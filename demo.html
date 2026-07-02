@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveChat Widget Demo</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; text-align: center; padding: 2rem; }
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        p { opacity: 0.8; max-width: 520px; margin: 0 auto 1rem; }
+        a { color: #6FD943; }
+        code { background: rgba(255,255,255,0.1); padding: 0.2rem 0.5rem; border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <div>
+        <h1 id="demo-title">LiveChat Demo</h1>
+        <p>Brand: <code id="demo-brand">default</code> — chat bubble bottom-right par click karein.</p>
+        <p>Admin: <a href="admin/login.php">Login</a> → <a href="admin/chats.php">Live Chats</a></p>
+        <p><small>Dusra brand test: <code>?brand=your-brand-key</code></small></p>
+    </div>
+    <script>
+        (function(){
+            var params = new URLSearchParams(location.search);
+            var brand = params.get('brand') || 'default';
+            document.getElementById('demo-brand').textContent = brand;
+            document.getElementById('demo-title').textContent = 'LiveChat — ' + brand;
+            var base = location.origin + location.pathname.replace(/\/demo\.html$/, '');
+            var s = document.createElement('script');
+            s.src = base + '/widget/embed.js';
+            s.setAttribute('data-site', base);
+            s.setAttribute('data-brand', brand);
+            document.body.appendChild(s);
+        })();
+    </script>
+</body>
+</html>

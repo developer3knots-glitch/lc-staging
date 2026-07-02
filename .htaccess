@@ -1,0 +1,22 @@
+# LiveChat — shared hosting (cPanel / Apache)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Force HTTPS when SSL is enabled (uncomment after SSL is active)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+<IfModule mod_php.c>
+    php_value upload_max_filesize 8M
+    php_value post_max_size 10M
+    php_value max_execution_time 120
+</IfModule>
+
+# Block direct access to sensitive folders (install.php still works at root)
+<IfModule mod_authz_core.c>
+    <FilesMatch "^(config\.php|db\.php|\.env)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+Options -Indexes

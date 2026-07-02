@@ -1,0 +1,21 @@
+# Secrets & local install state
+includes/config.php
+install/installed.lock
+.env
+
+# Logs
+*.log
+admin/error_log
+
+# User uploads (keep folder structure)
+uploads/*
+!uploads/.htaccess
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Cursor temp assets
+assets/c__Users_*
