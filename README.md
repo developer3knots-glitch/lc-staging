@@ -56,3 +56,7 @@ Works on shared hosting — no WebSocket server needed. Adjust `poll_interval_ms
 
 ## Default Admin
 Created during install (you choose email/password).
+
+## Configuration
+
+Copy `includes/config.example.php` to `includes/config.php` and set your database credentials (this file is not committed to Git).
