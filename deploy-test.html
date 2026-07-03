@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deploy Test — LiveChat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+            color: #e2e8f0;
+            padding: 24px;
+        }
+        .card {
+            max-width: 520px;
+            width: 100%;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,.35);
+        }
+        .badge {
+            display: inline-block;
+            background: #22c55e;
+            color: #052e16;
+            font-weight: 700;
+            font-size: 12px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            border-radius: 999px;
+            margin-bottom: 16px;
+        }
+        h1 { font-size: 1.75rem; margin-bottom: 12px; }
+        p { color: #94a3b8; line-height: 1.6; margin-bottom: 8px; }
+        code {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 10px 14px;
+            background: rgba(0,0,0,.35);
+            border-radius: 8px;
+            font-size: 14px;
+            color: #7dd3fc;
+        }
+        ul {
+            text-align: left;
+            margin: 20px 0 0;
+            padding-left: 20px;
+            color: #cbd5e1;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="badge">New file test</div>
+        <h1>Deploy test successful</h1>
+        <p>If you see this page on the live domain, the new file was deployed correctly.</p>
+        <p><strong>Test ID:</strong> DEPLOY-TEST-2026-07-04-v1</p>
+        <code>deploy-test.html</code>
+        <ul>
+            <li>New file: this page (deploy-test.html)</li>
+            <li>Old file: admin login subtitle updated to <strong>Deploy v1</strong></li>
+            <li>After push → cPanel: Update from Remote → Deploy HEAD Commit</li>
+        </ul>
+    </div>
+</body>
+</html>

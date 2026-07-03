@@ -3,4 +3,4 @@ deployment:
   tasks:
     - export DEPLOYPATH=/home/gbfkpryc/livechat.3knotsdigital.com/
     - /bin/cp -R admin api assets includes install widget $DEPLOYPATH
-    - /bin/cp index.php install.php demo.html .htaccess $DEPLOYPATH
+    - /bin/cp index.php install.php demo.html deploy-test.html .htaccess $DEPLOYPATH

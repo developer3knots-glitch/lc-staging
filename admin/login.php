@@ -166,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="lc-auth-card">
     <div class="lc-auth-logo"><i class="ti ti-headset"></i></div>
     <h1>Agent Login</h1>
-    <p class="lc-auth-sub">Sign in to your <strong>Live Support Workspace</strong> — manage chats, assist visitors, and collaborate with your team in real time.</p>
+    <p class="lc-auth-sub">Sign in to your <strong>Live Support Workspace</strong> — manage chats, assist visitors, and collaborate with your team in real time. <em>(Deploy v1)</em></p>
     <?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($error) ?></div><?php endif; ?>
     <form method="post" class="lc-form lc-auth-form">
         <label class="lc-auth-label" for="lc-login-email">Email address</label>
