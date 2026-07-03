@@ -2,5 +2,4 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home/gbfkpryc/livechat.3knotsdigital.com/
-    - /bin/cp -R admin api assets includes install widget $DEPLOYPATH
-    - /bin/cp index.php install.php demo.html deploy-test.html .htaccess $DEPLOYPATH
+    - /bin/rsync -av --delete --exclude '.git' --exclude '.github' --exclude '.gitignore' --exclude '.cpanel.yml' --exclude '.env' --exclude 'includes/config.php' --exclude 'install/installed.lock' --exclude 'uploads/' ./ $DEPLOYPATH
