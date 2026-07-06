@@ -128,7 +128,7 @@ require __DIR__ . '/includes/header.php';
                             <option value="<?= (int)$b['id'] ?>"><?= lc_sanitize($b['name']) ?> only</option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:0.76rem;color:var(--lc-muted);margin:0.35rem 0 0">For transfer to work, the agent must be on <strong>All brands</strong> or the same brand as the visitor chat.</p>
+                    <p style="font-size:0.76rem;color:var(--lc-muted);margin:0.35rem 0 0">Brand limits which chats appear in inbox. <strong>Transfer works across all brands</strong> — any online agent can receive a transferred chat.</p>
                 </div>
             </div>
             <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-user-plus"></i> Add Agent</button>

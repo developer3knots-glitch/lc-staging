@@ -181,7 +181,6 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
 
     lc_ensure_brands_schema();
 
-    $brandId = (int) ($conv['brand_id'] ?? 0);
     $excludeIds = [(int) $agent['id']];
     if ((int) ($conv['agent_id'] ?? 0) > 0) {
         $excludeIds[] = (int) $conv['agent_id'];
@@ -205,8 +204,7 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
     $rows = $stmt->fetchAll();
 
     foreach ($rows as &$row) {
-        $rowBrandId = $row['brand_id'] !== null ? (int) $row['brand_id'] : null;
-        $row['can_receive'] = lc_agent_can_serve_brand($rowBrandId, $brandId);
+        $row['can_receive'] = true;
     }
     unset($row);
 
@@ -243,12 +241,6 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     }
     if (($target['status'] ?? '') !== 'online' && ($target['status'] ?? '') !== 'away') {
         return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
-    }
-
-    $brandId = (int) ($conv['brand_id'] ?? 0);
-    $targetBrandId = $target['brand_id'] !== null ? (int) $target['brand_id'] : null;
-    if (!lc_agent_can_serve_brand($targetBrandId, $brandId)) {
-        return ['ok' => false, 'error' => 'This agent is not assigned to this chat brand. Set their brand to All brands or match this chat brand in Agents settings.'];
     }
 
     $actingName = trim((string) ($actingAgent['name'] ?? '')) ?: 'Agent';
