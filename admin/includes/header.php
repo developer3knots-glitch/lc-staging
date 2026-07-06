@@ -24,9 +24,6 @@ if ($agent['role'] === 'admin') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= lc_sanitize($pageTitle ?? 'Dashboard') ?> — <?= lc_sanitize(LC_APP_NAME) ?></title>
     <?php require __DIR__ . '/head-assets.php'; ?>
-    <?php if (!empty($loadRecordingAssets)): ?>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/rrweb@1.1.3/dist/style.css">
-    <?php endif; ?>
     <style>:root { --lc-primary: <?= lc_sanitize($primary) ?>; --lc-primary-dark: <?= lc_sanitize($primary) ?>; }</style>
 </head>
 <body class="lc-admin-body">

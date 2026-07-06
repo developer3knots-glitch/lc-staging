@@ -126,7 +126,7 @@ function lc_brand_embed_code(array $brand): string
     $url = LC_BASE_URL;
     $key = $brand['brand_key'];
     return '<script src="' . $url . '/assets/js/lc-time.js?v=1"></script>' . "\n"
-        . '<script src="' . $url . '/widget/embed.js?v=8" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
+        . '<script src="' . $url . '/widget/embed.js?v=9" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
 }
 
 function lc_brand_settings(array $brand): array
@@ -138,6 +138,5 @@ function lc_brand_settings(array $brand): array
         'welcome_message' => $brand['welcome_message'] ?? '',
         'brand_key' => $brand['brand_key'],
         'poll_interval_ms' => (int) lc_setting('poll_interval_ms', '1500'),
-        'session_recording_enabled' => lc_session_recording_enabled(),
     ];
 }

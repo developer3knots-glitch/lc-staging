@@ -50,8 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             ('widget_position', 'right'),
             ('offline_message', 'We are currently offline. Leave a message and we will get back to you.'),
             ('auto_assign', '1'),
-            ('poll_interval_ms', '1500'),
-            ('session_recording_enabled', '0')");
+            ('poll_interval_ms', '1500')");
         $pdo->exec("INSERT IGNORE INTO canned_replies (title, message) VALUES
             ('Greeting', 'Hello! Thank you for contacting us. How may I assist you?'),
             ('Please wait', 'Please give me a moment while I check that for you.'),
@@ -89,13 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
 
         $pageViewSql = file_get_contents(__DIR__ . '/install/upgrade_page_views.sql');
         foreach (array_filter(array_map('trim', explode(';', $pageViewSql))) as $statement) {
-            if ($statement !== '') {
-                $pdo->exec($statement);
-            }
-        }
-
-        $recordingSql = file_get_contents(__DIR__ . '/install/upgrade_session_recording.sql');
-        foreach (array_filter(array_map('trim', explode(';', $recordingSql))) as $statement) {
             if ($statement !== '') {
                 $pdo->exec($statement);
             }
