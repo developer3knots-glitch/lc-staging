@@ -37,7 +37,20 @@
     function formatTime(ts) {
         if (!ts) return '';
         var d = new Date(ts.replace(' ', 'T'));
+        if (isNaN(d.getTime())) return '';
         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatVisitTime(ts) {
+        if (!ts) return '';
+        var d = new Date(ts.replace(' ', 'T'));
+        if (isNaN(d.getTime())) return '';
+        var now = new Date();
+        var time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (d.toDateString() === now.toDateString()) {
+            return time;
+        }
+        return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
     }
 
     function renderMessage(m) {
@@ -66,7 +79,7 @@
         html += '<div class="lc-journey-meta">';
         html += '<span>' + esc(view.page_path || view.page_url) + '</span>';
         if (duration) html += '<span> · ' + esc(duration) + '</span>';
-        html += '<span> · ' + esc(view.time_ago || '') + '</span>';
+        html += '<span> · ' + esc(formatVisitTime(view.visited_at) || '') + '</span>';
         html += '</div>';
         html += '</div></div>';
         return html;

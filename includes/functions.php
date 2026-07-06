@@ -66,6 +66,15 @@ function lc_uid(): string
     return bin2hex(random_bytes(16));
 }
 
+function lc_format_time(string $datetime): string
+{
+    $ts = strtotime($datetime);
+    if (!$ts) {
+        return '';
+    }
+    return date('g:i A', $ts);
+}
+
 function lc_time_ago(string $datetime): string
 {
     $ts = strtotime($datetime);
