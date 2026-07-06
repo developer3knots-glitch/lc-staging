@@ -34,6 +34,21 @@ try {
         lc_json(['success' => true, 'already_closed' => true]);
     }
 
+    if ($autoClose) {
+        $dup = $db->prepare("
+            SELECT id FROM messages
+            WHERE conversation_id = ? AND sender_type = 'system'
+              AND message LIKE '%left the page%'
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 3 MINUTE)
+            ORDER BY id DESC LIMIT 1
+        ");
+        $dup->execute([$conversationId]);
+        if ($dup->fetch()) {
+            http_response_code(204);
+            exit;
+        }
+    }
+
     $upd = $db->prepare("UPDATE conversations SET status = 'closed', closed_at = NOW() WHERE id = ?");
     $upd->execute([$conversationId]);
     $closeMsg = $autoClose

@@ -58,7 +58,7 @@
     initPageTracker();
 
     function setupSiteNavigationDetection() {
-        document.addEventListener('click', function (e) {
+        function markIfInternalLink(e) {
             var link = e.target.closest('a');
             if (!link || !link.href) return;
             if (link.target === '_blank' || link.hasAttribute('download')) return;
@@ -66,7 +66,11 @@
             if (isSameSiteUrl(link.href)) {
                 markSiteNavigation();
             }
-        }, true);
+        }
+
+        document.addEventListener('mousedown', markIfInternalLink, true);
+        document.addEventListener('touchstart', markIfInternalLink, true);
+        document.addEventListener('click', markIfInternalLink, true);
 
         document.addEventListener('submit', function (e) {
             var form = e.target;
@@ -96,7 +100,13 @@
             if (url.protocol === 'javascript:' || url.protocol === 'mailto:' || url.protocol === 'tel:') {
                 return false;
             }
-            return url.origin === window.location.origin;
+            if (url.origin === window.location.origin) {
+                return true;
+            }
+            var stripWww = function (host) {
+                return (host || '').toLowerCase().replace(/^www\./, '');
+            };
+            return stripWww(url.hostname) === stripWww(window.location.hostname);
         } catch (err) {
             return false;
         }
@@ -393,43 +403,19 @@
 
         scheduleTeaser();
 
+        // Chat stays open across same-site page navigations (sessionStorage resumes on next page).
+        // Auto-close on unload caused false "Visitor left the page" on every link click.
         window.addEventListener('pagehide', function (e) {
             if (e.persisted) return;
             if (isReloadNavigation()) {
                 clearReloadNavigation();
-                return;
             }
-            if (isSiteNavigation()) {
-                return;
-            }
-            closeChatOnTabLeave();
         });
     }
 
     /** sessionStorage = survives page refresh, cleared when tab closes */
     function chatStore() {
         return window.sessionStorage;
-    }
-
-    function closeChatOnTabLeave() {
-        if (leaveCloseSent || chatClosed) return;
-
-        var convId = conversationId || getStoredConversationId();
-        if (!convId) return;
-
-        leaveCloseSent = true;
-
-        var fd = new FormData();
-        fd.append('conversation_id', String(convId));
-        fd.append('visitor_uid', visitorUid);
-        fd.append('auto_close', '1');
-
-        var url = siteUrl + '/api/visitor-close.php';
-        if (navigator.sendBeacon) {
-            navigator.sendBeacon(url, fd);
-        } else {
-            fetch(url, { method: 'POST', body: fd, keepalive: true });
-        }
     }
 
     function persistConversationId(id) {
