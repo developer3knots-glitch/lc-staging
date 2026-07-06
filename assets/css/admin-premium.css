@@ -655,56 +655,150 @@ body,
 /* ─── Live session recorder ─── */
 .lc-session-recorder {
     border-bottom: 1px solid var(--lc-border);
-    background: #0b1220;
+    background: #0f172a;
+    flex-shrink: 0;
+}
+.lc-session-recorder.is-collapsed .lc-replayer-shell {
+    display: none;
 }
 .lc-session-recorder-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.55rem 1rem;
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: #e2e8f0;
-    background: #111827;
-    border-bottom: 1px solid #1f2937;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+    background: linear-gradient(180deg, #1e293b 0%, #111827 100%);
+    border-bottom: 1px solid #334155;
 }
-.lc-session-recorder-head i { color: #38bdf8; }
-.lc-recording-live {
+.lc-session-recorder-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+.lc-session-recorder-title > i {
+    font-size: 1.1rem;
+    color: #38bdf8;
+}
+.lc-rec-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    background: #334155;
+    color: #94a3b8;
+}
+.lc-rec-badge.is-standby { background: #334155; color: #94a3b8; }
+.lc-rec-badge.is-connecting { background: #422006; color: #fdba74; }
+.lc-rec-badge.is-live {
+    background: #450a0a;
+    color: #fca5a5;
+    animation: lc-rec-badge-pulse 1.5s ease-in-out infinite;
+}
+.lc-rec-badge.is-error { background: #450a0a; color: #f87171; }
+@keyframes lc-rec-badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
+}
+.lc-session-recorder-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.lc-recording-events {
     font-size: 0.68rem;
     font-weight: 600;
-    color: #fca5a5;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    color: #64748b;
 }
-.lc-recording-live-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ef4444;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-    animation: lc-rec-pulse 1.4s ease-out infinite;
+.lc-recording-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #1e293b;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 0;
 }
-@keyframes lc-rec-pulse {
-    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
-    70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+.lc-recording-toggle:hover {
+    background: #334155;
+    color: #fff;
 }
-.lc-replayer-frame {
-    height: 240px;
+.lc-replayer-shell {
+    min-height: 260px;
+    max-height: 320px;
     overflow: hidden;
     background: #020617;
     position: relative;
+    border-bottom: 1px solid #1e293b;
 }
-.lc-replayer-frame .replayer-wrapper {
-    transform: scale(0.52);
-    transform-origin: top left;
+.lc-replayer-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1.5rem;
+    color: #94a3b8;
+    z-index: 2;
+    background: radial-gradient(ellipse at center, #0f172a 0%, #020617 70%);
+}
+.lc-replayer-empty-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.85rem;
+    color: #38bdf8;
+    font-size: 1.5rem;
+}
+.lc-replayer-empty strong {
+    color: #e2e8f0;
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+}
+.lc-replayer-empty p {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    max-width: 320px;
+    color: #64748b;
+}
+.lc-replayer-hint {
+    margin-top: 0.85rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #38bdf8;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+}
+.lc-replayer-stage {
+    position: relative;
+    min-height: 260px;
+    width: 100%;
+    overflow: hidden;
+    display: none;
+}
+.lc-replayer-stage .replayer-wrapper {
     pointer-events: none;
 }
-.lc-replayer-frame iframe {
+.lc-replayer-stage iframe {
     border: 0;
 }
 

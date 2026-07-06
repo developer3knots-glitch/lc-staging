@@ -5,7 +5,8 @@ $selectedId = (int) ($_GET['id'] ?? 0);
 $pageTitle = 'Live Chats';
 $activeNav = 'chats';
 $extraScripts = ['admin-chat.js'];
-if (lc_session_recording_enabled()) {
+$loadRecordingAssets = lc_session_recording_enabled();
+if ($loadRecordingAssets) {
     array_unshift($extraScripts, 'admin-recording.js');
 }
 require __DIR__ . '/includes/header.php';
@@ -50,10 +51,27 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-session-recorder" id="lc-session-recorder" style="display:none">
                 <div class="lc-session-recorder-head">
-                    <span><i class="ti ti-video"></i> Live session recording</span>
-                    <span class="lc-recording-live"><span class="lc-recording-live-dot"></span> <span id="lc-recording-status">Live</span></span>
+                    <div class="lc-session-recorder-title">
+                        <i class="ti ti-device-desktop-analytics"></i>
+                        <span>Live Session View</span>
+                        <span class="lc-rec-badge" id="lc-recording-badge">STANDBY</span>
+                    </div>
+                    <div class="lc-session-recorder-actions">
+                        <span class="lc-recording-events" id="lc-recording-events">0 events</span>
+                        <button type="button" class="lc-recording-toggle" id="lc-recording-toggle" title="Collapse">
+                            <i class="ti ti-chevron-up"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="lc-replayer-frame" id="lc-replayer-mount"></div>
+                <div class="lc-replayer-shell" id="lc-replayer-shell">
+                    <div class="lc-replayer-empty" id="lc-replayer-empty">
+                        <div class="lc-replayer-empty-icon"><i class="ti ti-player-play"></i></div>
+                        <strong>Waiting for visitor screen</strong>
+                        <p>Visitor website par widget load hone ke baad unki screen yahan live dikhegi — mouse, scroll aur clicks ke saath.</p>
+                        <span class="lc-replayer-hint" id="lc-recording-status">Connecting…</span>
+                    </div>
+                    <div class="lc-replayer-stage" id="lc-replayer-mount"></div>
+                </div>
             </div>
             <div class="lc-chat-messages" id="lc-messages"></div>
             <div class="lc-chat-compose">
