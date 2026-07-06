@@ -22,7 +22,11 @@ try {
     $agentId = (int) $agent['id'];
     $wasWaiting = $conv['status'] === 'waiting';
 
-    // Claim chat if waiting
+    if ($conv['status'] === 'active' && (int) ($conv['agent_id'] ?? 0) > 0 && (int) $conv['agent_id'] !== $agentId) {
+        lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
+    }
+
+    // Claim chat if waiting or unassigned
     if ($conv['status'] === 'waiting' || $conv['agent_id'] === null) {
         $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, NOW()) WHERE id = ?");
         $upd->execute([$agentId, $conversationId]);

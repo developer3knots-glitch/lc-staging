@@ -224,8 +224,12 @@
                     return;
                 }
                 if (!data.agents.length) {
-                    var hint = 'No other agents are online right now.';
-                    hint += ' Ask your teammate to log in on the other PC and set status to <strong>Online</strong> in the top bar.';
+                    var hint = 'No other agents available to transfer to.';
+                    if (data.current_agent_name) {
+                        hint += ' This chat is with <strong>' + esc(data.current_agent_name) + '</strong>.';
+                    } else {
+                        hint += ' Ask another agent to log in and set status to <strong>Online</strong>.';
+                    }
                     transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">' + hint + '</div>';
                     return;
                 }
@@ -262,16 +266,18 @@
                     return;
                 }
                 closeTransferPanel();
-                lastMsgId = 0;
-                messagesEl.innerHTML = '';
-                pollMessages();
                 loadConversations();
-                if (!isAdmin && data.agent_id !== myAgentId) {
-                    chatTransferredAway = true;
-                    replyInput.disabled = true;
-                    document.getElementById('lc-send-reply').disabled = true;
-                    if (transferWrap) transferWrap.style.display = 'none';
-                    visitorMetaEl.textContent = 'Chat transferred to ' + (data.agent_name || 'another agent');
+                if (parseInt(data.agent_id, 10) !== myAgentId) {
+                    selectedId = 0;
+                    activeEl.style.display = 'none';
+                    emptyEl.style.display = 'flex';
+                    messagesEl.innerHTML = '';
+                    lastMsgId = 0;
+                    chatTransferredAway = false;
+                } else {
+                    lastMsgId = 0;
+                    messagesEl.innerHTML = '';
+                    pollMessages();
                 }
             })
             .catch(function () {
@@ -280,7 +286,10 @@
             });
     }
 
-    function canComposeChat(c) {
+    function canComposeChat(c, serverFlag) {
+        if (typeof serverFlag === 'boolean') {
+            return serverFlag;
+        }
         if (!c || c.status === 'closed') return false;
         if (c.status === 'waiting') return true;
         if (!c.agent_id) return false;
@@ -289,19 +298,20 @@
 
     function canTransferChat(c) {
         if (!c || c.status !== 'active') return false;
-        if (isAdmin) return true;
+        if (isAdmin) return parseInt(c.agent_id || 0, 10) === myAgentId || !c.agent_id;
         return parseInt(c.agent_id || 0, 10) === myAgentId;
     }
 
-    function updateChatActions(c) {
-        var compose = canComposeChat(c);
+    function updateChatActions(c, canCompose) {
+        canCompose = canComposeChat(c, canCompose);
         var transfer = canTransferChat(c);
-        replyInput.disabled = !compose;
-        document.getElementById('lc-send-reply').disabled = !compose;
+        var assignedId = parseInt(c.agent_id || 0, 10);
+        replyInput.disabled = !canCompose;
+        document.getElementById('lc-send-reply').disabled = !canCompose;
         acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
         if (transferWrap) transferWrap.style.display = transfer ? 'inline-flex' : 'none';
         if (!transfer) closeTransferPanel();
-        chatTransferredAway = c.status === 'active' && !compose && !isAdmin;
+        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
     }
 
     function loadCanned() {
@@ -360,7 +370,14 @@
         fetch(base + '/api/agent-poll.php?conversation_id=' + selectedId + '&last_id=' + lastMsgId, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (!data.success) return;
+                if (!data.success) {
+                    if (data.error === 'Forbidden') {
+                        chatTransferredAway = true;
+                        updateChatActions({ status: 'active', agent_id: 0 }, false);
+                        loadConversations();
+                    }
+                    return;
+                }
                 var c = data.conversation;
 
                 if (c.status === 'closed') {
@@ -390,9 +407,11 @@
                 renderVisitorDetails(c);
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
-                if (chatTransferredAway) meta = 'Chat transferred to ' + (c.agent_name || 'another agent');
+                if (chatTransferredAway) {
+                    meta = 'Assigned to ' + (c.agent_name || 'another agent') + ' — you are viewing only';
+                }
                 visitorMetaEl.textContent = meta;
-                updateChatActions(c);
+                updateChatActions(c, data.can_compose);
 
                 if (lastMsgId === 0 && data.messages.length) {
                     messagesEl.innerHTML = '';

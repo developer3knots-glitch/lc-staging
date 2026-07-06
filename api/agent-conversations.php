@@ -11,19 +11,7 @@ $agentId = (int) $agent['id'];
 try {
     lc_ensure_brands_schema();
     $db = lc_db();
-    [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
-
-    $where = '1=1' . $brandSql;
-    $params = $brandParams;
-
-    if ($tab === 'waiting') {
-        $where = "c.status = 'waiting'" . $brandSql;
-    } elseif ($tab === 'active') {
-        $where = "c.status = 'active' AND (c.agent_id = ? OR c.agent_id IS NULL)" . $brandSql;
-        $params = array_merge([$agentId], $brandParams);
-    } else {
-        $where = "c.status IN ('waiting','active')" . $brandSql;
-    }
+    [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
 
     $sql = "
         SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at,

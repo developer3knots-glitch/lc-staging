@@ -39,6 +39,7 @@ try {
         'agents' => $list,
         'can_transfer' => true,
         'chat_brand' => (string) ($conv['brand_name'] ?? ''),
+        'current_agent_name' => (string) ($conv['agent_name'] ?? ''),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

@@ -18,6 +18,10 @@ try {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
     }
 
+    if (!lc_agent_can_view_conversation($agent, $conv)) {
+        lc_json(['success' => false, 'error' => 'Forbidden'], 403);
+    }
+
     $stmt = lc_db()->prepare('
         SELECT m.id, m.sender_type, m.message, m.created_at, m.is_read,
                CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name
@@ -29,7 +33,7 @@ try {
     $stmt->execute([$conversationId, $lastId]);
     $messages = $stmt->fetchAll();
 
-    if (!empty($messages)) {
+    if (!empty($messages) && lc_agent_can_handle_conversation($agent, $conv)) {
         lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = "visitor" AND is_read = 0')
             ->execute([$conversationId]);
     }
@@ -38,6 +42,8 @@ try {
         'success' => true,
         'conversation' => lc_format_api_conversation($conv),
         'messages' => lc_format_api_messages($messages),
+        'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
+        'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

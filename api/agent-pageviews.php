@@ -18,8 +18,7 @@ try {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
     }
 
-    $agentBrandId = lc_agent_brand_id($agent);
-    if ($agentBrandId !== null && (int) ($conv['brand_id'] ?? 0) !== $agentBrandId) {
+    if (!lc_agent_can_view_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
 
