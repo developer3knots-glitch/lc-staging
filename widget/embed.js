@@ -812,23 +812,26 @@
     }
 
     function formatMsgTime(ts) {
-        if (!ts) return '';
-        var d = new Date(String(ts).replace(' ', 'T'));
-        if (isNaN(d.getTime())) return '';
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (window.LCTime) {
+            return window.LCTime.formatRelative(ts);
+        }
+        return '';
+    }
+
+    function msgTimeHtml(ts) {
+        var iso = window.LCTime ? window.LCTime.toIso(ts || new Date().toISOString()) : '';
+        if (!iso) {
+            return '';
+        }
+        var label = window.LCTime ? window.LCTime.formatRelative(iso) : '';
+        return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';
     }
 
     function formatDateLabel(ts) {
-        if (!ts) return '';
-        var d = new Date(String(ts).replace(' ', 'T'));
-        if (isNaN(d.getTime())) return '';
-        var now = new Date();
-        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        var msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        var diff = (today - msgDay) / 86400000;
-        if (diff === 0) return 'Today';
-        if (diff === 1) return 'Yesterday';
-        return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+        if (window.LCTime) {
+            return window.LCTime.formatDateLabel(ts);
+        }
+        return '';
     }
 
     function maybeAppendDateDivider(ts) {
@@ -942,7 +945,7 @@
         if (m.created_at) maybeAppendDateDivider(m.created_at);
 
         var box = document.getElementById('lc-panel-messages');
-        var timeStr = formatMsgTime(m.created_at) || formatMsgTime(new Date().toISOString());
+        var timeHtml = msgTimeHtml(m.created_at);
 
         if (m.sender_type === 'system' && m.event === 'agent_join') {
             setWaitingState(false);
@@ -968,7 +971,7 @@
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
                 '<div class="lcw-msg lcw-agent">' + esc(m.message) + '</div>' +
-                '<div class="lcw-msg-meta">' + esc(timeStr) + '</div></div>';
+                '<div class="lcw-msg-meta">' + timeHtml + '</div></div>';
             box.appendChild(row);
         } else if (m.sender_type === 'visitor') {
             var wrap = document.createElement('div');
@@ -977,7 +980,7 @@
             var readMark = m._pending ? '' : '<span class="lcw-msg-read">' + (m.is_read ? '✓✓' : '✓') + '</span>';
             wrap.innerHTML =
                 '<div class="lcw-msg lcw-visitor">' + esc(m.message) + '</div>' +
-                '<div class="lcw-msg-meta">' + esc(timeStr) + readMark + '</div>';
+                '<div class="lcw-msg-meta">' + timeHtml + readMark + '</div>';
             box.appendChild(wrap);
         } else {
             var sys = document.createElement('div');
@@ -987,6 +990,7 @@
             box.appendChild(sys);
         }
         box.scrollTop = box.scrollHeight;
+        if (window.LCTime) window.LCTime.scan(box);
     }
 
     function resumeChatOnLoad() {
@@ -1096,7 +1100,7 @@
             _tempId: tempId,
             sender_type: 'visitor',
             message: msg,
-            created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+            created_at: new Date().toISOString(),
             _pending: true
         });
 

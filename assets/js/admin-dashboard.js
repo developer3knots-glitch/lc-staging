@@ -18,13 +18,21 @@
         return '<span class="lc-badge lc-badge-' + cls + '">' + esc(status.charAt(0).toUpperCase() + status.slice(1)) + '</span>';
     }
 
+    function timeCell(iso) {
+        if (!iso) {
+            return '—';
+        }
+        var label = window.LCTime ? window.LCTime.formatRelative(iso) : '';
+        return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';
+    }
+
     function renderWaitingRow(r) {
         var html = '<tr>';
         html += '<td><a href="' + esc(r.chat_url) + '">' + esc(r.visitor_name) + '</a></td>';
         html += '<td>' + esc(r.brand_name || '—') + '</td>';
         html += '<td>' + esc(r.visitor_country || '—') + '</td>';
         html += '<td>' + esc(r.last_msg) + '</td>';
-        html += '<td>' + esc(r.time_ago) + '</td>';
+        html += '<td>' + timeCell(r.last_message_at) + '</td>';
         html += '<td><a href="' + esc(r.chat_url) + '" class="lc-btn lc-btn-primary lc-btn-sm">Reply</a></td>';
         html += '</tr>';
         return html;
@@ -38,7 +46,7 @@
         html += '<td>' + esc(r.visitor_country || '—') + '</td>';
         html += '<td>' + statusBadge(r.status) + '</td>';
         html += '<td>' + esc(r.last_msg) + '</td>';
-        html += '<td>' + esc(r.time_ago) + '</td>';
+        html += '<td>' + timeCell(r.last_message_at) + '</td>';
         html += '</tr>';
         return html;
     }
@@ -113,6 +121,10 @@
                 }
 
                 tbody.innerHTML = data.recent.map(renderRecentRow).join('');
+                if (window.LCTime) {
+                    if (waitingTbody) window.LCTime.scan(waitingTbody);
+                    window.LCTime.scan(tbody);
+                }
             })
             .catch(function () {});
     }

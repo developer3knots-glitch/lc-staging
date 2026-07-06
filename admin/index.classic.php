@@ -95,7 +95,7 @@ require __DIR__ . '/includes/header.php';
                     <td><?= lc_sanitize($r['visitor_country'] ?? '—') ?></td>
                     <td><span class="lc-badge lc-badge-<?= $r['status'] === 'waiting' ? 'waiting' : ($r['status'] === 'closed' ? 'closed' : 'active') ?>"><?= ucfirst($r['status']) ?></span></td>
                     <td><?= lc_sanitize(mb_strimwidth($r['last_msg'] ?? '—', 0, 50, '…')) ?></td>
-                    <td><?= $r['last_message_at'] ? lc_time_ago($r['last_message_at']) : '—' ?></td>
+                    <td><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '—' ?></td>
                 </tr>
             <?php endforeach; endif; ?>
             </tbody>

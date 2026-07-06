@@ -46,7 +46,7 @@ require __DIR__ . '/includes/header.php';
                     <td><?= lc_sanitize($r['visitor_country'] ?? '—') ?></td>
                     <td><?= lc_sanitize($r['agent_name'] ?: '—') ?></td>
                     <td><?= (int)$r['msg_count'] ?></td>
-                    <td><?= $r['closed_at'] ? date('M j, Y g:ia', strtotime($r['closed_at'])) : '—' ?></td>
+                    <td><?= $r['closed_at'] ? lc_time_span($r['closed_at'], 'absolute') : '—' ?></td>
                     <td><a href="<?= LC_BASE_URL ?>/admin/chats.php?id=<?= (int)$r['id'] ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-eye"></i> View</a></td>
                 </tr>
             <?php endforeach; endif; ?>

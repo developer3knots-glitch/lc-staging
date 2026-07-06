@@ -36,8 +36,8 @@ try {
 
     lc_json([
         'success' => true,
-        'conversation' => $conv,
-        'messages' => $messages,
+        'conversation' => lc_format_api_conversation($conv),
+        'messages' => lc_format_api_messages($messages),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

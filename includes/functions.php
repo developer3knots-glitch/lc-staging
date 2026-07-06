@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/datetime.php';
 require_once __DIR__ . '/brand.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/avatars.php';
@@ -64,34 +65,6 @@ function lc_set_setting(string $key, string $value): void
 function lc_uid(): string
 {
     return bin2hex(random_bytes(16));
-}
-
-function lc_format_time(string $datetime): string
-{
-    if ($datetime === '') {
-        return '';
-    }
-    try {
-        $dt = new DateTime($datetime, new DateTimeZone(lc_app_timezone()));
-        return $dt->format('g:i A');
-    } catch (Throwable $e) {
-        return '';
-    }
-}
-
-function lc_time_ago(string $datetime): string
-{
-    try {
-        $dt = new DateTime($datetime, new DateTimeZone(lc_app_timezone()));
-    } catch (Throwable $e) {
-        return '';
-    }
-    $now = new DateTime('now', new DateTimeZone(lc_app_timezone()));
-    $diff = $now->getTimestamp() - $dt->getTimestamp();
-    if ($diff < 60) return 'just now';
-    if ($diff < 3600) return floor($diff / 60) . 'm ago';
-    if ($diff < 86400) return floor($diff / 3600) . 'h ago';
-    return $dt->format('M j, g:ia');
 }
 
 function lc_get_online_agents_count(?int $brandId = null): int

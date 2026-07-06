@@ -146,7 +146,7 @@ require __DIR__ . '/includes/header.php';
                     <td><?= lc_sanitize($w['brand_name'] ?? '—') ?></td>
                     <td><?= lc_sanitize($w['visitor_country'] ?? '—') ?></td>
                     <td><?= lc_sanitize(mb_strimwidth($w['last_msg'] ?? '—', 0, 50, '…')) ?></td>
-                    <td><?= $w['last_message_at'] ? lc_time_ago($w['last_message_at']) : 'just now' ?></td>
+                    <td><?= $w['last_message_at'] ? lc_time_span($w['last_message_at']) : '<span class="lc-time">Just now</span>' ?></td>
                     <td><a href="<?= LC_BASE_URL ?>/admin/chats.php?id=<?= (int)$w['id'] ?>" class="lc-btn lc-btn-primary lc-btn-sm">Reply</a></td>
                 </tr>
             <?php endforeach; ?>
@@ -187,7 +187,7 @@ require __DIR__ . '/includes/header.php';
                     <td><?= lc_sanitize($r['visitor_country'] ?? '—') ?></td>
                     <td><span class="lc-badge lc-badge-<?= $r['status'] === 'waiting' ? 'waiting' : ($r['status'] === 'closed' ? 'closed' : 'active') ?>"><?= ucfirst($r['status']) ?></span></td>
                     <td><?= lc_sanitize(mb_strimwidth($r['last_msg'] ?? '—', 0, 50, '…')) ?></td>
-                    <td><?= $r['last_message_at'] ? lc_time_ago($r['last_message_at']) : '—' ?></td>
+                    <td><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '—' ?></td>
                 </tr>
             <?php endforeach; endif; ?>
             </tbody>

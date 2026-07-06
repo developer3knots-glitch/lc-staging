@@ -24,5 +24,5 @@ define('LC_DB_CHARSET', 'utf8mb4');
 define('LC_SESSION_NAME', 'livechat_session');
 define('LC_POLL_INTERVAL', 1500);
 
-define('LC_TIMEZONE', 'Asia/Karachi');
-date_default_timezone_set(LC_TIMEZONE);
+// Application logic uses UTC. MySQL session is set to +00:00 in db.php.
+// APIs return ISO-8601; browsers display in the visitor/agent local timezone.

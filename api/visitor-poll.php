@@ -88,7 +88,7 @@ try {
 
     lc_json([
         'success' => true,
-        'messages' => $messages,
+        'messages' => lc_format_api_messages($messages),
         'status' => $conv['status'],
         'agent_name' => $conv['agent_name'],
         'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),

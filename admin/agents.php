@@ -64,7 +64,7 @@ require __DIR__ . '/includes/header.php';
                     <td><?= ucfirst($a['role']) ?></td>
                     <td><?= $a['role'] === 'admin' ? 'All brands' : lc_sanitize($a['brand_name'] ?? '—') ?></td>
                     <td><span class="lc-status-dot <?= $a['status'] ?>"></span> <?= ucfirst($a['status']) ?></td>
-                    <td><?= $a['last_seen'] ? lc_time_ago($a['last_seen']) : '—' ?></td>
+                    <td><?= $a['last_seen'] ? lc_time_span($a['last_seen']) : '—' ?></td>
                     <td>
                         <?php if ((int)$a['id'] !== (int)$agent['id']): ?>
                         <form method="post" style="display:inline">

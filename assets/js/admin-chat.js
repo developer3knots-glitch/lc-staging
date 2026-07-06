@@ -34,12 +34,15 @@
         return d.innerHTML;
     }
 
-    function formatTime(ts) {
-        return window.LC_formatTime ? window.LC_formatTime(ts) : '';
-    }
-
-    function formatVisitTime(ts) {
-        return window.LC_formatDateTime ? window.LC_formatDateTime(ts) : formatTime(ts);
+    function timeHtml(ts) {
+        if (!ts || !window.LCTime) {
+            return '';
+        }
+        var iso = window.LCTime.toIso(ts);
+        if (!iso) {
+            return '';
+        }
+        return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
     function renderMessage(m) {
@@ -47,7 +50,7 @@
         var label = cls === 'agent' ? (m.agent_name || 'Agent') : (cls === 'visitor' ? 'Visitor' : '');
         var html = '<div class="lc-msg ' + cls + '" data-id="' + m.id + '">';
         html += esc(m.message);
-        html += '<div class="lc-msg-time">' + formatTime(m.created_at) + (label && cls !== 'system' ? ' · ' + esc(label) : '') + '</div>';
+        html += '<div class="lc-msg-time">' + timeHtml(m.created_at) + (label && cls !== 'system' ? ' · ' + esc(label) : '') + '</div>';
         html += '</div>';
         return html;
     }
@@ -68,7 +71,7 @@
         html += '<div class="lc-journey-meta">';
         html += '<span>' + esc(view.page_path || view.page_url) + '</span>';
         if (duration) html += '<span> · ' + esc(duration) + '</span>';
-        html += '<span> · ' + esc(formatVisitTime(view.visited_at) || '') + '</span>';
+        html += '<span> · ' + timeHtml(view.visited_at) + '</span>';
         html += '</div>';
         html += '</div></div>';
         return html;
@@ -116,6 +119,7 @@
                 var total = journeyListEl.querySelectorAll('.lc-journey-item').length;
                 journeyCountEl.textContent = total + (total === 1 ? ' page' : ' pages');
                 journeyListEl.scrollTop = journeyListEl.scrollHeight;
+                if (window.LCTime) window.LCTime.scan(journeyListEl);
             });
     }
 
@@ -227,6 +231,7 @@
                     document.getElementById('lc-send-reply').disabled = true;
                     acceptBtn.style.display = 'none';
                     visitorMetaEl.textContent = (c.visitor_page || c.page_url || '') + ' · Chat closed';
+                    if (window.LCTime) window.LCTime.scan(messagesEl);
                     loadConversations();
                     return;
                 }
@@ -250,6 +255,7 @@
                     }
                 });
                 messagesEl.scrollTop = messagesEl.scrollHeight;
+                if (window.LCTime) window.LCTime.scan(messagesEl);
                 loadPageJourney(false);
             });
     }

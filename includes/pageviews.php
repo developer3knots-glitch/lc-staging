@@ -116,9 +116,7 @@ function lc_get_visitor_page_journey(int $visitorId, int $brandId, int $limit = 
             'referrer' => $row['referrer'],
             'duration_seconds' => $row['duration_seconds'] !== null ? (int) $row['duration_seconds'] : null,
             'duration_label' => lc_format_duration_label($row['duration_seconds']),
-            'visited_at' => $row['visited_at'],
-            'visited_time' => lc_format_time($row['visited_at']),
-            'time_ago' => lc_time_ago($row['visited_at']),
+            'visited_at' => lc_to_iso8601($row['visited_at']),
         ];
     }
 

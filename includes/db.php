@@ -2,25 +2,7 @@
 
 require_once __DIR__ . '/config.php';
 
-if (!defined('LC_TIMEZONE')) {
-    define('LC_TIMEZONE', 'Asia/Karachi');
-}
-
-date_default_timezone_set(LC_TIMEZONE);
-
-function lc_app_timezone(): string
-{
-    return LC_TIMEZONE;
-}
-
-function lc_utc_offset(): string
-{
-    static $offset = null;
-    if ($offset === null) {
-        $offset = (new DateTime('now', new DateTimeZone(LC_TIMEZONE)))->format('P');
-    }
-    return $offset;
-}
+date_default_timezone_set('UTC');
 
 function lc_db(): PDO
 {
@@ -32,7 +14,7 @@ function lc_db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
-        $pdo->exec("SET time_zone = '" . lc_utc_offset() . "'");
+        $pdo->exec("SET time_zone = '+00:00'");
     }
     return $pdo;
 }
