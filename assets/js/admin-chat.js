@@ -200,13 +200,20 @@
     function renderTransferAgent(agent) {
         var initials = agent.avatar && agent.avatar.initials ? agent.avatar.initials : (agent.name || '?').charAt(0);
         var color = agent.avatar && agent.avatar.color ? agent.avatar.color : '#64748b';
-        var html = '<button type="button" class="lc-transfer-agent" data-id="' + agent.id + '">';
+        var disabled = agent.can_receive === false;
+        var statusLabel = agent.status === 'away' ? 'Away' : 'Online';
+        var brandLabel = agent.brand_name ? agent.brand_name : 'All brands';
+        var html = '<button type="button" class="lc-transfer-agent' + (disabled ? ' is-disabled' : '') + '" data-id="' + agent.id + '"' + (disabled ? ' disabled' : '') + '>';
         html += '<span class="lc-transfer-agent-avatar" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
         html += '<span class="lc-transfer-agent-body">';
         html += '<strong>' + esc(agent.name) + '</strong>';
-        html += '<span>' + esc(agent.email || 'Online') + '</span>';
+        html += '<span>' + esc(statusLabel) + ' · ' + esc(brandLabel) + '</span>';
         html += '</span>';
-        html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
+        if (disabled) {
+            html += '<span class="lc-transfer-agent-warn" title="Brand mismatch">!</span>';
+        } else {
+            html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
+        }
         html += '</button>';
         return html;
     }
@@ -222,13 +229,23 @@
                     return;
                 }
                 if (!data.agents.length) {
-                    transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">No other online agents available right now</div>';
+                    var hint = 'No other agents are online right now.';
+                    hint += ' Ask your teammate to log in on the other PC and set status to <strong>Online</strong> in the top bar.';
+                    if (data.chat_brand) {
+                        hint += ' Chat brand: <strong>' + esc(data.chat_brand) + '</strong>.';
+                    }
+                    transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">' + hint + '</div>';
                     return;
                 }
                 var html = '';
+                var canReceiveCount = 0;
                 data.agents.forEach(function (agent) {
+                    if (agent.can_receive !== false) canReceiveCount++;
                     html += renderTransferAgent(agent);
                 });
+                if (!canReceiveCount) {
+                    html = '<div class="lc-transfer-empty">Agents are online but none match this chat brand. In <strong>Agents</strong> settings, set their brand to <strong>All brands</strong> or match <strong>' + esc(data.chat_brand || 'this chat') + '</strong>.</div>' + html;
+                }
                 transferAgentsEl.innerHTML = html;
                 transferAgentsLoaded = true;
             })
@@ -490,7 +507,7 @@
     if (transferAgentsEl) {
         transferAgentsEl.addEventListener('click', function (e) {
             var btn = e.target.closest('.lc-transfer-agent');
-            if (!btn) return;
+            if (!btn || btn.disabled || btn.classList.contains('is-disabled')) return;
             selectedTransferAgentId = parseInt(btn.dataset.id, 10) || 0;
             transferAgentsEl.querySelectorAll('.lc-transfer-agent').forEach(function (el) {
                 el.classList.toggle('is-selected', el === btn);

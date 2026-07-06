@@ -20,6 +20,15 @@
                 body: JSON.stringify({ status: statusSelect.value })
             });
         });
+
+        setInterval(function () {
+            fetch(window.LC_BASE_URL + '/api/agent-status.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ status: statusSelect.value, ping: true })
+            });
+        }, 45000);
     }
 
     var app = document.getElementById('lc-app');

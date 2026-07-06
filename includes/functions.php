@@ -157,6 +157,18 @@ function lc_agent_can_transfer_conversation(array $agent, array $conv): bool
     return (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'];
 }
 
+function lc_agent_can_serve_brand(?int $agentBrandId, int $conversationBrandId): bool
+{
+    if ($conversationBrandId < 1) {
+        return true;
+    }
+    if ($agentBrandId === null) {
+        return true;
+    }
+
+    return $agentBrandId === $conversationBrandId;
+}
+
 /**
  * @return array<int, array<string, mixed>>
  */
@@ -167,27 +179,38 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
         return [];
     }
 
+    lc_ensure_brands_schema();
+
     $brandId = (int) ($conv['brand_id'] ?? 0);
-    $excludeId = (int) ($conv['agent_id'] ?? 0);
-
-    $sql = "
-        SELECT id, name, email, status, avatar
-        FROM agents
-        WHERE is_active = 1 AND status = 'online' AND id != ?
-    ";
-    $params = [$excludeId];
-
-    if ($brandId > 0) {
-        $sql .= ' AND (brand_id IS NULL OR brand_id = ?)';
-        $params[] = $brandId;
+    $excludeIds = [(int) $agent['id']];
+    if ((int) ($conv['agent_id'] ?? 0) > 0) {
+        $excludeIds[] = (int) $conv['agent_id'];
     }
+    $excludeIds = array_values(array_unique($excludeIds));
 
-    $sql .= ' ORDER BY name ASC';
+    $placeholders = implode(',', array_fill(0, count($excludeIds), '?'));
+    $sql = "
+        SELECT a.id, a.name, a.email, a.status, a.avatar, a.role, a.brand_id, b.name AS brand_name
+        FROM agents a
+        LEFT JOIN brands b ON b.id = a.brand_id
+        WHERE a.is_active = 1
+          AND a.status IN ('online', 'away')
+          AND a.role = 'agent'
+          AND a.id NOT IN ({$placeholders})
+        ORDER BY FIELD(a.status, 'online', 'away'), a.name ASC
+    ";
 
     $stmt = lc_db()->prepare($sql);
-    $stmt->execute($params);
+    $stmt->execute($excludeIds);
+    $rows = $stmt->fetchAll();
 
-    return $stmt->fetchAll();
+    foreach ($rows as &$row) {
+        $rowBrandId = $row['brand_id'] !== null ? (int) $row['brand_id'] : null;
+        $row['can_receive'] = lc_agent_can_serve_brand($rowBrandId, $brandId);
+    }
+    unset($row);
+
+    return $rows;
 }
 
 /**
@@ -209,20 +232,23 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         return ['ok' => false, 'error' => 'Chat is already with this agent'];
     }
 
-    $stmt = lc_db()->prepare('SELECT id, name, is_active, status, brand_id FROM agents WHERE id = ? LIMIT 1');
+    $stmt = lc_db()->prepare('SELECT id, name, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
     $stmt->execute([$targetAgentId]);
     $target = $stmt->fetch();
     if (!$target || !(int) $target['is_active']) {
         return ['ok' => false, 'error' => 'Agent not found'];
     }
-    if (($target['status'] ?? '') !== 'online') {
-        return ['ok' => false, 'error' => 'Selected agent is not online'];
+    if (($target['role'] ?? '') !== 'agent') {
+        return ['ok' => false, 'error' => 'Transfer is only available to support agents'];
+    }
+    if (($target['status'] ?? '') !== 'online' && ($target['status'] ?? '') !== 'away') {
+        return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
     }
 
     $brandId = (int) ($conv['brand_id'] ?? 0);
     $targetBrandId = $target['brand_id'] !== null ? (int) $target['brand_id'] : null;
-    if ($brandId > 0 && $targetBrandId !== null && $targetBrandId !== $brandId) {
-        return ['ok' => false, 'error' => 'Agent cannot handle this brand'];
+    if (!lc_agent_can_serve_brand($targetBrandId, $brandId)) {
+        return ['ok' => false, 'error' => 'This agent is not assigned to this chat brand. Set their brand to All brands or match this chat brand in Agents settings.'];
     }
 
     $actingName = trim((string) ($actingAgent['name'] ?? '')) ?: 'Agent';

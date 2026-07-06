@@ -123,11 +123,12 @@ require __DIR__ . '/includes/header.php';
                 <div id="lc-agent-brand-wrap">
                     <label>Assign Brand</label>
                     <select name="brand_id">
-                        <option value="">— Select brand —</option>
+                        <option value="">All brands (can handle any chat)</option>
                         <?php foreach ($brands as $b): ?>
-                            <option value="<?= (int)$b['id'] ?>"><?= lc_sanitize($b['name']) ?></option>
+                            <option value="<?= (int)$b['id'] ?>"><?= lc_sanitize($b['name']) ?> only</option>
                         <?php endforeach; ?>
                     </select>
+                    <p style="font-size:0.76rem;color:var(--lc-muted);margin:0.35rem 0 0">For transfer to work, the agent must be on <strong>All brands</strong> or the same brand as the visitor chat.</p>
                 </div>
             </div>
             <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-user-plus"></i> Add Agent</button>

@@ -20,6 +20,7 @@ try {
     }
 
     $agents = lc_get_transferable_agents($agent, $conversationId);
+    $convBrandId = (int) ($conv['brand_id'] ?? 0);
     $list = [];
     foreach ($agents as $row) {
         $list[] = [
@@ -27,6 +28,8 @@ try {
             'name' => (string) $row['name'],
             'email' => (string) $row['email'],
             'status' => (string) $row['status'],
+            'brand_name' => (string) ($row['brand_name'] ?? ''),
+            'can_receive' => (bool) ($row['can_receive'] ?? true),
             'avatar' => lc_avatar_meta($row['avatar'] ?? null, (string) $row['name']),
         ];
     }
@@ -35,6 +38,7 @@ try {
         'success' => true,
         'agents' => $list,
         'can_transfer' => true,
+        'chat_brand' => (string) ($conv['brand_name'] ?? ''),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

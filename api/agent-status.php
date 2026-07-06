@@ -7,6 +7,18 @@ if (!$agent) {
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $status = $input['status'] ?? '';
+$isPing = !empty($input['ping']);
+
+if ($isPing) {
+    try {
+        $stmt = lc_db()->prepare('UPDATE agents SET last_seen = UTC_TIMESTAMP() WHERE id = ?');
+        $stmt->execute([(int) $agent['id']]);
+        lc_json(['success' => true, 'status' => $agent['status']]);
+    } catch (Throwable $e) {
+        lc_json(['success' => false, 'error' => 'Server error'], 500);
+    }
+}
+
 if (!in_array($status, ['online', 'away', 'offline'], true)) {
     lc_json(['success' => false, 'error' => 'Invalid status'], 400);
 }
