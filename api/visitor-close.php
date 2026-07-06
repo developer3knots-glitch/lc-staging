@@ -53,7 +53,7 @@ try {
     $upd->execute([$conversationId]);
     $closeMsg = $autoClose
         ? 'Visitor left the page — chat closed automatically.'
-        : 'Visitor ended the chat. Thank you!';
+        : 'Visitor closed the live chat.';
     lc_add_system_message($conversationId, $closeMsg);
 
     if ($autoClose) {

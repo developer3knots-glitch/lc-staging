@@ -268,7 +268,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=4';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=5';
         document.head.appendChild(link);
     }
 
@@ -276,6 +276,8 @@
     var ICON_SEND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
 
     var ICON_LOCK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+    var ICON_MINIMIZE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>';
+    var ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
     function buildWidget() {
         injectStyles();
@@ -295,9 +297,8 @@
                 '<div id="lc-panel-toolbar" class="lcw-toolbar">' +
                     '<span class="lcw-toolbar-brand" id="lc-toolbar-brand">LiveChat</span>' +
                     '<div class="lcw-toolbar-actions">' +
-                        '<button type="button" id="lc-end-chat" class="lcw-icon-btn lcw-end-btn" title="End chat">End</button>' +
-                        '<button type="button" id="lc-panel-close" class="lcw-icon-btn" title="Minimize" aria-label="Minimize">' +
-                            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>' +
+                        '<button type="button" id="lc-toolbar-minimize" class="lcw-icon-btn" title="Minimize chat" aria-label="Minimize chat">' +
+                            ICON_MINIMIZE +
                         '</button>' +
                     '</div>' +
                 '</div>' +
@@ -308,6 +309,14 @@
                             '<strong id="lc-panel-title">LiveChat</strong>' +
                             '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting…</small>' +
                         '</div>' +
+                    '</div>' +
+                    '<div class="lcw-head-actions">' +
+                        '<button type="button" id="lc-minimize-chat" class="lcw-head-btn" title="Minimize chat" aria-label="Minimize chat">' +
+                            ICON_MINIMIZE +
+                        '</button>' +
+                        '<button type="button" id="lc-close-chat" class="lcw-head-btn lcw-head-btn-close" title="End chat" aria-label="End chat">' +
+                            ICON_CLOSE +
+                        '</button>' +
                     '</div>' +
                 '</div>' +
                 '<div id="lc-waiting-bar" class="lcw-waiting-bar">' +
@@ -354,11 +363,13 @@
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
-                    '<div class="lcw-ended-icon">' +
-                        '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>' +
+                    '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
+                        '<span class="lcw-wave-hand">👋</span>' +
                     '</div>' +
-                    '<p>Thank you for reaching out.<br>We appreciate your time.</p>' +
-                    '<button type="button" id="lc-new-chat">Start new conversation</button>' +
+                    '<h3 class="lcw-ended-title">Thanks for chatting!</h3>' +
+                    '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
+                    '<p class="lcw-ended-note">This conversation has been closed.</p>' +
+                    '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
@@ -372,8 +383,9 @@
         document.body.appendChild(root);
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
-        document.getElementById('lc-panel-close').addEventListener('click', togglePanel);
-        document.getElementById('lc-end-chat').addEventListener('click', endChat);
+        document.getElementById('lc-toolbar-minimize').addEventListener('click', minimizePanel);
+        document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
+        document.getElementById('lc-close-chat').addEventListener('click', endChat);
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
@@ -398,7 +410,7 @@
         });
 
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && isOpen) togglePanel();
+            if (e.key === 'Escape' && isOpen) minimizePanel();
         });
 
         scheduleTeaser();
@@ -491,7 +503,6 @@
         document.getElementById('lc-panel-ended').style.display = 'none';
         document.getElementById('lc-panel-head').style.display = 'none';
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
-        document.getElementById('lc-end-chat').style.display = 'none';
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
         loadWidgetSettings();
@@ -504,7 +515,8 @@
         document.getElementById('lc-panel-compose').style.display = 'block';
         document.getElementById('lc-panel-head').style.display = 'flex';
         document.getElementById('lc-panel-toolbar').style.display = 'none';
-        document.getElementById('lc-end-chat').style.display = 'inline-flex';
+        document.getElementById('lc-panel-ended').style.display = 'none';
+        setComposeEnabled(!chatClosed);
     }
 
     function updatePrechatStatus(count) {
@@ -623,54 +635,77 @@
         });
     }
 
-    function togglePanel() {
-        isOpen = !isOpen;
+    function minimizePanel() {
+        if (!isOpen) return;
+        isOpen = false;
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
-        panel.style.display = isOpen ? 'flex' : 'none';
-        if (bubble) bubble.classList.toggle('lcw-open', isOpen);
-        persistPanelOpen(isOpen);
+        panel.style.display = 'none';
+        if (bubble) bubble.classList.remove('lcw-open');
+        persistPanelOpen(false);
+    }
+
+    function togglePanel() {
         if (isOpen) {
-            hideTeaser(false);
-            if (!chatClosed) {
-                if (conversationId) {
+            minimizePanel();
+            return;
+        }
+        isOpen = true;
+        var panel = document.getElementById('lc-panel');
+        var bubble = document.getElementById('lc-bubble');
+        panel.style.display = 'flex';
+        if (bubble) bubble.classList.add('lcw-open');
+        persistPanelOpen(true);
+        hideTeaser(false);
+        if (!chatClosed) {
+            if (conversationId) {
+                showChatView();
+                if (!pollTimer) {
+                    pollTimer = setInterval(pollMessages, pollMs);
+                    pollMessages(true);
+                }
+            } else {
+                var stored = getStoredConversationId();
+                if (stored) {
                     showChatView();
-                    if (!pollTimer) {
-                        pollTimer = setInterval(pollMessages, pollMs);
-                        pollMessages(true);
-                    }
+                    updateStatus('Reconnecting…', false);
+                    initChat({ resumeConversationId: stored });
                 } else {
-                    var stored = getStoredConversationId();
-                    if (stored) {
-                        showChatView();
-                        updateStatus('Reconnecting…', false);
-                        initChat({ resumeConversationId: stored });
-                    } else {
-                        showPrechatForm();
-                    }
+                    showPrechatForm();
                 }
             }
+        } else {
+            document.getElementById('lc-panel-ended').style.display = 'flex';
+            document.getElementById('lc-panel-toolbar').style.display = 'flex';
+            document.getElementById('lc-panel-head').style.display = 'none';
         }
-        if (isOpen) document.getElementById('lc-bubble-badge').style.display = 'none';
+        document.getElementById('lc-bubble-badge').style.display = 'none';
     }
 
     function setComposeEnabled(enabled) {
         var compose = document.getElementById('lc-panel-compose');
         var input = document.getElementById('lc-input');
         var send = document.getElementById('lc-send');
-        var endBtn = document.getElementById('lc-end-chat');
+        var closeBtn = document.getElementById('lc-close-chat');
         if (compose) compose.style.display = enabled ? 'block' : 'none';
         if (input) input.disabled = !enabled;
         if (send) send.disabled = !enabled;
-        if (endBtn) endBtn.style.display = enabled ? 'inline-flex' : 'none';
+        if (closeBtn) {
+            closeBtn.style.display = enabled ? 'inline-flex' : 'none';
+            closeBtn.disabled = false;
+        }
     }
 
     function showEndedState() {
         chatClosed = true;
         leaveCloseSent = true;
         setWaitingState(false);
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
         persistConversationId(null);
-        persistPanelOpen(false);
+        persistChatToken('');
         conversationId = null;
         lastMsgId = 0;
         setComposeEnabled(false);
@@ -680,8 +715,7 @@
         document.getElementById('lc-panel-head').style.display = 'none';
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-panel-ended').style.display = 'flex';
-        document.getElementById('lc-end-chat').style.display = 'none';
-        updateStatus('Chat ended', false);
+        document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
     }
 
     function hideEndedState() {
@@ -692,23 +726,37 @@
     }
 
     function endChat() {
-        if (!conversationId || chatClosed) return;
-        if (!confirm('End this chat? You can start a new conversation anytime.')) return;
+        if (chatClosed) {
+            minimizePanel();
+            return;
+        }
+        if (!conversationId) {
+            minimizePanel();
+            return;
+        }
+
+        var closeBtn = document.getElementById('lc-close-chat');
+        if (closeBtn) closeBtn.disabled = true;
 
         fetch(siteUrl + '/api/visitor-close.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 conversation_id: conversationId,
-                visitor_uid: visitorUid
+                visitor_uid: visitorUid,
+                closed_by: 'visitor'
             })
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.success) {
-                pollMessages();
                 showEndedState();
+            } else if (closeBtn) {
+                closeBtn.disabled = false;
             }
+        })
+        .catch(function () {
+            if (closeBtn) closeBtn.disabled = false;
         });
     }
 

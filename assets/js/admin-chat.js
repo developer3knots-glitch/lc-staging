@@ -62,6 +62,9 @@
         if (cls === 'system' && (m.message || '').indexOf('transferred this chat') !== -1) {
             cls += ' is-transfer';
         }
+        if (cls === 'system' && (m.message || '').indexOf('Visitor closed the live chat') !== -1) {
+            cls += ' is-visitor-close';
+        }
         var label = cls === 'agent' ? (m.agent_name || 'Agent') : (cls === 'visitor' ? 'Visitor' : '');
         var html = '<div class="lc-msg ' + cls + '" data-id="' + m.id + '">';
         html += esc(m.message);

@@ -304,6 +304,41 @@
     display: flex;
     align-items: center;
 }
+.lcw-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+.lcw-head-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.15s, opacity 0.15s;
+}
+.lcw-head-btn:hover {
+    background: rgba(255, 255, 255, 0.28);
+    transform: scale(1.04);
+}
+.lcw-head-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+.lcw-head-btn-close:hover {
+    background: rgba(255, 255, 255, 0.24);
+}
+#lc-panel-head {
+    justify-content: space-between;
+}
 
 /* ─── Waiting bar ─── */
 .lcw-waiting-bar {
@@ -739,14 +774,54 @@
     font-size: 0.9rem;
 }
 .lcw-ended-icon {
-    width: 56px;
-    height: 56px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
-    background: var(--lcw-primary-soft);
+    background: linear-gradient(145deg, var(--lcw-primary-soft), #fff);
     color: var(--lcw-primary-dark);
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--lcw-primary) 18%, transparent);
+}
+.lcw-ended-wave {
+    border: 2px solid color-mix(in srgb, var(--lcw-primary) 20%, transparent);
+}
+.lcw-wave-hand {
+    font-size: 2.2rem;
+    line-height: 1;
+    display: inline-block;
+    transform-origin: 70% 70%;
+    animation: lcw-wave-hand 1.4s ease-in-out infinite;
+}
+@keyframes lcw-wave-hand {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(16deg); }
+    40% { transform: rotate(-8deg); }
+    60% { transform: rotate(14deg); }
+    80% { transform: rotate(-4deg); }
+}
+.lcw-ended-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--lcw-ink);
+    letter-spacing: -0.02em;
+}
+.lcw-ended-text {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.55;
+    color: var(--lcw-muted);
+}
+.lcw-ended-note {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: #f1f5f9;
 }
 #lc-new-chat {
     border: none;
