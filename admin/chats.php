@@ -38,6 +38,13 @@ require __DIR__ . '/includes/header.php';
                             <button type="button" class="lc-btn lc-btn-danger lc-btn-sm" id="lc-close-chat"><i class="ti ti-x"></i> Close</button>
                 </div>
             </div>
+            <div class="lc-page-journey" id="lc-page-journey" style="display:none">
+                <div class="lc-page-journey-head">
+                    <span><i class="ti ti-route"></i> Page journey</span>
+                    <span class="lc-page-journey-count" id="lc-journey-count"></span>
+                </div>
+                <div class="lc-page-journey-list" id="lc-page-journey-list"></div>
+            </div>
             <div class="lc-chat-messages" id="lc-messages"></div>
             <div class="lc-chat-compose">
                 <textarea id="lc-reply-input" rows="1" placeholder="Type your reply…"></textarea>

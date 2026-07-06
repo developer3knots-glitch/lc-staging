@@ -86,6 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             $pdo->exec("UPDATE conversations SET brand_id = {$defaultId} WHERE brand_id IS NULL");
         }
 
+        $pageViewSql = file_get_contents(__DIR__ . '/install/upgrade_page_views.sql');
+        foreach (array_filter(array_map('trim', explode(';', $pageViewSql))) as $statement) {
+            if ($statement !== '') {
+                $pdo->exec($statement);
+            }
+        }
+
         // Update config file
         $configPath = __DIR__ . '/includes/config.php';
         $config = file_get_contents($configPath);

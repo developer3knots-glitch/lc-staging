@@ -12,6 +12,7 @@
     var pollTimer = null;
     var listTimer = null;
     var cannedLoaded = false;
+    var lastJourneyId = 0;
 
     var listEl = document.getElementById('lc-conversation-list');
     var messagesEl = document.getElementById('lc-messages');
@@ -21,6 +22,9 @@
     var visitorNameEl = document.getElementById('lc-chat-visitor-name');
     var visitorMetaEl = document.getElementById('lc-chat-visitor-meta');
     var visitorDetailsEl = document.getElementById('lc-chat-visitor-details');
+    var journeyEl = document.getElementById('lc-page-journey');
+    var journeyListEl = document.getElementById('lc-page-journey-list');
+    var journeyCountEl = document.getElementById('lc-journey-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
     var cannedSelect = document.getElementById('lc-canned-select');
 
@@ -44,6 +48,73 @@
         html += '<div class="lc-msg-time">' + formatTime(m.created_at) + (label && cls !== 'system' ? ' · ' + esc(label) : '') + '</div>';
         html += '</div>';
         return html;
+    }
+
+    function formatDuration(seconds) {
+        if (!seconds && seconds !== 0) return '';
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+        return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+    }
+
+    function renderJourneyItem(view, isCurrent) {
+        var duration = view.duration_label || formatDuration(view.duration_seconds);
+        var html = '<div class="lc-journey-item' + (isCurrent ? ' is-current' : '') + '" data-id="' + view.id + '">';
+        html += '<div class="lc-journey-dot"></div>';
+        html += '<div class="lc-journey-body">';
+        html += '<div class="lc-journey-title" title="' + esc(view.page_url) + '">' + esc(view.page_title || view.page_path || view.page_url) + '</div>';
+        html += '<div class="lc-journey-meta">';
+        html += '<span>' + esc(view.page_path || view.page_url) + '</span>';
+        if (duration) html += '<span> · ' + esc(duration) + '</span>';
+        html += '<span> · ' + esc(view.time_ago || '') + '</span>';
+        html += '</div>';
+        html += '</div></div>';
+        return html;
+    }
+
+    function loadPageJourney(reset) {
+        if (!selectedId || !journeyEl) return;
+        var since = reset ? 0 : lastJourneyId;
+        fetch(base + '/api/agent-pageviews.php?conversation_id=' + selectedId + '&since_id=' + since, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) return;
+                var views = data.page_views || [];
+                if (reset) {
+                    lastJourneyId = 0;
+                    journeyListEl.innerHTML = '';
+                }
+                if (!views.length && reset) {
+                    journeyEl.style.display = 'block';
+                    journeyCountEl.textContent = '0 pages';
+                    journeyListEl.innerHTML = '<div class="lc-journey-empty">No page visits recorded yet</div>';
+                    return;
+                }
+                if (!views.length) return;
+
+                journeyEl.style.display = 'block';
+                if (reset) {
+                    journeyListEl.innerHTML = '';
+                } else {
+                    journeyListEl.querySelectorAll('.lc-journey-item.is-current').forEach(function (el) {
+                        el.classList.remove('is-current');
+                    });
+                }
+
+                views.forEach(function (view) {
+                    journeyListEl.insertAdjacentHTML('beforeend', renderJourneyItem(view, false));
+                    if (view.id > lastJourneyId) lastJourneyId = view.id;
+                });
+
+                var items = journeyListEl.querySelectorAll('.lc-journey-item');
+                if (items.length) {
+                    items[items.length - 1].classList.add('is-current');
+                }
+
+                var total = journeyListEl.querySelectorAll('.lc-journey-item').length;
+                journeyCountEl.textContent = total + (total === 1 ? ' page' : ' pages');
+                journeyListEl.scrollTop = journeyListEl.scrollHeight;
+            });
     }
 
     function loadConversations() {
@@ -106,7 +177,11 @@
         messagesEl.innerHTML = '';
         emptyEl.style.display = 'none';
         activeEl.style.display = 'flex';
+        lastJourneyId = 0;
+        if (journeyEl) journeyEl.style.display = 'none';
+        if (journeyListEl) journeyListEl.innerHTML = '';
         loadCanned();
+        loadPageJourney(true);
         pollMessages();
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
@@ -173,6 +248,7 @@
                     }
                 });
                 messagesEl.scrollTop = messagesEl.scrollHeight;
+                loadPageJourney(false);
             });
     }
 

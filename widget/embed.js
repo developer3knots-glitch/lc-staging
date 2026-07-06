@@ -53,6 +53,102 @@
     } catch (ignore) {}
 
     setupReloadDetection();
+    initPageTracker();
+
+    function initPageTracker() {
+        var lastSentUrl = '';
+        var currentEnteredAt = Date.now();
+        var leaveSentForUrl = '';
+
+        function buildPayload(extra) {
+            var data = {
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                page_url: window.location.href,
+                page_title: document.title || '',
+                referrer: document.referrer || '',
+                website_url: ''
+            };
+            if (extra) {
+                for (var key in extra) {
+                    if (Object.prototype.hasOwnProperty.call(extra, key)) {
+                        data[key] = extra[key];
+                    }
+                }
+            }
+            return data;
+        }
+
+        function postPageEvent(extra, useBeacon) {
+            var endpoint = siteUrl + '/api/visitor-pageview.php';
+            var body = JSON.stringify(buildPayload(extra));
+            if (useBeacon && navigator.sendBeacon) {
+                navigator.sendBeacon(endpoint, new Blob([body], { type: 'application/json' }));
+                return;
+            }
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body,
+                keepalive: true
+            }).catch(function () {});
+        }
+
+        function sendLeave(url, useBeacon) {
+            if (!url || leaveSentForUrl === url) return;
+            var duration = Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
+            leaveSentForUrl = url;
+            postPageEvent({
+                event: 'leave',
+                page_url: url,
+                duration_seconds: duration
+            }, useBeacon);
+        }
+
+        function recordView() {
+            var url = window.location.href;
+            if (url === lastSentUrl) return;
+
+            if (lastSentUrl) {
+                sendLeave(lastSentUrl, true);
+            }
+
+            lastSentUrl = url;
+            leaveSentForUrl = '';
+            currentEnteredAt = Date.now();
+            postPageEvent({ event: 'view' }, false);
+        }
+
+        function hookHistory() {
+            var pushState = history.pushState;
+            var replaceState = history.replaceState;
+            history.pushState = function () {
+                pushState.apply(history, arguments);
+                recordView();
+            };
+            history.replaceState = function () {
+                replaceState.apply(history, arguments);
+                recordView();
+            };
+            window.addEventListener('popstate', recordView);
+        }
+
+        recordView();
+        hookHistory();
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') {
+                sendLeave(lastSentUrl, true);
+            } else if (document.visibilityState === 'visible') {
+                currentEnteredAt = Date.now();
+                leaveSentForUrl = '';
+            }
+        });
+
+        window.addEventListener('pagehide', function () {
+            sendLeave(lastSentUrl, true);
+        });
+    }
 
     function setupReloadDetection() {
         window.addEventListener('keydown', function (e) {
