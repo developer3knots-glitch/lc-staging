@@ -27,6 +27,18 @@
     var journeyCountEl = document.getElementById('lc-journey-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
     var cannedSelect = document.getElementById('lc-canned-select');
+    var transferWrap = document.getElementById('lc-transfer-wrap');
+    var transferBtn = document.getElementById('lc-transfer-chat');
+    var transferPanel = document.getElementById('lc-transfer-panel');
+    var transferAgentsEl = document.getElementById('lc-transfer-agents');
+    var transferNoteEl = document.getElementById('lc-transfer-note');
+    var transferSubmitBtn = document.getElementById('lc-transfer-submit');
+    var transferCloseBtn = document.getElementById('lc-transfer-close');
+    var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
+    var isAdmin = app.dataset.agentRole === 'admin';
+    var selectedTransferAgentId = 0;
+    var transferAgentsLoaded = false;
+    var chatTransferredAway = false;
 
     function esc(s) {
         var d = document.createElement('div');
@@ -47,6 +59,9 @@
 
     function renderMessage(m) {
         var cls = m.sender_type;
+        if (cls === 'system' && (m.message || '').indexOf('transferred this chat') !== -1) {
+            cls += ' is-transfer';
+        }
         var label = cls === 'agent' ? (m.agent_name || 'Agent') : (cls === 'visitor' ? 'Visitor' : '');
         var html = '<div class="lc-msg ' + cls + '" data-id="' + m.id + '">';
         html += esc(m.message);
@@ -161,6 +176,130 @@
             });
     }
 
+    function closeTransferPanel() {
+        if (!transferPanel) return;
+        transferPanel.hidden = true;
+        if (transferBtn) transferBtn.setAttribute('aria-expanded', 'false');
+        selectedTransferAgentId = 0;
+        if (transferSubmitBtn) transferSubmitBtn.disabled = true;
+        if (transferNoteEl) transferNoteEl.value = '';
+        if (transferAgentsEl) {
+            transferAgentsEl.querySelectorAll('.lc-transfer-agent').forEach(function (el) {
+                el.classList.remove('is-selected');
+            });
+        }
+    }
+
+    function openTransferPanel() {
+        if (!transferPanel || !selectedId) return;
+        transferPanel.hidden = false;
+        if (transferBtn) transferBtn.setAttribute('aria-expanded', 'true');
+        loadTransferAgents();
+    }
+
+    function renderTransferAgent(agent) {
+        var initials = agent.avatar && agent.avatar.initials ? agent.avatar.initials : (agent.name || '?').charAt(0);
+        var color = agent.avatar && agent.avatar.color ? agent.avatar.color : '#64748b';
+        var html = '<button type="button" class="lc-transfer-agent" data-id="' + agent.id + '">';
+        html += '<span class="lc-transfer-agent-avatar" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
+        html += '<span class="lc-transfer-agent-body">';
+        html += '<strong>' + esc(agent.name) + '</strong>';
+        html += '<span>' + esc(agent.email || 'Online') + '</span>';
+        html += '</span>';
+        html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
+        html += '</button>';
+        return html;
+    }
+
+    function loadTransferAgents() {
+        if (!transferAgentsEl || !selectedId) return;
+        transferAgentsEl.innerHTML = '<div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents…</div>';
+        fetch(base + '/api/agent-transfer-agents.php?conversation_id=' + selectedId, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) {
+                    transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">Unable to load agents</div>';
+                    return;
+                }
+                if (!data.agents.length) {
+                    transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">No other online agents available right now</div>';
+                    return;
+                }
+                var html = '';
+                data.agents.forEach(function (agent) {
+                    html += renderTransferAgent(agent);
+                });
+                transferAgentsEl.innerHTML = html;
+                transferAgentsLoaded = true;
+            })
+            .catch(function () {
+                transferAgentsEl.innerHTML = '<div class="lc-transfer-empty">Unable to load agents</div>';
+            });
+    }
+
+    function submitTransfer() {
+        if (!selectedId || !selectedTransferAgentId) return;
+        transferSubmitBtn.disabled = true;
+        fetch(base + '/api/agent-transfer.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                conversation_id: selectedId,
+                target_agent_id: selectedTransferAgentId,
+                note: transferNoteEl ? transferNoteEl.value.trim() : ''
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) {
+                    alert(data.error || 'Transfer failed');
+                    transferSubmitBtn.disabled = false;
+                    return;
+                }
+                closeTransferPanel();
+                lastMsgId = 0;
+                messagesEl.innerHTML = '';
+                pollMessages();
+                loadConversations();
+                if (!isAdmin && data.agent_id !== myAgentId) {
+                    chatTransferredAway = true;
+                    replyInput.disabled = true;
+                    document.getElementById('lc-send-reply').disabled = true;
+                    if (transferWrap) transferWrap.style.display = 'none';
+                    visitorMetaEl.textContent = 'Chat transferred to ' + (data.agent_name || 'another agent');
+                }
+            })
+            .catch(function () {
+                alert('Transfer failed');
+                transferSubmitBtn.disabled = false;
+            });
+    }
+
+    function canComposeChat(c) {
+        if (!c || c.status === 'closed') return false;
+        if (c.status === 'waiting') return true;
+        if (!c.agent_id) return false;
+        return parseInt(c.agent_id, 10) === myAgentId;
+    }
+
+    function canTransferChat(c) {
+        if (!c || c.status !== 'active') return false;
+        if (isAdmin) return true;
+        return parseInt(c.agent_id || 0, 10) === myAgentId;
+    }
+
+    function updateChatActions(c) {
+        var compose = canComposeChat(c);
+        var transfer = canTransferChat(c);
+        replyInput.disabled = !compose;
+        document.getElementById('lc-send-reply').disabled = !compose;
+        acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
+        if (transferWrap) transferWrap.style.display = transfer ? 'inline-flex' : 'none';
+        if (!transfer) closeTransferPanel();
+        chatTransferredAway = c.status === 'active' && !compose && !isAdmin;
+    }
+
     function loadCanned() {
         if (cannedLoaded) return;
         fetch(base + '/api/canned-list.php', { credentials: 'same-origin' })
@@ -184,6 +323,9 @@
         emptyEl.style.display = 'none';
         activeEl.style.display = 'flex';
         lastJourneyId = 0;
+        chatTransferredAway = false;
+        closeTransferPanel();
+        transferAgentsLoaded = false;
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
         loadCanned();
@@ -230,6 +372,8 @@
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
                     acceptBtn.style.display = 'none';
+                    if (transferWrap) transferWrap.style.display = 'none';
+                    closeTransferPanel();
                     visitorMetaEl.textContent = (c.visitor_page || c.page_url || '') + ' · Chat closed';
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     loadConversations();
@@ -242,8 +386,9 @@
                 renderVisitorDetails(c);
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
+                if (chatTransferredAway) meta = 'Chat transferred to ' + (c.agent_name || 'another agent');
                 visitorMetaEl.textContent = meta;
-                acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
+                updateChatActions(c);
 
                 if (lastMsgId === 0 && data.messages.length) {
                     messagesEl.innerHTML = '';
@@ -304,6 +449,7 @@
 
     document.getElementById('lc-close-chat').addEventListener('click', function () {
         if (!selectedId || !confirm('Close this chat?')) return;
+        closeTransferPanel();
         fetch(base + '/api/agent-close.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -323,6 +469,41 @@
             cannedSelect.value = '';
             replyInput.focus();
         }
+    });
+
+    if (transferBtn) {
+        transferBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (transferPanel && !transferPanel.hidden) {
+                closeTransferPanel();
+            } else {
+                openTransferPanel();
+            }
+        });
+    }
+    if (transferCloseBtn) {
+        transferCloseBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            closeTransferPanel();
+        });
+    }
+    if (transferAgentsEl) {
+        transferAgentsEl.addEventListener('click', function (e) {
+            var btn = e.target.closest('.lc-transfer-agent');
+            if (!btn) return;
+            selectedTransferAgentId = parseInt(btn.dataset.id, 10) || 0;
+            transferAgentsEl.querySelectorAll('.lc-transfer-agent').forEach(function (el) {
+                el.classList.toggle('is-selected', el === btn);
+            });
+            if (transferSubmitBtn) transferSubmitBtn.disabled = !selectedTransferAgentId;
+        });
+    }
+    if (transferSubmitBtn) {
+        transferSubmitBtn.addEventListener('click', submitTransfer);
+    }
+    document.addEventListener('click', function (e) {
+        if (!transferPanel || transferPanel.hidden || !transferWrap) return;
+        if (!transferWrap.contains(e.target)) closeTransferPanel();
     });
 
     loadConversations();

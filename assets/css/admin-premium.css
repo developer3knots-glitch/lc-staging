@@ -501,6 +501,153 @@ body,
     align-items: flex-start;
     gap: 0.75rem;
     background: #fafbfc;
+    position: relative;
+    z-index: 20;
+}
+.lc-transfer-wrap {
+    position: relative;
+    display: inline-flex;
+}
+.lc-transfer-panel {
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    right: 0;
+    width: min(320px, 92vw);
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 14px;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    padding: 0.85rem;
+    z-index: 50;
+}
+.lc-transfer-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+.lc-transfer-panel-head strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+}
+.lc-transfer-close {
+    border: 0;
+    background: transparent;
+    color: var(--lc-muted);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+}
+.lc-transfer-close:hover {
+    background: #f1f5f9;
+    color: var(--lc-ink);
+}
+.lc-transfer-hint {
+    margin: 0 0 0.65rem;
+    font-size: 0.74rem;
+    color: var(--lc-muted);
+    line-height: 1.45;
+}
+.lc-transfer-agents {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 0.65rem;
+}
+.lc-transfer-agent {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    border: 1px solid var(--lc-border);
+    background: #fff;
+    border-radius: 12px;
+    padding: 0.55rem 0.65rem;
+    cursor: pointer;
+    text-align: left;
+}
+.lc-transfer-agent:hover,
+.lc-transfer-agent.is-selected {
+    border-color: var(--lc-primary);
+    background: #f8fff4;
+}
+.lc-transfer-agent-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.lc-transfer-agent-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    flex: 1;
+}
+.lc-transfer-agent-body strong {
+    font-size: 0.8rem;
+    color: var(--lc-ink);
+}
+.lc-transfer-agent-body span {
+    font-size: 0.68rem;
+    color: var(--lc-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lc-transfer-agent-check {
+    color: var(--lc-primary);
+    opacity: 0;
+    font-size: 1rem;
+}
+.lc-transfer-agent.is-selected .lc-transfer-agent-check {
+    opacity: 1;
+}
+.lc-transfer-note-label {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--lc-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.35rem;
+}
+.lc-transfer-panel textarea {
+    width: 100%;
+    border: 1px solid var(--lc-border);
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8rem;
+    resize: vertical;
+    min-height: 58px;
+    margin-bottom: 0.65rem;
+}
+.lc-transfer-submit {
+    width: 100%;
+    justify-content: center;
+}
+.lc-transfer-loading,
+.lc-transfer-empty {
+    font-size: 0.78rem;
+    color: var(--lc-muted);
+    text-align: center;
+    padding: 0.85rem 0.5rem;
+}
+.lc-msg.system.is-transfer {
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 .lc-chat-messages {
     flex: 1;

@@ -132,6 +132,131 @@ function lc_add_system_message(int $conversationId, string $message): void
     lc_touch_conversation($conversationId);
 }
 
+function lc_agent_can_access_conversation(array $agent, array $conv): bool
+{
+    $agentBrandId = lc_agent_brand_id($agent);
+    if ($agentBrandId !== null && (int) ($conv['brand_id'] ?? 0) !== $agentBrandId) {
+        return false;
+    }
+
+    return true;
+}
+
+function lc_agent_can_transfer_conversation(array $agent, array $conv): bool
+{
+    if (($conv['status'] ?? '') !== 'active') {
+        return false;
+    }
+    if (!lc_agent_can_access_conversation($agent, $conv)) {
+        return false;
+    }
+    if (($agent['role'] ?? '') === 'admin') {
+        return true;
+    }
+
+    return (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function lc_get_transferable_agents(array $agent, int $conversationId): array
+{
+    $conv = lc_get_conversation($conversationId);
+    if (!$conv || !lc_agent_can_transfer_conversation($agent, $conv)) {
+        return [];
+    }
+
+    $brandId = (int) ($conv['brand_id'] ?? 0);
+    $excludeId = (int) ($conv['agent_id'] ?? 0);
+
+    $sql = "
+        SELECT id, name, email, status, avatar
+        FROM agents
+        WHERE is_active = 1 AND status = 'online' AND id != ?
+    ";
+    $params = [$excludeId];
+
+    if ($brandId > 0) {
+        $sql .= ' AND (brand_id IS NULL OR brand_id = ?)';
+        $params[] = $brandId;
+    }
+
+    $sql .= ' ORDER BY name ASC';
+
+    $stmt = lc_db()->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll();
+}
+
+/**
+ * @return array{ok: bool, error?: string, agent_id?: int, agent_name?: string}
+ */
+function lc_transfer_conversation(int $conversationId, array $actingAgent, int $targetAgentId, string $note = ''): array
+{
+    $conv = lc_get_conversation($conversationId);
+    if (!$conv) {
+        return ['ok' => false, 'error' => 'Conversation not found'];
+    }
+    if (!lc_agent_can_transfer_conversation($actingAgent, $conv)) {
+        return ['ok' => false, 'error' => 'You cannot transfer this chat'];
+    }
+    if ($targetAgentId < 1) {
+        return ['ok' => false, 'error' => 'Select an agent'];
+    }
+    if ($targetAgentId === (int) ($conv['agent_id'] ?? 0)) {
+        return ['ok' => false, 'error' => 'Chat is already with this agent'];
+    }
+
+    $stmt = lc_db()->prepare('SELECT id, name, is_active, status, brand_id FROM agents WHERE id = ? LIMIT 1');
+    $stmt->execute([$targetAgentId]);
+    $target = $stmt->fetch();
+    if (!$target || !(int) $target['is_active']) {
+        return ['ok' => false, 'error' => 'Agent not found'];
+    }
+    if (($target['status'] ?? '') !== 'online') {
+        return ['ok' => false, 'error' => 'Selected agent is not online'];
+    }
+
+    $brandId = (int) ($conv['brand_id'] ?? 0);
+    $targetBrandId = $target['brand_id'] !== null ? (int) $target['brand_id'] : null;
+    if ($brandId > 0 && $targetBrandId !== null && $targetBrandId !== $brandId) {
+        return ['ok' => false, 'error' => 'Agent cannot handle this brand'];
+    }
+
+    $actingName = trim((string) ($actingAgent['name'] ?? '')) ?: 'Agent';
+    $targetName = trim((string) ($target['name'] ?? '')) ?: 'Agent';
+    $note = trim($note);
+
+    $db = lc_db();
+    $db->beginTransaction();
+    try {
+        $upd = $db->prepare("UPDATE conversations SET agent_id = ?, accepted_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'active'");
+        $upd->execute([$targetAgentId, $conversationId]);
+        if (!$upd->rowCount()) {
+            $db->rollBack();
+            return ['ok' => false, 'error' => 'Transfer failed — chat may have been closed'];
+        }
+
+        $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '.';
+        if ($note !== '') {
+            $transferMsg .= ' Note: ' . $note;
+        }
+        lc_add_system_message($conversationId, $transferMsg);
+        lc_add_agent_join_message($conversationId, $targetAgentId);
+
+        $db->commit();
+
+        return ['ok' => true, 'agent_id' => $targetAgentId, 'agent_name' => $targetName];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['ok' => false, 'error' => 'Server error'];
+    }
+}
+
 /** Reopen chat when visitor returns (page refresh) after accidental auto-close */
 function lc_reopen_if_visitor_returning(int $conversationId, int $visitorId): bool
 {
