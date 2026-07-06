@@ -35,22 +35,11 @@
     }
 
     function formatTime(ts) {
-        if (!ts) return '';
-        var d = new Date(ts.replace(' ', 'T'));
-        if (isNaN(d.getTime())) return '';
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return window.LC_formatTime ? window.LC_formatTime(ts) : '';
     }
 
     function formatVisitTime(ts) {
-        if (!ts) return '';
-        var d = new Date(ts.replace(' ', 'T'));
-        if (isNaN(d.getTime())) return '';
-        var now = new Date();
-        var time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        if (d.toDateString() === now.toDateString()) {
-            return time;
-        }
-        return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
+        return window.LC_formatDateTime ? window.LC_formatDateTime(ts) : formatTime(ts);
     }
 
     function renderMessage(m) {

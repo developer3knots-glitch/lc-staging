@@ -24,4 +24,5 @@ define('LC_DB_CHARSET', 'utf8mb4');
 define('LC_SESSION_NAME', 'livechat_session');
 define('LC_POLL_INTERVAL', 1500);
 
-date_default_timezone_set('Asia/Karachi');
+define('LC_TIMEZONE', 'Asia/Karachi');
+date_default_timezone_set(LC_TIMEZONE);

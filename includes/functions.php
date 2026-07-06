@@ -68,21 +68,30 @@ function lc_uid(): string
 
 function lc_format_time(string $datetime): string
 {
-    $ts = strtotime($datetime);
-    if (!$ts) {
+    if ($datetime === '') {
         return '';
     }
-    return date('g:i A', $ts);
+    try {
+        $dt = new DateTime($datetime, new DateTimeZone(lc_app_timezone()));
+        return $dt->format('g:i A');
+    } catch (Throwable $e) {
+        return '';
+    }
 }
 
 function lc_time_ago(string $datetime): string
 {
-    $ts = strtotime($datetime);
-    $diff = time() - $ts;
+    try {
+        $dt = new DateTime($datetime, new DateTimeZone(lc_app_timezone()));
+    } catch (Throwable $e) {
+        return '';
+    }
+    $now = new DateTime('now', new DateTimeZone(lc_app_timezone()));
+    $diff = $now->getTimestamp() - $dt->getTimestamp();
     if ($diff < 60) return 'just now';
     if ($diff < 3600) return floor($diff / 60) . 'm ago';
     if ($diff < 86400) return floor($diff / 3600) . 'h ago';
-    return date('M j, g:ia', $ts);
+    return $dt->format('M j, g:ia');
 }
 
 function lc_get_online_agents_count(?int $brandId = null): int
