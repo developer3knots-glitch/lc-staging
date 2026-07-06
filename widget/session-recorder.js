@@ -75,7 +75,9 @@
 
     function onEmit(event) {
         state.buffer.push(event);
-        if (state.buffer.length >= 40) {
+        if (Number(event && event.type) === 2) {
+            flush();
+        } else if (state.buffer.length >= 40) {
             flush();
         }
     }

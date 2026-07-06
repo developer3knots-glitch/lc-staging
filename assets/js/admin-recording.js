@@ -9,6 +9,8 @@
     var conversationId = 0;
     var lastEventId = 0;
     var totalEvents = 0;
+    var allEvents = [];
+    var appliedCount = 0;
     var replayer = null;
     var liveStarted = false;
     var mountEl = null;
@@ -37,9 +39,7 @@
     }
 
     function setStatus(text) {
-        if (statusEl) {
-            statusEl.textContent = text;
-        }
+        if (statusEl) statusEl.textContent = text;
     }
 
     function setBadge(label, mode) {
@@ -56,12 +56,19 @@
     }
 
     function showEmpty(show) {
-        if (emptyEl) {
-            emptyEl.style.display = show ? 'flex' : 'none';
+        if (emptyEl) emptyEl.style.display = show ? 'flex' : 'none';
+        if (mountEl) mountEl.style.display = show ? 'none' : 'block';
+    }
+
+    function eventType(ev) {
+        return Number(ev && ev.type);
+    }
+
+    function hasFullSnapshot(events) {
+        for (var i = 0; i < events.length; i++) {
+            if (eventType(events[i]) === 2) return true;
         }
-        if (mountEl) {
-            mountEl.style.display = show ? 'none' : 'block';
-        }
+        return false;
     }
 
     function fitReplayer() {
@@ -69,11 +76,11 @@
         var wrapper = mountEl.querySelector('.replayer-wrapper');
         if (!wrapper || !shellEl) return;
         var baseWidth = wrapper.offsetWidth || 1366;
+        if (baseWidth < 100) baseWidth = 1366;
         var available = shellEl.clientWidth || 600;
         var scale = Math.min(1, available / baseWidth);
         wrapper.style.transform = 'scale(' + scale + ')';
         wrapper.style.transformOrigin = 'top left';
-        wrapper.style.width = baseWidth + 'px';
     }
 
     function destroyReplayer() {
@@ -82,18 +89,17 @@
         }
         replayer = null;
         liveStarted = false;
+        allEvents = [];
+        appliedCount = 0;
         if (mountEl) mountEl.innerHTML = '';
         showEmpty(true);
     }
 
-    function ensureReplayer(events) {
-        if (!mountEl || !events.length) return;
+    function syncReplayer() {
+        if (!mountEl || !allEvents.length) return;
 
-        var hasSnapshot = events.some(function (ev) {
-            return ev && ev.type === 2;
-        });
-        if (!replayer && !hasSnapshot) {
-            setStatus('Receiving visitor screen data…');
+        if (!hasFullSnapshot(allEvents)) {
+            setStatus('Receiving visitor screen data… (' + allEvents.length + ' events)');
             return;
         }
 
@@ -104,28 +110,35 @@
                 return;
             }
 
-            if (!replayer) {
-                mountEl.innerHTML = '';
-                showEmpty(false);
-                replayer = new global.rrweb.Replayer(events, {
-                    root: mountEl,
-                    liveMode: true,
-                    skipInactive: false,
-                    mouseTail: { strokeStyle: '#ef4444', duration: 800 },
-                    speed: 1,
-                    UNSAFE_replayCanvas: true
-                });
-                replayer.startLive();
-                liveStarted = true;
-                setBadge('LIVE', 'live');
-                setStatus('Streaming visitor session');
-                setTimeout(fitReplayer, 120);
-                setTimeout(fitReplayer, 500);
-            } else if (liveStarted) {
-                events.forEach(function (ev) {
-                    try { replayer.addEvent(ev); } catch (err) {}
-                });
-                setTimeout(fitReplayer, 80);
+            try {
+                if (!replayer) {
+                    mountEl.innerHTML = '';
+                    showEmpty(false);
+                    replayer = new global.rrweb.Replayer(allEvents, {
+                        root: mountEl,
+                        liveMode: true,
+                        skipInactive: false,
+                        mouseTail: true,
+                        speed: 1
+                    });
+                    replayer.startLive();
+                    appliedCount = allEvents.length;
+                    liveStarted = true;
+                    setBadge('LIVE', 'live');
+                    setStatus('Streaming visitor session');
+                    setTimeout(fitReplayer, 150);
+                    setTimeout(fitReplayer, 600);
+                } else if (appliedCount < allEvents.length) {
+                    for (var i = appliedCount; i < allEvents.length; i++) {
+                        replayer.addEvent(allEvents[i]);
+                    }
+                    appliedCount = allEvents.length;
+                    setTimeout(fitReplayer, 80);
+                }
+            } catch (err) {
+                setBadge('ERROR', 'error');
+                setStatus('Replay failed — refresh chat to retry');
+                if (global.console) console.error('LCRecording:', err);
             }
         });
     }
@@ -139,33 +152,37 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) {
-                    if (data.enabled === false && panelEl) {
-                        panelEl.style.display = 'none';
-                    }
+                    if (data.enabled === false && panelEl) panelEl.style.display = 'none';
                     return;
                 }
 
-                if (data.last_id > lastEventId) {
-                    var batch = data.events ? data.events.length : 0;
-                    lastEventId = data.last_id;
-                    setEventCount(totalEvents + batch);
+                if (data.events && data.events.length) {
+                    allEvents = allEvents.concat(data.events);
+                    if (data.last_id > lastEventId) lastEventId = data.last_id;
+                    setEventCount(allEvents.length);
                 }
 
-                if (!data.events || !data.events.length) {
-                    if (lastEventId === 0 && !data.has_data) {
-                        setBadge('STANDBY', 'standby');
-                        setStatus('Visitor has not loaded the widget yet on this session');
-                    }
+                if (!allEvents.length && lastEventId === 0 && !data.has_data) {
+                    setBadge('STANDBY', 'standby');
+                    setStatus('Visitor has not loaded the widget yet on this session');
                     return;
                 }
 
-                if (panelEl && !collapsed) {
-                    panelEl.classList.remove('is-collapsed');
-                }
-                ensureReplayer(data.events);
+                if (panelEl && !collapsed) panelEl.classList.remove('is-collapsed');
 
                 if (data.has_more) {
-                    setTimeout(poll, 100);
+                    setBadge('CONNECTING', 'connecting');
+                    setStatus('Loading session recording…');
+                    setTimeout(poll, 80);
+                } else if (allEvents.length && !hasFullSnapshot(allEvents)) {
+                    setBadge('CONNECTING', 'connecting');
+                    if (data.has_snapshot === false && allEvents.length > 10) {
+                        setStatus('Screen snapshot missing — ask visitor to refresh their page');
+                    } else {
+                        setStatus('Waiting for screen snapshot from visitor…');
+                    }
+                } else {
+                    syncReplayer();
                 }
             })
             .catch(function () {
@@ -179,6 +196,8 @@
         close();
         conversationId = convId;
         lastEventId = 0;
+        allEvents = [];
+        appliedCount = 0;
         totalEvents = 0;
         setEventCount(0);
         collapsed = false;
@@ -188,23 +207,23 @@
         setBadge('CONNECTING', 'connecting');
         setStatus('Connecting to visitor session…');
         showEmpty(true);
-        loadRrweb(function () {});
-        poll();
-        pollTimer = setInterval(poll, 1500);
+
+        loadRrweb(function () {
+            poll();
+            pollTimer = setInterval(poll, 2000);
+        });
     }
 
     function close() {
         conversationId = 0;
         lastEventId = 0;
-        totalEvents = 0;
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
         }
         destroyReplayer();
-        if (panelEl) {
-            panelEl.style.display = 'none';
-        }
+        totalEvents = 0;
+        if (panelEl) panelEl.style.display = 'none';
     }
 
     function init() {

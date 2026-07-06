@@ -40,6 +40,7 @@ try {
     }
 
     $result = lc_get_recording_events($visitorId, $brandId, $sinceId);
+    $sessionId = lc_get_active_recording_session($visitorId, $brandId);
 
     lc_json([
         'success' => true,
@@ -48,6 +49,9 @@ try {
         'last_id' => $result['last_id'],
         'has_more' => $result['has_more'],
         'has_data' => $sinceId === 0 ? lc_recording_has_data($visitorId, $brandId) : true,
+        'has_snapshot' => $sessionId
+            ? lc_recording_session_has_snapshot($visitorId, $brandId, $sessionId)
+            : false,
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

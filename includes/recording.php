@@ -44,11 +44,11 @@ function lc_store_recording_events(int $visitorId, int $brandId, string $session
 
     $count = 0;
     foreach ($events as $event) {
-        if (!is_array($event) || empty($event['type'])) {
+        if (!is_array($event) || !array_key_exists('type', $event)) {
             continue;
         }
         $json = json_encode($event, JSON_UNESCAPED_UNICODE);
-        if ($json === false || strlen($json) > 5000000) {
+        if ($json === false || strlen($json) > 16777216) {
             continue;
         }
         $ins->execute([$visitorId, $brandId, $sessionId, $json]);
@@ -56,6 +56,57 @@ function lc_store_recording_events(int $visitorId, int $brandId, string $session
     }
 
     return $count;
+}
+
+function lc_get_active_recording_session(int $visitorId, int $brandId): ?string
+{
+    lc_ensure_recording_schema();
+    $db = lc_db();
+
+    // Prefer the session that has the newest full DOM snapshot (rrweb type 2).
+    try {
+        $stmt = $db->prepare('
+            SELECT session_id FROM visitor_recording_events
+            WHERE visitor_id = ? AND brand_id = ?
+              AND JSON_EXTRACT(event_data, "$.type") = 2
+            ORDER BY id DESC
+            LIMIT 1
+        ');
+        $stmt->execute([$visitorId, $brandId]);
+        $row = $stmt->fetch();
+        if ($row) {
+            return (string) $row['session_id'];
+        }
+    } catch (Throwable $e) {
+        // JSON functions unavailable — fall back below.
+    }
+
+    $stmt = $db->prepare('
+        SELECT session_id FROM visitor_recording_events
+        WHERE visitor_id = ? AND brand_id = ?
+        ORDER BY id DESC LIMIT 1
+    ');
+    $stmt->execute([$visitorId, $brandId]);
+    $row = $stmt->fetch();
+
+    return $row ? (string) $row['session_id'] : null;
+}
+
+function lc_recording_session_has_snapshot(int $visitorId, int $brandId, string $sessionId): bool
+{
+    lc_ensure_recording_schema();
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT id FROM visitor_recording_events
+            WHERE visitor_id = ? AND brand_id = ? AND session_id = ?
+              AND JSON_EXTRACT(event_data, "$.type") = 2
+            LIMIT 1
+        ');
+        $stmt->execute([$visitorId, $brandId, $sessionId]);
+        return (bool) $stmt->fetch();
+    } catch (Throwable $e) {
+        return false;
+    }
 }
 
 /**
@@ -66,14 +117,19 @@ function lc_get_recording_events(int $visitorId, int $brandId, int $sinceId = 0,
     lc_ensure_recording_schema();
     $limit = min(max($limit, 1), 300);
 
+    $sessionId = lc_get_active_recording_session($visitorId, $brandId);
+    if ($sessionId === null) {
+        return ['events' => [], 'last_id' => $sinceId, 'has_more' => false];
+    }
+
     $stmt = lc_db()->prepare('
         SELECT id, event_data
         FROM visitor_recording_events
-        WHERE visitor_id = ? AND brand_id = ? AND id > ?
+        WHERE visitor_id = ? AND brand_id = ? AND session_id = ? AND id > ?
         ORDER BY id ASC
         LIMIT ' . $limit . '
     ');
-    $stmt->execute([$visitorId, $brandId, $sinceId]);
+    $stmt->execute([$visitorId, $brandId, $sessionId, $sinceId]);
     $rows = $stmt->fetchAll();
 
     $events = [];

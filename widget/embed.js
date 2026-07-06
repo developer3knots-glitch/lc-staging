@@ -548,7 +548,7 @@
         }
         recorderBooted = true;
         var script = document.createElement('script');
-        script.src = siteUrl + '/widget/session-recorder.js?v=1';
+        script.src = siteUrl + '/widget/session-recorder.js?v=2';
         script.async = true;
         script.onload = function () {
             if (window.LCSessionRecorder) {
