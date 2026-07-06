@@ -23,6 +23,7 @@ function lc_require_auth(): array
     if (lc_installed()) {
         lc_ensure_brands_schema();
         lc_ensure_security_schema();
+        lc_ensure_blocking_schema();
     }
     $agent = lc_auth_agent();
     if (!$agent) {

@@ -93,6 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             }
         }
 
+        $blockingSql = file_get_contents(__DIR__ . '/install/upgrade_blocking.sql');
+        foreach (array_filter(array_map('trim', explode(';', $blockingSql))) as $statement) {
+            if ($statement !== '') {
+                $pdo->exec($statement);
+            }
+        }
+
         // Update config file
         $configPath = __DIR__ . '/includes/config.php';
         $config = file_get_contents($configPath);

@@ -734,6 +734,99 @@ body,
 .lc-visitor-details span.is-ip { background: #eff6ff; color: #1d4ed8; border-color: #dbeafe; }
 .lc-visitor-details span.is-country { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
 .lc-visitor-details span.is-brand { background: #fff7ed; color: #c2410c; border-color: #ffedd5; }
+.lc-block-ip-btn {
+    margin-left: 0.35rem;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid #fecaca;
+    background: #fff;
+    color: #dc2626;
+    cursor: pointer;
+    font-family: inherit;
+    vertical-align: middle;
+}
+.lc-block-ip-btn:hover { background: #fef2f2; }
+.lc-block-ip-btn i { font-size: 0.75rem; }
+
+/* ─── Country blocking picker ─── */
+.lc-country-picker {
+    border: 1px solid var(--lc-border);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+.lc-country-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.65rem 0.75rem;
+    min-height: 2.5rem;
+    border-bottom: 1px solid var(--lc-border);
+    background: #f8fafc;
+}
+.lc-country-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #dbeafe;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.lc-country-tag-remove {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+}
+.lc-country-search {
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid var(--lc-border);
+    border-radius: 0;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.84rem;
+}
+.lc-country-search:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lc-primary) 20%, transparent);
+}
+.lc-country-options {
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 0.35rem;
+}
+.lc-country-option {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.84rem;
+}
+.lc-country-option:hover { background: #f8fafc; }
+.lc-country-option.is-selected { background: #eff6ff; }
+.lc-country-option input { margin: 0; }
+.lc-country-option small { color: var(--lc-muted); }
+.lc-ip-block-row {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr auto;
+    gap: 0.75rem;
+    align-items: end;
+}
+.lc-ip-block-action .lc-btn { white-space: nowrap; }
+@media (max-width: 720px) {
+    .lc-ip-block-row { grid-template-columns: 1fr; }
+}
 
 /* ─── Page journey timeline ─── */
 .lc-page-journey {

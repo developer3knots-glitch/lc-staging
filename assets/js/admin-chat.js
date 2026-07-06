@@ -39,6 +39,7 @@
     var selectedTransferAgentId = 0;
     var transferAgentsLoaded = false;
     var chatTransferredAway = false;
+    var currentVisitorIp = '';
 
     function esc(s) {
         var d = document.createElement('div');
@@ -374,17 +375,44 @@
 
     function renderVisitorDetails(c) {
         if (!visitorDetailsEl) return;
+        currentVisitorIp = c.visitor_ip || '';
         var html = '';
         if (c.brand_name) {
             html += '<span class="is-brand"><i class="ti ti-tag"></i> ' + esc(c.brand_name) + '</span>';
         }
         if (c.visitor_ip) {
-            html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip) + '</span>';
+            html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip);
+            html += ' <button type="button" class="lc-block-ip-btn" id="lc-block-ip-btn" title="Block this IP from chat widget"><i class="ti ti-ban"></i> Block IP</button>';
+            html += '</span>';
         }
         if (c.visitor_country) {
             html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
         }
         visitorDetailsEl.innerHTML = html;
+
+        var blockBtn = document.getElementById('lc-block-ip-btn');
+        if (blockBtn) {
+            blockBtn.addEventListener('click', blockVisitorIp);
+        }
+    }
+
+    function blockVisitorIp() {
+        if (!currentVisitorIp || !selectedId) return;
+        if (!confirm('Block ' + currentVisitorIp + '? The chat widget will be hidden for this IP on all sites.')) return;
+        fetch(base + '/api/agent-block-ip.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId, reason: 'Blocked from live chat #' + selectedId })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                alert('IP ' + currentVisitorIp + ' has been blocked.');
+                return;
+            }
+            alert(data.error || 'Unable to block IP');
+        });
     }
 
     function pollMessages() {

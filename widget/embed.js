@@ -1188,11 +1188,32 @@
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () {
+            checkWidgetAccess(function () {
+                buildWidget();
+                resumeChatOnLoad();
+            });
+        });
+    } else {
+        checkWidgetAccess(function () {
             buildWidget();
             resumeChatOnLoad();
         });
-    } else {
-        buildWidget();
-        resumeChatOnLoad();
+    }
+
+    function checkWidgetAccess(callback) {
+        fetch(siteUrl + '/api/widget-access.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brand_key: brandKey, visitor_uid: visitorUid })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data && data.allowed) {
+                callback();
+            }
+        })
+        .catch(function () {
+            callback();
+        });
     }
 })();
