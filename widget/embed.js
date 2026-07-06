@@ -35,6 +35,7 @@
     var LAST_MSG_KEY = 'lc_last_msg_' + brandKey;
     var TOKEN_STORAGE_KEY = 'lc_chat_token_' + brandKey;
     var RELOAD_FLAG_KEY = 'lc_reload_' + brandKey;
+    var SITE_NAV_FLAG_KEY = 'lc_site_nav_' + brandKey;
     var leaveCloseSent = false;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
@@ -53,7 +54,73 @@
     } catch (ignore) {}
 
     setupReloadDetection();
+    setupSiteNavigationDetection();
     initPageTracker();
+
+    function setupSiteNavigationDetection() {
+        document.addEventListener('click', function (e) {
+            var link = e.target.closest('a');
+            if (!link || !link.href) return;
+            if (link.target === '_blank' || link.hasAttribute('download')) return;
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if (isSameSiteUrl(link.href)) {
+                markSiteNavigation();
+            }
+        }, true);
+
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || form.tagName !== 'FORM') return;
+            if (form.target === '_blank') return;
+            var action = form.getAttribute('action') || window.location.href;
+            if (isSameSiteUrl(action)) {
+                markSiteNavigation();
+            }
+        }, true);
+
+        if (window.navigation && window.navigation.addEventListener) {
+            window.navigation.addEventListener('navigate', function (e) {
+                if (e.navigationType === 'reload' || e.navigationType === 'back_forward_cache') return;
+                try {
+                    if (e.destination && isSameSiteUrl(e.destination.url)) {
+                        markSiteNavigation();
+                    }
+                } catch (err) {}
+            });
+        }
+    }
+
+    function isSameSiteUrl(href) {
+        try {
+            var url = new URL(href, window.location.href);
+            if (url.protocol === 'javascript:' || url.protocol === 'mailto:' || url.protocol === 'tel:') {
+                return false;
+            }
+            return url.origin === window.location.origin;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function markSiteNavigation() {
+        try {
+            sessionStorage.setItem(SITE_NAV_FLAG_KEY, '1');
+        } catch (err) {}
+    }
+
+    function isSiteNavigation() {
+        try {
+            return sessionStorage.getItem(SITE_NAV_FLAG_KEY) === '1';
+        } catch (err) {
+            return false;
+        }
+    }
+
+    function clearSiteNavigation() {
+        try {
+            sessionStorage.removeItem(SITE_NAV_FLAG_KEY);
+        } catch (err) {}
+    }
 
     function initPageTracker() {
         var lastSentUrl = '';
@@ -330,6 +397,9 @@
             if (e.persisted) return;
             if (isReloadNavigation()) {
                 clearReloadNavigation();
+                return;
+            }
+            if (isSiteNavigation()) {
                 return;
             }
             closeChatOnTabLeave();
@@ -934,6 +1004,8 @@
     }
 
     function resumeChatOnLoad() {
+        clearSiteNavigation();
+
         var storedConv = getStoredConversationId();
         var hadPanelOpen = chatStore().getItem(PANEL_OPEN_KEY) === '1';
 
