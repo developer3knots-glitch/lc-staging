@@ -6,6 +6,7 @@ require_once __DIR__ . '/brand.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
+require_once __DIR__ . '/recording.php';
 
 function lc_cors_headers(): void
 {

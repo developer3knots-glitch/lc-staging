@@ -192,6 +192,9 @@
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
         });
+        if (window.LCRecording) {
+            window.LCRecording.open(id);
+        }
     }
 
     function renderVisitorDetails(c) {
@@ -310,6 +313,7 @@
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId })
         }).then(function () {
+            if (window.LCRecording) window.LCRecording.close();
             selectedId = 0;
             activeEl.style.display = 'none';
             emptyEl.style.display = 'flex';
@@ -328,6 +332,10 @@
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);
     pollTimer = setInterval(pollMessages, pollMs);
+
+    if (window.LCRecording) {
+        window.LCRecording.init();
+    }
 
     if (selectedId) openConversation(selectedId);
 })();

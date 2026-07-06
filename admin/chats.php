@@ -4,7 +4,10 @@ $agent = lc_require_auth();
 $selectedId = (int) ($_GET['id'] ?? 0);
 $pageTitle = 'Live Chats';
 $activeNav = 'chats';
-$extraScript = 'admin-chat.js';
+$extraScripts = ['admin-chat.js'];
+if (lc_session_recording_enabled()) {
+    array_unshift($extraScripts, 'admin-recording.js');
+}
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -44,6 +47,13 @@ require __DIR__ . '/includes/header.php';
                     <span class="lc-page-journey-count" id="lc-journey-count"></span>
                 </div>
                 <div class="lc-page-journey-list" id="lc-page-journey-list"></div>
+            </div>
+            <div class="lc-session-recorder" id="lc-session-recorder" style="display:none">
+                <div class="lc-session-recorder-head">
+                    <span><i class="ti ti-video"></i> Live session recording</span>
+                    <span class="lc-recording-live"><span class="lc-recording-live-dot"></span> <span id="lc-recording-status">Live</span></span>
+                </div>
+                <div class="lc-replayer-frame" id="lc-replayer-mount"></div>
             </div>
             <div class="lc-chat-messages" id="lc-messages"></div>
             <div class="lc-chat-compose">

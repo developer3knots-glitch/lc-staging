@@ -138,5 +138,6 @@ function lc_brand_settings(array $brand): array
         'welcome_message' => $brand['welcome_message'] ?? '',
         'brand_key' => $brand['brand_key'],
         'poll_interval_ms' => (int) lc_setting('poll_interval_ms', '1500'),
+        'session_recording_enabled' => lc_session_recording_enabled(),
     ];
 }

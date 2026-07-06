@@ -538,6 +538,24 @@
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
         }
         updatePrechatStatus(data.agents_online || 0);
+        maybeStartSessionRecorder();
+    }
+
+    var recorderBooted = false;
+    function maybeStartSessionRecorder() {
+        if (recorderBooted || !settings.session_recording_enabled) {
+            return;
+        }
+        recorderBooted = true;
+        var script = document.createElement('script');
+        script.src = siteUrl + '/widget/session-recorder.js?v=1';
+        script.async = true;
+        script.onload = function () {
+            if (window.LCSessionRecorder) {
+                window.LCSessionRecorder.start(siteUrl, brandKey, visitorUid);
+            }
+        };
+        document.head.appendChild(script);
     }
 
     function loadWidgetSettings() {

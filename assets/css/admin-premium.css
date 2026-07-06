@@ -652,6 +652,62 @@ body,
     text-overflow: ellipsis;
 }
 
+/* ─── Live session recorder ─── */
+.lc-session-recorder {
+    border-bottom: 1px solid var(--lc-border);
+    background: #0b1220;
+}
+.lc-session-recorder-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: #111827;
+    border-bottom: 1px solid #1f2937;
+}
+.lc-session-recorder-head i { color: #38bdf8; }
+.lc-recording-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #fca5a5;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.lc-recording-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+    animation: lc-rec-pulse 1.4s ease-out infinite;
+}
+@keyframes lc-rec-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+    70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+.lc-replayer-frame {
+    height: 240px;
+    overflow: hidden;
+    background: #020617;
+    position: relative;
+}
+.lc-replayer-frame .replayer-wrapper {
+    transform: scale(0.52);
+    transform-origin: top left;
+    pointer-events: none;
+}
+.lc-replayer-frame iframe {
+    border: 0;
+}
+
 /* ─── Forms & buttons ─── */
 .lc-form label {
     display: block;
