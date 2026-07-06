@@ -19,7 +19,11 @@ try {
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
-               (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'visitor' AND is_read = 0) AS unread
+               (CASE
+                    WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
+                        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'visitor' AND is_read = 0)
+                    ELSE 0
+                END) AS unread
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN agents a ON a.id = c.agent_id
@@ -31,7 +35,7 @@ try {
         LIMIT 50
     ";
     $stmt = $db->prepare($sql);
-    $stmt->execute($params);
+    $stmt->execute(array_merge([$agentId], $params));
     $conversations = $stmt->fetchAll();
 
     $agentBrandId = lc_agent_brand_id($agent);

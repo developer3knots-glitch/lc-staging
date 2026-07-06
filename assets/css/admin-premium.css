@@ -455,6 +455,7 @@ body,
 .lc-chat-item:hover, .lc-chat-item.active { background: var(--lc-primary-soft); }
 .lc-chat-item-name { font-weight: 700; font-size: 0.86rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .lc-chat-item-preview { font-size: 0.76rem; color: var(--lc-muted); margin-top: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lc-chat-item-agent { color: #64748b; font-weight: 600; }
 
 .lc-badge {
     display: inline-flex;

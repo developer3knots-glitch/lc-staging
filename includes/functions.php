@@ -152,19 +152,24 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return false;
     }
 
-    if ((int) ($conv['agent_id'] ?? 0) === (int) $agent['id']) {
+    $agentId = (int) $agent['id'];
+    $assignedId = (int) ($conv['agent_id'] ?? 0);
+    $status = (string) ($conv['status'] ?? '');
+
+    if ($assignedId === $agentId) {
         return true;
     }
 
-    if (($agent['role'] ?? '') === 'admin') {
+    if ($status === 'waiting') {
         return true;
     }
 
-    if (($conv['status'] ?? '') === 'waiting') {
+    if ($status === 'active' && $assignedId === 0) {
         return true;
     }
 
-    return ($conv['agent_id'] ?? null) === null;
+    // Active chat owned by another agent — live access only for the assignee.
+    return false;
 }
 
 function lc_agent_can_handle_conversation(array $agent, array $conv): bool
@@ -172,11 +177,28 @@ function lc_agent_can_handle_conversation(array $agent, array $conv): bool
     if (($conv['status'] ?? '') === 'closed') {
         return false;
     }
-    if (($conv['status'] ?? '') === 'waiting' || ($conv['agent_id'] ?? null) === null) {
+
+    $agentId = (int) $agent['id'];
+    $assignedId = (int) ($conv['agent_id'] ?? 0);
+
+    if ($assignedId === $agentId) {
         return true;
     }
 
-    return (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'];
+    if (($conv['status'] ?? '') === 'waiting' && $assignedId === 0) {
+        return lc_agent_can_access_conversation($agent, $conv);
+    }
+
+    return false;
+}
+
+function lc_agent_can_close_conversation(array $agent, array $conv): bool
+{
+    if (($conv['status'] ?? '') === 'closed') {
+        return false;
+    }
+
+    return lc_agent_can_handle_conversation($agent, $conv);
 }
 
 /**
@@ -196,7 +218,10 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
             return ["{$a}.status = 'active' AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL)", [$agentId]];
         }
 
-        return ["{$a}.status IN ('waiting','active')", []];
+        return [
+            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting')",
+            [$agentId],
+        ];
     }
 
     if ($tab === 'waiting') {
@@ -222,9 +247,6 @@ function lc_agent_can_transfer_conversation(array $agent, array $conv): bool
     }
     if (!lc_agent_can_access_conversation($agent, $conv)) {
         return false;
-    }
-    if (($agent['role'] ?? '') === 'admin') {
-        return true;
     }
 
     return (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'];

@@ -18,11 +18,14 @@ try {
     if (!$conv || !in_array($conv['status'], ['waiting', 'active'], true)) {
         lc_json(['success' => false, 'error' => 'Conversation closed'], 400);
     }
+    if (!lc_agent_can_view_conversation($agent, $conv)) {
+        lc_json(['success' => false, 'error' => 'Forbidden'], 403);
+    }
 
     $agentId = (int) $agent['id'];
     $wasWaiting = $conv['status'] === 'waiting';
 
-    if ($conv['status'] === 'active' && (int) ($conv['agent_id'] ?? 0) > 0 && (int) $conv['agent_id'] !== $agentId) {
+    if (!lc_agent_can_handle_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
     }
 

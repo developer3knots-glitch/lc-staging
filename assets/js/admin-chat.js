@@ -167,12 +167,32 @@
                     if (c.unread > 0) html += '<span class="lc-badge lc-badge-unread">' + c.unread + '</span>';
                     else html += '<span class="lc-badge lc-badge-' + (c.status === 'waiting' ? 'waiting' : 'active') + '">' + c.status + '</span>';
                     html += '</div>';
-                    html += '<div class="lc-chat-item-preview">' + (c.brand_name ? '[' + esc(c.brand_name) + '] ' : '') + esc(c.last_message || '—') + '</div>';
+                    html += '<div class="lc-chat-item-preview">';
+                    if (c.brand_name) html += '[' + esc(c.brand_name) + '] ';
+                    html += esc(c.last_message || '—');
+                    if (c.agent_name && c.status === 'active') {
+                        html += ' · <span class="lc-chat-item-agent">' + esc(c.agent_name) + '</span>';
+                    }
+                    html += '</div>';
                     html += '</div>';
                 });
                 var loadingEl2 = document.getElementById('lc-list-loading');
                 if (loadingEl2) loadingEl2.remove();
                 listEl.innerHTML = html;
+
+                if (selectedId) {
+                    var stillVisible = data.conversations.some(function (c) {
+                        return parseInt(c.id, 10) === selectedId;
+                    });
+                    if (!stillVisible) {
+                        selectedId = 0;
+                        lastMsgId = 0;
+                        activeEl.style.display = 'none';
+                        emptyEl.style.display = 'flex';
+                        messagesEl.innerHTML = '';
+                        chatTransferredAway = false;
+                    }
+                }
             });
     }
 
@@ -298,7 +318,6 @@
 
     function canTransferChat(c) {
         if (!c || c.status !== 'active') return false;
-        if (isAdmin) return parseInt(c.agent_id || 0, 10) === myAgentId || !c.agent_id;
         return parseInt(c.agent_id || 0, 10) === myAgentId;
     }
 
@@ -372,8 +391,12 @@
             .then(function (data) {
                 if (!data.success) {
                     if (data.error === 'Forbidden') {
-                        chatTransferredAway = true;
-                        updateChatActions({ status: 'active', agent_id: 0 }, false);
+                        selectedId = 0;
+                        activeEl.style.display = 'none';
+                        emptyEl.style.display = 'flex';
+                        messagesEl.innerHTML = '';
+                        lastMsgId = 0;
+                        chatTransferredAway = false;
                         loadConversations();
                     }
                     return;
@@ -407,9 +430,6 @@
                 renderVisitorDetails(c);
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
-                if (chatTransferredAway) {
-                    meta = 'Assigned to ' + (c.agent_name || 'another agent') + ' — you are viewing only';
-                }
                 visitorMetaEl.textContent = meta;
                 updateChatActions(c, data.can_compose);
 
@@ -438,7 +458,11 @@
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId, message: msg })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data.success) pollMessages();
+            if (data.success) {
+                pollMessages();
+                return;
+            }
+            alert(data.error || 'Unable to send message');
         });
     }
 

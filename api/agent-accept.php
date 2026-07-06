@@ -13,7 +13,18 @@ if ($conversationId < 1) {
 }
 
 try {
-    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting'");
+    $conv = lc_get_conversation($conversationId);
+    if (!$conv) {
+        lc_json(['success' => false, 'error' => 'Not found'], 404);
+    }
+    if (($conv['status'] ?? '') !== 'waiting') {
+        lc_json(['success' => false, 'error' => 'Chat is no longer waiting'], 400);
+    }
+    if (!lc_agent_can_view_conversation($agent, $conv)) {
+        lc_json(['success' => false, 'error' => 'Forbidden'], 403);
+    }
+
+    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'waiting'");
     $upd->execute([(int) $agent['id'], $conversationId]);
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, (int) $agent['id']);
