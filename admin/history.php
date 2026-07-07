@@ -163,8 +163,8 @@ require __DIR__ . '/includes/header.php';
             <h1 class="lc-hero-title">Chat History</h1>
             <p class="lc-hero-sub">Browse, search and review every closed conversation — visitor details, agent handoffs, and full transcripts.</p>
             <div class="lc-hero-actions">
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-hero-chip"><i class="ti ti-messages"></i> Live Inbox</a>
-                <a href="<?= LC_BASE_URL ?>/admin/history.php" class="lc-hero-chip"><i class="ti ti-refresh"></i> Reset filters</a>
+                <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Live Inbox</a>
+                <a href="<?= lc_admin_url('history') ?>" class="lc-hero-chip"><i class="ti ti-refresh"></i> Reset filters</a>
             </div>
         </div>
         <div class="lc-hero-metrics lc-hero-metrics-4">
@@ -226,7 +226,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-card-head">
             <h3><i class="ti ti-search"></i> Search &amp; Filter</h3>
             <?php if ($hasFilters): ?>
-                <a href="<?= LC_BASE_URL ?>/admin/history.php" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-x"></i> Clear all</a>
+                <a href="<?= lc_admin_url('history') ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-x"></i> Clear all</a>
             <?php endif; ?>
         </div>
         <div class="lc-card-body">
@@ -278,13 +278,14 @@ require __DIR__ . '/includes/header.php';
                 <?php
                 $periods = ['all' => 'All', 'today' => 'Today', 'week' => '7 days', 'month' => '30 days'];
                 foreach ($periods as $key => $label):
-                    $qs = http_build_query(array_filter([
+                    $href = lc_admin_url('history', array_filter([
                         'q' => $search !== '' ? $search : null,
                         'brand' => $brandFilter > 0 ? $brandFilter : null,
                         'agent' => $agentFilter > 0 ? $agentFilter : null,
                         'period' => $key !== 'all' ? $key : null,
-                    ]));
-                    $href = LC_BASE_URL . '/admin/history.php' . ($qs ? '?' . $qs : '');
+                    ], static function ($value) {
+                        return $value !== null && $value !== '';
+                    }));
                 ?>
                     <a href="<?= lc_sanitize($href) ?>" class="lc-history-pill<?= $period === $key ? ' is-active' : '' ?>"><?= lc_sanitize($label) ?></a>
                 <?php endforeach; ?>
@@ -304,13 +305,13 @@ require __DIR__ . '/includes/header.php';
                     <p>No closed chats found</p>
                     <span><?= $hasFilters ? 'Try adjusting your filters or search terms.' : 'Closed conversations will appear here after agents end chats.' ?></span>
                     <?php if ($hasFilters): ?>
-                        <a href="<?= LC_BASE_URL ?>/admin/history.php" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-x"></i> Clear filters</a>
+                        <a href="<?= lc_admin_url('history') ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-x"></i> Clear filters</a>
                     <?php endif; ?>
                 </div>
             <?php else: foreach ($rows as $r):
                 $name = $r['visitor_name'] ?: 'Visitor';
                 $duration = $formatDuration($r['started_at'], $r['closed_at']);
-                $chatUrl = LC_BASE_URL . '/admin/chats.php?id=' . (int) $r['id'];
+                $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                 $brandColor = $r['brand_color'] ?? '#6FD943';
             ?>
                 <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-history-item" data-search="<?= lc_sanitize(strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? ''))) ?>">

@@ -93,21 +93,21 @@ require __DIR__ . '/includes/header.php';
             <h1 class="lc-hero-title"><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agent['name']) ?></h1>
             <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets — everything in one beautiful workspace.</p>
             <div class="lc-hero-actions">
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Inbox</a>
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-hero-chip"><i class="ti ti-bolt"></i> Waiting queue</a>
+                <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Inbox</a>
+                <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-hero-chip"><i class="ti ti-bolt"></i> Waiting queue</a>
                 <?php if ($agent['role'] === 'admin'): ?>
-                    <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-hero-chip"><i class="ti ti-code"></i> Widget codes</a>
+                    <a href="<?= lc_admin_url('brands') ?>" class="lc-hero-chip"><i class="ti ti-code"></i> Widget codes</a>
                 <?php endif; ?>
             </div>
             <?php if ($waiting > 0): ?>
                 <p class="lc-hero-cta" id="lc-dash-cta-wrap">
-                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta">
+                    <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta">
                         <i class="ti ti-bolt"></i> Answer <?= $waiting ?> waiting chat<?= $waiting === 1 ? '' : 's' ?>
                     </a>
                 </p>
             <?php else: ?>
                 <p class="lc-hero-cta" id="lc-dash-cta-wrap" style="display:none">
-                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta"></a>
+                    <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta"></a>
                 </p>
             <?php endif; ?>
         </div>
@@ -130,17 +130,17 @@ require __DIR__ . '/includes/header.php';
     <?php if ($unread > 0): ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php else: ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert" style="display:none">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php endif; ?>
 
     <div class="lc-kpi-grid lc-kpi-grid-pro">
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-kpi lc-kpi-pro lc-kpi-waiting">
+        <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-kpi lc-kpi-pro lc-kpi-waiting">
             <div class="lc-kpi-icon orange"><i class="ti ti-clock-hour-4"></i></div>
             <div class="lc-kpi-body">
                 <div class="lc-kpi-name">Waiting</div>
@@ -149,7 +149,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
         </a>
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=active" class="lc-kpi lc-kpi-pro lc-kpi-active">
+        <a href="<?= lc_admin_url('chats', ['tab' => 'active']) ?>" class="lc-kpi lc-kpi-pro lc-kpi-active">
             <div class="lc-kpi-icon green"><i class="ti ti-messages"></i></div>
             <div class="lc-kpi-body">
                 <div class="lc-kpi-name">Active Chats</div>
@@ -158,7 +158,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
         </a>
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-kpi lc-kpi-pro lc-kpi-unread">
+        <a href="<?= lc_admin_url('chats') ?>" class="lc-kpi lc-kpi-pro lc-kpi-unread">
             <div class="lc-kpi-icon red"><i class="ti ti-bell"></i></div>
             <div class="lc-kpi-body">
                 <div class="lc-kpi-name">Unread</div>
@@ -167,7 +167,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
         </a>
-        <a href="<?= LC_BASE_URL ?>/admin/agents.php" class="lc-kpi lc-kpi-pro lc-kpi-agents">
+        <a href="<?= lc_admin_url('agents') ?>" class="lc-kpi lc-kpi-pro lc-kpi-agents">
             <div class="lc-kpi-icon blue"><i class="ti ti-users"></i></div>
             <div class="lc-kpi-body">
                 <div class="lc-kpi-name">Online Agents</div>
@@ -191,12 +191,12 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-card lc-card-pro" id="lc-waiting-card"<?= empty($waitingChats) ? ' style="display:none"' : '' ?>>
                 <div class="lc-card-head">
                     <h3><i class="ti ti-flame"></i> Priority Queue <span class="lc-card-count" id="lc-waiting-count"><?= count($waitingChats) ?></span></h3>
-                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> View all</a>
+                    <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> View all</a>
                 </div>
                 <div class="lc-conv-feed" id="lc-waiting-feed">
                     <?php foreach ($waitingChats as $w):
                         $name = $w['visitor_name'] ?: 'Visitor';
-                        $chatUrl = LC_BASE_URL . '/admin/chats.php?id=' . (int) $w['id'];
+                        $chatUrl = lc_admin_url('chats', ['id' => (int) $w['id']]);
                         $msg = mb_strimwidth($w['last_msg'] ?? '—', 0, 72, '…');
                     ?>
                     <div class="lc-conv-item is-waiting">
@@ -222,7 +222,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-card lc-card-pro">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-inbox"></i> Recent Conversations</h3>
-                    <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open Inbox</a>
+                    <a href="<?= lc_admin_url('chats') ?>" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open Inbox</a>
                 </div>
                 <div class="lc-conv-feed" id="lc-recent-feed">
                     <?php if (empty($recent)): ?>
@@ -233,7 +233,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
-                        $chatUrl = LC_BASE_URL . '/admin/chats.php?id=' . (int) $r['id'];
+                        $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                         $msg = mb_strimwidth($r['last_msg'] ?? '—', 0, 72, '…');
                     ?>
                     <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item">
@@ -304,13 +304,13 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-card lc-card-pro lc-quick-card">
                 <div class="lc-card-head"><h3><i class="ti ti-rocket"></i> Quick Actions</h3></div>
                 <div class="lc-quick-grid">
-                    <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-quick-tile"><i class="ti ti-messages"></i><span>Live Chats</span></a>
-                    <a href="<?= LC_BASE_URL ?>/admin/history.php" class="lc-quick-tile"><i class="ti ti-history"></i><span>History</span></a>
-                    <a href="<?= LC_BASE_URL ?>/admin/canned.php" class="lc-quick-tile"><i class="ti ti-bolt"></i><span>Canned</span></a>
+                    <a href="<?= lc_admin_url('chats') ?>" class="lc-quick-tile"><i class="ti ti-messages"></i><span>Live Chats</span></a>
+                    <a href="<?= lc_admin_url('history') ?>" class="lc-quick-tile"><i class="ti ti-history"></i><span>History</span></a>
+                    <a href="<?= lc_admin_url('canned') ?>" class="lc-quick-tile"><i class="ti ti-bolt"></i><span>Canned</span></a>
                     <?php if ($agent['role'] === 'admin'): ?>
-                        <a href="<?= LC_BASE_URL ?>/admin/settings.php" class="lc-quick-tile"><i class="ti ti-shield"></i><span>Blocking</span></a>
-                        <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-quick-tile"><i class="ti ti-tags"></i><span>Brands</span></a>
-                        <a href="<?= LC_BASE_URL ?>/admin/agents.php" class="lc-quick-tile"><i class="ti ti-user-plus"></i><span>Agents</span></a>
+                        <a href="<?= lc_admin_url('settings') ?>" class="lc-quick-tile"><i class="ti ti-shield"></i><span>Blocking</span></a>
+                        <a href="<?= lc_admin_url('brands') ?>" class="lc-quick-tile"><i class="ti ti-tags"></i><span>Brands</span></a>
+                        <a href="<?= lc_admin_url('agents') ?>" class="lc-quick-tile"><i class="ti ti-user-plus"></i><span>Agents</span></a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -319,11 +319,11 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-card lc-card-pro">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-code"></i> Brand Widgets</h3>
-                    <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-btn lc-btn-secondary lc-btn-sm">Manage</a>
+                    <a href="<?= lc_admin_url('brands') ?>" class="lc-btn lc-btn-secondary lc-btn-sm">Manage</a>
                 </div>
                 <div class="lc-brand-stack">
                     <?php foreach (array_slice($brands, 0, 4) as $brand): ?>
-                        <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-brand-pill">
+                        <a href="<?= lc_admin_url('brands') ?>" class="lc-brand-pill">
                             <span class="lc-brand-dot" style="background:<?= lc_sanitize($brand['widget_color'] ?? '#6FD943') ?>"></span>
                             <span><?= lc_sanitize($brand['name']) ?></span>
                             <i class="ti ti-chevron-right"></i>

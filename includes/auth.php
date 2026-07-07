@@ -27,7 +27,7 @@ function lc_require_auth(): array
     }
     $agent = lc_auth_agent();
     if (!$agent) {
-        header('Location: ' . LC_BASE_URL . '/admin/login.php');
+        header('Location: ' . lc_admin_url('login'));
         exit;
     }
     return $agent;
@@ -37,7 +37,7 @@ function lc_require_admin(): array
 {
     $agent = lc_require_auth();
     if ($agent['role'] !== 'admin') {
-        header('Location: ' . LC_BASE_URL . '/admin/index.php');
+        header('Location: ' . lc_admin_url());
         exit;
     }
     return $agent;

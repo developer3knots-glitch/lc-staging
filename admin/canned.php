@@ -80,7 +80,7 @@ require __DIR__ . '/includes/header.php';
             <h1 class="lc-hero-title">Canned Replies</h1>
             <p class="lc-hero-sub">Pre-written messages your team can drop into live chats in one click — faster replies, consistent tone, happier visitors.</p>
             <div class="lc-hero-actions">
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Live Chats</a>
+                <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Live Chats</a>
                 <a href="#lc-canned-compose" class="lc-hero-chip"><i class="ti ti-plus"></i> Add new reply</a>
             </div>
         </div>

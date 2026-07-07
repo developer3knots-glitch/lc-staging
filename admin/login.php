@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 
 if (!lc_installed()) {
-    header('Location: ' . LC_BASE_URL . '/install.php');
+    header('Location: ' . lc_url('install'));
     exit;
 }
 
@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cookieOpts['expires'] = time() - 3600;
             setcookie($rememberCookie, '', $cookieOpts);
         }
-        header('Location: ' . LC_BASE_URL . '/admin/index.php');
+        header('Location: ' . lc_admin_url());
         exit;
     }
     $rememberEmail = $email;

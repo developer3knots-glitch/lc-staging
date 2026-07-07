@@ -69,7 +69,7 @@ require __DIR__ . '/includes/header.php';
             <h1 class="lc-hero-title">Settings</h1>
             <p class="lc-hero-sub">System performance, geo-blocking, and IP restrictions — secure your chat widget and fine-tune how your team operates.</p>
             <div class="lc-hero-actions">
-                <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-hero-chip"><i class="ti ti-tags"></i> Brand widgets</a>
+                <a href="<?= lc_admin_url('brands') ?>" class="lc-hero-chip"><i class="ti ti-tags"></i> Brand widgets</a>
                 <a href="#lc-settings-security" class="lc-hero-chip"><i class="ti ti-shield"></i> Security</a>
             </div>
         </div>
@@ -239,7 +239,7 @@ require __DIR__ . '/includes/header.php';
                         <i class="ti ti-info-circle"></i>
                         <div>
                             <strong>Brand-specific settings</strong>
-                            <p>Widget color, welcome message, and offline text are managed per brand on the <a href="<?= LC_BASE_URL ?>/admin/brands.php">Brands</a> page.</p>
+                            <p>Widget color, welcome message, and offline text are managed per brand on the <a href="<?= lc_admin_url('brands') ?>">Brands</a> page.</p>
                         </div>
                     </div>
                 </div>

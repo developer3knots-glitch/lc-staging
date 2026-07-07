@@ -134,10 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
     <?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if ($success): ?>
         <div class="lc-alert lc-alert-success"><i class="ti ti-circle-check"></i> <?= htmlspecialchars($success) ?></div>
-        <a href="<?= LC_BASE_URL ?>/admin/login.php" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-login"></i> Go to Admin Login</a>
+        <a href="<?= lc_admin_url('login') ?>" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-login"></i> Go to Admin Login</a>
     <?php elseif ($installed): ?>
         <div class="lc-alert lc-alert-info"><i class="ti ti-info-circle"></i> Already installed.</div>
-        <a href="<?= LC_BASE_URL ?>/admin/login.php" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-login"></i> Go to Admin Login</a>
+        <a href="<?= lc_admin_url('login') ?>" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-login"></i> Go to Admin Login</a>
     <?php else: ?>
         <form method="post" class="lc-form">
             <h3>Database</h3>

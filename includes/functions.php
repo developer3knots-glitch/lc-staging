@@ -40,6 +40,56 @@ function lc_sanitize(?string $value): string
     return htmlspecialchars(trim((string) $value), ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Build a public URL without the .php extension.
+ *
+ * @param array<string, scalar|null> $query
+ */
+function lc_url(string $path = '', array $query = []): string
+{
+    $path = trim(str_replace('\\', '/', $path), '/');
+    if ($path !== '') {
+        if (substr($path, -4) === '.php') {
+            $path = substr($path, 0, -4);
+        }
+        if ($path === 'index' || substr($path, -6) === '/index') {
+            $path = $path === 'index' ? '' : substr($path, 0, -6);
+        }
+    }
+
+    $url = rtrim(LC_BASE_URL, '/');
+    if ($path !== '') {
+        $url .= '/' . $path;
+    }
+
+    $query = array_filter($query, static function ($value) {
+        return $value !== null && $value !== '';
+    });
+    if ($query !== []) {
+        $url .= '?' . http_build_query($query);
+    }
+
+    return $url;
+}
+
+/**
+ * Admin panel URL helper.
+ *
+ * @param array<string, scalar|null> $query
+ */
+function lc_admin_url(string $page = '', array $query = []): string
+{
+    $page = trim(str_replace('\\', '/', $page), '/');
+    if (substr($page, -4) === '.php') {
+        $page = substr($page, 0, -4);
+    }
+    if ($page === '' || $page === 'index') {
+        return lc_url('admin', $query);
+    }
+
+    return lc_url('admin/' . $page, $query);
+}
+
 function lc_setting(string $key, $default = ''): string
 {
     static $cache = [];

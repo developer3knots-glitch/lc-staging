@@ -78,7 +78,7 @@ require __DIR__ . '/includes/header.php';
             <p class="lc-hero-sub">Manage your support team — assign roles, brands, and avatars. Agents handle live chats; admins control the full workspace.</p>
             <div class="lc-hero-actions">
                 <a href="#lc-agent-create" class="lc-hero-chip"><i class="ti ti-user-plus"></i> Add agent</a>
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-hero-chip"><i class="ti ti-messages"></i> Live inbox</a>
+                <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Live inbox</a>
             </div>
         </div>
         <div class="lc-hero-metrics lc-hero-metrics-4">

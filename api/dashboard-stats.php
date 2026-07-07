@@ -73,7 +73,7 @@ try {
             'status' => $r['status'],
             'last_msg' => $msg,
             'last_message_at' => $r['last_message_at'] ? lc_to_iso8601($r['last_message_at']) : null,
-            'chat_url' => LC_BASE_URL . '/admin/chats.php?id=' . (int) $r['id'],
+            'chat_url' => lc_admin_url('chats', ['id' => (int) $r['id']]),
         ];
     }
 

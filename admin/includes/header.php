@@ -6,15 +6,15 @@ if (!isset($agent)) $agent = lc_require_auth();
 $primary = lc_setting('widget_color', '#6FD943');
 
 $navItems = [
-    ['id' => 'dashboard', 'url' => '/admin/index.php', 'icon' => 'ti-layout-dashboard', 'label' => 'Dashboard'],
-    ['id' => 'chats', 'url' => '/admin/chats.php', 'icon' => 'ti-messages', 'label' => 'Live Chats'],
-    ['id' => 'history', 'url' => '/admin/history.php', 'icon' => 'ti-history', 'label' => 'History'],
-    ['id' => 'canned', 'url' => '/admin/canned.php', 'icon' => 'ti-bolt', 'label' => 'Canned Replies'],
+    ['id' => 'dashboard', 'page' => '', 'icon' => 'ti-layout-dashboard', 'label' => 'Dashboard'],
+    ['id' => 'chats', 'page' => 'chats', 'icon' => 'ti-messages', 'label' => 'Live Chats'],
+    ['id' => 'history', 'page' => 'history', 'icon' => 'ti-history', 'label' => 'History'],
+    ['id' => 'canned', 'page' => 'canned', 'icon' => 'ti-bolt', 'label' => 'Canned Replies'],
 ];
 if ($agent['role'] === 'admin') {
-    $navItems[] = ['id' => 'brands', 'url' => '/admin/brands.php', 'icon' => 'ti-tags', 'label' => 'Brands'];
-    $navItems[] = ['id' => 'agents', 'url' => '/admin/agents.php', 'icon' => 'ti-users', 'label' => 'Agents'];
-    $navItems[] = ['id' => 'settings', 'url' => '/admin/settings.php', 'icon' => 'ti-settings', 'label' => 'Settings'];
+    $navItems[] = ['id' => 'brands', 'page' => 'brands', 'icon' => 'ti-tags', 'label' => 'Brands'];
+    $navItems[] = ['id' => 'agents', 'page' => 'agents', 'icon' => 'ti-users', 'label' => 'Agents'];
+    $navItems[] = ['id' => 'settings', 'page' => 'settings', 'icon' => 'ti-settings', 'label' => 'Settings'];
 }
 ?>
 <!DOCTYPE html>
@@ -39,7 +39,7 @@ if ($agent['role'] === 'admin') {
         </div>
         <nav class="lc-nav">
             <?php foreach ($navItems as $item): ?>
-                <a href="<?= LC_BASE_URL . $item['url'] ?>" class="lc-nav-link <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>">
+                <a href="<?= lc_admin_url($item['page']) ?>" class="lc-nav-link <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>">
                     <span class="lc-nav-icon"><i class="ti <?= lc_sanitize($item['icon']) ?>"></i></span>
                     <span><?= lc_sanitize($item['label']) ?></span>
                 </a>
@@ -56,7 +56,7 @@ if ($agent['role'] === 'admin') {
                     </div>
                 </div>
             </div>
-            <a href="<?= LC_BASE_URL ?>/admin/logout.php" class="lc-btn lc-btn-ghost lc-btn-sm lc-btn-block">
+            <a href="<?= lc_admin_url('logout') ?>" class="lc-btn lc-btn-ghost lc-btn-sm lc-btn-block">
                 <i class="ti ti-logout"></i> Sign out
             </a>
         </div>
