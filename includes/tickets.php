@@ -20,15 +20,21 @@ function lc_ticket_schema_ready(): bool
 function lc_ensure_ticket_schema(): void
 {
     static $done = false;
-    if ($done) {
+    static $running = false;
+    if ($done || $running) {
         return;
     }
+    $running = true;
 
     $pdo = lc_db();
     try {
         $pdo->exec('ALTER TABLE conversations ADD COLUMN ticket_reference VARCHAR(24) NULL AFTER subject');
     } catch (Throwable $e) {
-        // column may already exist
+        try {
+            $pdo->exec('ALTER TABLE conversations ADD COLUMN ticket_reference VARCHAR(24) NULL');
+        } catch (Throwable $e2) {
+            // column may already exist
+        }
     }
     try {
         $pdo->exec('ALTER TABLE conversations ADD UNIQUE INDEX idx_ticket_reference (ticket_reference)');
@@ -39,10 +45,11 @@ function lc_ensure_ticket_schema(): void
     if (lc_ticket_schema_ready()) {
         $stmt = $pdo->query("SELECT id, started_at FROM conversations WHERE ticket_reference IS NULL OR ticket_reference = '' ORDER BY id ASC");
         while ($row = $stmt->fetch()) {
-            lc_assign_conversation_ticket((int) $row['id'], $row['started_at'] ?? null);
+            lc_persist_conversation_ticket((int) $row['id'], $row['started_at'] ?? null);
         }
     }
 
+    $running = false;
     $done = true;
 }
 
@@ -51,6 +58,10 @@ function lc_ticket_prefix(): string
     static $prefix = null;
     if ($prefix !== null) {
         return $prefix;
+    }
+
+    if (!function_exists('lc_setting')) {
+        return 'LC';
     }
 
     $raw = strtoupper(preg_replace('/[^A-Z0-9]/', '', lc_setting('ticket_prefix', 'LC')));
@@ -80,13 +91,14 @@ function lc_build_ticket_reference(int $id, ?string $startedAt = null): string
     return lc_ticket_prefix() . '-' . $dt->format('Ymd') . '-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT);
 }
 
-function lc_assign_conversation_ticket(int $conversationId, ?string $startedAt = null): string
+/**
+ * Write ticket to DB only — never calls lc_ensure_ticket_schema() (safe for backfill loops).
+ */
+function lc_persist_conversation_ticket(int $conversationId, ?string $startedAt = null): string
 {
     if ($conversationId < 1) {
         return '';
     }
-
-    lc_ensure_ticket_schema();
 
     $stmt = lc_db()->prepare('SELECT ticket_reference, started_at FROM conversations WHERE id = ? LIMIT 1');
     $stmt->execute([$conversationId]);
@@ -104,6 +116,17 @@ function lc_assign_conversation_ticket(int $conversationId, ?string $startedAt =
     $upd->execute([$reference, $conversationId]);
 
     return $reference;
+}
+
+function lc_assign_conversation_ticket(int $conversationId, ?string $startedAt = null): string
+{
+    if ($conversationId < 1) {
+        return '';
+    }
+
+    lc_ensure_ticket_schema();
+
+    return lc_persist_conversation_ticket($conversationId, $startedAt);
 }
 
 /**
@@ -124,7 +147,7 @@ function lc_conversation_reference(int $id, ?string $startedAt = null): string
         return $stored;
     }
 
-    return lc_assign_conversation_ticket($id, $startedAt);
+    return lc_persist_conversation_ticket($id, $startedAt);
 }
 
 /**
@@ -148,11 +171,13 @@ function lc_parse_conversation_reference(string $input): ?int
         return (int) $input;
     }
 
-    $stmt = lc_db()->prepare('SELECT id FROM conversations WHERE ticket_reference = ? LIMIT 1');
-    $stmt->execute([$input]);
-    $id = $stmt->fetchColumn();
-    if ($id) {
-        return (int) $id;
+    if (lc_ticket_schema_ready()) {
+        $stmt = lc_db()->prepare('SELECT id FROM conversations WHERE ticket_reference = ? LIMIT 1');
+        $stmt->execute([$input]);
+        $id = $stmt->fetchColumn();
+        if ($id) {
+            return (int) $id;
+        }
     }
 
     return null;
