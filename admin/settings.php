@@ -141,7 +141,7 @@ require __DIR__ . '/includes/header.php';
                 </div>
             </section>
 
-            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-geo">
+            <section class="lc-card lc-card-pro lc-settings-section lc-settings-geo-pro" id="lc-settings-geo">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-world-off"></i> Country Blocking</h3>
                     <span class="lc-card-sub"><?= count($blockedCountries) ?> blocked</span>
@@ -152,6 +152,9 @@ require __DIR__ . '/includes/header.php';
                         <input type="hidden" name="action" value="save_countries">
                         <div class="lc-country-picker lc-country-picker-pro" id="lc-country-picker">
                             <div class="lc-country-tags" id="lc-country-tags">
+                                <?php if (empty($blockedCountries)): ?>
+                                    <span class="lc-country-tags-empty">No countries blocked yet — select below</span>
+                                <?php endif; ?>
                                 <?php foreach ($blockedCountries as $code): ?>
                                     <span class="lc-country-tag" data-code="<?= lc_sanitize($code) ?>">
                                         <?= lc_sanitize(lc_country_name($code)) ?> (<?= lc_sanitize($code) ?>)
@@ -159,17 +162,26 @@ require __DIR__ . '/includes/header.php';
                                     </span>
                                 <?php endforeach; ?>
                             </div>
-                            <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries…" autocomplete="off">
+                            <div class="lc-country-search-wrap">
+                                <i class="ti ti-search"></i>
+                                <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries…" autocomplete="off">
+                            </div>
                             <div class="lc-country-options" id="lc-country-options">
                                 <?php foreach ($allCountries as $code => $name): ?>
                                     <label class="lc-country-option<?= in_array($code, $blockedCountries, true) ? ' is-selected' : '' ?>" data-name="<?= lc_sanitize(strtolower($name . ' ' . $code)) ?>">
-                                        <input type="checkbox" name="blocked_countries[]" value="<?= lc_sanitize($code) ?>"<?= in_array($code, $blockedCountries, true) ? ' checked' : '' ?>>
-                                        <span><?= lc_sanitize($name) ?> <small>(<?= lc_sanitize($code) ?>)</small></span>
+                                        <span class="lc-country-option-main">
+                                            <span class="lc-country-code"><?= lc_sanitize($code) ?></span>
+                                            <span class="lc-country-name"><?= lc_sanitize($name) ?></span>
+                                        </span>
+                                        <span class="lc-country-check">
+                                            <input type="checkbox" name="blocked_countries[]" value="<?= lc_sanitize($code) ?>"<?= in_array($code, $blockedCountries, true) ? ' checked' : '' ?>>
+                                            <span class="lc-country-check-ui" aria-hidden="true"><i class="ti ti-check"></i></span>
+                                        </span>
                                     </label>
                                 <?php endforeach; ?>
                             </div>
                         </div>
-                        <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-shield-off"></i> Save country blocks</button>
+                        <button type="submit" class="lc-btn lc-btn-primary lc-country-save-btn"><i class="ti ti-shield-off"></i> Save country blocks</button>
                     </form>
                 </div>
             </section>

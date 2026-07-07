@@ -8,8 +8,12 @@
         var options = document.getElementById('lc-country-options');
 
         function syncTag(code, name, selected) {
+            var emptyHint = tags.querySelector('.lc-country-tags-empty');
             var existing = tags.querySelector('[data-code="' + code + '"]');
             if (selected && !existing) {
+                if (emptyHint) {
+                    emptyHint.remove();
+                }
                 var tag = document.createElement('span');
                 tag.className = 'lc-country-tag';
                 tag.dataset.code = code;
@@ -18,6 +22,12 @@
             } else if (!selected && existing) {
                 existing.remove();
             }
+            if (!tags.querySelector('.lc-country-tag') && !tags.querySelector('.lc-country-tags-empty')) {
+                var hint = document.createElement('span');
+                hint.className = 'lc-country-tags-empty';
+                hint.textContent = 'No countries blocked yet — select below';
+                tags.appendChild(hint);
+            }
         }
 
         options.addEventListener('change', function (e) {
@@ -25,7 +35,8 @@
             if (!cb || cb.type !== 'checkbox') return;
             var label = cb.closest('.lc-country-option');
             label.classList.toggle('is-selected', cb.checked);
-            var name = label.querySelector('span').childNodes[0].textContent.trim();
+            var nameEl = label.querySelector('.lc-country-name');
+            var name = nameEl ? nameEl.textContent.trim() : cb.value;
             syncTag(cb.value, name, cb.checked);
         });
 
@@ -40,6 +51,12 @@
                 cb.closest('.lc-country-option').classList.remove('is-selected');
             }
             tag.remove();
+            if (!tags.querySelector('.lc-country-tag') && !tags.querySelector('.lc-country-tags-empty')) {
+                var hint = document.createElement('span');
+                hint.className = 'lc-country-tags-empty';
+                hint.textContent = 'No countries blocked yet — select below';
+                tags.appendChild(hint);
+            }
         });
 
         search.addEventListener('input', function () {
