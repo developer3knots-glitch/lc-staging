@@ -7,18 +7,19 @@ $message = '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? 'save_settings';
+    $action = $_POST['action'] ?? '';
 
-    if ($action === 'save_settings') {
+    if ($action === 'save_system') {
         lc_set_setting('auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
         lc_set_setting('poll_interval_ms', (string) max(800, (int) ($_POST['poll_interval_ms'] ?? 1500)));
-
+        $message = 'System settings saved successfully.';
+    } elseif ($action === 'save_countries') {
         $countryCodes = $_POST['blocked_countries'] ?? [];
         if (!is_array($countryCodes)) {
             $countryCodes = [];
         }
         lc_save_blocked_country_codes($countryCodes);
-        $message = 'Settings saved.';
+        $message = 'Country block list updated.';
     } elseif ($action === 'block_ip') {
         $ip = trim((string) ($_POST['ip_address'] ?? ''));
         $reason = trim((string) ($_POST['ip_reason'] ?? ''));
@@ -47,181 +48,192 @@ $blockedIps = lc_get_blocked_ips();
 $allCountries = lc_country_list();
 asort($allCountries);
 
+$pollMs = (int) lc_setting('poll_interval_ms', '1500');
+$autoAssign = lc_setting('auto_assign', '1') === '1';
+
 $pageTitle = 'Settings';
 $activeNav = 'settings';
+$extraScript = 'admin-settings.js';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<?php if ($message): ?><div class="lc-alert lc-alert-success"><i class="ti ti-circle-check"></i> <?= lc_sanitize($message) ?></div><?php endif; ?>
-<?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($error) ?></div><?php endif; ?>
+<div class="lc-settings-page">
+    <?php if ($message): ?><div class="lc-alert lc-alert-success lc-settings-alert"><i class="ti ti-circle-check"></i> <?= lc_sanitize($message) ?></div><?php endif; ?>
+    <?php if ($error): ?><div class="lc-alert lc-alert-error lc-settings-alert"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($error) ?></div><?php endif; ?>
 
-<div class="lc-alert lc-alert-info"><i class="ti ti-info-circle"></i> Per-brand widget settings are managed on the <a href="<?= LC_BASE_URL ?>/admin/brands.php"><strong>Brands</strong></a> page.</div>
-
-<div class="lc-card">
-    <div class="lc-card-head"><h3><i class="ti ti-settings"></i> System Settings</h3></div>
-    <div class="lc-card-body">
-        <form method="post" class="lc-form">
-            <input type="hidden" name="action" value="save_settings">
-            <label>Poll Interval (ms) — real-time speed</label>
-            <input type="number" name="poll_interval_ms" min="800" max="5000" value="<?= lc_sanitize(lc_setting('poll_interval_ms', '1500')) ?>">
-            <label style="text-transform:none;font-weight:600;color:var(--lc-ink)">
-                <input type="checkbox" name="auto_assign" <?= lc_setting('auto_assign', '1') === '1' ? 'checked' : '' ?>> Auto-assign waiting chats to online agents
-            </label>
-            <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-device-floppy"></i> Save Settings</button>
-        </form>
+    <div class="lc-hero lc-hero-pro lc-hero-settings">
+        <div class="lc-hero-glow lc-hero-glow-1"></div>
+        <div class="lc-hero-glow lc-hero-glow-2"></div>
+        <div class="lc-hero-main">
+            <div class="lc-hero-eyebrow"><i class="ti ti-adjustments"></i> Control Center</div>
+            <h1 class="lc-hero-title">Settings</h1>
+            <p class="lc-hero-sub">System performance, geo-blocking, and IP restrictions — secure your chat widget and fine-tune how your team operates.</p>
+            <div class="lc-hero-actions">
+                <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-hero-chip"><i class="ti ti-tags"></i> Brand widgets</a>
+                <a href="#lc-settings-security" class="lc-hero-chip"><i class="ti ti-shield"></i> Security</a>
+            </div>
+        </div>
+        <div class="lc-hero-metrics lc-hero-metrics-4">
+            <div class="lc-hero-metric">
+                <span class="lc-hero-metric-val"><?= $pollMs ?></span>
+                <span class="lc-hero-metric-label">Poll (ms)</span>
+            </div>
+            <div class="lc-hero-metric is-accent">
+                <span class="lc-hero-metric-val"><?= count($blockedCountries) ?></span>
+                <span class="lc-hero-metric-label">Countries</span>
+            </div>
+            <div class="lc-hero-metric">
+                <span class="lc-hero-metric-val"><?= count($blockedIps) ?></span>
+                <span class="lc-hero-metric-label">Blocked IPs</span>
+            </div>
+            <div class="lc-hero-metric">
+                <span class="lc-hero-metric-val"><?= $autoAssign ? 'On' : 'Off' ?></span>
+                <span class="lc-hero-metric-label">Auto-assign</span>
+            </div>
+        </div>
     </div>
-</div>
 
-<div class="lc-card">
-    <div class="lc-card-head"><h3><i class="ti ti-world-off"></i> Country Blocking</h3></div>
-    <div class="lc-card-body">
-        <p style="font-size:0.84rem;color:var(--lc-muted);margin:0 0 1rem">
-            Visitors from selected countries will not see the chat widget on your website. Existing chats are not affected.
-        </p>
-        <form method="post" class="lc-form" id="lc-country-block-form">
-            <input type="hidden" name="action" value="save_settings">
-            <input type="hidden" name="poll_interval_ms" value="<?= lc_sanitize(lc_setting('poll_interval_ms', '1500')) ?>">
-            <?php if (lc_setting('auto_assign', '1') === '1'): ?>
-                <input type="hidden" name="auto_assign" value="1">
-            <?php endif; ?>
+    <nav class="lc-settings-nav" aria-label="Settings sections">
+        <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
+        <a href="#lc-settings-geo" class="lc-settings-nav-link"><i class="ti ti-world-off"></i> Countries</a>
+        <a href="#lc-settings-security" class="lc-settings-nav-link"><i class="ti ti-ban"></i> IP Block</a>
+    </nav>
 
-            <label>Blocked countries</label>
-            <div class="lc-country-picker" id="lc-country-picker">
-                <div class="lc-country-tags" id="lc-country-tags">
-                    <?php foreach ($blockedCountries as $code): ?>
-                        <span class="lc-country-tag" data-code="<?= lc_sanitize($code) ?>">
-                            <?= lc_sanitize(lc_country_name($code)) ?> (<?= lc_sanitize($code) ?>)
-                            <button type="button" class="lc-country-tag-remove" aria-label="Remove">&times;</button>
-                        </span>
-                    <?php endforeach; ?>
+    <div class="lc-settings-layout">
+        <div class="lc-settings-main">
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-system">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-settings"></i> System Settings</h3>
+                    <span class="lc-card-sub">Real-time &amp; routing</span>
                 </div>
-                <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries…" autocomplete="off">
-                <div class="lc-country-options" id="lc-country-options">
-                    <?php foreach ($allCountries as $code => $name): ?>
-                        <label class="lc-country-option<?= in_array($code, $blockedCountries, true) ? ' is-selected' : '' ?>" data-name="<?= lc_sanitize(strtolower($name . ' ' . $code)) ?>">
-                            <input type="checkbox" name="blocked_countries[]" value="<?= lc_sanitize($code) ?>"<?= in_array($code, $blockedCountries, true) ? ' checked' : '' ?>>
-                            <span><?= lc_sanitize($name) ?> <small>(<?= lc_sanitize($code) ?>)</small></span>
-                        </label>
-                    <?php endforeach; ?>
+                <div class="lc-card-body">
+                    <form method="post" class="lc-form lc-settings-system-form">
+                        <input type="hidden" name="action" value="save_system">
+                        <div class="lc-settings-tiles">
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon blue"><i class="ti ti-refresh"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label for="lc-poll-interval">Poll interval (ms)</label>
+                                    <p class="lc-settings-tile-hint">How fast the inbox refreshes. Lower = faster, more server load.</p>
+                                    <input type="range" id="lc-poll-interval-range" min="800" max="5000" step="100" value="<?= $pollMs ?>">
+                                    <div class="lc-settings-range-val">
+                                        <input type="number" name="poll_interval_ms" id="lc-poll-interval" min="800" max="5000" value="<?= $pollMs ?>">
+                                        <span>ms</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon green"><i class="ti ti-users"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="auto_assign" <?= $autoAssign ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Auto-assign chats</strong>
+                                            <small>Waiting chats go to the next available online agent</small>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-geo">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-world-off"></i> Country Blocking</h3>
+                    <span class="lc-card-sub"><?= count($blockedCountries) ?> blocked</span>
+                </div>
+                <div class="lc-card-body">
+                    <p class="lc-settings-desc">Visitors from selected countries will <strong>not see the chat widget</strong> on your site. Existing chats are not affected.</p>
+                    <form method="post" class="lc-form" id="lc-country-block-form">
+                        <input type="hidden" name="action" value="save_countries">
+                        <div class="lc-country-picker lc-country-picker-pro" id="lc-country-picker">
+                            <div class="lc-country-tags" id="lc-country-tags">
+                                <?php foreach ($blockedCountries as $code): ?>
+                                    <span class="lc-country-tag" data-code="<?= lc_sanitize($code) ?>">
+                                        <?= lc_sanitize(lc_country_name($code)) ?> (<?= lc_sanitize($code) ?>)
+                                        <button type="button" class="lc-country-tag-remove" aria-label="Remove">&times;</button>
+                                    </span>
+                                <?php endforeach; ?>
+                            </div>
+                            <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries…" autocomplete="off">
+                            <div class="lc-country-options" id="lc-country-options">
+                                <?php foreach ($allCountries as $code => $name): ?>
+                                    <label class="lc-country-option<?= in_array($code, $blockedCountries, true) ? ' is-selected' : '' ?>" data-name="<?= lc_sanitize(strtolower($name . ' ' . $code)) ?>">
+                                        <input type="checkbox" name="blocked_countries[]" value="<?= lc_sanitize($code) ?>"<?= in_array($code, $blockedCountries, true) ? ' checked' : '' ?>>
+                                        <span><?= lc_sanitize($name) ?> <small>(<?= lc_sanitize($code) ?>)</small></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-shield-off"></i> Save country blocks</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+
+        <aside class="lc-settings-aside">
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-security">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-ban"></i> IP Blocking</h3>
+                    <span class="lc-card-sub"><?= count($blockedIps) ?> blocked</span>
+                </div>
+                <div class="lc-card-body">
+                    <p class="lc-settings-desc">Block a specific visitor IP — widget hidden for that network. You can also block from the live chat screen.</p>
+                    <form method="post" class="lc-form lc-ip-block-form-pro">
+                        <input type="hidden" name="action" value="block_ip">
+                        <label>IP address</label>
+                        <input type="text" name="ip_address" placeholder="e.g. 203.0.113.45" required>
+                        <label>Reason <small>(optional)</small></label>
+                        <input type="text" name="ip_reason" placeholder="Spam / abuse" maxlength="255">
+                        <button type="submit" class="lc-btn lc-btn-danger lc-btn-block"><i class="ti ti-ban"></i> Block this IP</button>
+                    </form>
+
+                    <div class="lc-blocked-ip-list">
+                        <div class="lc-blocked-ip-head"><i class="ti ti-list"></i> Blocked list</div>
+                        <?php if (empty($blockedIps)): ?>
+                            <div class="lc-blocked-ip-empty">
+                                <i class="ti ti-shield-check"></i>
+                                <p>No blocked IPs</p>
+                                <span>Your block list is empty — all visitors can see the widget.</span>
+                            </div>
+                        <?php else: foreach ($blockedIps as $row): ?>
+                            <div class="lc-blocked-ip-item">
+                                <div class="lc-blocked-ip-main">
+                                    <code><?= lc_sanitize($row['ip_address']) ?></code>
+                                    <span><?= lc_sanitize($row['reason'] ?: 'No reason') ?></span>
+                                    <small>
+                                        <?= lc_sanitize($row['blocked_by_name'] ?: 'System') ?>
+                                        · <?= lc_time_span($row['created_at']) ?>
+                                    </small>
+                                </div>
+                                <form method="post" onsubmit="return confirm('Unblock this IP?');">
+                                    <input type="hidden" name="action" value="unblock_ip">
+                                    <input type="hidden" name="ip_address" value="<?= lc_sanitize($row['ip_address']) ?>">
+                                    <button type="submit" class="lc-btn lc-btn-secondary lc-btn-sm" title="Unblock"><i class="ti ti-lock-open"></i></button>
+                                </form>
+                            </div>
+                        <?php endforeach; endif; ?>
+                    </div>
+                </div>
+            </section>
+
+            <div class="lc-card lc-card-pro">
+                <div class="lc-card-body">
+                    <div class="lc-settings-tip">
+                        <i class="ti ti-info-circle"></i>
+                        <div>
+                            <strong>Brand-specific settings</strong>
+                            <p>Widget color, welcome message, and offline text are managed per brand on the <a href="<?= LC_BASE_URL ?>/admin/brands.php">Brands</a> page.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-
-            <button type="submit" class="lc-btn lc-btn-primary" style="margin-top:1rem"><i class="ti ti-shield-off"></i> Save Country Blocks</button>
-        </form>
+        </aside>
     </div>
 </div>
-
-<div class="lc-card">
-    <div class="lc-card-head"><h3><i class="ti ti-ban"></i> IP Blocking</h3></div>
-    <div class="lc-card-body">
-        <p style="font-size:0.84rem;color:var(--lc-muted);margin:0 0 1rem">
-            Block a specific visitor IP so the chat widget is hidden for that network. You can also block from the live chat screen.
-        </p>
-        <form method="post" class="lc-form lc-ip-block-form">
-            <input type="hidden" name="action" value="block_ip">
-            <div class="lc-ip-block-row">
-                <div>
-                    <label>IP address</label>
-                    <input type="text" name="ip_address" placeholder="e.g. 203.0.113.45" required>
-                </div>
-                <div>
-                    <label>Reason (optional)</label>
-                    <input type="text" name="ip_reason" placeholder="Spam / abuse" maxlength="255">
-                </div>
-                <div class="lc-ip-block-action">
-                    <button type="submit" class="lc-btn lc-btn-danger"><i class="ti ti-ban"></i> Block IP</button>
-                </div>
-            </div>
-        </form>
-
-        <?php if ($blockedIps): ?>
-            <div class="lc-table-wrap" style="margin-top:1.25rem">
-                <table class="lc-table">
-                    <thead>
-                        <tr>
-                            <th>IP Address</th>
-                            <th>Reason</th>
-                            <th>Blocked by</th>
-                            <th>Date</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($blockedIps as $row): ?>
-                            <tr>
-                                <td><code><?= lc_sanitize($row['ip_address']) ?></code></td>
-                                <td><?= lc_sanitize($row['reason'] ?: '—') ?></td>
-                                <td><?= lc_sanitize($row['blocked_by_name'] ?: '—') ?></td>
-                                <td><?= lc_time_span($row['created_at']) ?></td>
-                                <td>
-                                    <form method="post" style="display:inline" onsubmit="return confirm('Unblock this IP?');">
-                                        <input type="hidden" name="action" value="unblock_ip">
-                                        <input type="hidden" name="ip_address" value="<?= lc_sanitize($row['ip_address']) ?>">
-                                        <button type="submit" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-lock-open"></i> Unblock</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php else: ?>
-            <p style="font-size:0.84rem;color:var(--lc-muted);margin:1rem 0 0">No blocked IPs yet.</p>
-        <?php endif; ?>
-    </div>
-</div>
-
-<script>
-(function () {
-    var picker = document.getElementById('lc-country-picker');
-    if (!picker) return;
-
-    var search = document.getElementById('lc-country-search');
-    var tags = document.getElementById('lc-country-tags');
-    var options = document.getElementById('lc-country-options');
-
-    function syncTag(code, name, selected) {
-        var existing = tags.querySelector('[data-code="' + code + '"]');
-        if (selected && !existing) {
-            var tag = document.createElement('span');
-            tag.className = 'lc-country-tag';
-            tag.dataset.code = code;
-            tag.innerHTML = name + ' (' + code + ') <button type="button" class="lc-country-tag-remove" aria-label="Remove">&times;</button>';
-            tags.appendChild(tag);
-        } else if (!selected && existing) {
-            existing.remove();
-        }
-    }
-
-    options.addEventListener('change', function (e) {
-        var cb = e.target;
-        if (!cb || cb.type !== 'checkbox') return;
-        var label = cb.closest('.lc-country-option');
-        label.classList.toggle('is-selected', cb.checked);
-        var name = label.querySelector('span').childNodes[0].textContent.trim();
-        syncTag(cb.value, name, cb.checked);
-    });
-
-    tags.addEventListener('click', function (e) {
-        var btn = e.target.closest('.lc-country-tag-remove');
-        if (!btn) return;
-        var tag = btn.closest('.lc-country-tag');
-        var code = tag.dataset.code;
-        var cb = options.querySelector('input[value="' + code + '"]');
-        if (cb) {
-            cb.checked = false;
-            cb.closest('.lc-country-option').classList.remove('is-selected');
-        }
-        tag.remove();
-    });
-
-    search.addEventListener('input', function () {
-        var q = search.value.trim().toLowerCase();
-        options.querySelectorAll('.lc-country-option').forEach(function (el) {
-            el.style.display = !q || el.dataset.name.indexOf(q) !== -1 ? '' : 'none';
-        });
-    });
-})();
-</script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>
