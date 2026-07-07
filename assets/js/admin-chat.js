@@ -195,17 +195,48 @@
 
     function renderJourneyItem(view, isCurrent) {
         var duration = view.duration_label || formatDuration(view.duration_seconds);
-        var html = '<div class="lc-journey-item' + (isCurrent ? ' is-current' : '') + '" data-id="' + view.id + '">';
-        html += '<div class="lc-journey-dot"></div>';
-        html += '<div class="lc-journey-body">';
-        html += '<div class="lc-journey-title" title="' + esc(view.page_url) + '">' + esc(view.page_title || view.page_path || view.page_url) + '</div>';
-        html += '<div class="lc-journey-meta">';
-        html += '<span>' + esc(view.page_path || view.page_url) + '</span>';
-        if (duration) html += '<span> · ' + esc(duration) + '</span>';
-        html += '<span> · ' + timeHtml(view.visited_at) + '</span>';
-        html += '</div>';
-        html += '</div></div>';
+        var label = view.page_title || view.page_path || view.page_url || '/';
+        var path = view.page_path || view.page_url || '/';
+        var html = '<div class="lc-journey-step' + (isCurrent ? ' is-current' : '') + '" data-id="' + view.id + '" title="' + esc(view.page_url) + '">';
+        html += '<span class="lc-journey-step-idx" aria-hidden="true"><i class="ti ti-' + (isCurrent ? 'map-pin-filled' : 'file') + '"></i></span>';
+        html += '<span class="lc-journey-step-body">';
+        html += '<span class="lc-journey-step-title">' + esc(label) + '</span>';
+        html += '<span class="lc-journey-step-meta">' + esc(path);
+        if (duration) {
+            html += ' · ' + esc(duration);
+        }
+        html += ' · ' + timeHtml(view.visited_at);
+        html += '</span></span></div>';
         return html;
+    }
+
+    function updateJourneySummary() {
+        var summaryEl = document.getElementById('lc-journey-summary');
+        if (!summaryEl || !journeyListEl) {
+            return;
+        }
+        var items = journeyListEl.querySelectorAll('.lc-journey-step');
+        if (!items.length) {
+            summaryEl.textContent = 'No pages recorded yet';
+            return;
+        }
+        var current = items[items.length - 1];
+        var titleEl = current.querySelector('.lc-journey-step-title');
+        var metaEl = current.querySelector('.lc-journey-step-meta');
+        var title = titleEl ? titleEl.textContent : '';
+        var timePart = '';
+        if (metaEl && metaEl.textContent.indexOf('·') !== -1) {
+            var parts = metaEl.textContent.split('·');
+            timePart = parts[parts.length - 1].trim();
+        }
+        summaryEl.textContent = title + (timePart ? ' · ' + timePart : '');
+    }
+
+    function scrollJourneyToEnd() {
+        if (!journeyListEl) {
+            return;
+        }
+        journeyListEl.scrollLeft = journeyListEl.scrollWidth;
     }
 
     function loadPageJourney(reset) {
@@ -224,6 +255,7 @@
                     journeyEl.style.display = 'block';
                     journeyCountEl.textContent = '0 pages';
                     journeyListEl.innerHTML = '<div class="lc-journey-empty">No page visits recorded yet</div>';
+                    updateJourneySummary();
                     return;
                 }
                 if (!views.length) return;
@@ -232,7 +264,7 @@
                 if (reset) {
                     journeyListEl.innerHTML = '';
                 } else {
-                    journeyListEl.querySelectorAll('.lc-journey-item.is-current').forEach(function (el) {
+                    journeyListEl.querySelectorAll('.lc-journey-step.is-current').forEach(function (el) {
                         el.classList.remove('is-current');
                     });
                 }
@@ -242,14 +274,15 @@
                     if (view.id > lastJourneyId) lastJourneyId = view.id;
                 });
 
-                var items = journeyListEl.querySelectorAll('.lc-journey-item');
+                var items = journeyListEl.querySelectorAll('.lc-journey-step');
                 if (items.length) {
                     items[items.length - 1].classList.add('is-current');
                 }
 
-                var total = journeyListEl.querySelectorAll('.lc-journey-item').length;
+                var total = journeyListEl.querySelectorAll('.lc-journey-step').length;
                 journeyCountEl.textContent = total + (total === 1 ? ' page' : ' pages');
-                journeyListEl.scrollTop = journeyListEl.scrollHeight;
+                updateJourneySummary();
+                scrollJourneyToEnd();
                 if (window.LCTime) window.LCTime.scan(journeyListEl);
             });
     }
@@ -455,6 +488,13 @@
         transferAgentsLoaded = false;
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
+        var journeyTrackWrap = document.getElementById('lc-journey-track-wrap');
+        var journeyToggle = document.getElementById('lc-journey-toggle');
+        if (journeyTrackWrap) journeyTrackWrap.hidden = true;
+        if (journeyToggle) {
+            journeyToggle.setAttribute('aria-expanded', 'false');
+            journeyToggle.classList.remove('is-open');
+        }
         loadCanned();
         loadPageJourney(true);
         pollMessages();
@@ -831,6 +871,20 @@
         inboxSearchEl.addEventListener('input', function () {
             inboxSearch = inboxSearchEl.value.trim();
             paintConversationList(filterConversations(lastConversations));
+        });
+    }
+
+    var journeyToggle = document.getElementById('lc-journey-toggle');
+    var journeyTrackWrap = document.getElementById('lc-journey-track-wrap');
+    if (journeyToggle && journeyTrackWrap) {
+        journeyToggle.addEventListener('click', function () {
+            var willOpen = journeyTrackWrap.hidden;
+            journeyTrackWrap.hidden = !willOpen;
+            journeyToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            journeyToggle.classList.toggle('is-open', willOpen);
+            if (willOpen) {
+                scrollJourneyToEnd();
+            }
         });
     }
 

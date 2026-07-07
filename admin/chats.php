@@ -13,7 +13,7 @@ require __DIR__ . '/includes/header.php';
         <aside class="lc-chat-list lc-chat-inbox-pro">
             <div class="lc-chat-inbox-head">
                 <div class="lc-chat-inbox-title">
-                    <span class="lc-chat-inbox-icon"><i class="ti ti-inbox"></i></span>
+                    <div class="lc-brand-icon lc-chat-inbox-icon" aria-hidden="true"><i class="ti ti-messages"></i></div>
                     <div>
                         <strong>Inbox</strong>
                         <span>Live conversations</span>
@@ -86,11 +86,18 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">
-                    <div class="lc-page-journey-head">
-                        <span><i class="ti ti-route"></i> Page journey</span>
-                        <span class="lc-page-journey-count" id="lc-journey-count"></span>
+                    <button type="button" class="lc-journey-bar" id="lc-journey-toggle" aria-expanded="false" aria-controls="lc-journey-track-wrap">
+                        <span class="lc-journey-bar-icon" aria-hidden="true"><i class="ti ti-route"></i></span>
+                        <span class="lc-journey-bar-text">
+                            <strong>Page journey</strong>
+                            <span class="lc-journey-bar-summary" id="lc-journey-summary">Visitor path on your site</span>
+                        </span>
+                        <span class="lc-journey-bar-count" id="lc-journey-count">0 pages</span>
+                        <i class="ti ti-chevron-down lc-journey-bar-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="lc-journey-track-wrap" id="lc-journey-track-wrap" hidden>
+                        <div class="lc-journey-track" id="lc-page-journey-list"></div>
                     </div>
-                    <div class="lc-page-journey-list" id="lc-page-journey-list"></div>
                 </div>
 
                 <div class="lc-chat-messages lc-chat-messages-pro" id="lc-messages"></div>
