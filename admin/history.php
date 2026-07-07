@@ -5,7 +5,6 @@ lc_ensure_brands_schema();
 
 $db = lc_db();
 $agentBrandId = lc_agent_brand_id($agent);
-[$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
 $search = trim($_GET['q'] ?? '');
 $brandFilter = (int) ($_GET['brand'] ?? 0);
@@ -15,11 +14,17 @@ if (!in_array($period, ['all', 'today', 'week', 'month'], true)) {
     $period = 'all';
 }
 
-$where = ["c.status = 'closed'"];
-$params = $brandParams;
+$scopeBrandId = $agentBrandId;
+if ($scopeBrandId === null && $brandFilter > 0) {
+    $scopeBrandId = $brandFilter;
+}
 
-if ($brandSql !== '') {
-    $where[] = trim(preg_replace('/^AND\s+/i', '', $brandSql));
+$where = ["c.status = 'closed'"];
+$params = [];
+
+if ($scopeBrandId !== null) {
+    $where[] = 'c.brand_id = ?';
+    $params[] = $scopeBrandId;
 }
 
 if ($search !== '') {
@@ -28,10 +33,6 @@ if ($search !== '') {
     $params = array_merge($params, array_fill(0, 6, $like));
 }
 
-if ($brandFilter > 0 && $agentBrandId === null) {
-    $where[] = 'c.brand_id = ?';
-    $params[] = $brandFilter;
-}
 
 if ($agentFilter > 0) {
     $where[] = 'c.agent_id = ?';
@@ -56,52 +57,73 @@ $baseFrom = "
     WHERE {$whereSql}
 ";
 
-$countStmt = $db->prepare('SELECT COUNT(*) ' . $baseFrom);
-$countStmt->execute($params);
-$totalMatching = (int) $countStmt->fetchColumn();
+$statsWhere = ["c.status = 'closed'"];
+$statsParams = [];
+if ($agentBrandId !== null) {
+    $statsWhere[] = 'c.brand_id = ?';
+    $statsParams[] = $agentBrandId;
+}
+$statsWhereSql = implode(' AND ', $statsWhere);
 
-$statsParams = $brandParams;
-$statsWhere = "c.status = 'closed' {$brandSql}";
-$statsStmt = $db->prepare("
-    SELECT
-        COUNT(*) AS total_closed,
-        SUM(CASE WHEN DATE(c.closed_at) = CURDATE() THEN 1 ELSE 0 END) AS closed_today,
-        SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS closed_week,
-        COALESCE(AVG(msg_counts.cnt), 0) AS avg_messages
-    FROM conversations c
-    LEFT JOIN (
-        SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
-    ) msg_counts ON msg_counts.conversation_id = c.id
-    WHERE {$statsWhere}
-");
-$statsStmt->execute($statsParams);
-$stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
+$historyError = null;
+try {
+    $countStmt = $db->prepare('SELECT COUNT(*) ' . $baseFrom);
+    $countStmt->execute($params);
+    $totalMatching = (int) $countStmt->fetchColumn();
 
-$sql = "
-    SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at,
-           v.name AS visitor_name, v.email AS visitor_email,
-           v.ip_address AS visitor_ip, v.country AS visitor_country,
-           b.name AS brand_name, b.widget_color AS brand_color,
-           a.name AS agent_name,
-           (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) AS msg_count
-    {$baseFrom}
-    ORDER BY c.closed_at DESC
-    LIMIT 100
-";
-$stmt = $db->prepare($sql);
-$stmt->execute($params);
-$rows = $stmt->fetchAll();
+    $statsStmt = $db->prepare("
+        SELECT
+            COUNT(*) AS total_closed,
+            SUM(CASE WHEN DATE(c.closed_at) = CURDATE() THEN 1 ELSE 0 END) AS closed_today,
+            SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS closed_week,
+            COALESCE(AVG(msg_counts.cnt), 0) AS avg_messages
+        FROM conversations c
+        LEFT JOIN (
+            SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
+        ) msg_counts ON msg_counts.conversation_id = c.id
+        WHERE {$statsWhereSql}
+    ");
+    $statsStmt->execute($statsParams);
+    $stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
+
+    $sql = "
+        SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at,
+               v.name AS visitor_name, v.email AS visitor_email,
+               v.ip_address AS visitor_ip, v.country AS visitor_country,
+               b.name AS brand_name, b.widget_color AS brand_color,
+               a.name AS agent_name,
+               (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) AS msg_count
+        {$baseFrom}
+        ORDER BY c.closed_at DESC
+        LIMIT 100
+    ";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    $agentsSql = "
+        SELECT DISTINCT a.id, a.name
+        FROM agents a
+        INNER JOIN conversations c ON c.agent_id = a.id AND c.status = 'closed'
+    ";
+    $agentsParams = [];
+    if ($agentBrandId !== null) {
+        $agentsSql .= ' WHERE c.brand_id = ?';
+        $agentsParams[] = $agentBrandId;
+    }
+    $agentsSql .= ' ORDER BY a.name ASC';
+    $agentsStmt = $db->prepare($agentsSql);
+    $agentsStmt->execute($agentsParams);
+    $agents = $agentsStmt->fetchAll();
+} catch (Throwable $e) {
+    $totalMatching = 0;
+    $stats = ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
+    $rows = [];
+    $agents = [];
+    $historyError = 'Unable to load history. Please refresh or contact support.';
+}
 
 $brands = $agentBrandId === null ? lc_get_all_brands(true) : [];
-$agentsStmt = $db->prepare("
-    SELECT DISTINCT a.id, a.name
-    FROM agents a
-    INNER JOIN conversations c ON c.agent_id = a.id AND c.status = 'closed'
-    WHERE 1=1 {$brandSql}
-    ORDER BY a.name ASC
-");
-$agentsStmt->execute($brandParams);
-$agents = $agentsStmt->fetchAll();
 
 $formatDuration = static function (?string $started, ?string $closed): string {
     if (!$started || !$closed) {
@@ -130,6 +152,9 @@ require __DIR__ . '/includes/header.php';
 ?>
 
 <div class="lc-history">
+    <?php if (!empty($historyError)): ?>
+        <div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($historyError) ?></div>
+    <?php endif; ?>
     <div class="lc-hero lc-hero-pro lc-hero-history">
         <div class="lc-hero-glow lc-hero-glow-1"></div>
         <div class="lc-hero-glow lc-hero-glow-2"></div>
