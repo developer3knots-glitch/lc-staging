@@ -2387,3 +2387,240 @@ a.lc-conv-item:hover {
     .lc-brand-preview-grid { grid-template-columns: 1fr; }
     .lc-brand-edit-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── Agents ─── */
+.lc-hero-agents {
+    background:
+        radial-gradient(circle at 12% 80%, rgba(99, 102, 241, 0.28), transparent 42%),
+        radial-gradient(circle at 88% 15%, color-mix(in srgb, var(--lc-primary) 25%, transparent), transparent 40%),
+        linear-gradient(135deg, #0b1220 0%, #151a2e 38%, #1e1b4b 68%, #312e81 100%);
+}
+.lc-agents-alert { margin-bottom: 1rem; }
+.lc-agents-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1rem;
+    align-items: start;
+}
+.lc-agents-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.lc-agents-search-wrap {
+    position: relative;
+    flex: 1;
+    max-width: 420px;
+}
+.lc-agents-search-wrap i {
+    position: absolute;
+    left: 0.8rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--lc-muted);
+    pointer-events: none;
+}
+.lc-agents-search-wrap input {
+    width: 100%;
+    padding: 0.58rem 0.85rem 0.58rem 2.35rem;
+    border: 1px solid var(--lc-border);
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 0.84rem;
+    background: #fff;
+}
+.lc-agents-search-wrap input:focus {
+    outline: none;
+    border-color: color-mix(in srgb, #6366f1 45%, var(--lc-border));
+    box-shadow: 0 0 0 3px color-mix(in srgb, #6366f1 12%, transparent);
+}
+.lc-agents-toolbar-count {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--lc-muted);
+}
+.lc-agents-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+.lc-agent-card {
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 16px;
+    padding: 1rem 1.05rem;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.lc-agent-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+    border-color: color-mix(in srgb, #6366f1 25%, var(--lc-border));
+}
+.lc-agent-card.is-disabled { opacity: 0.72; }
+.lc-agent-card.is-self {
+    border-color: color-mix(in srgb, var(--lc-primary) 35%, var(--lc-border));
+    background: linear-gradient(180deg, #f0fdf4 0%, #fff 40%);
+}
+.lc-agent-card-top {
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+    margin-bottom: 0.85rem;
+}
+.lc-agent-card-avatar {
+    position: relative;
+    flex-shrink: 0;
+}
+.lc-agent-card-status {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 12px !important;
+    height: 12px !important;
+    border: 2px solid #fff;
+    border-radius: 50%;
+}
+.lc-agent-card-info { min-width: 0; flex: 1; }
+.lc-agent-card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.15rem;
+}
+.lc-agent-card-name-row strong {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+.lc-agent-you-badge {
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+}
+.lc-agent-card-email {
+    font-size: 0.78rem;
+    color: var(--lc-muted);
+    margin-bottom: 0.45rem;
+    word-break: break-all;
+}
+.lc-agent-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.lc-agent-role-tag,
+.lc-agent-brand-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+}
+.lc-agent-role-tag.is-admin {
+    background: #ede9fe;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+}
+.lc-agent-role-tag.is-agent {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #dbeafe;
+}
+.lc-agent-brand-tag {
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid var(--lc-border);
+}
+.lc-agent-card-meta {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    padding: 0.65rem 0;
+    border-top: 1px solid var(--lc-border);
+    border-bottom: 1px solid var(--lc-border);
+    margin-bottom: 0.75rem;
+}
+.lc-agent-meta-label {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--lc-muted);
+    margin-bottom: 0.15rem;
+}
+.lc-agent-meta-val {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--lc-ink);
+}
+.lc-agent-card-actions { margin-top: 0.15rem; }
+.lc-agents-compose { position: sticky; top: 5.5rem; }
+.lc-avatar-picker-pro {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.1rem;
+    border-radius: 14px;
+}
+.lc-avatar-picker-pro .lc-avatar-picker-body { width: 100%; }
+.lc-avatar-picker-pro .lc-avatar-presets { justify-content: center; }
+.lc-avatar-picker-pro .lc-avatar-upload { justify-content: center; }
+.lc-agent-brand-hint {
+    margin: 0.35rem 0 0.75rem;
+    font-size: 0.74rem;
+    color: var(--lc-muted);
+    line-height: 1.45;
+}
+.lc-agents-tip {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+.lc-agents-tip > i {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #ede9fe;
+    color: #6d28d9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.lc-agents-tip strong {
+    display: block;
+    font-size: 0.84rem;
+    margin-bottom: 0.2rem;
+}
+.lc-agents-tip p {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--lc-muted);
+    line-height: 1.55;
+}
+@media (max-width: 1100px) {
+    .lc-agents-grid { grid-template-columns: 1fr; }
+    .lc-hero-metrics-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) {
+    .lc-agents-layout { grid-template-columns: 1fr; }
+    .lc-agents-compose { position: static; }
+    .lc-agent-card-meta { grid-template-columns: 1fr; gap: 0.35rem; }
+}
