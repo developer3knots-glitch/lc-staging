@@ -69,9 +69,32 @@ if ($agent['role'] === 'admin') {
                 <p class="lc-topbar-sub">Support operations console</p>
             </div>
             <div class="lc-topbar-actions">
-                <div class="lc-status-control">
-                    <span class="lc-status-dot <?= lc_sanitize($agent['status']) ?>" id="lc-status-dot"></span>
-                    <select id="lc-agent-status" class="lc-status-select" data-agent-id="<?= (int)$agent['id'] ?>">
+                <div class="lc-status-control" id="lc-status-control">
+                    <div class="lc-status-dropdown">
+                        <button type="button" class="lc-status-trigger" id="lc-status-trigger" aria-expanded="false" aria-haspopup="listbox" aria-controls="lc-status-menu">
+                            <span class="lc-status-dot <?= lc_sanitize($agent['status']) ?>" id="lc-status-dot"></span>
+                            <span class="lc-status-trigger-label" id="lc-status-label"><?= ucfirst(lc_sanitize($agent['status'])) ?></span>
+                            <i class="ti ti-chevron-down lc-status-trigger-chevron" aria-hidden="true"></i>
+                        </button>
+                        <div class="lc-status-menu" id="lc-status-menu" hidden role="listbox" aria-label="Agent status">
+                            <button type="button" class="lc-status-option<?= $agent['status'] === 'online' ? ' is-active' : '' ?>" data-value="online" role="option" aria-selected="<?= $agent['status'] === 'online' ? 'true' : 'false' ?>">
+                                <span class="lc-status-dot online"></span>
+                                <span>Online</span>
+                                <i class="ti ti-check lc-status-option-check"></i>
+                            </button>
+                            <button type="button" class="lc-status-option<?= $agent['status'] === 'away' ? ' is-active' : '' ?>" data-value="away" role="option" aria-selected="<?= $agent['status'] === 'away' ? 'true' : 'false' ?>">
+                                <span class="lc-status-dot away"></span>
+                                <span>Away</span>
+                                <i class="ti ti-check lc-status-option-check"></i>
+                            </button>
+                            <button type="button" class="lc-status-option<?= $agent['status'] === 'offline' ? ' is-active' : '' ?>" data-value="offline" role="option" aria-selected="<?= $agent['status'] === 'offline' ? 'true' : 'false' ?>">
+                                <span class="lc-status-dot offline"></span>
+                                <span>Offline</span>
+                                <i class="ti ti-check lc-status-option-check"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <select id="lc-agent-status" class="lc-status-select-native" data-agent-id="<?= (int)$agent['id'] ?>" hidden aria-hidden="true" tabindex="-1">
                         <option value="online" <?= $agent['status'] === 'online' ? 'selected' : '' ?>>Online</option>
                         <option value="away" <?= $agent['status'] === 'away' ? 'selected' : '' ?>>Away</option>
                         <option value="offline" <?= $agent['status'] === 'offline' ? 'selected' : '' ?>>Offline</option>
