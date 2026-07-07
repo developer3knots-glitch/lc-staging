@@ -40,6 +40,9 @@
     var transferAgentsLoaded = false;
     var chatTransferredAway = false;
     var currentVisitorIp = '';
+    var currentIpBlocked = false;
+    var currentConversationMeta = {};
+    var ipModalOkHandler = null;
     var lastConversations = [];
     var inboxSearch = '';
 
@@ -461,46 +464,191 @@
         });
     }
 
-    function renderVisitorDetails(c) {
-        if (!visitorDetailsEl) return;
-        currentVisitorIp = c.visitor_ip || '';
-        var html = '';
-        if (c.brand_name) {
-            html += '<span class="is-brand"><i class="ti ti-tag"></i> ' + esc(c.brand_name) + '</span>';
+    function blockIpButtonHtml() {
+        if (currentIpBlocked) {
+            return '<button type="button" class="lc-block-ip-btn is-blocked" id="lc-block-ip-btn" title="Remove IP from block list"><i class="ti ti-lock-open"></i> Unblock IP</button>';
         }
-        if (c.visitor_ip) {
-            html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip);
-            html += ' <button type="button" class="lc-block-ip-btn" id="lc-block-ip-btn" title="Block this IP from chat widget"><i class="ti ti-ban"></i> Block IP</button>';
-            html += '</span>';
-        }
-        if (c.visitor_country) {
-            html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
-        }
-        visitorDetailsEl.innerHTML = html;
+        return '<button type="button" class="lc-block-ip-btn" id="lc-block-ip-btn" title="Block this IP from chat widget"><i class="ti ti-ban"></i> Block IP</button>';
+    }
 
+    function bindBlockIpButton() {
         var blockBtn = document.getElementById('lc-block-ip-btn');
         if (blockBtn) {
-            blockBtn.addEventListener('click', blockVisitorIp);
+            blockBtn.addEventListener('click', onBlockIpClick);
         }
     }
 
-    function blockVisitorIp() {
-        if (!currentVisitorIp || !selectedId) return;
-        if (!confirm('Block ' + currentVisitorIp + '? The chat widget will be hidden for this IP on all sites.')) return;
-        fetch(base + '/api/agent-block-ip.php', {
+    function showIpModal(opts) {
+        var modal = document.getElementById('lc-ip-modal');
+        var titleEl = document.getElementById('lc-ip-modal-title');
+        var msgEl = document.getElementById('lc-ip-modal-msg');
+        var okBtn = document.getElementById('lc-ip-modal-ok');
+        var iconEl = document.getElementById('lc-ip-modal-icon');
+        if (!modal || !titleEl || !msgEl || !okBtn) {
+            return;
+        }
+        titleEl.textContent = opts.title || 'Confirm';
+        msgEl.textContent = opts.message || '';
+        okBtn.textContent = opts.okLabel || 'OK';
+        okBtn.className = 'lc-btn lc-btn-sm ' + (opts.mode === 'unblock' ? 'lc-btn-primary' : 'lc-btn-danger');
+        if (iconEl) {
+            iconEl.className = 'lc-ip-modal-icon' + (opts.mode === 'unblock' ? ' is-unblock' : '');
+            iconEl.innerHTML = opts.mode === 'unblock'
+                ? '<i class="ti ti-lock-open"></i>'
+                : '<i class="ti ti-ban"></i>';
+        }
+        ipModalOkHandler = opts.onOk || null;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        okBtn.focus();
+    }
+
+    function hideIpModal() {
+        var modal = document.getElementById('lc-ip-modal');
+        if (!modal) {
+            return;
+        }
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        ipModalOkHandler = null;
+    }
+
+    function onBlockIpClick() {
+        if (!currentVisitorIp || !selectedId) {
+            return;
+        }
+        if (currentIpBlocked) {
+            showIpModal({
+                title: 'Unblock IP address',
+                message: 'Are you sure you want to unblock ' + currentVisitorIp + '? This visitor will be able to see the chat widget again on all your sites.',
+                okLabel: 'OK, Unblock',
+                mode: 'unblock',
+                onOk: submitUnblockIp
+            });
+            return;
+        }
+        showIpModal({
+            title: 'Block IP address',
+            message: 'Are you sure you want to block ' + currentVisitorIp + '? The chat widget will be hidden for this IP on all your sites.',
+            okLabel: 'OK, Block',
+            mode: 'block',
+            onOk: submitBlockIp
+        });
+    }
+
+    function submitBlockIp() {
+        var okBtn = document.getElementById('lc-ip-modal-ok');
+        if (okBtn) {
+            okBtn.disabled = true;
+        }
+        return fetch(base + '/api/agent-block-ip.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId, reason: 'Blocked from live chat #' + selectedId })
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.success) {
-                alert('IP ' + currentVisitorIp + ' has been blocked.');
-                return;
-            }
-            alert(data.error || 'Unable to block IP');
-        });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (okBtn) {
+                    okBtn.disabled = false;
+                }
+                hideIpModal();
+                if (!data.success) {
+                    showIpModal({
+                        title: 'Unable to block',
+                        message: data.error || 'Unable to block this IP. Please try again.',
+                        okLabel: 'OK',
+                        mode: 'block',
+                        onOk: hideIpModal
+                    });
+                    return;
+                }
+                currentIpBlocked = true;
+                renderVisitorDetails(currentConversationMeta, true);
+            })
+            .catch(function () {
+                if (okBtn) {
+                    okBtn.disabled = false;
+                }
+                hideIpModal();
+                showIpModal({
+                    title: 'Unable to block',
+                    message: 'Something went wrong. Please check your connection and try again.',
+                    okLabel: 'OK',
+                    mode: 'block',
+                    onOk: hideIpModal
+                });
+            });
+    }
+
+    function submitUnblockIp() {
+        var okBtn = document.getElementById('lc-ip-modal-ok');
+        if (okBtn) {
+            okBtn.disabled = true;
+        }
+        return fetch(base + '/api/agent-unblock-ip.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (okBtn) {
+                    okBtn.disabled = false;
+                }
+                hideIpModal();
+                if (!data.success) {
+                    showIpModal({
+                        title: 'Unable to unblock',
+                        message: data.error || 'Unable to unblock this IP. Please try again.',
+                        okLabel: 'OK',
+                        mode: 'unblock',
+                        onOk: hideIpModal
+                    });
+                    return;
+                }
+                currentIpBlocked = false;
+                renderVisitorDetails(currentConversationMeta, false);
+            })
+            .catch(function () {
+                if (okBtn) {
+                    okBtn.disabled = false;
+                }
+                hideIpModal();
+                showIpModal({
+                    title: 'Unable to unblock',
+                    message: 'Something went wrong. Please check your connection and try again.',
+                    okLabel: 'OK',
+                    mode: 'unblock',
+                    onOk: hideIpModal
+                });
+            });
+    }
+
+    function renderVisitorDetails(c, ipBlocked) {
+        if (!visitorDetailsEl) {
+            return;
+        }
+        if (typeof ipBlocked === 'boolean') {
+            currentIpBlocked = ipBlocked;
+        }
+        if (c.visitor_ip) {
+            currentVisitorIp = c.visitor_ip;
+        }
+        var html = '';
+        if (c.brand_name) {
+            html += '<span class="is-brand"><i class="ti ti-tag"></i> ' + esc(c.brand_name) + '</span>';
+        }
+        if (c.visitor_ip || currentVisitorIp) {
+            html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip || currentVisitorIp) + '</span>';
+            html += blockIpButtonHtml();
+        }
+        if (c.visitor_country) {
+            html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
+        }
+        visitorDetailsEl.innerHTML = html;
+        bindBlockIpButton();
     }
 
     function pollMessages() {
@@ -547,7 +695,12 @@
                 document.getElementById('lc-send-reply').disabled = false;
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
-                renderVisitorDetails(c);
+                currentConversationMeta = {
+                    brand_name: c.brand_name,
+                    visitor_ip: c.visitor_ip,
+                    visitor_country: c.visitor_country
+                };
+                renderVisitorDetails(c, !!c.ip_blocked);
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
                 visitorMetaEl.textContent = meta;
@@ -680,6 +833,31 @@
             paintConversationList(filterConversations(lastConversations));
         });
     }
+
+    var ipModalCancel = document.getElementById('lc-ip-modal-cancel');
+    var ipModalOk = document.getElementById('lc-ip-modal-ok');
+    var ipModalBackdrop = document.getElementById('lc-ip-modal-backdrop');
+    if (ipModalCancel) {
+        ipModalCancel.addEventListener('click', hideIpModal);
+    }
+    if (ipModalBackdrop) {
+        ipModalBackdrop.addEventListener('click', hideIpModal);
+    }
+    if (ipModalOk) {
+        ipModalOk.addEventListener('click', function () {
+            if (typeof ipModalOkHandler === 'function') {
+                ipModalOkHandler();
+            } else {
+                hideIpModal();
+            }
+        });
+    }
+    document.addEventListener('keydown', function (e) {
+        var modal = document.getElementById('lc-ip-modal');
+        if (e.key === 'Escape' && modal && !modal.hidden) {
+            hideIpModal();
+        }
+    });
 
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);

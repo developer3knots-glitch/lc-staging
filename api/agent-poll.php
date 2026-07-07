@@ -40,7 +40,10 @@ try {
 
     lc_json([
         'success' => true,
-        'conversation' => lc_format_api_conversation($conv),
+        'conversation' => array_merge(
+            lc_format_api_conversation($conv) ?? [],
+            ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
+        ),
         'messages' => lc_format_api_messages($messages),
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],

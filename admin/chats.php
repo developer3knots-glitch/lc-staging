@@ -107,4 +107,17 @@ require __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<div class="lc-ip-modal" id="lc-ip-modal" hidden aria-hidden="true">
+    <div class="lc-ip-modal-backdrop" id="lc-ip-modal-backdrop"></div>
+    <div class="lc-ip-modal-card" role="dialog" aria-modal="true" aria-labelledby="lc-ip-modal-title">
+        <div class="lc-ip-modal-icon" id="lc-ip-modal-icon"><i class="ti ti-ban"></i></div>
+        <h4 id="lc-ip-modal-title">Block IP</h4>
+        <p id="lc-ip-modal-msg"></p>
+        <div class="lc-ip-modal-actions">
+            <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-ip-modal-cancel">Cancel</button>
+            <button type="button" class="lc-btn lc-btn-danger lc-btn-sm" id="lc-ip-modal-ok">OK</button>
+        </div>
+    </div>
+</div>
+
 <?php require __DIR__ . '/includes/footer.php'; ?>

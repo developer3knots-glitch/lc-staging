@@ -37,4 +37,4 @@ if (!lc_block_ip($ip, (int) $agent['id'], $reason)) {
     lc_json(['success' => false, 'error' => 'Unable to block IP'], 400);
 }
 
-lc_json(['success' => true, 'ip_address' => $ip]);
+lc_json(['success' => true, 'ip_address' => $ip, 'blocked' => true]);
