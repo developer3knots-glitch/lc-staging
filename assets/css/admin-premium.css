@@ -916,7 +916,7 @@ body,
 }
 
 /* ─── Forms & buttons ─── */
-.lc-form label {
+.lc-form label:not(.lc-settings-toggle) {
     display: block;
     font-size: 0.74rem;
     font-weight: 700;
@@ -2725,7 +2725,7 @@ a.lc-conv-item:hover {
 .lc-settings-tile-icon.blue { background: #eff6ff; color: #2563eb; }
 .lc-settings-tile-icon.green { background: #ecfdf5; color: #059669; }
 .lc-settings-tile-body { flex: 1; min-width: 0; }
-.lc-settings-tile-body > label:first-child {
+.lc-settings-tile-body > label:first-child:not(.lc-settings-toggle) {
     display: block;
     font-size: 0.84rem;
     font-weight: 700;
@@ -2762,12 +2762,22 @@ a.lc-conv-item:hover {
     max-width: 100%;
     accent-color: var(--lc-primary);
 }
+.lc-form .lc-settings-toggle,
 .lc-settings-toggle {
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
     cursor: pointer;
     margin: 0;
+    position: relative;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: normal;
+    color: inherit;
+}
+.lc-settings-toggle-text {
+    flex: 1;
+    min-width: 0;
 }
 .lc-settings-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .lc-settings-toggle-ui {
