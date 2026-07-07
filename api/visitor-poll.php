@@ -13,7 +13,7 @@ if ($conversationId < 1 || $visitorUid === '') {
 try {
     $db = lc_db();
     $stmt = $db->prepare('
-        SELECT c.status, c.agent_id, c.visitor_id, a.name AS agent_name, a.avatar AS agent_avatar
+        SELECT c.status, c.agent_id, c.visitor_id, c.started_at, a.name AS agent_name, a.avatar AS agent_avatar
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN agents a ON a.id = c.agent_id
@@ -90,6 +90,7 @@ try {
         'success' => true,
         'messages' => lc_format_api_messages($messages),
         'status' => $conv['status'],
+        'reference' => lc_conversation_reference($conversationId, $conv['started_at'] ?? null),
         'agent_name' => $conv['agent_name'],
         'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),
         'agents_online' => lc_get_online_agents_count(),

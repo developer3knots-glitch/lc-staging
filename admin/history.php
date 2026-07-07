@@ -28,9 +28,16 @@ if ($scopeBrandId !== null) {
 }
 
 if ($search !== '') {
-    $where[] = '(v.name LIKE ? OR v.email LIKE ? OR v.ip_address LIKE ? OR b.name LIKE ? OR a.name LIKE ? OR v.country LIKE ?)';
-    $like = '%' . $search . '%';
-    $params = array_merge($params, array_fill(0, 6, $like));
+    $refId = lc_parse_conversation_reference($search);
+    if ($refId !== null) {
+        $where[] = '(c.id = ? OR c.ticket_reference = ?)';
+        $params[] = $refId;
+        $params[] = strtoupper(trim($search));
+    } else {
+        $where[] = '(v.name LIKE ? OR v.email LIKE ? OR v.ip_address LIKE ? OR b.name LIKE ? OR a.name LIKE ? OR v.country LIKE ? OR CAST(c.id AS CHAR) LIKE ? OR c.ticket_reference LIKE ?)';
+        $like = '%' . $search . '%';
+        $params = array_merge($params, array_fill(0, 8, $like));
+    }
 }
 
 
@@ -87,7 +94,7 @@ try {
     $stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
 
     $sql = "
-        SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at,
+        SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at, c.ticket_reference,
                v.name AS visitor_name, v.email AS visitor_email,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                b.name AS brand_name, b.widget_color AS brand_color,
@@ -236,7 +243,7 @@ require __DIR__ . '/includes/header.php';
                         <label for="lc-history-q">Search</label>
                         <div class="lc-history-search-wrap">
                             <i class="ti ti-search"></i>
-                            <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Visitor, IP, country, brand, agent…" autocomplete="off">
+                            <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Ticket (LC-…), visitor, IP, brand, agent…" autocomplete="off">
                         </div>
                     </div>
                     <?php if ($agentBrandId === null && !empty($brands)): ?>
@@ -313,8 +320,9 @@ require __DIR__ . '/includes/header.php';
                 $duration = $formatDuration($r['started_at'], $r['closed_at']);
                 $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                 $brandColor = $r['brand_color'] ?? '#6FD943';
+                $ticketRef = $r['ticket_reference'] ?: lc_conversation_reference((int) $r['id'], $r['started_at'] ?? null);
             ?>
-                <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-history-item" data-search="<?= lc_sanitize(strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? ''))) ?>">
+                <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-history-item" data-search="<?= lc_sanitize(strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? '') . ' ' . $ticketRef)) ?>">
                     <div class="lc-history-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
                     <div class="lc-history-item-body">
                         <div class="lc-history-item-top">
@@ -323,6 +331,7 @@ require __DIR__ . '/includes/header.php';
                                 <span class="lc-history-email"><?= lc_sanitize($r['visitor_email']) ?></span>
                             <?php endif; ?>
                             <span class="lc-badge lc-badge-closed">Closed</span>
+                            <span class="lc-history-ticket" title="Support ticket reference"><?= lc_sanitize($ticketRef) ?></span>
                         </div>
                         <div class="lc-history-item-tags">
                             <?php if (!empty($r['brand_name'])): ?>

@@ -50,7 +50,14 @@ require __DIR__ . '/includes/header.php';
                     <div class="lc-chat-header-visitor">
                         <div class="lc-chat-header-av" id="lc-chat-header-av" aria-hidden="true">V</div>
                         <div class="lc-chat-header-info">
-                            <strong id="lc-chat-visitor-name">Visitor</strong>
+                            <div class="lc-chat-header-title-row">
+                                <strong id="lc-chat-visitor-name">Visitor</strong>
+                                <div class="lc-chat-ref" id="lc-chat-ref" hidden>
+                                    <span class="lc-chat-ref-label">Ticket</span>
+                                    <code class="lc-chat-ref-code" id="lc-chat-ref-code">—</code>
+                                    <button type="button" class="lc-chat-ref-copy" id="lc-chat-ref-copy" title="Copy ticket reference" aria-label="Copy ticket reference"><i class="ti ti-copy"></i></button>
+                                </div>
+                            </div>
                             <div class="lc-visitor-details lc-visitor-details-pro" id="lc-chat-visitor-details"></div>
                             <div class="lc-chat-visitor-meta" id="lc-chat-visitor-meta"></div>
                         </div>
@@ -70,7 +77,11 @@ require __DIR__ . '/includes/header.php';
                                     <strong><i class="ti ti-arrows-exchange"></i> Transfer chat</strong>
                                     <button type="button" class="lc-transfer-close" id="lc-transfer-close" title="Close"><i class="ti ti-x"></i></button>
                                 </div>
-                                <p class="lc-transfer-hint">Select an online agent to take over this conversation.</p>
+                                <p class="lc-transfer-hint">Select an online agent to take over this conversation. The ticket reference stays the same — full chat history moves with it.</p>
+                                <div class="lc-transfer-ref" id="lc-transfer-ref" hidden>
+                                    <span class="lc-transfer-ref-label">Ticket</span>
+                                    <code id="lc-transfer-ref-code">—</code>
+                                </div>
                                 <div class="lc-transfer-agents" id="lc-transfer-agents">
                                     <div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents…</div>
                                 </div>

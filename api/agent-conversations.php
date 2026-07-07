@@ -10,11 +10,12 @@ $agentId = (int) $agent['id'];
 
 try {
     lc_ensure_brands_schema();
+    lc_ensure_ticket_schema();
     $db = lc_db();
     [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
 
     $sql = "
-        SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at,
+        SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
                v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
@@ -37,6 +38,11 @@ try {
     $stmt = $db->prepare($sql);
     $stmt->execute(array_merge([$agentId], $params));
     $conversations = $stmt->fetchAll();
+    foreach ($conversations as &$row) {
+        $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
+        unset($row['ticket_reference']);
+    }
+    unset($row);
 
     $agentBrandId = lc_agent_brand_id($agent);
 

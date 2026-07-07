@@ -45,6 +45,12 @@
     var ipModalOkHandler = null;
     var lastConversations = [];
     var inboxSearch = '';
+    var currentReference = '';
+    var chatRefEl = document.getElementById('lc-chat-ref');
+    var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
+    var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
+    var transferRefEl = document.getElementById('lc-transfer-ref');
+    var transferRefCodeEl = document.getElementById('lc-transfer-ref-code');
 
     function visitorInitials(name) {
         name = (name || 'Visitor').trim();
@@ -82,6 +88,38 @@
         av.style.background = avatarColor(name);
     }
 
+    function updateChatReference(ref) {
+        if (!ref) {
+            return;
+        }
+        currentReference = ref;
+        if (chatRefEl && chatRefCodeEl) {
+            chatRefCodeEl.textContent = ref;
+            chatRefEl.hidden = false;
+        }
+        if (transferRefEl && transferRefCodeEl) {
+            transferRefCodeEl.textContent = ref;
+            transferRefEl.hidden = false;
+        }
+    }
+
+    function copyChatReference() {
+        if (!currentReference) {
+            return;
+        }
+        var done = function () {
+            if (chatRefCopyBtn) {
+                chatRefCopyBtn.classList.add('is-copied');
+                setTimeout(function () {
+                    chatRefCopyBtn.classList.remove('is-copied');
+                }, 1600);
+            }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(currentReference).then(done).catch(function () {});
+        }
+    }
+
     function filterConversations(list) {
         if (!inboxSearch) {
             return list;
@@ -92,7 +130,8 @@
                 c.visitor_name || '',
                 c.last_message || '',
                 c.brand_name || '',
-                c.agent_name || ''
+                c.agent_name || '',
+                c.reference || ''
             ].join(' ').toLowerCase();
             return hay.indexOf(q) !== -1;
         });
@@ -128,6 +167,9 @@
         }
         if (c.agent_name && status === 'active') {
             html += '<span class="lc-chat-item-agent"><i class="ti ti-user"></i> ' + esc(c.agent_name) + '</span>';
+        }
+        if (c.reference) {
+            html += '<span class="lc-chat-item-ticket" title="Support ticket">' + esc(c.reference) + '</span>';
         }
         html += '</div></div></div>';
         return html;
@@ -172,6 +214,9 @@
 
     function renderMessage(m) {
         var cls = m.sender_type;
+        if (cls === 'system' && (m.message || '').indexOf('support ticket reference') !== -1) {
+            cls += ' is-ticket-ref';
+        }
         if (cls === 'system' && (m.message || '').indexOf('transferred this chat') !== -1) {
             cls += ' is-transfer';
         }
@@ -574,6 +619,9 @@
         chatTransferredAway = false;
         closeTransferPanel();
         transferAgentsLoaded = false;
+        currentReference = '';
+        if (chatRefEl) chatRefEl.hidden = true;
+        if (transferRefEl) transferRefEl.hidden = true;
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
         journeyViewsRaw = [];
@@ -830,6 +878,9 @@
                     visitor_country: c.visitor_country
                 };
                 renderVisitorDetails(c, !!c.ip_blocked);
+                if (c.reference) {
+                    updateChatReference(c.reference);
+                }
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
                 visitorMetaEl.textContent = meta;
@@ -1001,6 +1052,10 @@
             hideIpModal();
         }
     });
+
+    if (chatRefCopyBtn) {
+        chatRefCopyBtn.addEventListener('click', copyChatReference);
+    }
 
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);

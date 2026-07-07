@@ -5,6 +5,7 @@ require_once __DIR__ . '/datetime.php';
 require_once __DIR__ . '/brand.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/blocking.php';
+require_once __DIR__ . '/tickets.php';
 require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
 
@@ -403,7 +404,9 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
             return ['ok' => false, 'error' => 'Transfer failed — chat may have been closed'];
         }
 
-        $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '.';
+        $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
+            . lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
+            . ' continues with full history.';
         if ($note !== '') {
             $transferMsg .= ' Note: ' . $note;
         }

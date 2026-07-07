@@ -39,6 +39,7 @@
     var leaveCloseSent = false;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
+    var currentReference = '';
     var agentsOnline = 0;
     var isWaitingForAgent = false;
     var lastDateLabel = '';
@@ -268,7 +269,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=5';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=6';
         document.head.appendChild(link);
     }
 
@@ -308,6 +309,7 @@
                         '<div>' +
                             '<strong id="lc-panel-title">LiveChat</strong>' +
                             '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting…</small>' +
+                            '<span id="lc-panel-ref" class="lcw-ref-badge" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
                         '</div>' +
                     '</div>' +
                     '<div class="lcw-head-actions">' +
@@ -369,6 +371,7 @@
                     '<h3 class="lcw-ended-title">Thanks for chatting!</h3>' +
                     '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
                     '<p class="lcw-ended-note">This conversation has been closed.</p>' +
+                    '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +
                     '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
@@ -716,6 +719,9 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-panel-ended').style.display = 'flex';
         document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
+        if (currentReference) {
+            updateWidgetReference(currentReference);
+        }
     }
 
     function hideEndedState() {
@@ -763,7 +769,12 @@
     function startNewChat() {
         hideEndedState();
         currentAgent = { name: '', avatar: null };
+        currentReference = '';
         updateHeaderAgent(null);
+        var refWrap = document.getElementById('lc-panel-ref');
+        var endedRef = document.getElementById('lc-ended-ref');
+        if (refWrap) refWrap.hidden = true;
+        if (endedRef) endedRef.hidden = true;
         conversationId = null;
         lastMsgId = 0;
         lastDateLabel = '';
@@ -791,6 +802,9 @@
         hideEndedState();
         showChatView();
         applyWidgetSettings(data);
+        if (data.reference) {
+            updateWidgetReference(data.reference);
+        }
         updatePrechatStatus(data.agents_online || 0);
         updateHeaderAgent(data.agent || null);
         var hasAgent = data.agent && data.agent.name;
@@ -980,6 +994,27 @@
         el.innerHTML = statusWithDot(text, online);
     }
 
+    function updateWidgetReference(ref) {
+        if (!ref) {
+            return;
+        }
+        currentReference = ref;
+        var wrap = document.getElementById('lc-panel-ref');
+        var code = document.getElementById('lc-panel-ref-code');
+        var endedWrap = document.getElementById('lc-ended-ref');
+        var endedCode = document.getElementById('lc-ended-ref-code');
+        if (wrap && code) {
+            code.textContent = ref;
+            wrap.hidden = false;
+        }
+        if (endedCode) {
+            endedCode.textContent = ref;
+        }
+        if (endedWrap) {
+            endedWrap.hidden = false;
+        }
+    }
+
     function appendMessage(m, options) {
         options = options || {};
         var msgKey = m.id ? String(m.id) : (m._tempId || '');
@@ -1081,6 +1116,10 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
+
+                if (data.reference) {
+                    updateWidgetReference(data.reference);
+                }
 
                 if (data.status === 'closed') {
                     showEndedState();

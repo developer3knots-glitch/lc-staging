@@ -304,6 +304,41 @@
     display: flex;
     align-items: center;
 }
+.lcw-ref-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.28rem;
+    padding: 0.16rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.95);
+}
+.lcw-ref-badge code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #fff;
+}
+.lcw-ended-ref {
+    margin: 0 0 1rem;
+    font-size: 0.78rem;
+    color: #475569;
+}
+.lcw-ended-ref code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    padding: 0.12rem 0.4rem;
+    border-radius: 6px;
+}
 .lcw-head-actions {
     display: flex;
     align-items: center;

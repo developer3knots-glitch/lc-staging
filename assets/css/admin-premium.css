@@ -762,6 +762,16 @@ body,
     background: #dbeafe;
     color: #1d4ed8;
 }
+.lc-msg.system.is-ticket-ref {
+    background: linear-gradient(135deg, #eff6ff, #f0f9ff);
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+    max-width: 92%;
+    text-align: center;
+    line-height: 1.45;
+    border-radius: 12px;
+    padding: 0.5rem 0.85rem;
+}
 .lc-msg.system.is-visitor-close {
     background: #fef3c7;
     color: #b45309;
@@ -3596,6 +3606,105 @@ a.lc-conv-item:hover {
 .lc-chat-header-info {
     flex: 1;
     min-width: 0;
+}
+.lc-chat-header-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem 0.75rem;
+    margin-bottom: 0.25rem;
+}
+.lc-chat-header-title-row > strong {
+    display: block;
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: var(--lc-ink);
+    letter-spacing: -0.01em;
+    margin-bottom: 0;
+}
+.lc-chat-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.45rem 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #eff6ff, #f8fafc);
+    border: 1px solid #bfdbfe;
+    font-size: 0.68rem;
+    line-height: 1;
+}
+.lc-chat-ref-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #1d4ed8;
+}
+.lc-chat-ref-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.02em;
+}
+.lc-chat-ref-copy {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(29, 78, 216, 0.1);
+    color: #1d4ed8;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+.lc-chat-ref-copy:hover { background: rgba(29, 78, 216, 0.18); }
+.lc-chat-ref-copy.is-copied { background: #dcfce7; color: #15803d; }
+.lc-chat-item-ticket {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+}
+.lc-transfer-ref {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.35rem 0 0.65rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: 10px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    font-size: 0.74rem;
+}
+.lc-transfer-ref-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    font-size: 0.66rem;
+}
+.lc-transfer-ref code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.lc-history-ticket {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
 }
 .lc-chat-header-info > strong {
     display: block;

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS `conversations` (
     `agent_id` INT UNSIGNED DEFAULT NULL,
     `status` ENUM('waiting','active','closed') NOT NULL DEFAULT 'waiting',
     `subject` VARCHAR(200) DEFAULT NULL,
+    `ticket_reference` VARCHAR(24) DEFAULT NULL,
     `page_url` VARCHAR(500) DEFAULT NULL,
     `started_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `accepted_at` DATETIME DEFAULT NULL,
@@ -44,7 +45,8 @@ CREATE TABLE IF NOT EXISTS `conversations` (
     FOREIGN KEY (`visitor_id`) REFERENCES `visitors`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE SET NULL,
     INDEX `idx_status` (`status`),
-    INDEX `idx_agent` (`agent_id`)
+    INDEX `idx_agent` (`agent_id`),
+    UNIQUE KEY `idx_ticket_reference` (`ticket_reference`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `messages` (
@@ -96,7 +98,8 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('widget_position', 'right'),
 ('offline_message', 'We are currently offline. Leave a message and we will get back to you.'),
 ('auto_assign', '1'),
-('poll_interval_ms', '1500');
+('poll_interval_ms', '1500'),
+('ticket_prefix', 'LC');
 
 -- Admin account is created during install.php
 

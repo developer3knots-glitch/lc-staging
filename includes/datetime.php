@@ -73,13 +73,22 @@ function lc_format_api_conversation(?array $conversation): ?array
         return null;
     }
 
-    return lc_format_api_datetimes($conversation, [
+    $conversation = lc_format_api_datetimes($conversation, [
         'started_at',
         'accepted_at',
         'closed_at',
         'last_message_at',
         'opened_at',
     ]);
+
+    if (!empty($conversation['id'])) {
+        $conversation['reference'] = lc_conversation_reference(
+            (int) $conversation['id'],
+            $conversation['started_at'] ?? null
+        );
+    }
+
+    return $conversation;
 }
 
 function lc_time_ago(string $datetime): string
