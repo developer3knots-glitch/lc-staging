@@ -482,3 +482,89 @@ function lc_waiting_count(?int $brandId = null): int
     $stmt->execute([$brandId]);
     return (int) $stmt->fetchColumn();
 }
+
+/**
+ * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
+ */
+function lc_dashboard_activity_chart(?int $brandId, int $days = 7): array
+{
+    lc_ensure_brands_schema();
+    $days = max(2, min(14, $days));
+    $start = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . ($days - 1) . ' days');
+
+    $params = [$start->format('Y-m-d') . ' 00:00:00'];
+    $brandFilter = '';
+    if ($brandId !== null) {
+        $brandFilter = ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    }
+
+    $stmt = lc_db()->prepare("
+        SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
+        FROM conversations c
+        WHERE c.started_at >= ? {$brandFilter}
+        GROUP BY DATE(c.started_at)
+    ");
+    $stmt->execute($params);
+
+    $rows = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[$row['day']] = (int) $row['cnt'];
+    }
+
+    $chart = [];
+    for ($i = 0; $i < $days; $i++) {
+        $d = $start->modify("+{$i} days");
+        $key = $d->format('Y-m-d');
+        $chart[] = [
+            'label' => $d->format('D'),
+            'full_label' => $d->format('M j'),
+            'count' => $rows[$key] ?? 0,
+            'iso' => $key,
+        ];
+    }
+
+    return $chart;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function lc_dashboard_online_agents(?int $brandId, int $limit = 8): array
+{
+    lc_ensure_brands_schema();
+    if ($brandId === null) {
+        $stmt = lc_db()->prepare("
+            SELECT name, status, avatar FROM agents
+            WHERE is_active = 1
+            ORDER BY FIELD(status, 'online', 'away', 'offline'), name ASC
+            LIMIT ?
+        ");
+        $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+    } else {
+        $stmt = lc_db()->prepare("
+            SELECT name, status, avatar FROM agents
+            WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)
+            ORDER BY FIELD(status, 'online', 'away', 'offline'), name ASC
+            LIMIT ?
+        ");
+        $stmt->bindValue(1, $brandId, PDO::PARAM_INT);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    return $stmt->fetchAll();
+}
+
+function lc_dashboard_started_today(?int $brandId): int
+{
+    lc_ensure_brands_schema();
+    if ($brandId === null) {
+        return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
+    }
+    $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id = ?');
+    $stmt->execute([$brandId]);
+
+    return (int) $stmt->fetchColumn();
+}

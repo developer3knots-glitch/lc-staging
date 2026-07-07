@@ -17,13 +17,20 @@ $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'clo
 $stmt->execute($brandParams);
 $closedToday = (int) $stmt->fetchColumn();
 
+$startedToday = lc_dashboard_started_today($agentBrandId);
+$activityChart = lc_dashboard_activity_chart($agentBrandId, 7);
+$chartMax = max(1, ...array_column($activityChart, 'count'));
+$onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8);
+
 $onlineAgents = lc_get_online_agents_count($agentBrandId);
 if ($agentBrandId === null) {
     $totalAgents = (int) $db->query("SELECT COUNT(*) FROM agents WHERE is_active = 1")->fetchColumn();
+    $brands = lc_get_all_brands(true);
 } else {
     $stmt = $db->prepare("SELECT COUNT(*) FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)");
     $stmt->execute([$agentBrandId]);
     $totalAgents = (int) $stmt->fetchColumn();
+    $brands = [];
 }
 $unread = lc_unread_count_for_agent((int) $agent['id']);
 
@@ -51,7 +58,7 @@ $recentSql = "
     LEFT JOIN brands b ON b.id = c.brand_id
     WHERE 1=1 {$brandSql}
     ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
-    LIMIT 8
+    LIMIT 10
 ";
 $stmt = $db->prepare($recentSql);
 $stmt->execute($brandParams);
@@ -66,144 +73,270 @@ if ($hour < 12) {
     $greeting = 'Good evening';
 }
 
+$statusBadge = static function (string $status): string {
+    $cls = $status === 'waiting' ? 'waiting' : ($status === 'closed' ? 'closed' : 'active');
+    return '<span class="lc-badge lc-badge-' . $cls . '">' . lc_sanitize(ucfirst($status)) . '</span>';
+};
+
 $pageTitle = 'Dashboard';
 $activeNav = 'dashboard';
 $extraScript = 'admin-dashboard.js';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-hero">
-    <div>
-        <div class="lc-hero-eyebrow"><i class="ti ti-headset"></i> Live Support</div>
-        <h1 class="lc-hero-title"><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agent['name']) ?></h1>
-        <p class="lc-hero-sub">Manage live chats, agents and brand widgets from one professional console.</p>
-        <?php if ($waiting > 0): ?>
-            <p style="margin:0.65rem 0 0">
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta">
-                    <i class="ti ti-bolt"></i> Answer <?= $waiting ?> waiting chat<?= $waiting === 1 ? '' : 's' ?>
-                </a>
-            </p>
-        <?php else: ?>
-            <p style="margin:0.65rem 0 0;display:none" id="lc-dash-cta-wrap">
-                <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta"></a>
-            </p>
-        <?php endif; ?>
+<div class="lc-dash">
+    <div class="lc-hero lc-hero-pro">
+        <div class="lc-hero-glow lc-hero-glow-1"></div>
+        <div class="lc-hero-glow lc-hero-glow-2"></div>
+        <div class="lc-hero-main">
+            <div class="lc-hero-eyebrow"><i class="ti ti-sparkles"></i> Live Support Console</div>
+            <h1 class="lc-hero-title"><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agent['name']) ?></h1>
+            <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets — everything in one beautiful workspace.</p>
+            <div class="lc-hero-actions">
+                <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Inbox</a>
+                <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-hero-chip"><i class="ti ti-bolt"></i> Waiting queue</a>
+                <?php if ($agent['role'] === 'admin'): ?>
+                    <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-hero-chip"><i class="ti ti-code"></i> Widget codes</a>
+                <?php endif; ?>
+            </div>
+            <?php if ($waiting > 0): ?>
+                <p class="lc-hero-cta" id="lc-dash-cta-wrap">
+                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta">
+                        <i class="ti ti-bolt"></i> Answer <?= $waiting ?> waiting chat<?= $waiting === 1 ? '' : 's' ?>
+                    </a>
+                </p>
+            <?php else: ?>
+                <p class="lc-hero-cta" id="lc-dash-cta-wrap" style="display:none">
+                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta"></a>
+                </p>
+            <?php endif; ?>
+        </div>
+        <div class="lc-hero-metrics">
+            <div class="lc-hero-metric">
+                <span class="lc-hero-metric-val" id="lc-dash-waiting"><?= $waiting ?></span>
+                <span class="lc-hero-metric-label">Waiting</span>
+            </div>
+            <div class="lc-hero-metric">
+                <span class="lc-hero-metric-val" id="lc-dash-active"><?= $active ?></span>
+                <span class="lc-hero-metric-label">Active now</span>
+            </div>
+            <div class="lc-hero-metric is-accent">
+                <span class="lc-hero-metric-val" id="lc-dash-started"><?= $startedToday ?></span>
+                <span class="lc-hero-metric-label">New today</span>
+            </div>
+        </div>
     </div>
-    <div class="lc-hero-stat">
-        <span class="lc-hero-stat-val" id="lc-dash-waiting"><?= $waiting ?></span>
-        <small>Waiting chats</small>
-    </div>
-</div>
 
-<?php if ($unread > 0): ?>
-<div class="lc-alert lc-alert-info" id="lc-dash-unread-alert">
-    <i class="ti ti-bell-ringing"></i>
-    <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
-</div>
-<?php else: ?>
-<div class="lc-alert lc-alert-info" id="lc-dash-unread-alert" style="display:none">
-    <i class="ti ti-bell-ringing"></i>
-    <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
-</div>
-<?php endif; ?>
+    <?php if ($unread > 0): ?>
+    <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert">
+        <i class="ti ti-bell-ringing"></i>
+        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
+    </div>
+    <?php else: ?>
+    <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert" style="display:none">
+        <i class="ti ti-bell-ringing"></i>
+        <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= LC_BASE_URL ?>/admin/chats.php"><strong>open inbox</strong></a></span>
+    </div>
+    <?php endif; ?>
 
-<div class="lc-kpi-grid">
-    <div class="lc-kpi">
-        <div class="lc-kpi-icon orange"><i class="ti ti-clock-hour-4"></i></div>
-        <div><div class="lc-kpi-name">Waiting</div><div class="lc-kpi-val" id="lc-kpi-waiting"><?= $waiting ?></div></div>
+    <div class="lc-kpi-grid lc-kpi-grid-pro">
+        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-kpi lc-kpi-pro lc-kpi-waiting">
+            <div class="lc-kpi-icon orange"><i class="ti ti-clock-hour-4"></i></div>
+            <div class="lc-kpi-body">
+                <div class="lc-kpi-name">Waiting</div>
+                <div class="lc-kpi-val" id="lc-kpi-waiting"><?= $waiting ?></div>
+                <div class="lc-kpi-hint">Needs first reply</div>
+            </div>
+            <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
+        </a>
+        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=active" class="lc-kpi lc-kpi-pro lc-kpi-active">
+            <div class="lc-kpi-icon green"><i class="ti ti-messages"></i></div>
+            <div class="lc-kpi-body">
+                <div class="lc-kpi-name">Active Chats</div>
+                <div class="lc-kpi-val" id="lc-kpi-active"><?= $active ?></div>
+                <div class="lc-kpi-hint">Live conversations</div>
+            </div>
+            <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
+        </a>
+        <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-kpi lc-kpi-pro lc-kpi-unread">
+            <div class="lc-kpi-icon red"><i class="ti ti-bell"></i></div>
+            <div class="lc-kpi-body">
+                <div class="lc-kpi-name">Unread</div>
+                <div class="lc-kpi-val" id="lc-kpi-unread"><?= $unread ?></div>
+                <div class="lc-kpi-hint">Awaiting your reply</div>
+            </div>
+            <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
+        </a>
+        <a href="<?= LC_BASE_URL ?>/admin/agents.php" class="lc-kpi lc-kpi-pro lc-kpi-agents">
+            <div class="lc-kpi-icon blue"><i class="ti ti-users"></i></div>
+            <div class="lc-kpi-body">
+                <div class="lc-kpi-name">Online Agents</div>
+                <div class="lc-kpi-val" id="lc-kpi-agents"><?= $onlineAgents ?>/<?= $totalAgents ?></div>
+                <div class="lc-kpi-hint">Team availability</div>
+            </div>
+            <i class="ti ti-arrow-up-right lc-kpi-arrow"></i>
+        </a>
+        <div class="lc-kpi lc-kpi-pro lc-kpi-closed">
+            <div class="lc-kpi-icon purple"><i class="ti ti-circle-check"></i></div>
+            <div class="lc-kpi-body">
+                <div class="lc-kpi-name">Closed Today</div>
+                <div class="lc-kpi-val" id="lc-kpi-closed"><?= $closedToday ?></div>
+                <div class="lc-kpi-hint">Resolved sessions</div>
+            </div>
+        </div>
     </div>
-    <div class="lc-kpi">
-        <div class="lc-kpi-icon green"><i class="ti ti-messages"></i></div>
-        <div><div class="lc-kpi-name">Active Chats</div><div class="lc-kpi-val" id="lc-kpi-active"><?= $active ?></div></div>
-    </div>
-    <div class="lc-kpi">
-        <div class="lc-kpi-icon" style="background:#fef2f2;color:#dc2626"><i class="ti ti-bell"></i></div>
-        <div><div class="lc-kpi-name">Unread</div><div class="lc-kpi-val" id="lc-kpi-unread"><?= $unread ?></div></div>
-    </div>
-    <div class="lc-kpi">
-        <div class="lc-kpi-icon blue"><i class="ti ti-users"></i></div>
-        <div><div class="lc-kpi-name">Online Agents</div><div class="lc-kpi-val" id="lc-kpi-agents"><?= $onlineAgents ?>/<?= $totalAgents ?></div></div>
-    </div>
-    <div class="lc-kpi">
-        <div class="lc-kpi-icon purple"><i class="ti ti-circle-check"></i></div>
-        <div><div class="lc-kpi-name">Closed Today</div><div class="lc-kpi-val" id="lc-kpi-closed"><?= $closedToday ?></div></div>
-    </div>
-</div>
 
-<?php if (!empty($waitingChats)): ?>
-<div class="lc-card" id="lc-waiting-card">
-    <div class="lc-card-head">
-        <h3><i class="ti ti-flame"></i> Waiting — needs reply (<span id="lc-waiting-count"><?= count($waitingChats) ?></span>)</h3>
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open waiting</a>
-    </div>
-    <div class="lc-card-body" style="padding:0">
-        <table class="lc-table">
-            <thead><tr><th>Visitor</th><th>Brand</th><th>Country</th><th>Last Message</th><th>Waiting</th><th></th></tr></thead>
-            <tbody id="lc-waiting-tbody">
-            <?php foreach ($waitingChats as $w): ?>
-                <tr>
-                    <td><a href="<?= LC_BASE_URL ?>/admin/chats.php?id=<?= (int)$w['id'] ?>"><?= lc_sanitize($w['visitor_name'] ?: 'Visitor') ?></a></td>
-                    <td><?= lc_sanitize($w['brand_name'] ?? '—') ?></td>
-                    <td><?= lc_sanitize($w['visitor_country'] ?? '—') ?></td>
-                    <td><?= lc_sanitize(mb_strimwidth($w['last_msg'] ?? '—', 0, 50, '…')) ?></td>
-                    <td><?= $w['last_message_at'] ? lc_time_span($w['last_message_at']) : '<span class="lc-time">Just now</span>' ?></td>
-                    <td><a href="<?= LC_BASE_URL ?>/admin/chats.php?id=<?= (int)$w['id'] ?>" class="lc-btn lc-btn-primary lc-btn-sm">Reply</a></td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-<?php else: ?>
-<div class="lc-card" id="lc-waiting-card" style="display:none">
-    <div class="lc-card-head">
-        <h3><i class="ti ti-flame"></i> Waiting — needs reply (<span id="lc-waiting-count">0</span>)</h3>
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open waiting</a>
-    </div>
-    <div class="lc-card-body" style="padding:0">
-        <table class="lc-table">
-            <thead><tr><th>Visitor</th><th>Brand</th><th>Country</th><th>Last Message</th><th>Waiting</th><th></th></tr></thead>
-            <tbody id="lc-waiting-tbody"></tbody>
-        </table>
-    </div>
-</div>
-<?php endif; ?>
+    <div class="lc-dash-layout">
+        <div class="lc-dash-main">
+            <div class="lc-card lc-card-pro" id="lc-waiting-card"<?= empty($waitingChats) ? ' style="display:none"' : '' ?>>
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-flame"></i> Priority Queue <span class="lc-card-count" id="lc-waiting-count"><?= count($waitingChats) ?></span></h3>
+                    <a href="<?= LC_BASE_URL ?>/admin/chats.php?tab=waiting" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> View all</a>
+                </div>
+                <div class="lc-conv-feed" id="lc-waiting-feed">
+                    <?php foreach ($waitingChats as $w):
+                        $name = $w['visitor_name'] ?: 'Visitor';
+                        $chatUrl = LC_BASE_URL . '/admin/chats.php?id=' . (int) $w['id'];
+                        $msg = mb_strimwidth($w['last_msg'] ?? '—', 0, 72, '…');
+                    ?>
+                    <div class="lc-conv-item is-waiting">
+                        <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
+                        <div class="lc-conv-item-body">
+                            <div class="lc-conv-item-top">
+                                <strong><?= lc_sanitize($name) ?></strong>
+                                <span class="lc-badge lc-badge-waiting">Waiting</span>
+                            </div>
+                            <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
+                            <div class="lc-conv-item-meta">
+                                <?php if (!empty($w['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($w['brand_name']) ?></span><?php endif; ?>
+                                <?php if (!empty($w['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($w['visitor_country']) ?></span><?php endif; ?>
+                                <span><?= $w['last_message_at'] ? lc_time_span($w['last_message_at']) : '<span class="lc-time">Just now</span>' ?></span>
+                            </div>
+                        </div>
+                        <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-btn lc-btn-primary lc-btn-sm lc-conv-reply"><i class="ti ti-send"></i> Reply</a>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
 
-<div class="lc-card">
-    <div class="lc-card-head"><h3><i class="ti ti-inbox"></i> Recent Conversations</h3>
-        <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open Inbox</a>
-    </div>
-    <div class="lc-card-body" style="padding:0">
-        <table class="lc-table">
-            <thead><tr><th>Visitor</th><th>Brand</th><th>IP</th><th>Country</th><th>Status</th><th>Last Message</th><th>Time</th></tr></thead>
-            <tbody id="lc-recent-tbody">
-            <?php if (empty($recent)): ?>
-                <tr><td colspan="7" style="text-align:center;color:var(--lc-muted)">No conversations yet. Add a brand and embed its widget.</td></tr>
-            <?php else: foreach ($recent as $r): ?>
-                <tr>
-                    <td><a href="<?= LC_BASE_URL ?>/admin/chats.php?id=<?= (int)$r['id'] ?>"><?= lc_sanitize($r['visitor_name'] ?: 'Visitor') ?></a></td>
-                    <td><?= lc_sanitize($r['brand_name'] ?? '—') ?></td>
-                    <td><?= lc_sanitize($r['visitor_ip'] ?? '—') ?></td>
-                    <td><?= lc_sanitize($r['visitor_country'] ?? '—') ?></td>
-                    <td><span class="lc-badge lc-badge-<?= $r['status'] === 'waiting' ? 'waiting' : ($r['status'] === 'closed' ? 'closed' : 'active') ?>"><?= ucfirst($r['status']) ?></span></td>
-                    <td><?= lc_sanitize(mb_strimwidth($r['last_msg'] ?? '—', 0, 50, '…')) ?></td>
-                    <td><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '—' ?></td>
-                </tr>
-            <?php endforeach; endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
+            <div class="lc-card lc-card-pro">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-inbox"></i> Recent Conversations</h3>
+                    <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-arrow-right"></i> Open Inbox</a>
+                </div>
+                <div class="lc-conv-feed" id="lc-recent-feed">
+                    <?php if (empty($recent)): ?>
+                        <div class="lc-conv-empty">
+                            <i class="ti ti-message-circle-off"></i>
+                            <p>No conversations yet</p>
+                            <span>Add a brand and embed its widget on your site to start receiving chats.</span>
+                        </div>
+                    <?php else: foreach ($recent as $r):
+                        $name = $r['visitor_name'] ?: 'Visitor';
+                        $chatUrl = LC_BASE_URL . '/admin/chats.php?id=' . (int) $r['id'];
+                        $msg = mb_strimwidth($r['last_msg'] ?? '—', 0, 72, '…');
+                    ?>
+                    <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item">
+                        <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
+                        <div class="lc-conv-item-body">
+                            <div class="lc-conv-item-top">
+                                <strong><?= lc_sanitize($name) ?></strong>
+                                <?= $statusBadge($r['status']) ?>
+                            </div>
+                            <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
+                            <div class="lc-conv-item-meta">
+                                <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
+                                <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
+                                <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
+                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '—' ?></span>
+                            </div>
+                        </div>
+                        <i class="ti ti-chevron-right lc-conv-item-arrow"></i>
+                    </a>
+                    <?php endforeach; endif; ?>
+                </div>
+            </div>
+        </div>
 
-<?php if ($agent['role'] === 'admin'): ?>
-<div class="lc-card">
-    <div class="lc-card-head"><h3><i class="ti ti-code"></i> Brand Widgets</h3>
-        <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-tags"></i> Manage Brands</a>
-    </div>
-    <div class="lc-card-body">
-        <p style="color:var(--lc-muted);font-size:0.88rem">Har brand ka alag embed code — <a href="<?= LC_BASE_URL ?>/admin/brands.php">Brands</a> page se copy karein.</p>
+        <aside class="lc-dash-aside">
+            <div class="lc-card lc-card-pro">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-chart-bar"></i> Chat Activity</h3>
+                    <span class="lc-card-sub">Last 7 days</span>
+                </div>
+                <div class="lc-card-body">
+                    <div class="lc-activity-chart" id="lc-activity-chart">
+                        <?php foreach ($activityChart as $bar): ?>
+                            <div class="lc-activity-bar-wrap" title="<?= lc_sanitize($bar['full_label']) ?>: <?= (int) $bar['count'] ?> chats">
+                                <div class="lc-activity-bar" style="height: <?= round(($bar['count'] / $chartMax) * 100) ?>%" data-count="<?= (int) $bar['count'] ?>"></div>
+                                <span class="lc-activity-label"><?= lc_sanitize($bar['label']) ?></span>
+                                <span class="lc-activity-val"><?= (int) $bar['count'] ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="lc-activity-summary">
+                        <span><strong id="lc-chart-total"><?= array_sum(array_column($activityChart, 'count')) ?></strong> chats this week</span>
+                        <span><strong id="lc-dash-started-aside"><?= $startedToday ?></strong> today</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lc-card lc-card-pro">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-users"></i> Team Status</h3>
+                    <span class="lc-card-sub" id="lc-team-online-label"><?= $onlineAgents ?> online</span>
+                </div>
+                <div class="lc-team-list" id="lc-team-list">
+                    <?php if (empty($onlineAgentsList)): ?>
+                        <div class="lc-team-empty">No agents configured</div>
+                    <?php else: foreach ($onlineAgentsList as $teamAgent): ?>
+                        <div class="lc-team-item">
+                            <?= lc_avatar_html($teamAgent['avatar'] ?? null, $teamAgent['name'], 'lc-avatar lc-avatar-sm') ?>
+                            <div class="lc-team-meta">
+                                <strong><?= lc_sanitize($teamAgent['name']) ?></strong>
+                                <span class="lc-team-status"><span class="lc-status-dot <?= lc_sanitize($teamAgent['status']) ?>"></span> <?= ucfirst($teamAgent['status']) ?></span>
+                            </div>
+                        </div>
+                    <?php endforeach; endif; ?>
+                </div>
+            </div>
+
+            <div class="lc-card lc-card-pro lc-quick-card">
+                <div class="lc-card-head"><h3><i class="ti ti-rocket"></i> Quick Actions</h3></div>
+                <div class="lc-quick-grid">
+                    <a href="<?= LC_BASE_URL ?>/admin/chats.php" class="lc-quick-tile"><i class="ti ti-messages"></i><span>Live Chats</span></a>
+                    <a href="<?= LC_BASE_URL ?>/admin/history.php" class="lc-quick-tile"><i class="ti ti-history"></i><span>History</span></a>
+                    <a href="<?= LC_BASE_URL ?>/admin/canned.php" class="lc-quick-tile"><i class="ti ti-bolt"></i><span>Canned</span></a>
+                    <?php if ($agent['role'] === 'admin'): ?>
+                        <a href="<?= LC_BASE_URL ?>/admin/settings.php" class="lc-quick-tile"><i class="ti ti-shield"></i><span>Blocking</span></a>
+                        <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-quick-tile"><i class="ti ti-tags"></i><span>Brands</span></a>
+                        <a href="<?= LC_BASE_URL ?>/admin/agents.php" class="lc-quick-tile"><i class="ti ti-user-plus"></i><span>Agents</span></a>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <?php if ($agent['role'] === 'admin' && !empty($brands)): ?>
+            <div class="lc-card lc-card-pro">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-code"></i> Brand Widgets</h3>
+                    <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-btn lc-btn-secondary lc-btn-sm">Manage</a>
+                </div>
+                <div class="lc-brand-stack">
+                    <?php foreach (array_slice($brands, 0, 4) as $brand): ?>
+                        <a href="<?= LC_BASE_URL ?>/admin/brands.php" class="lc-brand-pill">
+                            <span class="lc-brand-dot" style="background:<?= lc_sanitize($brand['widget_color'] ?? '#6FD943') ?>"></span>
+                            <span><?= lc_sanitize($brand['name']) ?></span>
+                            <i class="ti ti-chevron-right"></i>
+                        </a>
+                    <?php endforeach; ?>
+                    <?php if (count($brands) > 4): ?>
+                        <div class="lc-brand-more">+<?= count($brands) - 4 ?> more brands</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+        </aside>
     </div>
 </div>
-<?php endif; ?>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

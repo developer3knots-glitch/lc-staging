@@ -24,7 +24,10 @@ try {
     $stmt->execute($brandParams);
     $closedToday = (int) $stmt->fetchColumn();
 
+    $startedToday = lc_dashboard_started_today($agentBrandId);
+    $activityChart = lc_dashboard_activity_chart($agentBrandId, 7);
     $onlineAgents = lc_get_online_agents_count($agentBrandId);
+    $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8);
 
     if ($agentBrandId === null) {
         $totalAgents = (int) $db->query("SELECT COUNT(*) FROM agents WHERE is_active = 1")->fetchColumn();
@@ -45,7 +48,7 @@ try {
         LEFT JOIN brands b ON b.id = c.brand_id
         WHERE 1=1 {$brandSql}
         ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
-        LIMIT 8
+        LIMIT 10
     ";
     $stmt = $db->prepare($recentSql);
     $stmt->execute($brandParams);
@@ -55,20 +58,32 @@ try {
     foreach ($recent as $r) {
         $msg = $r['last_msg'] ?? '—';
         if (function_exists('mb_strimwidth')) {
-            $msg = mb_strimwidth($msg, 0, 50, '…');
-        } elseif (strlen($msg) > 50) {
-            $msg = substr($msg, 0, 50) . '…';
+            $msg = mb_strimwidth($msg, 0, 72, '…');
+        } elseif (strlen($msg) > 72) {
+            $msg = substr($msg, 0, 72) . '…';
         }
+        $name = $r['visitor_name'] ?: 'Visitor';
         $recentFormatted[] = [
             'id' => (int) $r['id'],
-            'visitor_name' => $r['visitor_name'] ?: 'Visitor',
-            'brand_name' => $r['brand_name'] ?? '—',
-            'visitor_ip' => $r['visitor_ip'] ?? '—',
-            'visitor_country' => $r['visitor_country'] ?? '—',
+            'visitor_name' => $name,
+            'visitor_initials' => lc_avatar_initials($name),
+            'brand_name' => $r['brand_name'] ?? '',
+            'visitor_ip' => $r['visitor_ip'] ?? '',
+            'visitor_country' => $r['visitor_country'] ?? '',
             'status' => $r['status'],
             'last_msg' => $msg,
             'last_message_at' => $r['last_message_at'] ? lc_to_iso8601($r['last_message_at']) : null,
             'chat_url' => LC_BASE_URL . '/admin/chats.php?id=' . (int) $r['id'],
+        ];
+    }
+
+    $teamFormatted = [];
+    foreach ($onlineAgentsList as $teamAgent) {
+        $meta = lc_avatar_meta($teamAgent['avatar'] ?? null, $teamAgent['name']);
+        $teamFormatted[] = [
+            'name' => $teamAgent['name'],
+            'status' => $teamAgent['status'],
+            'avatar_html' => lc_avatar_html($teamAgent['avatar'] ?? null, $teamAgent['name'], 'lc-avatar lc-avatar-sm'),
         ];
     }
 
@@ -80,10 +95,13 @@ try {
             'waiting' => $waiting,
             'active' => $active,
             'closed_today' => $closedToday,
+            'started_today' => $startedToday,
             'online_agents' => $onlineAgents,
             'total_agents' => $totalAgents,
             'unread' => $unread,
         ],
+        'activity' => $activityChart,
+        'team' => $teamFormatted,
         'recent' => $recentFormatted,
     ]);
 } catch (Throwable $e) {
