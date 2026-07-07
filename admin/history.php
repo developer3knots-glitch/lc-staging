@@ -18,6 +18,10 @@ if (!in_array($period, ['all', 'today', 'week', 'month'], true)) {
 $where = ["c.status = 'closed'"];
 $params = $brandParams;
 
+if ($brandSql !== '') {
+    $where[] = trim(preg_replace('/^AND\s+/i', '', $brandSql));
+}
+
 if ($search !== '') {
     $where[] = '(v.name LIKE ? OR v.email LIKE ? OR v.ip_address LIKE ? OR b.name LIKE ? OR a.name LIKE ? OR v.country LIKE ?)';
     $like = '%' . $search . '%';
