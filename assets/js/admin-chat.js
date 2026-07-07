@@ -40,6 +40,115 @@
     var transferAgentsLoaded = false;
     var chatTransferredAway = false;
     var currentVisitorIp = '';
+    var lastConversations = [];
+    var inboxSearch = '';
+
+    function visitorInitials(name) {
+        name = (name || 'Visitor').trim();
+        var parts = name.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+            return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+        }
+        return name.substring(0, 2).toUpperCase();
+    }
+
+    function avatarColor(name) {
+        name = name || 'Visitor';
+        var hues = [210, 168, 250, 330, 24, 190, 280];
+        var h = 0;
+        for (var i = 0; i < name.length; i++) {
+            h = (h + name.charCodeAt(i) * 7) % hues.length;
+        }
+        return 'hsl(' + hues[h] + ', 62%, 48%)';
+    }
+
+    function relativeTime(ts) {
+        if (!ts || !window.LCTime) {
+            return '';
+        }
+        var iso = window.LCTime.toIso(ts);
+        return iso ? window.LCTime.formatRelative(iso) : '';
+    }
+
+    function updateHeaderAvatar(name) {
+        var av = document.getElementById('lc-chat-header-av');
+        if (!av) {
+            return;
+        }
+        av.textContent = visitorInitials(name);
+        av.style.background = avatarColor(name);
+    }
+
+    function filterConversations(list) {
+        if (!inboxSearch) {
+            return list;
+        }
+        var q = inboxSearch.toLowerCase();
+        return list.filter(function (c) {
+            var hay = [
+                c.visitor_name || '',
+                c.last_message || '',
+                c.brand_name || '',
+                c.agent_name || ''
+            ].join(' ').toLowerCase();
+            return hay.indexOf(q) !== -1;
+        });
+    }
+
+    function renderConversationItem(c) {
+        var active = c.id == selectedId ? ' active' : '';
+        var name = c.visitor_name || 'Visitor';
+        var status = c.status;
+        var waitingCls = status === 'waiting' ? ' is-waiting' : '';
+        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '">';
+        html += '<div class="lc-chat-item-av" style="background:' + avatarColor(name) + '">' + esc(visitorInitials(name)) + '</div>';
+        html += '<div class="lc-chat-item-body">';
+        html += '<div class="lc-chat-item-top">';
+        html += '<strong>' + esc(name) + '</strong>';
+        var rel = relativeTime(c.last_message_at || c.started_at);
+        if (rel) {
+            html += '<span class="lc-chat-item-time">' + esc(rel) + '</span>';
+        }
+        html += '</div>';
+        html += '<div class="lc-chat-item-preview">';
+        if (c.brand_name) {
+            html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
+        }
+        html += esc(c.last_message || '—');
+        html += '</div>';
+        html += '<div class="lc-chat-item-foot">';
+        if (c.unread > 0) {
+            html += '<span class="lc-badge lc-badge-unread">' + c.unread + ' new</span>';
+        } else {
+            var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
+            html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(status) + '</span>';
+        }
+        if (c.agent_name && status === 'active') {
+            html += '<span class="lc-chat-item-agent"><i class="ti ti-user"></i> ' + esc(c.agent_name) + '</span>';
+        }
+        html += '</div></div></div>';
+        return html;
+    }
+
+    function paintConversationList(conversations) {
+        var loadingEl = document.getElementById('lc-list-loading');
+        if (loadingEl) {
+            loadingEl.remove();
+        }
+        if (!conversations.length) {
+            if (inboxSearch) {
+                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-search-off"></i><p>No matches</p><span>Try another search term</span></div>';
+            } else {
+                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-inbox-off"></i><p>No conversations</p><span>New chats will appear here</span></div>';
+            }
+            return;
+        }
+        var html = '';
+        conversations.forEach(function (c) {
+            html += renderConversationItem(c);
+        });
+        listEl.innerHTML = html;
+    }
 
     function esc(s) {
         var d = document.createElement('div');
@@ -155,34 +264,12 @@
                     badge.style.display = 'none';
                 }
                 if (!data.conversations.length) {
-                    var loading = document.getElementById('lc-list-loading');
-                    if (loading) loading.remove();
-                    listEl.innerHTML = '<div class="lc-empty-state"><i class="ti ti-inbox-off"></i><p>No conversations</p></div>';
+                    lastConversations = [];
+                    paintConversationList([]);
                     return;
                 }
-                var loadingEl = document.getElementById('lc-list-loading');
-                if (loadingEl) loadingEl.remove();
-                var html = '';
-                data.conversations.forEach(function (c) {
-                    var active = c.id == selectedId ? ' active' : '';
-                    html += '<div class="lc-chat-item' + active + '" data-id="' + c.id + '" data-status="' + c.status + '">';
-                    html += '<div class="lc-chat-item-name">';
-                    html += '<span>' + esc(c.visitor_name || 'Visitor') + '</span>';
-                    if (c.unread > 0) html += '<span class="lc-badge lc-badge-unread">' + c.unread + '</span>';
-                    else html += '<span class="lc-badge lc-badge-' + (c.status === 'waiting' ? 'waiting' : 'active') + '">' + c.status + '</span>';
-                    html += '</div>';
-                    html += '<div class="lc-chat-item-preview">';
-                    if (c.brand_name) html += '[' + esc(c.brand_name) + '] ';
-                    html += esc(c.last_message || '—');
-                    if (c.agent_name && c.status === 'active') {
-                        html += ' · <span class="lc-chat-item-agent">' + esc(c.agent_name) + '</span>';
-                    }
-                    html += '</div>';
-                    html += '</div>';
-                });
-                var loadingEl2 = document.getElementById('lc-list-loading');
-                if (loadingEl2) loadingEl2.remove();
-                listEl.innerHTML = html;
+                lastConversations = data.conversations;
+                paintConversationList(filterConversations(lastConversations));
 
                 if (selectedId) {
                     var stillVisible = data.conversations.some(function (c) {
@@ -368,6 +455,7 @@
         loadCanned();
         loadPageJourney(true);
         pollMessages();
+        updateHeaderAvatar(visitorNameEl.textContent);
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
         });
@@ -458,6 +546,7 @@
                 replyInput.disabled = false;
                 document.getElementById('lc-send-reply').disabled = false;
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
+                updateHeaderAvatar(c.visitor_name || 'Visitor');
                 renderVisitorDetails(c);
                 var meta = c.visitor_page || c.page_url || '';
                 if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
@@ -583,6 +672,14 @@
         if (!transferPanel || transferPanel.hidden || !transferWrap) return;
         if (!transferWrap.contains(e.target)) closeTransferPanel();
     });
+
+    var inboxSearchEl = document.getElementById('lc-inbox-search');
+    if (inboxSearchEl) {
+        inboxSearchEl.addEventListener('input', function () {
+            inboxSearch = inboxSearchEl.value.trim();
+            paintConversationList(filterConversations(lastConversations));
+        });
+    }
 
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);
