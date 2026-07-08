@@ -273,7 +273,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=9';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=10';
         document.head.appendChild(link);
     }
 
@@ -283,6 +283,7 @@
     var ICON_LOCK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
     var ICON_MINIMIZE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>';
     var ICON_CLIP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+    var ICON_WAVE = '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V6a1.5 1.5 0 0 1 3 0v4"/><path d="M10 10.5V5a1.5 1.5 0 0 1 3 0v4.5"/><path d="M13 10V6a1.5 1.5 0 0 1 3 0v5"/><path d="M16 10.5V8a1.5 1.5 0 0 1 3 0v4"/><path d="M7 11h-.5a2.5 2.5 0 0 0 0 5H14a4 4 0 0 0 4-4v-1"/></svg>';
 
     function ensureAttachmentLib(callback) {
         if (window.LCChatFiles) {
@@ -411,9 +412,9 @@
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
                     '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
-                        '<span class="lcw-wave-hand">👋</span>' +
+                        '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
                     '</div>' +
-                    '<h3 class="lcw-ended-title">Thanks for chatting!</h3>' +
+                    '<p class="lcw-ended-title">Thanks for chatting!</p>' +
                     '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
                     '<p class="lcw-ended-note">This conversation has been closed.</p>' +
                     '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +

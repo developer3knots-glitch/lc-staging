@@ -822,26 +822,37 @@
 .lcw-ended-wave {
     border: 2px solid color-mix(in srgb, var(--lcw-primary) 20%, transparent);
 }
-.lcw-wave-hand {
-    font-size: 2.2rem;
-    line-height: 1;
-    display: inline-block;
-    transform-origin: 70% 70%;
+.lcw-wave-icon {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: 70% 80%;
     animation: lcw-wave-hand 1.4s ease-in-out infinite;
+}
+.lcw-wave-icon svg {
+    width: 36px;
+    height: 36px;
+    display: block;
 }
 @keyframes lcw-wave-hand {
     0%, 100% { transform: rotate(0deg); }
-    20% { transform: rotate(16deg); }
-    40% { transform: rotate(-8deg); }
-    60% { transform: rotate(14deg); }
-    80% { transform: rotate(-4deg); }
+    20% { transform: rotate(14deg); }
+    40% { transform: rotate(-6deg); }
+    60% { transform: rotate(12deg); }
+    80% { transform: rotate(-3deg); }
 }
-.lcw-ended-title {
+#lc-widget-root .lcw-ended-title {
     margin: 0;
-    font-size: 1.15rem;
-    font-weight: 800;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.96rem;
+    font-weight: 700;
+    font-style: normal;
     color: var(--lcw-ink);
     letter-spacing: -0.02em;
+    text-transform: none;
+    line-height: 1.4;
 }
 .lcw-ended-text {
     margin: 0;
