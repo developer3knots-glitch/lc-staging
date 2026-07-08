@@ -536,8 +536,8 @@
     border-color: var(--lcw-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
 }
-#lc-prechat-honeypot, #lc-honeypot {
-    position: absolute; left: -9999px; opacity: 0; height: 0; width: 0;
+#lc-prechat-honeypot, #lc-ticket-honeypot, #lc-honeypot {
+    position: absolute; left: -9999px; opacity: 0; height: 0; width: 0; pointer-events: none;
 }
 .lcw-prechat-error {
     background: #fef2f2;
