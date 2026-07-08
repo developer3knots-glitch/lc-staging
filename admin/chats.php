@@ -4,7 +4,7 @@ $agent = lc_require_auth();
 $selectedId = (int) ($_GET['id'] ?? 0);
 $pageTitle = 'Live Chats';
 $activeNav = 'chats';
-$extraScripts = ['admin-chat.js'];
+$extraScripts = ['lc-chat-attachments.js', 'admin-chat.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -115,10 +115,12 @@ require __DIR__ . '/includes/header.php';
 
                 <div class="lc-chat-compose lc-chat-compose-pro">
                     <div class="lc-chat-compose-inner">
-                        <textarea id="lc-reply-input" rows="1" placeholder="Type your reply…"></textarea>
+                        <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
+                        <textarea id="lc-reply-input" rows="1" placeholder="Type your reply… Paste screenshot with Ctrl+V"></textarea>
                         <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
+                        <input type="file" id="lc-file-input" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>
                     </div>
-                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> new line</p>
+                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>Ctrl+V</kbd> paste screenshot · JPG PNG WebP GIF PDF</p>
                 </div>
             </div>
         </div>

@@ -45,6 +45,7 @@
     var lastDateLabel = '';
     var teaserTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
+    var visitorUploadBusy = false;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
     try {
@@ -269,7 +270,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=6';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=7';
         document.head.appendChild(link);
     }
 
@@ -278,6 +279,19 @@
 
     var ICON_LOCK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
     var ICON_MINIMIZE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>';
+    var ICON_CLIP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+
+    function ensureAttachmentLib(callback) {
+        if (window.LCChatFiles) {
+            callback();
+            return;
+        }
+        var script = document.createElement('script');
+        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=1';
+        script.onload = callback;
+        script.onerror = callback;
+        document.head.appendChild(script);
+    }
     var ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
     function buildWidget() {
@@ -378,8 +392,10 @@
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div class="lcw-compose-inner">' +
-                        '<textarea id="lc-input" rows="1" placeholder="Write a message…"></textarea>' +
+                        '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
+                        '<textarea id="lc-input" rows="1" placeholder="Write a message… Ctrl+V to paste screenshot"></textarea>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
+                        '<input type="file" id="lc-file-input" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
             '</div>';
@@ -401,6 +417,38 @@
         inputEl.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
+        inputEl.addEventListener('paste', function (e) {
+            var items = e.clipboardData && e.clipboardData.items;
+            if (!items || !conversationId) return;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.indexOf('image') !== -1) {
+                    var pasted = items[i].getAsFile();
+                    if (pasted) {
+                        e.preventDefault();
+                        uploadVisitorFile(pasted);
+                    }
+                    break;
+                }
+            }
+        });
+
+        var attachBtn = document.getElementById('lc-attach-file');
+        var fileInput = document.getElementById('lc-file-input');
+        if (attachBtn && fileInput) {
+            attachBtn.addEventListener('click', function () {
+                if (!conversationId) {
+                    showPrechatForm();
+                    showPrechatError('Please start a conversation before sending files.');
+                    return;
+                }
+                fileInput.click();
+            });
+            fileInput.addEventListener('change', function () {
+                var file = fileInput.files && fileInput.files[0];
+                fileInput.value = '';
+                uploadVisitorFile(file);
+            });
+        }
 
         document.getElementById('lc-teaser').addEventListener('click', function (e) {
             if (e.target.id === 'lc-teaser-close') return;
@@ -802,6 +850,9 @@
         hideEndedState();
         showChatView();
         applyWidgetSettings(data);
+        if (data.attachments && window.LCChatFiles) {
+            window.LCChatFiles.setLimits(data.attachments);
+        }
         if (data.reference) {
             updateWidgetReference(data.reference);
         }
@@ -1053,7 +1104,7 @@
             updateStatus('Chatting with ' + agentName, true);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
-                '<div class="lcw-msg lcw-agent">' + esc(m.message) + '</div>' +
+                '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-meta">' + timeHtml + '</div></div>';
             box.appendChild(row);
         } else if (m.sender_type === 'visitor') {
@@ -1062,7 +1113,7 @@
             if (msgKey) wrap.setAttribute('data-msg-id', msgKey);
             var readMark = m._pending ? '' : '<span class="lcw-msg-read">' + (m.is_read ? '✓✓' : '✓') + '</span>';
             wrap.innerHTML =
-                '<div class="lcw-msg lcw-visitor">' + esc(m.message) + '</div>' +
+                '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-meta">' + timeHtml + readMark + '</div>';
             box.appendChild(wrap);
         } else {
@@ -1112,7 +1163,7 @@
     function pollMessages(isHistoryLoad) {
         if (!conversationId) return;
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId + '&last_id=' + fetchLastId + '&visitor_uid=' + encodeURIComponent(visitorUid))
+        fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId + '&last_id=' + fetchLastId + '&visitor_uid=' + encodeURIComponent(visitorUid) + '&chat_token=' + encodeURIComponent(chatToken || ''))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
@@ -1165,6 +1216,65 @@
                     }
                 });
             });
+    }
+
+    function messageBodyHtml(m) {
+        if (window.LCChatFiles && m.attachment) {
+            return window.LCChatFiles.renderWidgetAttachmentHtml(m.attachment, m.message);
+        }
+        return esc(m.message);
+    }
+
+    function uploadVisitorFile(file) {
+        if (!file || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
+            return;
+        }
+        visitorUploadBusy = true;
+        var attachBtn = document.getElementById('lc-attach-file');
+        if (attachBtn) attachBtn.classList.add('is-busy');
+
+        var caption = '';
+        var input = document.getElementById('lc-input');
+        if (input) {
+            caption = input.value.trim();
+        }
+
+        window.LCChatFiles.prepareFile(file).then(function (prepared) {
+            if (!prepared.ok) {
+                appendMessage({ sender_type: 'system', message: prepared.error || 'Invalid file' });
+                visitorUploadBusy = false;
+                if (attachBtn) attachBtn.classList.remove('is-busy');
+                return null;
+            }
+            return window.LCChatFiles.upload({
+                role: 'visitor',
+                baseUrl: siteUrl,
+                conversationId: conversationId,
+                file: prepared.file,
+                caption: caption,
+                visitorUid: visitorUid,
+                chatToken: chatToken,
+                websiteUrl: (document.getElementById('lc-honeypot') || {}).value || '',
+                widgetLoadedAt: widgetLoadedAt
+            });
+        }).then(function (data) {
+            visitorUploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            if (!data) return;
+            if (data.success) {
+                if (input) {
+                    input.value = '';
+                    autoResizeTextarea(input);
+                }
+                pollMessages(true);
+                return;
+            }
+            appendMessage({ sender_type: 'system', message: data.error || 'Upload failed' });
+        }).catch(function () {
+            visitorUploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            appendMessage({ sender_type: 'system', message: 'Upload failed. Please try again.' });
+        });
     }
 
     function sendMessage() {
@@ -1228,14 +1338,18 @@
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () {
             checkWidgetAccess(function () {
-                buildWidget();
-                resumeChatOnLoad();
+                ensureAttachmentLib(function () {
+                    buildWidget();
+                    resumeChatOnLoad();
+                });
             });
         });
     } else {
         checkWidgetAccess(function () {
-            buildWidget();
-            resumeChatOnLoad();
+            ensureAttachmentLib(function () {
+                buildWidget();
+                resumeChatOnLoad();
+            });
         });
     }
 

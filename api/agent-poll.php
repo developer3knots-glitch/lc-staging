@@ -13,6 +13,7 @@ if ($conversationId < 1) {
 }
 
 try {
+    lc_ensure_attachments_schema();
     $conv = lc_get_conversation($conversationId);
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
@@ -23,15 +24,20 @@ try {
     }
 
     $stmt = lc_db()->prepare('
-        SELECT m.id, m.sender_type, m.message, m.created_at, m.is_read,
-               CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name
+        SELECT ' . lc_attachment_message_select_sql() . ',
+               CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
+               CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
         FROM messages m
         LEFT JOIN agents a ON a.id = m.sender_id
         WHERE m.conversation_id = ? AND m.id > ?
         ORDER BY m.id ASC
     ');
     $stmt->execute([$conversationId, $lastId]);
-    $messages = $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+    $messages = [];
+    foreach ($rows as $row) {
+        $messages[] = lc_format_message_row($row);
+    }
 
     if (!empty($messages) && lc_agent_can_handle_conversation($agent, $conv)) {
         lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = "visitor" AND is_read = 0')
@@ -44,7 +50,7 @@ try {
             lc_format_api_conversation($conv) ?? [],
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
         ),
-        'messages' => lc_format_api_messages($messages),
+        'messages' => $messages,
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ]);

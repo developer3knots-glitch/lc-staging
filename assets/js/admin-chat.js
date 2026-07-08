@@ -224,8 +224,11 @@
             cls += ' is-visitor-close';
         }
         var label = cls === 'agent' ? (m.agent_name || 'Agent') : (cls === 'visitor' ? 'Visitor' : '');
-        var html = '<div class="lc-msg ' + cls + '" data-id="' + m.id + '">';
-        html += esc(m.message);
+        var bodyHtml = (window.LCChatFiles && m.attachment)
+            ? window.LCChatFiles.renderAttachmentHtml(m.attachment, m.message)
+            : esc(m.message);
+        var html = '<div class="lc-msg ' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + m.id + '">';
+        html += bodyHtml;
         html += '<div class="lc-msg-time">' + timeHtml(m.created_at) + (label && cls !== 'system' ? ' · ' + esc(label) : '') + '</div>';
         html += '</div>';
         return html;
@@ -1055,6 +1058,88 @@
 
     if (chatRefCopyBtn) {
         chatRefCopyBtn.addEventListener('click', copyChatReference);
+    }
+
+    if (window.LCChatFiles && window.LC_ATTACHMENT_LIMITS) {
+        window.LCChatFiles.setLimits(window.LC_ATTACHMENT_LIMITS);
+    }
+
+    var attachBtn = document.getElementById('lc-attach-file');
+    var fileInput = document.getElementById('lc-file-input');
+    var uploadBusy = false;
+
+    function showUploadError(msg) {
+        if (!messagesEl) return;
+        messagesEl.insertAdjacentHTML('beforeend', '<div class="lc-msg system is-upload-error">' + esc(msg) + '</div>');
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function uploadAgentFile(file) {
+        if (!file || !selectedId || uploadBusy || !window.LCChatFiles) return;
+        if (replyInput.disabled) {
+            showUploadError('You cannot send files in this chat right now.');
+            return;
+        }
+        uploadBusy = true;
+        if (attachBtn) attachBtn.classList.add('is-busy');
+        window.LCChatFiles.prepareFile(file).then(function (prepared) {
+            if (!prepared.ok) {
+                showUploadError(prepared.error || 'Invalid file');
+                uploadBusy = false;
+                if (attachBtn) attachBtn.classList.remove('is-busy');
+                return null;
+            }
+            return window.LCChatFiles.upload({
+                role: 'agent',
+                baseUrl: base,
+                conversationId: selectedId,
+                file: prepared.file,
+                caption: replyInput.value.trim()
+            });
+        }).then(function (data) {
+            uploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            if (!data) return;
+            if (data.success) {
+                replyInput.value = '';
+                pollMessages();
+                return;
+            }
+            showUploadError(data.error || 'Upload failed');
+        }).catch(function () {
+            uploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            showUploadError('Upload failed. Please try again.');
+        });
+    }
+
+    if (attachBtn && fileInput) {
+        attachBtn.addEventListener('click', function () {
+            if (!selectedId) return;
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', function () {
+            var file = fileInput.files && fileInput.files[0];
+            fileInput.value = '';
+            uploadAgentFile(file);
+        });
+    }
+
+    if (replyInput) {
+        replyInput.addEventListener('paste', function (e) {
+            var items = e.clipboardData && e.clipboardData.items;
+            if (!items || !selectedId) return;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.indexOf('image') !== -1) {
+                    var pasted = items[i].getAsFile();
+                    if (pasted) {
+                        e.preventDefault();
+                        uploadAgentFile(pasted);
+                    }
+                    break;
+                }
+            }
+        });
     }
 
     loadConversations();

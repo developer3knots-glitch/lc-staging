@@ -1,0 +1,69 @@
+<?php
+require_once __DIR__ . '/../includes/functions.php';
+lc_cors_headers();
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    lc_json(['success' => false, 'error' => 'Method not allowed'], 405);
+}
+
+$conversationId = (int) ($_POST['conversation_id'] ?? 0);
+$visitorUid = trim($_POST['visitor_uid'] ?? '');
+$caption = trim($_POST['caption'] ?? '');
+
+$input = $_POST;
+$input['chat_token'] = trim($_POST['chat_token'] ?? '');
+$ip = lc_client_ip();
+$userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+if ($conversationId < 1 || $visitorUid === '' || empty($_FILES['file'])) {
+    lc_json(['success' => false, 'error' => 'Invalid request'], 400);
+}
+
+$security = lc_widget_upload_security_check($input, $ip, $userAgent);
+if ($security !== true) {
+    lc_json(['success' => false, 'error' => $security], 403);
+}
+
+try {
+    lc_ensure_attachments_schema();
+    $db = lc_db();
+    $stmt = $db->prepare('
+        SELECT c.id, c.visitor_id, c.status
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE c.id = ? AND v.visitor_uid = ? AND c.status IN ("waiting","active")
+    ');
+    $stmt->execute([$conversationId, $visitorUid]);
+    $conv = $stmt->fetch();
+    if (!$conv) {
+        lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
+    }
+
+    lc_update_visitor_geo((int) $conv['visitor_id'], $ip, $userAgent, null);
+
+    $saved = lc_attachment_save_message(
+        $conversationId,
+        'visitor',
+        (int) $conv['visitor_id'],
+        $_FILES['file'],
+        $caption
+    );
+    if (!$saved['ok']) {
+        lc_json(['success' => false, 'error' => $saved['error'] ?? 'Upload failed'], 400);
+    }
+
+    lc_touch_conversation($conversationId);
+    if ($conv['status'] === 'waiting') {
+        lc_assign_agent($conversationId);
+    }
+
+    $row = lc_fetch_message_by_id((int) $saved['message_id']);
+    $chatToken = trim($_POST['chat_token'] ?? '');
+    lc_json([
+        'success' => true,
+        'message_id' => (int) $saved['message_id'],
+        'message' => $row ? lc_format_message_row($row, $chatToken) : null,
+    ]);
+} catch (Throwable $e) {
+    lc_json(['success' => false, 'error' => 'Server error'], 500);
+}

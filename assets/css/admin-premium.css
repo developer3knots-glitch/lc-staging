@@ -3994,6 +3994,73 @@ a.lc-conv-item:hover {
     outline: none;
     box-shadow: none;
 }
+.lc-chat-attach-btn {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--lc-border);
+    border-radius: 11px;
+    background: #fff;
+    color: #64748b;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.lc-chat-attach-btn:hover { background: #f8fafc; color: #334155; border-color: #cbd5e1; }
+.lc-chat-attach-btn.is-busy { opacity: 0.55; pointer-events: none; }
+.lc-msg.has-attachment { max-width: min(92%, 320px); }
+.lc-msg.has-attachment .lc-chat-text { margin-bottom: 0.45rem; white-space: pre-wrap; word-break: break-word; }
+.lc-chat-attach-image {
+    display: block;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+}
+.lc-chat-attach-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    object-fit: cover;
+}
+.lc-chat-attach-file {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    text-decoration: none;
+    color: inherit;
+}
+.lc-chat-attach-file-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: #fee2e2;
+    color: #dc2626;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.lc-chat-attach-file-body { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.lc-chat-attach-file-body strong {
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+.lc-chat-attach-file-body span { font-size: 0.68rem; color: var(--lc-muted); }
+.lc-msg.system.is-upload-error {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
 .lc-chat-send-btn {
     width: 42px;
     height: 42px;

@@ -5,6 +5,7 @@ lc_cors_headers();
 $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
 $visitorUid = trim($_GET['visitor_uid'] ?? '');
+$chatToken = trim($_GET['chat_token'] ?? '');
 
 if ($conversationId < 1 || $visitorUid === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
@@ -31,8 +32,10 @@ try {
         }
     }
 
+    lc_ensure_attachments_schema();
+
     $stmt = $db->prepare('
-        SELECT m.id, m.sender_type, m.message, m.created_at, m.sender_id, m.is_read,
+        SELECT ' . lc_attachment_message_select_sql() . ',
                ag.name AS agent_name, ag.avatar AS agent_avatar
         FROM messages m
         LEFT JOIN agents ag ON ag.id = m.sender_id AND m.sender_type IN ("agent", "system")
@@ -44,33 +47,7 @@ try {
 
     $messages = [];
     foreach ($rows as $row) {
-        $msg = [
-            'id' => (int) $row['id'],
-            'sender_type' => $row['sender_type'],
-            'message' => $row['message'],
-            'created_at' => $row['created_at'],
-        ];
-        if ($row['sender_type'] === 'agent') {
-            $msg['agent_name'] = $row['agent_name'];
-            $msg['agent_avatar'] = lc_avatar_meta($row['agent_avatar'] ?? null, $row['agent_name'] ?? 'Agent');
-        } elseif ($row['sender_type'] === 'visitor') {
-            $msg['is_read'] = (bool) $row['is_read'];
-        } elseif ($row['sender_type'] === 'system' && lc_message_is_agent_join($row['message'])) {
-            $agentName = $row['agent_name'];
-            $agentAvatar = $row['agent_avatar'] ?? null;
-            if (!$agentName && preg_match('/^(.+?)\s+joined the chat\.?$/i', $row['message'], $match)) {
-                $agentName = trim($match[1]);
-            }
-            if (!$agentName && !empty($conv['agent_name'])) {
-                $agentName = $conv['agent_name'];
-                $agentAvatar = $conv['agent_avatar'] ?? null;
-            }
-            $agentName = $agentName ?: 'Agent';
-            $msg['event'] = 'agent_join';
-            $msg['agent_name'] = $agentName;
-            $msg['agent_avatar'] = lc_avatar_meta($agentAvatar, $agentName);
-        }
-        $messages[] = $msg;
+        $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
     // Mark agent messages as read
@@ -88,7 +65,7 @@ try {
 
     lc_json([
         'success' => true,
-        'messages' => lc_format_api_messages($messages),
+        'messages' => $messages,
         'status' => $conv['status'],
         'reference' => lc_conversation_reference($conversationId, $conv['started_at'] ?? null),
         'agent_name' => $conv['agent_name'],

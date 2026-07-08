@@ -873,6 +873,70 @@
 }
 #lc-new-chat:hover { filter: brightness(1.04); transform: translateY(-1px); }
 
+.lcw-attach-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: #f1f5f9;
+    color: #64748b;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    align-self: flex-end;
+    margin-bottom: 2px;
+}
+.lcw-attach-btn:hover { background: #e2e8f0; color: #334155; }
+.lcw-attach-btn.is-busy { opacity: 0.55; pointer-events: none; }
+.lcw-msg.has-attachment { max-width: min(88%, 260px); padding: 0.45rem; }
+.lcw-chat-text { margin-bottom: 0.4rem; white-space: pre-wrap; word-break: break-word; }
+.lcw-attach-image {
+    display: block;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.lcw-attach-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 180px;
+    object-fit: cover;
+}
+.lcw-attach-file {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    text-decoration: none;
+    color: inherit;
+}
+.lcw-agent .lcw-attach-file { background: rgba(255, 255, 255, 0.72); color: #0f172a; }
+.lcw-attach-file-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #fee2e2;
+    color: #dc2626;
+    font-size: 0.62rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.lcw-attach-file-body { display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
+.lcw-attach-file-body strong {
+    font-size: 0.74rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+.lcw-attach-file-body span { font-size: 0.66rem; opacity: 0.78; }
+
 /* ─── Mobile fullscreen ─── */
 @media (max-width: 480px) {
     #lc-widget-root { right: 12px; bottom: 12px; }

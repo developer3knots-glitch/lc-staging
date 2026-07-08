@@ -28,6 +28,7 @@ try {
     lc_ensure_brands_schema();
     lc_ensure_security_schema();
     lc_ensure_ticket_schema();
+    lc_ensure_attachments_schema();
 
     $brand = lc_get_brand_by_key($brandKey);
     if (!$brand) {
@@ -164,6 +165,7 @@ try {
         'agents_online' => $online,
         'agent' => $agentInfo,
         'settings' => $brandSettings,
+        'attachments' => lc_attachment_public_config(),
         'visitor_ip' => $visitorInfo['ip_address'] ?? $ip,
         'visitor_country' => $visitorInfo['country'] ?? '',
     ]);

@@ -25,6 +25,7 @@ function lc_require_auth(): array
         lc_ensure_security_schema();
         lc_ensure_blocking_schema();
         lc_ensure_ticket_schema();
+        lc_ensure_attachments_schema();
     }
     $agent = lc_auth_agent();
     if (!$agent) {
