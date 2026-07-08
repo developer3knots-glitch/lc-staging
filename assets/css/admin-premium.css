@@ -2838,6 +2838,8 @@ a.lc-conv-item:hover {
 }
 .lc-settings-tile-icon.blue { background: #eff6ff; color: #2563eb; }
 .lc-settings-tile-icon.green { background: #ecfdf5; color: #059669; }
+.lc-settings-tile-icon.violet { background: #f5f3ff; color: #7c3aed; }
+.lc-settings-tile-icon.amber { background: #fffbeb; color: #d97706; }
 .lc-settings-tile-body { flex: 1; min-width: 0; }
 .lc-settings-tile-body > label:first-child:not(.lc-settings-toggle) {
     display: block;

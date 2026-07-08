@@ -13,6 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         lc_set_setting('auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
         lc_set_setting('poll_interval_ms', (string) max(800, (int) ($_POST['poll_interval_ms'] ?? 1500)));
         $message = 'System settings saved successfully.';
+    } elseif ($action === 'save_tickets') {
+        lc_set_setting('ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
+        lc_set_setting('ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
+        $message = 'Ticket settings saved successfully.';
     } elseif ($action === 'save_countries') {
         $countryCodes = $_POST['blocked_countries'] ?? [];
         if (!is_array($countryCodes)) {
@@ -50,6 +54,8 @@ asort($allCountries);
 
 $pollMs = (int) lc_setting('poll_interval_ms', '1500');
 $autoAssign = lc_setting('auto_assign', '1') === '1';
+$ticketDisplayEnabled = lc_ticket_display_enabled();
+$ticketResumeEnabled = lc_ticket_resume_enabled();
 
 $pageTitle = 'Settings';
 $activeNav = 'settings';
@@ -87,14 +93,15 @@ require __DIR__ . '/includes/header.php';
                 <span class="lc-hero-metric-label">Blocked IPs</span>
             </div>
             <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= $autoAssign ? 'On' : 'Off' ?></span>
-                <span class="lc-hero-metric-label">Auto-assign</span>
+                <span class="lc-hero-metric-val"><?= $ticketDisplayEnabled ? 'On' : 'Off' ?></span>
+                <span class="lc-hero-metric-label">Ticket ID</span>
             </div>
         </div>
     </div>
 
     <nav class="lc-settings-nav" aria-label="Settings sections">
         <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
+        <a href="#lc-settings-tickets" class="lc-settings-nav-link"><i class="ti ti-ticket"></i> Tickets</a>
         <a href="#lc-settings-geo" class="lc-settings-nav-link"><i class="ti ti-world-off"></i> Countries</a>
         <a href="#lc-settings-security" class="lc-settings-nav-link"><i class="ti ti-ban"></i> IP Block</a>
     </nav>
@@ -137,6 +144,48 @@ require __DIR__ . '/includes/header.php';
                             </div>
                         </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-tickets">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-ticket"></i> Support Tickets</h3>
+                    <span class="lc-card-sub">Visitor widget features</span>
+                </div>
+                <div class="lc-card-body">
+                    <p class="lc-settings-desc">Control official ticket features for visitors. Tickets are always stored in the database and visible to agents in the admin panel.</p>
+                    <form method="post" class="lc-form lc-settings-system-form">
+                        <input type="hidden" name="action" value="save_tickets">
+                        <div class="lc-settings-tiles">
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon violet"><i class="ti ti-hash"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="ticket_display_enabled" <?= $ticketDisplayEnabled ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Show ticket reference to visitors</strong>
+                                            <small>Displays the official ticket ID in the widget header, chat message, and closed-chat screen</small>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon amber"><i class="ti ti-login-2"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="ticket_resume_enabled" <?= $ticketResumeEnabled ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Allow visitors to resume with ticket</strong>
+                                            <small>Visitors can enter ticket + email to continue a previous conversation on any device</small>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save ticket settings</button>
                     </form>
                 </div>
             </section>

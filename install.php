@@ -51,7 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             ('offline_message', 'We are currently offline. Leave a message and we will get back to you.'),
             ('auto_assign', '1'),
             ('poll_interval_ms', '1500'),
-            ('ticket_prefix', 'LC')");
+            ('ticket_prefix', 'LC'),
+            ('ticket_display_enabled', '0'),
+            ('ticket_resume_enabled', '0')");
         $pdo->exec("INSERT IGNORE INTO canned_replies (title, message) VALUES
             ('Greeting', 'Hello! Thank you for contacting us. How may I assist you?'),
             ('Please wait', 'Please give me a moment while I check that for you.'),
@@ -108,6 +110,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             $pdo->exec('ALTER TABLE conversations ADD UNIQUE INDEX idx_ticket_reference (ticket_reference)');
         } catch (Throwable $e) {}
         $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_prefix', 'LC')");
+        $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_display_enabled', '0')");
+        $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_resume_enabled', '0')");
         $ticketRows = $pdo->query("SELECT id, started_at FROM conversations WHERE ticket_reference IS NULL OR ticket_reference = ''");
         while ($row = $ticketRows->fetch(PDO::FETCH_ASSOC)) {
             $id = (int) $row['id'];

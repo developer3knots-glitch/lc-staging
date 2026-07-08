@@ -104,7 +104,9 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
 ('offline_message', 'We are currently offline. Leave a message and we will get back to you.'),
 ('auto_assign', '1'),
 ('poll_interval_ms', '1500'),
-('ticket_prefix', 'LC');
+('ticket_prefix', 'LC'),
+('ticket_display_enabled', '0'),
+('ticket_resume_enabled', '0');
 
 -- Admin account is created during install.php
 

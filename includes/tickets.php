@@ -183,6 +183,16 @@ function lc_parse_conversation_reference(string $input): ?int
     return null;
 }
 
+function lc_ticket_display_enabled(): bool
+{
+    return lc_setting('ticket_display_enabled', '0') === '1';
+}
+
+function lc_ticket_resume_enabled(): bool
+{
+    return lc_setting('ticket_resume_enabled', '0') === '1';
+}
+
 function lc_conversation_reference_message(int $conversationId, ?string $startedAt = null): string
 {
     $ref = lc_conversation_reference($conversationId, $startedAt);

@@ -67,11 +67,13 @@ try {
         'success' => true,
         'messages' => $messages,
         'status' => $conv['status'],
-        'reference' => lc_conversation_reference($conversationId, $conv['started_at'] ?? null),
+        'reference' => lc_ticket_display_enabled() ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null) : '',
         'agent_name' => $conv['agent_name'],
         'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),
         'agents_online' => lc_get_online_agents_count(),
         'last_visitor_read' => $lastVisitorRead,
+        'ticket_display_enabled' => lc_ticket_display_enabled(),
+        'ticket_resume_enabled' => lc_ticket_resume_enabled(),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

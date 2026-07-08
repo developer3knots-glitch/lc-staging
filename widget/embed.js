@@ -46,6 +46,9 @@
     var teaserTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
     var visitorUploadBusy = false;
+    var ticketDisplayEnabled = false;
+    var ticketResumeEnabled = false;
+    var settingsSyncTimer = null;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
     try {
@@ -375,7 +378,7 @@
                             '</button>' +
                         '</form>' +
                     '</div>' +
-                    '<div class="lcw-ticket-resume-wrap">' +
+                    '<div class="lcw-ticket-resume-wrap" id="lc-ticket-resume-wrap">' +
                         '<button type="button" class="lcw-ticket-resume-toggle" id="lc-show-ticket-resume">Already have a ticket? Continue your conversation</button>' +
                         '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
                             '<div class="lcw-form-card lcw-ticket-resume-card">' +
@@ -501,9 +504,10 @@
         });
 
         scheduleTeaser();
+        loadWidgetSettings();
+        startSettingsSync();
 
-        // Chat stays open across same-site page navigations (sessionStorage resumes on next page).
-        // Auto-close on unload caused false "Visitor left the page" on every link click.
+        // Chat stays open across same-site page navigations
         window.addEventListener('pagehide', function (e) {
             if (e.persisted) return;
             if (isReloadNavigation()) {
@@ -595,6 +599,9 @@
     }
 
     function showTicketResumePanel() {
+        if (!ticketResumeEnabled) {
+            return;
+        }
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
         var toggle = document.getElementById('lc-show-ticket-resume');
@@ -619,6 +626,9 @@
     }
 
     function openTicketResumeFromEnded() {
+        if (!ticketResumeEnabled) {
+            return;
+        }
         hideEndedState();
         showPrechatForm();
         showTicketResumePanel();
@@ -631,6 +641,10 @@
 
     function submitTicketResumeForm(e) {
         e.preventDefault();
+        if (!ticketResumeEnabled) {
+            showTicketResumeError('Ticket resume is not available.');
+            return;
+        }
         var ticketRef = (document.getElementById('lc-ticket-ref').value || '').trim();
         var email = (document.getElementById('lc-ticket-email').value || '').trim();
         var submitBtn = document.getElementById('lc-ticket-resume-submit');
@@ -714,9 +728,67 @@
         setBubbleOnline(agentsOnline > 0);
     }
 
+    function getSettingsSyncMs() {
+        return Math.max(10000, Math.min(30000, (pollMs || 1500) * 8));
+    }
+
+    function startSettingsSync() {
+        if (settingsSyncTimer) {
+            clearInterval(settingsSyncTimer);
+        }
+        settingsSyncTimer = setInterval(refreshWidgetSettings, getSettingsSyncMs());
+    }
+
+    function isTicketReferenceMessage(m) {
+        return !!(m && m.sender_type === 'system' && (m.message || '').indexOf('support ticket reference') !== -1);
+    }
+
+    function syncTicketMessagesVisibility() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        box.querySelectorAll('[data-ticket-ref-msg]').forEach(function (el) {
+            el.style.display = ticketDisplayEnabled ? '' : 'none';
+        });
+    }
+
+    function applyTicketFeatureFlags(display, resume) {
+        var prevDisplay = ticketDisplayEnabled;
+        var prevResume = ticketResumeEnabled;
+        ticketDisplayEnabled = !!display;
+        ticketResumeEnabled = !!resume;
+        if (prevDisplay === ticketDisplayEnabled && prevResume === ticketResumeEnabled) {
+            return false;
+        }
+        if (prevResume && !ticketResumeEnabled) {
+            hideTicketResumePanel();
+        }
+        syncTicketFeatureUi();
+        if (ticketDisplayEnabled && !prevDisplay && currentReference) {
+            updateWidgetReference(currentReference);
+        }
+        return true;
+    }
+
+    function syncTicketFeatureUi() {
+        var resumeWrap = document.getElementById('lc-ticket-resume-wrap');
+        var endedBtn = document.getElementById('lc-resume-ticket');
+        var refWrap = document.getElementById('lc-panel-ref');
+        var endedRef = document.getElementById('lc-ended-ref');
+        if (resumeWrap) resumeWrap.style.display = ticketResumeEnabled ? '' : 'none';
+        if (endedBtn) endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
+        if (!ticketDisplayEnabled) {
+            if (refWrap) refWrap.hidden = true;
+            if (endedRef) endedRef.hidden = true;
+        } else if (currentReference) {
+            updateWidgetReference(currentReference);
+        }
+        syncTicketMessagesVisibility();
+    }
+
     function applyWidgetSettings(data) {
         if (!data || !data.settings) return;
         settings = data.settings;
+        applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;
@@ -725,12 +797,18 @@
         document.documentElement.style.setProperty('--lcw-primary', settings.widget_color || '#6FD943');
         if (settings.poll_interval_ms) {
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = setInterval(pollMessages, pollMs);
+            }
+            startSettingsSync();
         }
+        syncTicketFeatureUi();
         updatePrechatStatus(data.agents_online || 0);
     }
 
-    function loadWidgetSettings() {
-        fetch(siteUrl + '/api/widget-init.php', {
+    function fetchWidgetSettings(done) {
+        return fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -743,7 +821,22 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (!data.success) return;
+            if (data.success && done) {
+                done(data);
+            }
+            return data;
+        })
+        .catch(function () {});
+    }
+
+    function refreshWidgetSettings() {
+        fetchWidgetSettings(function (data) {
+            applyWidgetSettings(data);
+        });
+    }
+
+    function loadWidgetSettings() {
+        fetchWidgetSettings(function (data) {
             applyWidgetSettings(data);
             if (data.has_active_chat && data.conversation_id) {
                 showChatView();
@@ -896,6 +989,7 @@
         if (currentReference) {
             updateWidgetReference(currentReference);
         }
+        syncTicketFeatureUi();
     }
 
     function hideEndedState() {
@@ -970,20 +1064,20 @@
         persistConversationId(conversationId);
         persistChatToken(chatToken);
         chatClosed = data.status === 'closed';
+        applyWidgetSettings(data);
+        if (data.attachments && window.LCChatFiles) {
+            window.LCChatFiles.setLimits(data.attachments);
+            window.LCChatFiles.applyFileInput(document.getElementById('lc-file-input'));
+        }
+        if (data.reference && ticketDisplayEnabled) {
+            updateWidgetReference(data.reference);
+        }
         if (chatClosed) {
             showEndedState();
             return;
         }
         hideEndedState();
         showChatView();
-        applyWidgetSettings(data);
-        if (data.attachments && window.LCChatFiles) {
-            window.LCChatFiles.setLimits(data.attachments);
-            window.LCChatFiles.applyFileInput(document.getElementById('lc-file-input'));
-        }
-        if (data.reference) {
-            updateWidgetReference(data.reference);
-        }
         updatePrechatStatus(data.agents_online || 0);
         updateHeaderAgent(data.agent || null);
         var hasAgent = data.agent && data.agent.name;
@@ -1174,7 +1268,7 @@
     }
 
     function updateWidgetReference(ref) {
-        if (!ref) {
+        if (!ref || !ticketDisplayEnabled) {
             return;
         }
         currentReference = ref;
@@ -1245,9 +1339,15 @@
                 '<div class="lcw-msg-meta">' + timeHtml + readMark + '</div>';
             box.appendChild(wrap);
         } else {
+            if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
+                return;
+            }
             var sys = document.createElement('div');
             sys.className = 'lcw-msg lcw-system';
             if (msgKey) sys.setAttribute('data-msg-id', msgKey);
+            if (isTicketReferenceMessage(m)) {
+                sys.setAttribute('data-ticket-ref-msg', '1');
+            }
             sys.innerHTML = esc(m.message);
             box.appendChild(sys);
         }
@@ -1296,7 +1396,11 @@
             .then(function (data) {
                 if (!data.success) return;
 
-                if (data.reference) {
+                if (data.ticket_display_enabled !== undefined) {
+                    applyTicketFeatureFlags(data.ticket_display_enabled, data.ticket_resume_enabled);
+                }
+
+                if (data.reference && ticketDisplayEnabled) {
                     updateWidgetReference(data.reference);
                 }
 

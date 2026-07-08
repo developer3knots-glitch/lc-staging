@@ -120,7 +120,9 @@ try {
         $welcome = $brand['welcome_message'] ?: 'Hi! How can we help you today?';
         $msg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
         $msg->execute([$convId, 'system', $welcome]);
-        $msg->execute([$convId, 'system', lc_conversation_reference_message($convId)]);
+        if (lc_ticket_display_enabled()) {
+            $msg->execute([$convId, 'system', lc_conversation_reference_message($convId)]);
+        }
 
         $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
         $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
@@ -156,7 +158,7 @@ try {
     lc_json([
         'success' => true,
         'conversation_id' => $convId,
-        'reference' => lc_conversation_reference($convId),
+        'reference' => lc_ticket_display_enabled() ? lc_conversation_reference($convId) : '',
         'chat_token' => $chatToken,
         'visitor_id' => $visitorId,
         'brand_id' => $brandId,

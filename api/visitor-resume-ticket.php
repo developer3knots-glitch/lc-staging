@@ -27,6 +27,10 @@ try {
     lc_ensure_ticket_schema();
     lc_ensure_attachments_schema();
 
+    if (!lc_ticket_resume_enabled()) {
+        lc_json(['success' => false, 'error' => 'Ticket resume is not enabled for this site'], 403);
+    }
+
     $brand = lc_get_brand_by_key($brandKey);
     if (!$brand) {
         lc_json(['success' => false, 'error' => 'Invalid brand key'], 400);
@@ -77,7 +81,9 @@ try {
     lc_json([
         'success' => true,
         'conversation_id' => $convId,
-        'reference' => $result['reference'] ?? lc_conversation_reference($convId),
+        'reference' => ($result['reference'] ?? '') && lc_ticket_display_enabled()
+            ? ($result['reference'] ?? lc_conversation_reference($convId))
+            : '',
         'chat_token' => $chatToken,
         'visitor_id' => $visitorId,
         'brand_id' => $brandId,
