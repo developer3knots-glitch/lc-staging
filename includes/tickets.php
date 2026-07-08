@@ -189,3 +189,78 @@ function lc_conversation_reference_message(int $conversationId, ?string $started
 
     return 'Your support ticket reference is ' . $ref . '. Please save this number — when you return, share it so we can continue this same conversation without starting over.';
 }
+
+/**
+ * Resume a conversation by official ticket reference + verified email (enterprise support flow).
+ *
+ * @return array{ok: bool, error?: string, conversation_id?: int, status?: string, reference?: string}
+ */
+function lc_resume_conversation_by_ticket(string $ticketInput, string $email, int $brandId, int $currentVisitorId): array
+{
+    lc_ensure_ticket_schema();
+    lc_ensure_brands_schema();
+
+    $email = strtolower(trim($email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'error' => 'Valid email is required'];
+    }
+
+    $ticketInput = trim($ticketInput);
+    if ($ticketInput === '') {
+        return ['ok' => false, 'error' => 'Ticket reference is required'];
+    }
+
+    $convId = lc_parse_conversation_reference($ticketInput);
+    if ($convId === null) {
+        return ['ok' => false, 'error' => 'We could not find that ticket. Check the number and try again.'];
+    }
+
+    $conv = lc_get_conversation($convId);
+    if (!$conv || (int) ($conv['brand_id'] ?? 0) !== $brandId) {
+        return ['ok' => false, 'error' => 'We could not find that ticket. Check the number and try again.'];
+    }
+
+    $storedEmail = strtolower(trim((string) ($conv['visitor_email'] ?? '')));
+    if ($storedEmail === '' || $storedEmail !== $email) {
+        return ['ok' => false, 'error' => 'Ticket and email do not match. Please check your details.'];
+    }
+
+    $db = lc_db();
+    $reference = lc_conversation_reference($convId, $conv['started_at'] ?? null);
+
+    if ((int) $conv['visitor_id'] !== $currentVisitorId) {
+        $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ?')->execute([$currentVisitorId, $convId]);
+        $db->prepare('
+            UPDATE visitors
+            SET email = ?, name = COALESCE(NULLIF(name, ""), ?)
+            WHERE id = ?
+        ')->execute([
+            $email,
+            trim((string) ($conv['visitor_name'] ?? '')),
+            $currentVisitorId,
+        ]);
+    }
+
+    $status = (string) $conv['status'];
+    if ($status === 'closed') {
+        $status = !empty($conv['agent_id']) ? 'active' : 'waiting';
+        $db->prepare('UPDATE conversations SET status = ?, closed_at = NULL WHERE id = ?')
+            ->execute([$status, $convId]);
+        lc_add_system_message(
+            $convId,
+            'Visitor resumed this conversation using ticket ' . $reference . '.'
+        );
+        if ($status === 'waiting') {
+            lc_assign_agent($convId);
+        }
+    }
+
+    lc_touch_conversation($convId);
+
+    return [
+        'ok' => true,
+        'conversation_id' => $convId,
+        'status' => $status,
+        'reference' => $reference,
+    ];
+}

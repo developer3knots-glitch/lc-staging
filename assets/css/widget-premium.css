@@ -937,6 +937,57 @@
 }
 .lcw-attach-file-body span { font-size: 0.66rem; opacity: 0.78; }
 
+.lcw-ticket-resume-wrap {
+    margin-top: 0.15rem;
+    text-align: center;
+}
+.lcw-ticket-resume-toggle {
+    border: none;
+    background: transparent;
+    color: var(--lcw-primary);
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.35rem 0.5rem;
+    font-family: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.lcw-ticket-resume-toggle:hover { color: var(--lcw-primary-dark); }
+.lcw-ticket-resume-panel { margin-top: 0.35rem; }
+.lcw-ticket-resume-card { margin-top: 0; }
+.lcw-ticket-resume-back {
+    display: block;
+    width: 100%;
+    margin-top: 0.55rem;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.35rem;
+    font-family: inherit;
+}
+.lcw-ticket-resume-back:hover { color: #334155; }
+.lcw-ended-secondary {
+    border: 1.5px solid var(--lcw-primary);
+    background: #fff;
+    color: var(--lcw-primary);
+    padding: 0.62rem 1.2rem;
+    border-radius: 11px;
+    font-weight: 700;
+    font-size: 0.84rem;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 0.55rem;
+    width: 100%;
+    max-width: 260px;
+}
+.lcw-ended-secondary:hover {
+    background: color-mix(in srgb, var(--lcw-primary) 8%, #fff);
+}
+
 /* ─── Mobile fullscreen ─── */
 @media (max-width: 480px) {
     #lc-widget-root { right: 12px; bottom: 12px; }

@@ -197,6 +197,32 @@ function lc_widget_upload_security_check(array $input, string $ip, ?string $user
     return true;
 }
 
+/**
+ * @return true|string
+ */
+function lc_widget_ticket_resume_security_check(array $input, string $ip, ?string $userAgent): bool|string
+{
+    $block = lc_widget_block_check($ip);
+    if ($block !== true) {
+        return $block;
+    }
+
+    if (lc_is_bot_user_agent($userAgent)) {
+        return 'Automated access blocked.';
+    }
+
+    $honeypot = trim((string) ($input['website_url'] ?? $input['company_website'] ?? ''));
+    if ($honeypot !== '') {
+        return 'Automated access blocked.';
+    }
+
+    if (!lc_rate_limit('ip:' . $ip . ':ticket_resume', 8, 60)) {
+        return 'Too many attempts. Please wait a moment.';
+    }
+
+    return true;
+}
+
 function lc_update_visitor_geo(int $visitorId, string $ip, ?string $userAgent, ?string $pageUrl): void
 {
     $geo = lc_resolve_geo($ip);

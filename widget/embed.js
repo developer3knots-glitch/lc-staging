@@ -270,7 +270,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=7';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=8';
         document.head.appendChild(link);
     }
 
@@ -349,7 +349,7 @@
                             '<span class="lcw-response-hint" id="lc-response-hint"></span>' +
                         '</div>' +
                     '</div>' +
-                    '<div class="lcw-form-card">' +
+                    '<div class="lcw-form-card" id="lc-prechat-start-panel">' +
                         '<div class="lcw-form-card-head">' +
                             '<h3 class="lcw-form-title">Start a conversation</h3>' +
                             '<p class="lcw-form-subtitle">Tell us a little about yourself — our team will take it from here.</p>' +
@@ -375,6 +375,34 @@
                             '</button>' +
                         '</form>' +
                     '</div>' +
+                    '<div class="lcw-ticket-resume-wrap">' +
+                        '<button type="button" class="lcw-ticket-resume-toggle" id="lc-show-ticket-resume">Already have a ticket? Continue your conversation</button>' +
+                        '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
+                            '<div class="lcw-form-card lcw-ticket-resume-card">' +
+                                '<div class="lcw-form-card-head">' +
+                                    '<h3 class="lcw-form-title">Continue with ticket</h3>' +
+                                    '<p class="lcw-form-subtitle">Enter your ticket reference and the same email you used before.</p>' +
+                                '</div>' +
+                                '<form id="lc-ticket-resume-form" class="lcw-prechat-form">' +
+                                    '<div class="lcw-field">' +
+                                        '<label for="lc-ticket-ref">Ticket reference <span>*</span></label>' +
+                                        '<input type="text" id="lc-ticket-ref" required placeholder="LC-20260707-000019" autocomplete="off" autocapitalize="characters">' +
+                                    '</div>' +
+                                    '<div class="lcw-field">' +
+                                        '<label for="lc-ticket-email">Email <span>*</span></label>' +
+                                        '<input type="email" id="lc-ticket-email" required placeholder="you@company.com" autocomplete="email">' +
+                                    '</div>' +
+                                    '<input type="text" name="website_url" id="lc-ticket-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                                    '<div id="lc-ticket-resume-error" class="lcw-prechat-error" style="display:none"></div>' +
+                                    '<button type="submit" class="lcw-prechat-btn" id="lc-ticket-resume-submit">' +
+                                        '<span class="lcw-btn-spinner"></span>' +
+                                        '<span class="lcw-btn-label">Continue conversation</span>' +
+                                    '</button>' +
+                                    '<button type="button" class="lcw-ticket-resume-back" id="lc-ticket-resume-back">Back to new conversation</button>' +
+                                '</form>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
                     '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential · <strong id="lc-powered-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
@@ -386,6 +414,7 @@
                     '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
                     '<p class="lcw-ended-note">This conversation has been closed.</p>' +
                     '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +
+                    '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
                     '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
@@ -406,6 +435,10 @@
         document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
         document.getElementById('lc-close-chat').addEventListener('click', endChat);
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
+        document.getElementById('lc-resume-ticket').addEventListener('click', openTicketResumeFromEnded);
+        document.getElementById('lc-show-ticket-resume').addEventListener('click', showTicketResumePanel);
+        document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
+        document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
             e.preventDefault();
@@ -549,6 +582,95 @@
         }
     }
 
+    function showTicketResumeError(msg) {
+        var el = document.getElementById('lc-ticket-resume-error');
+        if (!el) return;
+        if (msg) {
+            el.textContent = msg;
+            el.style.display = 'block';
+        } else {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
+    }
+
+    function showTicketResumePanel() {
+        var startPanel = document.getElementById('lc-prechat-start-panel');
+        var ticketPanel = document.getElementById('lc-ticket-resume-panel');
+        var toggle = document.getElementById('lc-show-ticket-resume');
+        if (startPanel) startPanel.style.display = 'none';
+        if (ticketPanel) ticketPanel.hidden = false;
+        if (toggle) toggle.style.display = 'none';
+        var emailEl = document.getElementById('lc-ticket-email');
+        if (emailEl) {
+            emailEl.value = localStorage.getItem('lc_visitor_email') || emailEl.value || '';
+        }
+        showTicketResumeError('');
+    }
+
+    function hideTicketResumePanel() {
+        var startPanel = document.getElementById('lc-prechat-start-panel');
+        var ticketPanel = document.getElementById('lc-ticket-resume-panel');
+        var toggle = document.getElementById('lc-show-ticket-resume');
+        if (startPanel) startPanel.style.display = '';
+        if (ticketPanel) ticketPanel.hidden = true;
+        if (toggle) toggle.style.display = '';
+        showTicketResumeError('');
+    }
+
+    function openTicketResumeFromEnded() {
+        hideEndedState();
+        showPrechatForm();
+        showTicketResumePanel();
+        var refCode = document.getElementById('lc-ended-ref-code');
+        var refInput = document.getElementById('lc-ticket-ref');
+        if (refCode && refInput && refCode.textContent && refCode.textContent !== '—') {
+            refInput.value = refCode.textContent.trim();
+        }
+    }
+
+    function submitTicketResumeForm(e) {
+        e.preventDefault();
+        var ticketRef = (document.getElementById('lc-ticket-ref').value || '').trim();
+        var email = (document.getElementById('lc-ticket-email').value || '').trim();
+        var submitBtn = document.getElementById('lc-ticket-resume-submit');
+        if (!ticketRef || !email) {
+            showTicketResumeError('Please enter your ticket reference and email.');
+            return;
+        }
+
+        showTicketResumeError('');
+        if (submitBtn) submitBtn.classList.add('is-loading');
+
+        fetch(siteUrl + '/api/visitor-resume-ticket.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                ticket_reference: ticketRef,
+                email: email,
+                page_url: window.location.href,
+                website_url: (document.getElementById('lc-ticket-honeypot') || {}).value || ''
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (submitBtn) submitBtn.classList.remove('is-loading');
+            if (!data.success) {
+                showTicketResumeError(data.error || 'Unable to resume this conversation.');
+                return;
+            }
+            localStorage.setItem('lc_visitor_email', email);
+            hideTicketResumePanel();
+            handleChatStarted(data, { keepMessages: false });
+        })
+        .catch(function () {
+            if (submitBtn) submitBtn.classList.remove('is-loading');
+            showTicketResumeError('Connection error. Please try again.');
+        });
+    }
+
     function showPrechatForm() {
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
@@ -559,6 +681,7 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
+        hideTicketResumePanel();
         loadWidgetSettings();
     }
 
@@ -826,6 +949,7 @@
         var endedRef = document.getElementById('lc-ended-ref');
         if (refWrap) refWrap.hidden = true;
         if (endedRef) endedRef.hidden = true;
+        hideTicketResumePanel();
         conversationId = null;
         lastMsgId = 0;
         lastDateLabel = '';
