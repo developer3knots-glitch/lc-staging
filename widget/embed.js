@@ -287,7 +287,7 @@
             return;
         }
         var script = document.createElement('script');
-        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=1';
+        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=2';
         script.onload = callback;
         script.onerror = callback;
         document.head.appendChild(script);
@@ -393,9 +393,9 @@
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div class="lcw-compose-inner">' +
                         '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
-                        '<textarea id="lc-input" rows="1" placeholder="Write a message… Ctrl+V to paste screenshot"></textarea>' +
+                        '<textarea id="lc-input" rows="1" placeholder="Write a message…"></textarea>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
-                        '<input type="file" id="lc-file-input" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" hidden>' +
+                        '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
             '</div>';
@@ -448,6 +448,9 @@
                 fileInput.value = '';
                 uploadVisitorFile(file);
             });
+            if (window.LCChatFiles) {
+                window.LCChatFiles.applyFileInput(fileInput);
+            }
         }
 
         document.getElementById('lc-teaser').addEventListener('click', function (e) {
@@ -852,6 +855,7 @@
         applyWidgetSettings(data);
         if (data.attachments && window.LCChatFiles) {
             window.LCChatFiles.setLimits(data.attachments);
+            window.LCChatFiles.applyFileInput(document.getElementById('lc-file-input'));
         }
         if (data.reference) {
             updateWidgetReference(data.reference);

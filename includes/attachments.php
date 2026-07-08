@@ -13,7 +13,9 @@ function lc_attachment_limits(): array
         'document_extensions' => ['pdf'],
         'image_mimes' => [
             'image/jpeg' => 'jpg',
+            'image/pjpeg' => 'jpg',
             'image/png' => 'png',
+            'image/x-png' => 'png',
             'image/webp' => 'webp',
             'image/gif' => 'gif',
         ],
@@ -78,6 +80,12 @@ function lc_attachment_storage_root(): string
     return __DIR__ . '/../uploads/chat';
 }
 
+function lc_attachment_file_accept(): string
+{
+    // image/* ensures Windows file picker shows photos; extensions cover all browsers.
+    return 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf';
+}
+
 function lc_attachment_public_config(): array
 {
     $limits = lc_attachment_limits();
@@ -88,6 +96,7 @@ function lc_attachment_public_config(): array
         'max_image_width' => $limits['max_image_width'],
         'image_extensions' => $limits['image_extensions'],
         'document_extensions' => $limits['document_extensions'],
+        'file_accept' => lc_attachment_file_accept(),
     ];
 }
 

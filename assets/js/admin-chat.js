@@ -1060,13 +1060,14 @@
         chatRefCopyBtn.addEventListener('click', copyChatReference);
     }
 
-    if (window.LCChatFiles && window.LC_ATTACHMENT_LIMITS) {
-        window.LCChatFiles.setLimits(window.LC_ATTACHMENT_LIMITS);
-    }
-
     var attachBtn = document.getElementById('lc-attach-file');
     var fileInput = document.getElementById('lc-file-input');
     var uploadBusy = false;
+
+    if (window.LCChatFiles && window.LC_ATTACHMENT_LIMITS) {
+        window.LCChatFiles.setLimits(window.LC_ATTACHMENT_LIMITS);
+        window.LCChatFiles.applyFileInput(fileInput);
+    }
 
     function showUploadError(msg) {
         if (!messagesEl) return;

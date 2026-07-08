@@ -1,12 +1,15 @@
 (function (global) {
     'use strict';
 
+    var FILE_ACCEPT = 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf';
+
     var defaults = {
         max_image_bytes: 3145728,
         max_document_bytes: 5242880,
         max_image_width: 1920,
         image_extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-        document_extensions: ['pdf']
+        document_extensions: ['pdf'],
+        file_accept: FILE_ACCEPT
     };
 
     function setLimits(limits) {
@@ -16,6 +19,15 @@
                 defaults[key] = limits[key];
             }
         });
+    }
+
+    function getFileAccept() {
+        return defaults.file_accept || FILE_ACCEPT;
+    }
+
+    function applyFileInput(input) {
+        if (!input) return;
+        input.setAttribute('accept', getFileAccept());
     }
 
     function esc(text) {
@@ -36,40 +48,44 @@
         return parts.length > 1 ? parts.pop().toLowerCase() : '';
     }
 
+    function isImageFile(file) {
+        if (!file) return false;
+        if ((file.type || '').indexOf('image/') === 0) return true;
+        return defaults.image_extensions.indexOf(ext(file.name)) !== -1;
+    }
+
+    function isPdfFile(file) {
+        if (!file) return false;
+        if (file.type === 'application/pdf') return true;
+        return ext(file.name) === 'pdf';
+    }
+
     function validateFile(file) {
         if (!file) {
             return { ok: false, error: 'No file selected' };
         }
-        var isImage = (file.type || '').indexOf('image/') === 0;
-        var maxBytes = isImage ? defaults.max_image_bytes : defaults.max_document_bytes;
-        var allowed = isImage ? defaults.image_extensions : defaults.document_extensions;
-        var fileExt = ext(file.name);
 
-        if (isImage) {
-            if (allowed.indexOf(fileExt) === -1 && ['jpg', 'jpeg', 'png', 'webp', 'gif'].indexOf(fileExt) === -1) {
-                return { ok: false, error: 'Image must be JPG, PNG, WebP, or GIF' };
-            }
-        } else if (file.type === 'application/pdf' || fileExt === 'pdf') {
-            isImage = false;
-            maxBytes = defaults.max_document_bytes;
-        } else {
-            return { ok: false, error: 'Only images or PDF files are allowed' };
+        var image = isImageFile(file);
+        var pdf = isPdfFile(file);
+        if (!image && !pdf) {
+            return { ok: false, error: 'Only images (JPG, PNG, GIF, WebP) or PDF are allowed' };
         }
 
+        var maxBytes = image ? defaults.max_image_bytes : defaults.max_document_bytes;
         if (file.size > maxBytes) {
             return { ok: false, error: 'File too large. Max ' + formatSize(maxBytes) + '.' };
         }
 
-        return { ok: true, isImage: isImage };
+        return { ok: true, isImage: image };
     }
 
     function compressImage(file) {
         return new Promise(function (resolve, reject) {
-            if (!file || (file.type || '').indexOf('image/') !== 0) {
+            if (!file || !isImageFile(file)) {
                 resolve(file);
                 return;
             }
-            if (file.type === 'image/gif') {
+            if (file.type === 'image/gif' || ext(file.name) === 'gif') {
                 resolve(file);
                 return;
             }
@@ -204,6 +220,8 @@
 
     global.LCChatFiles = {
         setLimits: setLimits,
+        getFileAccept: getFileAccept,
+        applyFileInput: applyFileInput,
         validateFile: validateFile,
         compressImage: compressImage,
         prepareFile: prepareFile,
