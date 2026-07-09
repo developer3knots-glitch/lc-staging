@@ -4,4 +4,4 @@ deployment:
     - export DEPLOYPATH=/home/gbfkpryc/livechat.3knotsdigital.com/
     - /bin/rsync -av --delete --exclude '.git' --exclude '.github' --exclude '.gitignore' --exclude '.cpanel.yml' --exclude '.env' --exclude 'includes/config.php' --exclude 'install/installed.lock' --exclude 'uploads/' ./ $DEPLOYPATH
     - /bin/find $DEPLOYPATH -type d -exec chmod 755 {} \;
-    - /bin/find $DEPLOYPATH -type f -exec chmod 644 {} \;
+    - /bin/find $DEPLOYPATH -type f -exec chmod 644 {} \; 
