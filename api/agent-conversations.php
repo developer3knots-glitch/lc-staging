@@ -4,6 +4,8 @@ $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
+lc_ensure_accounts_schema();
+$agent = lc_ensure_agent_workspace($agent);
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];
@@ -45,11 +47,12 @@ try {
     unset($row);
 
     $agentBrandId = lc_agent_brand_id($agent);
+    $accountId = lc_agent_account_id($agent);
 
     lc_json([
         'success' => true,
         'conversations' => $conversations,
-        'waiting_count' => lc_waiting_count($agentBrandId),
+        'waiting_count' => lc_waiting_count($agentBrandId, $accountId),
         'unread_total' => lc_unread_count_for_agent($agentId),
     ]);
 } catch (Throwable $e) {

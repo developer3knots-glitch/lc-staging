@@ -133,13 +133,18 @@ function lc_brand_sql_filter(array $agent, string $alias = 'c'): array
 {
     $brandId = lc_agent_brand_id($agent);
     if ($brandId !== null) {
+        $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
+        if ($accountId > 0) {
+            return [" AND {$alias}.brand_id = ? AND {$alias}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)", [$brandId, $accountId]];
+        }
         return [" AND {$alias}.brand_id = ?", [$brandId]];
     }
     $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
     if ($accountId > 0) {
         return [" AND {$alias}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)", [$accountId]];
     }
-    return ['', []];
+    // Never unscoped for multi-tenant safety
+    return [' AND 1=0', []];
 }
 
 function lc_brand_embed_code(array $brand): string

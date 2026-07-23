@@ -80,17 +80,19 @@ function lc_migrate_legacy_account(): void
 {
     $pdo = lc_db();
     if ((int) $pdo->query('SELECT COUNT(*) FROM accounts')->fetchColumn() > 0) {
-        // Attach any orphan rows still missing account_id to the first account
         $firstId = (int) $pdo->query('SELECT id FROM accounts ORDER BY id ASC LIMIT 1')->fetchColumn();
         if ($firstId > 0) {
-            $pdo->prepare('UPDATE agents SET account_id = ? WHERE account_id IS NULL')->execute([$firstId]);
+            // Orphan brands/settings stay with primary workspace
             $pdo->prepare('UPDATE brands SET account_id = ? WHERE account_id IS NULL')->execute([$firstId]);
             $pdo->prepare('UPDATE canned_replies SET account_id = ? WHERE account_id IS NULL')->execute([$firstId]);
             try {
                 $pdo->prepare('UPDATE blocked_ips SET account_id = ? WHERE account_id IS NULL')->execute([$firstId]);
             } catch (Throwable $e) {
             }
+            // Team agents without account join primary; signup admins are repaired below
+            $pdo->prepare("UPDATE agents SET account_id = ? WHERE account_id IS NULL AND role = 'agent'")->execute([$firstId]);
         }
+        lc_repair_non_owner_admin_workspaces();
         return;
     }
 
@@ -116,7 +118,9 @@ function lc_migrate_legacy_account(): void
     $ins->execute([$company, $slug, (int) $owner['id']]);
     $accountId = (int) $pdo->lastInsertId();
 
-    $pdo->prepare('UPDATE agents SET account_id = ? WHERE account_id IS NULL')->execute([$accountId]);
+    // Owner + team agents only — other admins get their own workspace in repair
+    $pdo->prepare('UPDATE agents SET account_id = ? WHERE id = ?')->execute([$accountId, (int) $owner['id']]);
+    $pdo->prepare("UPDATE agents SET account_id = ? WHERE account_id IS NULL AND role = 'agent'")->execute([$accountId]);
     $pdo->prepare('UPDATE brands SET account_id = ? WHERE account_id IS NULL')->execute([$accountId]);
     $pdo->prepare('UPDATE canned_replies SET account_id = ? WHERE account_id IS NULL')->execute([$accountId]);
     try {
@@ -124,7 +128,6 @@ function lc_migrate_legacy_account(): void
     } catch (Throwable $e) {
     }
 
-    // Seed account settings from global settings for workspace keys
     $keys = ['auto_assign', 'poll_interval_ms', 'ticket_display_enabled', 'ticket_resume_enabled', 'blocked_countries'];
     foreach ($keys as $key) {
         try {
@@ -138,6 +141,124 @@ function lc_migrate_legacy_account(): void
         } catch (Throwable $e) {
         }
     }
+
+    lc_repair_non_owner_admin_workspaces();
+}
+
+/**
+ * Signup admins wrongly merged into another workspace get their own empty workspace.
+ * Team members (role=agent) stay with the account owner.
+ */
+function lc_repair_non_owner_admin_workspaces(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    $pdo = lc_db();
+    $admins = $pdo->query("SELECT id, name, email, account_id FROM agents WHERE role = 'admin' AND is_active = 1")->fetchAll();
+    foreach ($admins as $admin) {
+        $accountId = isset($admin['account_id']) ? (int) $admin['account_id'] : 0;
+        if ($accountId > 0) {
+            $stmt = $pdo->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
+            $stmt->execute([$accountId]);
+            $ownerId = (int) $stmt->fetchColumn();
+            if ($ownerId === (int) $admin['id']) {
+                continue;
+            }
+        }
+        lc_create_workspace_for_existing_agent($admin);
+    }
+}
+
+/**
+ * @param array{id:int|string,name?:string,email?:string,account_id?:int|string|null} $agent
+ */
+function lc_create_workspace_for_existing_agent(array $agent): int
+{
+    lc_ensure_brands_schema();
+    $pdo = lc_db();
+    $agentId = (int) $agent['id'];
+    $name = trim((string) ($agent['name'] ?? 'Workspace'));
+    $company = $name !== '' ? ($name . "'s Workspace") : 'My Workspace';
+    $slug = lc_unique_account_slug(lc_slug_key($company));
+
+    $pdo->beginTransaction();
+    try {
+        $ins = $pdo->prepare('INSERT INTO accounts (company_name, slug, owner_agent_id, is_active) VALUES (?, ?, ?, 1)');
+        $ins->execute([$company, $slug, $agentId]);
+        $accountId = (int) $pdo->lastInsertId();
+
+        $pdo->prepare('UPDATE agents SET account_id = ?, brand_id = NULL WHERE id = ?')->execute([$accountId, $agentId]);
+        $pdo->prepare('UPDATE accounts SET owner_agent_id = ? WHERE id = ?')->execute([$agentId, $accountId]);
+
+        $brandKey = lc_unique_brand_key(lc_slug_key($company));
+        $pdo->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?)')
+            ->execute([
+                $accountId,
+                $company,
+                $brandKey,
+                '#6FD943',
+                'Hi! How can we help you today?',
+                'We are currently offline. Leave a message and we will get back to you.',
+            ]);
+
+        $defaults = [
+            'auto_assign' => '1',
+            'poll_interval_ms' => '1500',
+            'ticket_display_enabled' => '0',
+            'ticket_resume_enabled' => '0',
+            'blocked_countries' => '[]',
+        ];
+        $setStmt = $pdo->prepare('INSERT INTO account_settings (account_id, setting_key, setting_value) VALUES (?, ?, ?)');
+        foreach ($defaults as $k => $v) {
+            $setStmt->execute([$accountId, $k, $v]);
+        }
+
+        $pdo->commit();
+        return $accountId;
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Guarantee the logged-in agent belongs to a workspace (never null / shared leak).
+ * @return array<string, mixed>
+ */
+function lc_ensure_agent_workspace(array $agent): array
+{
+    lc_ensure_accounts_schema();
+    $accountId = isset($agent['account_id']) ? (int) $agent['account_id'] : 0;
+    if ($accountId > 0) {
+        // Non-owner admin still sharing → detach
+        if (($agent['role'] ?? '') === 'admin') {
+            $stmt = lc_db()->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
+            $stmt->execute([$accountId]);
+            $ownerId = (int) $stmt->fetchColumn();
+            if ($ownerId > 0 && $ownerId !== (int) $agent['id']) {
+                $accountId = lc_create_workspace_for_existing_agent($agent);
+                $agent['account_id'] = $accountId;
+            }
+        }
+        return $agent;
+    }
+
+    if (($agent['role'] ?? '') === 'agent') {
+        $firstId = (int) lc_db()->query('SELECT id FROM accounts ORDER BY id ASC LIMIT 1')->fetchColumn();
+        if ($firstId > 0) {
+            lc_db()->prepare('UPDATE agents SET account_id = ? WHERE id = ?')->execute([$firstId, (int) $agent['id']]);
+            $agent['account_id'] = $firstId;
+            return $agent;
+        }
+    }
+
+    $accountId = lc_create_workspace_for_existing_agent($agent);
+    $agent['account_id'] = $accountId;
+    return $agent;
 }
 
 function lc_unique_account_slug(string $base): string

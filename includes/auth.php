@@ -33,7 +33,7 @@ function lc_require_auth(): array
         header('Location: ' . lc_admin_url('login'));
         exit;
     }
-    return $agent;
+    return lc_ensure_agent_workspace($agent);
 }
 
 function lc_require_admin(): array

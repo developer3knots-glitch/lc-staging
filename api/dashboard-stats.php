@@ -7,12 +7,15 @@ if (!$agent) {
 
 try {
     lc_ensure_brands_schema();
+    lc_ensure_accounts_schema();
+    $agent = lc_ensure_agent_workspace($agent);
     $db = lc_db();
     $agentId = (int) $agent['id'];
     $agentBrandId = lc_agent_brand_id($agent);
+    $accountId = lc_agent_account_id($agent);
     [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
-    $waiting = lc_waiting_count($agentBrandId);
+    $waiting = lc_waiting_count($agentBrandId, $accountId);
 
     $activeSql = "SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'" . $brandSql;
     $stmt = $db->prepare($activeSql);
@@ -24,16 +27,28 @@ try {
     $stmt->execute($brandParams);
     $closedToday = (int) $stmt->fetchColumn();
 
-    $startedToday = lc_dashboard_started_today($agentBrandId);
-    $activityChart = lc_dashboard_activity_chart($agentBrandId, 7);
-    $onlineAgents = lc_get_online_agents_count($agentBrandId);
-    $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8);
+    $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
+    $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
+    $onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);
+    $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8, $accountId);
 
     if ($agentBrandId === null) {
-        $totalAgents = (int) $db->query("SELECT COUNT(*) FROM agents WHERE is_active = 1")->fetchColumn();
+        if ($accountId > 0) {
+            $stmt = $db->prepare('SELECT COUNT(*) FROM agents WHERE is_active = 1 AND account_id = ?');
+            $stmt->execute([$accountId]);
+            $totalAgents = (int) $stmt->fetchColumn();
+        } else {
+            $totalAgents = 0;
+        }
     } else {
-        $stmt = $db->prepare("SELECT COUNT(*) FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)");
-        $stmt->execute([$agentBrandId]);
+        $sql = 'SELECT COUNT(*) FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)';
+        $params = [$agentBrandId];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
         $totalAgents = (int) $stmt->fetchColumn();
     }
 
@@ -79,7 +94,6 @@ try {
 
     $teamFormatted = [];
     foreach ($onlineAgentsList as $teamAgent) {
-        $meta = lc_avatar_meta($teamAgent['avatar'] ?? null, $teamAgent['name']);
         $teamFormatted[] = [
             'name' => $teamAgent['name'],
             'status' => $teamAgent['status'],

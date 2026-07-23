@@ -302,35 +302,56 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
 {
     $agentId = (int) $agent['id'];
     $brandId = lc_agent_brand_id($agent);
+    $accountId = lc_agent_account_id($agent);
     $a = $alias;
 
     if ($brandId === null) {
+        $accountFilter = '';
+        $accountParams = [];
+        if ($accountId > 0) {
+            $accountFilter = " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
+            $accountParams = [$accountId];
+        } else {
+            // No workspace — show nothing (never leak other tenants)
+            return ['1=0', []];
+        }
         if ($tab === 'waiting') {
-            return ["{$a}.status = 'waiting'", []];
+            return ["{$a}.status = 'waiting'{$accountFilter}", $accountParams];
         }
         if ($tab === 'active') {
-            return ["{$a}.status = 'active' AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL)", [$agentId]];
+            return [
+                "{$a}.status = 'active' AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL){$accountFilter}",
+                array_merge([$agentId], $accountParams),
+            ];
         }
 
         return [
-            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting')",
-            [$agentId],
+            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'){$accountFilter}",
+            array_merge([$agentId], $accountParams),
         ];
     }
 
+    // Scoped agent: also enforce account if present
+    $extra = '';
+    $extraParams = [];
+    if ($accountId > 0) {
+        $extra = " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
+        $extraParams = [$accountId];
+    }
+
     if ($tab === 'waiting') {
-        return ["{$a}.status = 'waiting' AND {$a}.brand_id = ?", [$brandId]];
+        return ["{$a}.status = 'waiting' AND {$a}.brand_id = ?{$extra}", array_merge([$brandId], $extraParams)];
     }
     if ($tab === 'active') {
         return [
-            "{$a}.status = 'active' AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL))",
-            [$agentId, $brandId],
+            "{$a}.status = 'active' AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
+            array_merge([$agentId, $brandId], $extraParams),
         ];
     }
 
     return [
-        "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL))",
-        [$agentId, $brandId],
+        "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
+        array_merge([$agentId, $brandId], $extraParams),
     ];
 }
 
