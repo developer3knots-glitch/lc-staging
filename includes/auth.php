@@ -12,28 +12,51 @@ function lc_auth_agent(): ?array
     if (empty($_SESSION['agent_id'])) {
         return null;
     }
-    $stmt = lc_db()->prepare('SELECT id, account_id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
-    $stmt->execute([$_SESSION['agent_id']]);
-    $agent = $stmt->fetch();
-    return $agent ?: null;
+    try {
+        $stmt = lc_db()->prepare('SELECT id, account_id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
+        $stmt->execute([$_SESSION['agent_id']]);
+        $agent = $stmt->fetch();
+        return $agent ?: null;
+    } catch (Throwable $e) {
+        // account_id column may not exist yet on older DBs
+        try {
+            $stmt = lc_db()->prepare('SELECT id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
+            $stmt->execute([$_SESSION['agent_id']]);
+            $agent = $stmt->fetch();
+            if ($agent) {
+                $agent['account_id'] = null;
+            }
+            return $agent ?: null;
+        } catch (Throwable $e2) {
+            return null;
+        }
+    }
 }
 
 function lc_require_auth(): array
 {
     if (lc_installed()) {
-        lc_ensure_brands_schema();
-        lc_ensure_accounts_schema();
-        lc_ensure_security_schema();
-        lc_ensure_blocking_schema();
-        lc_ensure_ticket_schema();
-        lc_ensure_attachments_schema();
+        try {
+            lc_ensure_brands_schema();
+            lc_ensure_accounts_schema();
+            lc_ensure_security_schema();
+            lc_ensure_blocking_schema();
+            lc_ensure_ticket_schema();
+            lc_ensure_attachments_schema();
+        } catch (Throwable $e) {
+            // Schema upgrades must never block login/dashboard
+        }
     }
     $agent = lc_auth_agent();
     if (!$agent) {
         header('Location: ' . lc_admin_url('login'));
         exit;
     }
-    return lc_ensure_agent_workspace($agent);
+    try {
+        return lc_ensure_agent_workspace($agent);
+    } catch (Throwable $e) {
+        return $agent;
+    }
 }
 
 function lc_require_admin(): array

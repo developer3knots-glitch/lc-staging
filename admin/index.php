@@ -20,7 +20,8 @@ $closedToday = (int) $stmt->fetchColumn();
 
 $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
 $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
-$chartMax = max(1, ...array_column($activityChart, 'count'));
+$chartCounts = array_column($activityChart, 'count');
+$chartMax = $chartCounts !== [] ? max(1, ...$chartCounts) : 1;
 $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8, $accountId);
 
 $onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);

@@ -15,65 +15,101 @@ function lc_accounts_table_exists(): bool
 function lc_ensure_accounts_schema(): void
 {
     static $done = false;
-    if ($done) {
+    static $running = false;
+    if ($done || $running) {
         return;
     }
-    $done = true;
+    $running = true;
 
-    $pdo = lc_db();
-    if (!lc_accounts_table_exists()) {
-        $sql = file_get_contents(__DIR__ . '/../install/upgrade_accounts.sql');
-        foreach (array_filter(array_map('trim', explode(';', $sql))) as $statement) {
-            if ($statement !== '') {
-                $pdo->exec($statement);
+    try {
+        $pdo = lc_db();
+        if (!lc_accounts_table_exists()) {
+            $sqlFile = __DIR__ . '/../install/upgrade_accounts.sql';
+            $sql = is_file($sqlFile) ? (string) file_get_contents($sqlFile) : '';
+            if ($sql === '') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS `accounts` (
+                    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `company_name` VARCHAR(160) NOT NULL,
+                    `slug` VARCHAR(80) NOT NULL,
+                    `owner_agent_id` INT UNSIGNED NULL,
+                    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+                    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `idx_account_slug` (`slug`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                $pdo->exec("CREATE TABLE IF NOT EXISTS `account_settings` (
+                    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `account_id` INT UNSIGNED NOT NULL,
+                    `setting_key` VARCHAR(80) NOT NULL,
+                    `setting_value` TEXT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `idx_account_setting` (`account_id`, `setting_key`),
+                    KEY `idx_account_settings_account` (`account_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+            } else {
+                foreach (array_filter(array_map('trim', explode(';', $sql))) as $statement) {
+                    if ($statement !== '') {
+                        try {
+                            $pdo->exec($statement);
+                        } catch (Throwable $e) {
+                        }
+                    }
+                }
             }
         }
+
+        try {
+            $pdo->exec('ALTER TABLE agents ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE brands ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE canned_replies ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE agents ADD INDEX idx_agent_account (account_id)');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE brands ADD INDEX idx_brand_account (account_id)');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE canned_replies ADD INDEX idx_canned_account (account_id)');
+        } catch (Throwable $e) {
+        }
+
+        try {
+            $pdo->exec('ALTER TABLE blocked_ips ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE blocked_ips DROP INDEX uniq_ip');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE blocked_ips ADD UNIQUE KEY uniq_account_ip (account_id, ip_address)');
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE blocked_ips ADD INDEX idx_blocked_account (account_id)');
+        } catch (Throwable $e) {
+        }
+
+        try {
+            lc_migrate_legacy_account();
+        } catch (Throwable $e) {
+        }
+    } catch (Throwable $e) {
+        // Never break admin login on schema setup
     }
 
-    try {
-        $pdo->exec('ALTER TABLE agents ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE brands ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE canned_replies ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE agents ADD INDEX idx_agent_account (account_id)');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE brands ADD INDEX idx_brand_account (account_id)');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE canned_replies ADD INDEX idx_canned_account (account_id)');
-    } catch (Throwable $e) {
-    }
-
-    // Per-account IP blocks (unique per workspace)
-    try {
-        $pdo->exec('ALTER TABLE blocked_ips ADD COLUMN account_id INT UNSIGNED NULL AFTER id');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE blocked_ips DROP INDEX uniq_ip');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE blocked_ips ADD UNIQUE KEY uniq_account_ip (account_id, ip_address)');
-    } catch (Throwable $e) {
-    }
-    try {
-        $pdo->exec('ALTER TABLE blocked_ips ADD INDEX idx_blocked_account (account_id)');
-    } catch (Throwable $e) {
-    }
-
-    lc_migrate_legacy_account();
+    $done = true;
+    $running = false;
 }
 
 function lc_migrate_legacy_account(): void
@@ -157,19 +193,25 @@ function lc_repair_non_owner_admin_workspaces(): void
     }
     $done = true;
 
-    $pdo = lc_db();
-    $admins = $pdo->query("SELECT id, name, email, account_id FROM agents WHERE role = 'admin' AND is_active = 1")->fetchAll();
-    foreach ($admins as $admin) {
-        $accountId = isset($admin['account_id']) ? (int) $admin['account_id'] : 0;
-        if ($accountId > 0) {
-            $stmt = $pdo->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
-            $stmt->execute([$accountId]);
-            $ownerId = (int) $stmt->fetchColumn();
-            if ($ownerId === (int) $admin['id']) {
-                continue;
+    try {
+        $pdo = lc_db();
+        $admins = $pdo->query("SELECT id, name, email, account_id FROM agents WHERE role = 'admin' AND is_active = 1")->fetchAll();
+        foreach ($admins as $admin) {
+            try {
+                $accountId = isset($admin['account_id']) ? (int) $admin['account_id'] : 0;
+                if ($accountId > 0) {
+                    $stmt = $pdo->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
+                    $stmt->execute([$accountId]);
+                    $ownerId = (int) $stmt->fetchColumn();
+                    if ($ownerId === (int) $admin['id']) {
+                        continue;
+                    }
+                }
+                lc_create_workspace_for_existing_agent($admin);
+            } catch (Throwable $e) {
             }
         }
-        lc_create_workspace_for_existing_agent($admin);
+    } catch (Throwable $e) {
     }
 }
 
@@ -178,32 +220,41 @@ function lc_repair_non_owner_admin_workspaces(): void
  */
 function lc_create_workspace_for_existing_agent(array $agent): int
 {
-    lc_ensure_brands_schema();
-    $pdo = lc_db();
-    $agentId = (int) $agent['id'];
-    $name = trim((string) ($agent['name'] ?? 'Workspace'));
-    $company = $name !== '' ? ($name . "'s Workspace") : 'My Workspace';
-    $slug = lc_unique_account_slug(lc_slug_key($company));
-
-    $pdo->beginTransaction();
     try {
+        lc_ensure_brands_schema();
+        $pdo = lc_db();
+        $agentId = (int) $agent['id'];
+        if ($agentId < 1) {
+            return 0;
+        }
+        $name = trim((string) ($agent['name'] ?? 'Workspace'));
+        $company = $name !== '' ? ($name . ' Workspace') : 'My Workspace';
+        $slug = lc_unique_account_slug(lc_slug_key($company . '-' . $agentId));
+
         $ins = $pdo->prepare('INSERT INTO accounts (company_name, slug, owner_agent_id, is_active) VALUES (?, ?, ?, 1)');
         $ins->execute([$company, $slug, $agentId]);
         $accountId = (int) $pdo->lastInsertId();
+        if ($accountId < 1) {
+            return 0;
+        }
 
         $pdo->prepare('UPDATE agents SET account_id = ?, brand_id = NULL WHERE id = ?')->execute([$accountId, $agentId]);
         $pdo->prepare('UPDATE accounts SET owner_agent_id = ? WHERE id = ?')->execute([$agentId, $accountId]);
 
-        $brandKey = lc_unique_brand_key(lc_slug_key($company));
-        $pdo->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?)')
-            ->execute([
-                $accountId,
-                $company,
-                $brandKey,
-                '#6FD943',
-                'Hi! How can we help you today?',
-                'We are currently offline. Leave a message and we will get back to you.',
-            ]);
+        try {
+            $brandKey = lc_unique_brand_key(lc_slug_key($company . '-' . $agentId));
+            $pdo->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?)')
+                ->execute([
+                    $accountId,
+                    $company,
+                    $brandKey,
+                    '#6FD943',
+                    'Hi! How can we help you today?',
+                    'We are currently offline. Leave a message and we will get back to you.',
+                ]);
+        } catch (Throwable $e) {
+            // Brand optional — agent still has workspace
+        }
 
         $defaults = [
             'auto_assign' => '1',
@@ -212,16 +263,17 @@ function lc_create_workspace_for_existing_agent(array $agent): int
             'ticket_resume_enabled' => '0',
             'blocked_countries' => '[]',
         ];
-        $setStmt = $pdo->prepare('INSERT INTO account_settings (account_id, setting_key, setting_value) VALUES (?, ?, ?)');
-        foreach ($defaults as $k => $v) {
-            $setStmt->execute([$accountId, $k, $v]);
+        try {
+            $setStmt = $pdo->prepare('INSERT INTO account_settings (account_id, setting_key, setting_value) VALUES (?, ?, ?)');
+            foreach ($defaults as $k => $v) {
+                $setStmt->execute([$accountId, $k, $v]);
+            }
+        } catch (Throwable $e) {
         }
 
-        $pdo->commit();
         return $accountId;
     } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
+        return 0;
     }
 }
 
@@ -231,33 +283,40 @@ function lc_create_workspace_for_existing_agent(array $agent): int
  */
 function lc_ensure_agent_workspace(array $agent): array
 {
-    lc_ensure_accounts_schema();
-    $accountId = isset($agent['account_id']) ? (int) $agent['account_id'] : 0;
-    if ($accountId > 0) {
-        // Non-owner admin still sharing → detach
-        if (($agent['role'] ?? '') === 'admin') {
-            $stmt = lc_db()->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
-            $stmt->execute([$accountId]);
-            $ownerId = (int) $stmt->fetchColumn();
-            if ($ownerId > 0 && $ownerId !== (int) $agent['id']) {
-                $accountId = lc_create_workspace_for_existing_agent($agent);
-                $agent['account_id'] = $accountId;
+    try {
+        lc_ensure_accounts_schema();
+        $accountId = isset($agent['account_id']) ? (int) $agent['account_id'] : 0;
+        if ($accountId > 0) {
+            if (($agent['role'] ?? '') === 'admin') {
+                $stmt = lc_db()->prepare('SELECT owner_agent_id FROM accounts WHERE id = ? LIMIT 1');
+                $stmt->execute([$accountId]);
+                $ownerId = (int) $stmt->fetchColumn();
+                if ($ownerId > 0 && $ownerId !== (int) $agent['id']) {
+                    $newId = lc_create_workspace_for_existing_agent($agent);
+                    if ($newId > 0) {
+                        $agent['account_id'] = $newId;
+                    }
+                }
             }
-        }
-        return $agent;
-    }
-
-    if (($agent['role'] ?? '') === 'agent') {
-        $firstId = (int) lc_db()->query('SELECT id FROM accounts ORDER BY id ASC LIMIT 1')->fetchColumn();
-        if ($firstId > 0) {
-            lc_db()->prepare('UPDATE agents SET account_id = ? WHERE id = ?')->execute([$firstId, (int) $agent['id']]);
-            $agent['account_id'] = $firstId;
             return $agent;
         }
+
+        if (($agent['role'] ?? '') === 'agent') {
+            $firstId = (int) lc_db()->query('SELECT id FROM accounts ORDER BY id ASC LIMIT 1')->fetchColumn();
+            if ($firstId > 0) {
+                lc_db()->prepare('UPDATE agents SET account_id = ? WHERE id = ?')->execute([$firstId, (int) $agent['id']]);
+                $agent['account_id'] = $firstId;
+                return $agent;
+            }
+        }
+
+        $newId = lc_create_workspace_for_existing_agent($agent);
+        if ($newId > 0) {
+            $agent['account_id'] = $newId;
+        }
+    } catch (Throwable $e) {
     }
 
-    $accountId = lc_create_workspace_for_existing_agent($agent);
-    $agent['account_id'] = $accountId;
     return $agent;
 }
 
