@@ -12,7 +12,7 @@ function lc_auth_agent(): ?array
     if (empty($_SESSION['agent_id'])) {
         return null;
     }
-    $stmt = lc_db()->prepare('SELECT id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
+    $stmt = lc_db()->prepare('SELECT id, account_id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
     $stmt->execute([$_SESSION['agent_id']]);
     $agent = $stmt->fetch();
     return $agent ?: null;
@@ -22,6 +22,7 @@ function lc_require_auth(): array
 {
     if (lc_installed()) {
         lc_ensure_brands_schema();
+        lc_ensure_accounts_schema();
         lc_ensure_security_schema();
         lc_ensure_blocking_schema();
         lc_ensure_ticket_schema();
@@ -62,37 +63,12 @@ function lc_login_agent(string $email, string $password): bool
 }
 
 /**
- * Public signup — creates an admin agent account.
- * @return array{success: bool, error?: string}
+ * Public signup — creates an isolated workspace (account + admin + default brand).
+ * @return array{success: bool, error?: string, account_id?: int, agent_id?: int}
  */
-function lc_register_agent(string $name, string $email, string $password): array
+function lc_register_agent(string $name, string $email, string $password, string $companyName = ''): array
 {
-    $name = trim($name);
-    $email = trim($email);
-
-    if ($name === '' || $email === '' || $password === '') {
-        return ['success' => false, 'error' => 'Name, email and password are required.'];
-    }
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        return ['success' => false, 'error' => 'Please enter a valid email address.'];
-    }
-    if (strlen($password) < 6) {
-        return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
-    }
-
-    lc_ensure_brands_schema();
-
-    $db = lc_db();
-    $check = $db->prepare('SELECT id FROM agents WHERE email = ? LIMIT 1');
-    $check->execute([$email]);
-    if ($check->fetch()) {
-        return ['success' => false, 'error' => 'An account with this email already exists.'];
-    }
-
-    $stmt = $db->prepare('INSERT INTO agents (name, email, password, role, brand_id) VALUES (?, ?, ?, ?, NULL)');
-    $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), 'admin']);
-
-    return ['success' => true];
+    return lc_register_workspace($companyName, $name, $email, $password);
 }
 
 function lc_logout_agent(): void

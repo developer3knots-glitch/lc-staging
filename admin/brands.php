@@ -1,9 +1,11 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-lc_require_admin();
+$currentAgent = lc_require_admin();
 lc_ensure_brands_schema();
+lc_ensure_accounts_schema();
 
 $db = lc_db();
+$accountId = lc_agent_account_id($currentAgent);
 $message = '';
 $error = '';
 $openEditId = (int) ($_GET['edit'] ?? 0);
@@ -23,35 +25,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
-            $stmt = $db->prepare('INSERT INTO brands (name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?)');
-            $stmt->execute([$name, $key, $color, $welcome, $offline]);
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $welcome, $offline]);
             $message = 'Brand created successfully. Copy the embed code and add it to your website.';
         }
     } elseif ($action === 'edit' && !empty($_POST['id'])) {
         $id = (int) $_POST['id'];
-        $name = trim($_POST['name'] ?? '');
-        $key = lc_slug_key(trim($_POST['brand_key'] ?? ''));
-        $key = lc_unique_brand_key($key, $id);
-        $stmt = $db->prepare('UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, welcome_message = ?, offline_message = ?, is_active = ? WHERE id = ?');
-        $stmt->execute([
-            $name,
-            $key,
-            trim($_POST['widget_color'] ?? '#6FD943'),
-            trim($_POST['welcome_message'] ?? ''),
-            trim($_POST['offline_message'] ?? ''),
-            isset($_POST['is_active']) ? 1 : 0,
-            $id,
-        ]);
-        $message = 'Brand settings saved.';
-        $openEditId = $id;
+        if ($accountId > 0) {
+            $own = $db->prepare('SELECT id FROM brands WHERE id = ? AND account_id = ? LIMIT 1');
+            $own->execute([$id, $accountId]);
+            if (!$own->fetch()) {
+                $error = 'Brand not found.';
+            }
+        }
+        if ($error === '') {
+            $name = trim($_POST['name'] ?? '');
+            $key = lc_slug_key(trim($_POST['brand_key'] ?? ''));
+            $key = lc_unique_brand_key($key, $id);
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, welcome_message = ?, offline_message = ?, is_active = ? WHERE id = ?';
+            $params = [
+                $name,
+                $key,
+                trim($_POST['widget_color'] ?? '#6FD943'),
+                trim($_POST['welcome_message'] ?? ''),
+                trim($_POST['offline_message'] ?? ''),
+                isset($_POST['is_active']) ? 1 : 0,
+                $id,
+            ];
+            if ($accountId > 0) {
+                $sql .= ' AND account_id = ?';
+                $params[] = $accountId;
+            }
+            $db->prepare($sql)->execute($params);
+            $message = 'Brand settings saved.';
+            $openEditId = $id;
+        }
     } elseif ($action === 'toggle' && !empty($_POST['id'])) {
-        $db->prepare('UPDATE brands SET is_active = IF(is_active=1,0,1) WHERE id = ? AND brand_key != ?')
-            ->execute([(int) $_POST['id'], 'default']);
+        $sql = 'UPDATE brands SET is_active = IF(is_active=1,0,1) WHERE id = ?';
+        $params = [(int) $_POST['id']];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $db->prepare($sql)->execute($params);
         $message = 'Brand status updated.';
     }
 }
 
-$brands = lc_get_all_brands();
+$brands = lc_get_all_brands(false, $accountId > 0 ? $accountId : null);
 $activeCount = 0;
 foreach ($brands as $b) {
     if (!empty($b['is_active'])) {

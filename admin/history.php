@@ -2,9 +2,11 @@
 require_once __DIR__ . '/../includes/auth.php';
 $agent = lc_require_auth();
 lc_ensure_brands_schema();
+lc_ensure_accounts_schema();
 
 $db = lc_db();
 $agentBrandId = lc_agent_brand_id($agent);
+$accountId = lc_agent_account_id($agent);
 
 $search = trim($_GET['q'] ?? '');
 $brandFilter = (int) ($_GET['brand'] ?? 0);
@@ -16,7 +18,15 @@ if (!in_array($period, ['all', 'today', 'week', 'month'], true)) {
 
 $scopeBrandId = $agentBrandId;
 if ($scopeBrandId === null && $brandFilter > 0) {
-    $scopeBrandId = $brandFilter;
+    if ($accountId > 0) {
+        $own = $db->prepare('SELECT id FROM brands WHERE id = ? AND account_id = ? LIMIT 1');
+        $own->execute([$brandFilter, $accountId]);
+        if ($own->fetch()) {
+            $scopeBrandId = $brandFilter;
+        }
+    } else {
+        $scopeBrandId = $brandFilter;
+    }
 }
 
 $where = ["c.status = 'closed'"];
@@ -25,6 +35,9 @@ $params = [];
 if ($scopeBrandId !== null) {
     $where[] = 'c.brand_id = ?';
     $params[] = $scopeBrandId;
+} elseif ($accountId > 0) {
+    $where[] = 'c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+    $params[] = $accountId;
 }
 
 if ($search !== '') {
@@ -114,9 +127,16 @@ try {
         INNER JOIN conversations c ON c.agent_id = a.id AND c.status = 'closed'
     ";
     $agentsParams = [];
+    $agentsWhere = [];
     if ($agentBrandId !== null) {
-        $agentsSql .= ' WHERE c.brand_id = ?';
+        $agentsWhere[] = 'c.brand_id = ?';
         $agentsParams[] = $agentBrandId;
+    } elseif ($accountId > 0) {
+        $agentsWhere[] = 'a.account_id = ?';
+        $agentsParams[] = $accountId;
+    }
+    if ($agentsWhere) {
+        $agentsSql .= ' WHERE ' . implode(' AND ', $agentsWhere);
     }
     $agentsSql .= ' ORDER BY a.name ASC';
     $agentsStmt = $db->prepare($agentsSql);
@@ -130,7 +150,7 @@ try {
     $historyError = 'Unable to load history. Please refresh or contact support.';
 }
 
-$brands = $agentBrandId === null ? lc_get_all_brands(true) : [];
+$brands = $agentBrandId === null ? lc_get_all_brands(true, $accountId > 0 ? $accountId : null) : [];
 
 $formatDuration = static function (?string $started, ?string $closed): string {
     if (!$started || !$closed) {

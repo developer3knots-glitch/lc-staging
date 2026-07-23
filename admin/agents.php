@@ -1,14 +1,15 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-lc_require_admin();
+$currentAgent = lc_require_admin();
 lc_ensure_brands_schema();
+lc_ensure_accounts_schema();
 
 $db = lc_db();
-$brands = lc_get_all_brands(true);
+$accountId = lc_agent_account_id($currentAgent);
+$brands = lc_get_all_brands(true, $accountId > 0 ? $accountId : null);
 $message = '';
 $error = '';
 $presets = lc_avatar_presets();
-$currentAgent = lc_auth_agent();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -21,27 +22,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($role === 'admin') {
             $brandId = null;
         }
+        if ($brandId && $accountId > 0) {
+            $chk = $db->prepare('SELECT id FROM brands WHERE id = ? AND account_id = ? LIMIT 1');
+            $chk->execute([$brandId, $accountId]);
+            if (!$chk->fetch()) {
+                $brandId = null;
+                $error = 'Invalid brand selection.';
+            }
+        }
         $avatar = lc_avatar_resolve_from_request($_POST, $_FILES);
-        if ($name && $email && $pass) {
-            $stmt = $db->prepare('INSERT INTO agents (name, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar]);
+        if ($error === '' && $name && $email && $pass) {
+            $stmt = $db->prepare('INSERT INTO agents (account_id, name, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar]);
             $message = 'Team member added successfully.';
-        } else {
+        } elseif ($error === '') {
             $error = 'Name, email and password are required.';
         }
     } elseif ($action === 'toggle' && !empty($_POST['id'])) {
-        $db->prepare('UPDATE agents SET is_active = IF(is_active=1,0,1) WHERE id = ? AND id != ?')
-            ->execute([(int) $_POST['id'], (int) $_SESSION['agent_id']]);
+        $sql = 'UPDATE agents SET is_active = IF(is_active=1,0,1) WHERE id = ? AND id != ?';
+        $params = [(int) $_POST['id'], (int) $_SESSION['agent_id']];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $db->prepare($sql)->execute($params);
         $message = 'Agent status updated.';
     }
 }
 
-$agents = $db->query('
-    SELECT a.id, a.name, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
-    FROM agents a
-    LEFT JOIN brands b ON b.id = a.brand_id
-    ORDER BY a.id ASC
-')->fetchAll();
+if ($accountId > 0) {
+    $stmt = $db->prepare('
+        SELECT a.id, a.name, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
+        FROM agents a
+        LEFT JOIN brands b ON b.id = a.brand_id
+        WHERE a.account_id = ?
+        ORDER BY a.id ASC
+    ');
+    $stmt->execute([$accountId]);
+    $agents = $stmt->fetchAll();
+} else {
+    $agents = $db->query('
+        SELECT a.id, a.name, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
+        FROM agents a
+        LEFT JOIN brands b ON b.id = a.brand_id
+        ORDER BY a.id ASC
+    ')->fetchAll();
+}
 
 $totalAgents = count($agents);
 $onlineCount = 0;

@@ -183,13 +183,25 @@ function lc_parse_conversation_reference(string $input): ?int
     return null;
 }
 
-function lc_ticket_display_enabled(): bool
+function lc_ticket_display_enabled(?int $accountId = null): bool
 {
+    if ($accountId === null) {
+        $accountId = function_exists('lc_current_account_id') ? lc_current_account_id() : 0;
+    }
+    if ($accountId > 0) {
+        return lc_account_setting($accountId, 'ticket_display_enabled', '0') === '1';
+    }
     return lc_setting('ticket_display_enabled', '0') === '1';
 }
 
-function lc_ticket_resume_enabled(): bool
+function lc_ticket_resume_enabled(?int $accountId = null): bool
 {
+    if ($accountId === null) {
+        $accountId = function_exists('lc_current_account_id') ? lc_current_account_id() : 0;
+    }
+    if ($accountId > 0) {
+        return lc_account_setting($accountId, 'ticket_resume_enabled', '0') === '1';
+    }
     return lc_setting('ticket_resume_enabled', '0') === '1';
 }
 

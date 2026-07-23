@@ -5,9 +5,10 @@ lc_ensure_brands_schema();
 
 $db = lc_db();
 $agentBrandId = lc_agent_brand_id($agent);
+$accountId = lc_agent_account_id($agent);
 [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
-$waiting = lc_waiting_count($agentBrandId);
+$waiting = lc_waiting_count($agentBrandId, $accountId);
 
 $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'" . $brandSql);
 $stmt->execute($brandParams);
@@ -17,18 +18,29 @@ $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'clo
 $stmt->execute($brandParams);
 $closedToday = (int) $stmt->fetchColumn();
 
-$startedToday = lc_dashboard_started_today($agentBrandId);
-$activityChart = lc_dashboard_activity_chart($agentBrandId, 7);
+$startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
+$activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
 $chartMax = max(1, ...array_column($activityChart, 'count'));
-$onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8);
+$onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8, $accountId);
 
-$onlineAgents = lc_get_online_agents_count($agentBrandId);
+$onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);
 if ($agentBrandId === null) {
-    $totalAgents = (int) $db->query("SELECT COUNT(*) FROM agents WHERE is_active = 1")->fetchColumn();
-    $brands = lc_get_all_brands(true);
+    if ($accountId > 0) {
+        $stmt = $db->prepare('SELECT COUNT(*) FROM agents WHERE is_active = 1 AND account_id = ?');
+        $stmt->execute([$accountId]);
+        $totalAgents = (int) $stmt->fetchColumn();
+        $brands = lc_get_all_brands(true, $accountId);
+    } else {
+        $totalAgents = (int) $db->query('SELECT COUNT(*) FROM agents WHERE is_active = 1')->fetchColumn();
+        $brands = lc_get_all_brands(true);
+    }
 } else {
-    $stmt = $db->prepare("SELECT COUNT(*) FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)");
-    $stmt->execute([$agentBrandId]);
+    $stmt = $db->prepare('SELECT COUNT(*) FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)' . ($accountId > 0 ? ' AND account_id = ?' : ''));
+    $params = [$agentBrandId];
+    if ($accountId > 0) {
+        $params[] = $accountId;
+    }
+    $stmt->execute($params);
     $totalAgents = (int) $stmt->fetchColumn();
     $brands = [];
 }

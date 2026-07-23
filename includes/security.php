@@ -118,7 +118,15 @@ function lc_validate_chat_token(int $conversationId, string $token): bool
  */
 function lc_widget_security_check(array $input, string $ip, ?string $userAgent, bool $isSend = false)
 {
-    $block = lc_widget_block_check($ip);
+    $accountId = null;
+    $brandKey = trim((string) ($input['brand'] ?? $input['brand_key'] ?? ''));
+    if ($brandKey !== '') {
+        $brand = lc_get_brand_by_key($brandKey);
+        if ($brand && isset($brand['account_id'])) {
+            $accountId = (int) $brand['account_id'];
+        }
+    }
+    $block = lc_widget_block_check($ip, $accountId > 0 ? $accountId : null);
     if ($block !== true) {
         return $block;
     }
@@ -170,7 +178,15 @@ function lc_widget_security_check(array $input, string $ip, ?string $userAgent, 
  */
 function lc_widget_upload_security_check(array $input, string $ip, ?string $userAgent): bool|string
 {
-    $block = lc_widget_block_check($ip);
+    $accountId = null;
+    $brandKey = trim((string) ($input['brand'] ?? $input['brand_key'] ?? ''));
+    if ($brandKey !== '') {
+        $brand = lc_get_brand_by_key($brandKey);
+        if ($brand && !empty($brand['account_id'])) {
+            $accountId = (int) $brand['account_id'];
+        }
+    }
+    $block = lc_widget_block_check($ip, $accountId > 0 ? $accountId : null);
     if ($block !== true) {
         return $block;
     }
@@ -202,7 +218,15 @@ function lc_widget_upload_security_check(array $input, string $ip, ?string $user
  */
 function lc_widget_ticket_resume_security_check(array $input, string $ip, ?string $userAgent): bool|string
 {
-    $block = lc_widget_block_check($ip);
+    $accountId = null;
+    $brandKey = trim((string) ($input['brand'] ?? $input['brand_key'] ?? ''));
+    if ($brandKey !== '') {
+        $brand = lc_get_brand_by_key($brandKey);
+        if ($brand && !empty($brand['account_id'])) {
+            $accountId = (int) $brand['account_id'];
+        }
+    }
+    $block = lc_widget_block_check($ip, $accountId > 0 ? $accountId : null);
     if ($block !== true) {
         return $block;
     }

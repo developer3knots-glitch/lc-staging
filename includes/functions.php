@@ -3,6 +3,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/datetime.php';
 require_once __DIR__ . '/brand.php';
+require_once __DIR__ . '/accounts.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/blocking.php';
 require_once __DIR__ . '/tickets.php';
@@ -120,33 +121,64 @@ function lc_uid(): string
     return bin2hex(random_bytes(16));
 }
 
-function lc_get_online_agents_count(?int $brandId = null): int
+function lc_get_online_agents_count(?int $brandId = null, ?int $accountId = null): int
 {
     lc_ensure_brands_schema();
-    if ($brandId === null) {
-        $stmt = lc_db()->query("SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1");
+    if (function_exists('lc_ensure_accounts_schema')) {
+        lc_ensure_accounts_schema();
+    }
+    if ($brandId !== null) {
+        $sql = "SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
+        $params = [$brandId];
+        if ($accountId !== null && $accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
         return (int) $stmt->fetchColumn();
     }
-    $stmt = lc_db()->prepare("SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)");
-    $stmt->execute([$brandId]);
+    if ($accountId !== null && $accountId > 0) {
+        $stmt = lc_db()->prepare("SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1 AND account_id = ?");
+        $stmt->execute([$accountId]);
+        return (int) $stmt->fetchColumn();
+    }
+    $stmt = lc_db()->query("SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1");
     return (int) $stmt->fetchColumn();
 }
 
 function lc_assign_agent(int $conversationId): ?int
 {
     lc_ensure_brands_schema();
-    $conv = lc_db()->prepare('SELECT brand_id FROM conversations WHERE id = ?');
+    if (function_exists('lc_ensure_accounts_schema')) {
+        lc_ensure_accounts_schema();
+    }
+    $conv = lc_db()->prepare('SELECT c.brand_id, b.account_id FROM conversations c LEFT JOIN brands b ON b.id = c.brand_id WHERE c.id = ?');
     $conv->execute([$conversationId]);
-    $brandId = $conv->fetchColumn();
+    $row = $conv->fetch();
+    $brandId = $row ? ($row['brand_id'] !== null ? (int) $row['brand_id'] : null) : null;
+    $accountId = $row && $row['account_id'] !== null ? (int) $row['account_id'] : 0;
 
-    $autoAssign = lc_setting('auto_assign', '1');
+    $autoAssign = $accountId > 0
+        ? lc_account_setting($accountId, 'auto_assign', '1')
+        : lc_setting('auto_assign', '1');
     if ($autoAssign !== '1') {
         return null;
     }
 
     if ($brandId) {
-        $stmt = lc_db()->prepare("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?) ORDER BY id ASC LIMIT 1");
-        $stmt->execute([(int) $brandId]);
+        $sql = "SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
+        $params = [(int) $brandId];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $sql .= ' ORDER BY id ASC LIMIT 1';
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+    } elseif ($accountId > 0) {
+        $stmt = lc_db()->prepare("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND account_id = ? ORDER BY id ASC LIMIT 1");
+        $stmt->execute([$accountId]);
     } else {
         $stmt = lc_db()->query("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 ORDER BY id ASC LIMIT 1");
     }
@@ -191,12 +223,21 @@ function lc_agent_can_access_conversation(array $agent, array $conv): bool
         return true;
     }
 
+    $accountId = lc_agent_account_id($agent);
+    $convBrandId = (int) ($conv['brand_id'] ?? 0);
+    if ($accountId > 0 && $convBrandId > 0) {
+        $brand = lc_get_brand($convBrandId);
+        if (!$brand || (int) ($brand['account_id'] ?? 0) !== $accountId) {
+            return false;
+        }
+    }
+
     $agentBrandId = lc_agent_brand_id($agent);
     if ($agentBrandId === null) {
         return true;
     }
 
-    return (int) ($conv['brand_id'] ?? 0) === $agentBrandId;
+    return $convBrandId === $agentBrandId;
 }
 
 function lc_agent_can_view_conversation(array $agent, array $conv): bool
@@ -344,11 +385,17 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
           AND a.status IN ('online', 'away')
           AND a.role = 'agent'
           AND a.id NOT IN ({$placeholders})
-        ORDER BY FIELD(a.status, 'online', 'away'), a.name ASC
     ";
+    $params = $excludeIds;
+    $accountId = lc_agent_account_id($agent);
+    if ($accountId > 0) {
+        $sql .= ' AND a.account_id = ?';
+        $params[] = $accountId;
+    }
+    $sql .= " ORDER BY FIELD(a.status, 'online', 'away'), a.name ASC";
 
     $stmt = lc_db()->prepare($sql);
-    $stmt->execute($excludeIds);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
     foreach ($rows as &$row) {
@@ -525,22 +572,27 @@ function lc_unread_count_for_agent(int $agentId): int
     return (int) $stmt->fetchColumn();
 }
 
-function lc_waiting_count(?int $brandId = null): int
+function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 {
     lc_ensure_brands_schema();
-    if ($brandId === null) {
-        $stmt = lc_db()->query("SELECT COUNT(*) FROM conversations WHERE status = 'waiting'");
+    if ($brandId !== null) {
+        $stmt = lc_db()->prepare("SELECT COUNT(*) FROM conversations WHERE status = 'waiting' AND brand_id = ?");
+        $stmt->execute([$brandId]);
         return (int) $stmt->fetchColumn();
     }
-    $stmt = lc_db()->prepare("SELECT COUNT(*) FROM conversations WHERE status = 'waiting' AND brand_id = ?");
-    $stmt->execute([$brandId]);
+    if ($accountId !== null && $accountId > 0) {
+        $stmt = lc_db()->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'waiting' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)");
+        $stmt->execute([$accountId]);
+        return (int) $stmt->fetchColumn();
+    }
+    $stmt = lc_db()->query("SELECT COUNT(*) FROM conversations WHERE status = 'waiting'");
     return (int) $stmt->fetchColumn();
 }
 
 /**
  * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
  */
-function lc_dashboard_activity_chart(?int $brandId, int $days = 7): array
+function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null): array
 {
     lc_ensure_brands_schema();
     $days = max(2, min(14, $days));
@@ -551,6 +603,9 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7): array
     if ($brandId !== null) {
         $brandFilter = ' AND c.brand_id = ?';
         $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
     }
 
     $stmt = lc_db()->prepare("
@@ -584,10 +639,35 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7): array
 /**
  * @return array<int, array<string, mixed>>
  */
-function lc_dashboard_online_agents(?int $brandId, int $limit = 8): array
+function lc_dashboard_online_agents(?int $brandId, int $limit = 8, ?int $accountId = null): array
 {
     lc_ensure_brands_schema();
-    if ($brandId === null) {
+    if ($brandId !== null) {
+        $sql = "SELECT name, status, avatar FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
+        $params = [$brandId];
+        if ($accountId !== null && $accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $sql .= " ORDER BY FIELD(status, 'online', 'away', 'offline'), name ASC LIMIT ?";
+        $stmt = lc_db()->prepare($sql);
+        $i = 1;
+        foreach ($params as $p) {
+            $stmt->bindValue($i++, (int) $p, PDO::PARAM_INT);
+        }
+        $stmt->bindValue($i, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+    } elseif ($accountId !== null && $accountId > 0) {
+        $stmt = lc_db()->prepare("
+            SELECT name, status, avatar FROM agents
+            WHERE is_active = 1 AND account_id = ?
+            ORDER BY FIELD(status, 'online', 'away', 'offline'), name ASC
+            LIMIT ?
+        ");
+        $stmt->bindValue(1, $accountId, PDO::PARAM_INT);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+    } else {
         $stmt = lc_db()->prepare("
             SELECT name, status, avatar FROM agents
             WHERE is_active = 1
@@ -596,29 +676,23 @@ function lc_dashboard_online_agents(?int $brandId, int $limit = 8): array
         ");
         $stmt->bindValue(1, $limit, PDO::PARAM_INT);
         $stmt->execute();
-    } else {
-        $stmt = lc_db()->prepare("
-            SELECT name, status, avatar FROM agents
-            WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)
-            ORDER BY FIELD(status, 'online', 'away', 'offline'), name ASC
-            LIMIT ?
-        ");
-        $stmt->bindValue(1, $brandId, PDO::PARAM_INT);
-        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
-        $stmt->execute();
     }
 
     return $stmt->fetchAll();
 }
 
-function lc_dashboard_started_today(?int $brandId): int
+function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
 {
     lc_ensure_brands_schema();
-    if ($brandId === null) {
-        return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
+    if ($brandId !== null) {
+        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id = ?');
+        $stmt->execute([$brandId]);
+        return (int) $stmt->fetchColumn();
     }
-    $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id = ?');
-    $stmt->execute([$brandId]);
-
-    return (int) $stmt->fetchColumn();
+    if ($accountId !== null && $accountId > 0) {
+        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id IN (SELECT id FROM brands WHERE account_id = ?)');
+        $stmt->execute([$accountId]);
+        return (int) $stmt->fetchColumn();
+    }
+    return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
 }

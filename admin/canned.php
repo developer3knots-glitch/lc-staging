@@ -2,8 +2,10 @@
 require_once __DIR__ . '/../includes/auth.php';
 $agent = lc_require_auth();
 lc_ensure_brands_schema();
+lc_ensure_accounts_schema();
 
 $db = lc_db();
+$accountId = lc_agent_account_id($agent);
 $message = '';
 $error = '';
 
@@ -26,22 +28,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($strLen($msg) > 2000) {
             $error = 'Message is too long (max 2000 characters).';
         } else {
-            $db->prepare('INSERT INTO canned_replies (title, message, created_by) VALUES (?, ?, ?)')
-                ->execute([$title, $msg, (int) $_SESSION['agent_id']]);
+            $db->prepare('INSERT INTO canned_replies (account_id, title, message, created_by) VALUES (?, ?, ?, ?)')
+                ->execute([$accountId > 0 ? $accountId : null, $title, $msg, (int) $_SESSION['agent_id']]);
             $message = 'Canned reply saved successfully.';
         }
     } elseif ($action === 'delete' && !empty($_POST['id'])) {
-        $db->prepare('DELETE FROM canned_replies WHERE id = ?')->execute([(int) $_POST['id']]);
+        $sql = 'DELETE FROM canned_replies WHERE id = ?';
+        $params = [(int) $_POST['id']];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $db->prepare($sql)->execute($params);
         $message = 'Canned reply deleted.';
     }
 }
 
-$replies = $db->query('
-    SELECT c.*, a.name AS author_name
-    FROM canned_replies c
-    LEFT JOIN agents a ON a.id = c.created_by
-    ORDER BY c.title ASC
-')->fetchAll();
+if ($accountId > 0) {
+    $stmt = $db->prepare('
+        SELECT c.*, a.name AS author_name
+        FROM canned_replies c
+        LEFT JOIN agents a ON a.id = c.created_by
+        WHERE c.account_id = ?
+        ORDER BY c.title ASC
+    ');
+    $stmt->execute([$accountId]);
+    $replies = $stmt->fetchAll();
+} else {
+    $replies = $db->query('
+        SELECT c.*, a.name AS author_name
+        FROM canned_replies c
+        LEFT JOIN agents a ON a.id = c.created_by
+        ORDER BY c.title ASC
+    ')->fetchAll();
+}
 
 $totalReplies = count($replies);
 $totalChars = 0;

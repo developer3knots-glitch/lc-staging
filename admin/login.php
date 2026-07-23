@@ -14,7 +14,7 @@ $tab = ($_GET['tab'] ?? 'login') === 'signup' ? 'signup' : 'login';
 $error = '';
 $signupError = '';
 $success = '';
-$signupValues = ['name' => '', 'email' => ''];
+$signupValues = ['name' => '', 'email' => '', 'company_name' => ''];
 
 if (!empty($_GET['registered'])) {
     $success = 'Account created successfully. Please sign in.';
@@ -30,9 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $signupValues = [
             'name' => trim($_POST['name'] ?? ''),
             'email' => trim($_POST['email'] ?? ''),
+            'company_name' => trim($_POST['company_name'] ?? ''),
         ];
         $password = $_POST['password'] ?? '';
-        $result = lc_register_agent($signupValues['name'], $signupValues['email'], $password);
+        $result = lc_register_agent(
+            $signupValues['name'],
+            $signupValues['email'],
+            $password,
+            $signupValues['company_name']
+        );
         if (!empty($result['success'])) {
             header('Location: ' . lc_admin_url('login', ['registered' => '1']));
             exit;
@@ -268,6 +274,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if ($signupError): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($signupError) ?></div><?php endif; ?>
         <form method="post" class="lc-form lc-auth-form" autocomplete="on">
             <input type="hidden" name="mode" value="signup">
+
+            <label class="lc-auth-label" for="lc-signup-company">Company / workspace</label>
+            <input type="text" id="lc-signup-company" name="company_name" placeholder="Your company name" value="<?= htmlspecialchars($signupValues['company_name']) ?>" autocomplete="organization">
 
             <label class="lc-auth-label" for="lc-signup-name">Your name</label>
             <input type="text" id="lc-signup-name" name="name" required autofocus placeholder="Full name" value="<?= htmlspecialchars($signupValues['name']) ?>" autocomplete="name">

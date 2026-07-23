@@ -1,28 +1,30 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-lc_require_admin();
+$agent = lc_require_admin();
 lc_ensure_blocking_schema();
+lc_ensure_accounts_schema();
 
 $message = '';
 $error = '';
+$accountId = lc_agent_account_id($agent);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'save_system') {
-        lc_set_setting('auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
-        lc_set_setting('poll_interval_ms', (string) max(800, (int) ($_POST['poll_interval_ms'] ?? 1500)));
+        lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
+        lc_set_account_setting($accountId, 'poll_interval_ms', (string) max(800, (int) ($_POST['poll_interval_ms'] ?? 1500)));
         $message = 'System settings saved successfully.';
     } elseif ($action === 'save_tickets') {
-        lc_set_setting('ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
-        lc_set_setting('ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
+        lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
+        lc_set_account_setting($accountId, 'ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
         $message = 'Ticket settings saved successfully.';
     } elseif ($action === 'save_countries') {
         $countryCodes = $_POST['blocked_countries'] ?? [];
         if (!is_array($countryCodes)) {
             $countryCodes = [];
         }
-        lc_save_blocked_country_codes($countryCodes);
+        lc_save_blocked_country_codes($countryCodes, $accountId);
         $message = 'Country block list updated.';
     } elseif ($action === 'block_ip') {
         $ip = trim((string) ($_POST['ip_address'] ?? ''));
@@ -31,14 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Enter a valid IP address.';
         } elseif (lc_is_local_ip($ip)) {
             $error = 'Local network IPs cannot be blocked.';
-        } elseif (lc_block_ip($ip, (int) lc_auth_agent()['id'], $reason)) {
+        } elseif (lc_block_ip($ip, (int) $agent['id'], $reason, $accountId)) {
             $message = 'IP ' . $ip . ' has been blocked.';
         } else {
             $error = 'Unable to block that IP.';
         }
     } elseif ($action === 'unblock_ip') {
         $ip = trim((string) ($_POST['ip_address'] ?? ''));
-        if ($ip !== '' && lc_unblock_ip($ip)) {
+        if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
             $message = 'IP ' . $ip . ' has been unblocked.';
         } else {
             $error = 'IP not found in block list.';
@@ -46,16 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$agent = lc_auth_agent();
-$blockedCountries = lc_get_blocked_country_codes();
-$blockedIps = lc_get_blocked_ips();
+$blockedCountries = lc_get_blocked_country_codes($accountId);
+$blockedIps = lc_get_blocked_ips($accountId);
 $allCountries = lc_country_list();
 asort($allCountries);
 
-$pollMs = (int) lc_setting('poll_interval_ms', '1500');
-$autoAssign = lc_setting('auto_assign', '1') === '1';
-$ticketDisplayEnabled = lc_ticket_display_enabled();
-$ticketResumeEnabled = lc_ticket_resume_enabled();
+$pollMs = (int) lc_account_setting($accountId, 'poll_interval_ms', '1500');
+$autoAssign = lc_account_setting($accountId, 'auto_assign', '1') === '1';
+$ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
+$ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
 
 $pageTitle = 'Settings';
 $activeNav = 'settings';

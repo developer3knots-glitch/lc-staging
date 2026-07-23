@@ -92,18 +92,35 @@ function lc_get_brand_by_key(string $key): ?array
     return $row ?: null;
 }
 
-function lc_get_all_brands(bool $activeOnly = false): array
+function lc_get_all_brands(bool $activeOnly = false, ?int $accountId = null): array
 {
     lc_ensure_brands_schema();
+    if (function_exists('lc_ensure_accounts_schema')) {
+        lc_ensure_accounts_schema();
+    }
     $sql = 'SELECT * FROM brands';
+    $where = [];
+    $params = [];
+    if ($accountId !== null && $accountId > 0) {
+        $where[] = 'account_id = ?';
+        $params[] = $accountId;
+    }
     if ($activeOnly) {
-        $sql .= ' WHERE is_active = 1';
+        $where[] = 'is_active = 1';
+    }
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
     }
     $sql .= ' ORDER BY name ASC';
+    if ($params) {
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
     return lc_db()->query($sql)->fetchAll();
 }
 
-/** Agent brand scope: null = all brands (admin), int = single brand */
+/** Agent brand scope: null = all brands in account (admin), int = single brand */
 function lc_agent_brand_id(array $agent): ?int
 {
     if ($agent['role'] === 'admin') {
@@ -115,10 +132,14 @@ function lc_agent_brand_id(array $agent): ?int
 function lc_brand_sql_filter(array $agent, string $alias = 'c'): array
 {
     $brandId = lc_agent_brand_id($agent);
-    if ($brandId === null) {
-        return ['', []];
+    if ($brandId !== null) {
+        return [" AND {$alias}.brand_id = ?", [$brandId]];
     }
-    return [" AND {$alias}.brand_id = ?", [$brandId]];
+    $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
+    if ($accountId > 0) {
+        return [" AND {$alias}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)", [$accountId]];
+    }
+    return ['', []];
 }
 
 function lc_brand_embed_code(array $brand): string
@@ -131,14 +152,18 @@ function lc_brand_embed_code(array $brand): string
 
 function lc_brand_settings(array $brand): array
 {
-        return [
+    $accountId = isset($brand['account_id']) ? (int) $brand['account_id'] : 0;
+    $poll = $accountId > 0
+        ? (int) lc_account_setting($accountId, 'poll_interval_ms', '1500')
+        : (int) lc_setting('poll_interval_ms', '1500');
+    return [
         'site_name' => $brand['name'],
         'widget_color' => $brand['widget_color'] ?? '#6FD943',
         'offline_message' => $brand['offline_message'] ?? '',
         'welcome_message' => $brand['welcome_message'] ?? '',
         'brand_key' => $brand['brand_key'],
-        'poll_interval_ms' => (int) lc_setting('poll_interval_ms', '1500'),
-        'ticket_display_enabled' => lc_ticket_display_enabled(),
-        'ticket_resume_enabled' => lc_ticket_resume_enabled(),
+        'poll_interval_ms' => $poll,
+        'ticket_display_enabled' => lc_ticket_display_enabled($accountId > 0 ? $accountId : null),
+        'ticket_resume_enabled' => lc_ticket_resume_enabled($accountId > 0 ? $accountId : null),
     ];
 }
