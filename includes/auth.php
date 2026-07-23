@@ -61,6 +61,40 @@ function lc_login_agent(string $email, string $password): bool
     return true;
 }
 
+/**
+ * Public signup — creates an admin agent account.
+ * @return array{success: bool, error?: string}
+ */
+function lc_register_agent(string $name, string $email, string $password): array
+{
+    $name = trim($name);
+    $email = trim($email);
+
+    if ($name === '' || $email === '' || $password === '') {
+        return ['success' => false, 'error' => 'Name, email and password are required.'];
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Please enter a valid email address.'];
+    }
+    if (strlen($password) < 6) {
+        return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
+    }
+
+    lc_ensure_brands_schema();
+
+    $db = lc_db();
+    $check = $db->prepare('SELECT id FROM agents WHERE email = ? LIMIT 1');
+    $check->execute([$email]);
+    if ($check->fetch()) {
+        return ['success' => false, 'error' => 'An account with this email already exists.'];
+    }
+
+    $stmt = $db->prepare('INSERT INTO agents (name, email, password, role, brand_id) VALUES (?, ?, ?, ?, NULL)');
+    $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), 'admin']);
+
+    return ['success' => true];
+}
+
 function lc_logout_agent(): void
 {
     if (!empty($_SESSION['agent_id'])) {

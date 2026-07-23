@@ -10,29 +10,55 @@ $rememberCookie = 'lc_remember_email';
 $rememberEmail = isset($_COOKIE[$rememberCookie]) ? trim((string) $_COOKIE[$rememberCookie]) : '';
 $rememberChecked = $rememberEmail !== '';
 
+$tab = ($_GET['tab'] ?? 'login') === 'signup' ? 'signup' : 'login';
 $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $remember = !empty($_POST['remember']);
+$signupError = '';
+$success = '';
+$signupValues = ['name' => '', 'email' => ''];
 
+if (!empty($_GET['registered'])) {
+    $success = 'Account created successfully. Please sign in.';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $mode = $_POST['mode'] ?? 'login';
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
     $cookieOpts = ['expires' => 0, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Lax'];
 
-    if (lc_login_agent($email, $password)) {
-        if ($remember) {
-            $cookieOpts['expires'] = time() + 60 * 60 * 24 * 30;
-            setcookie($rememberCookie, $email, $cookieOpts);
-        } else {
-            $cookieOpts['expires'] = time() - 3600;
-            setcookie($rememberCookie, '', $cookieOpts);
+    if ($mode === 'signup') {
+        $tab = 'signup';
+        $signupValues = [
+            'name' => trim($_POST['name'] ?? ''),
+            'email' => trim($_POST['email'] ?? ''),
+        ];
+        $password = $_POST['password'] ?? '';
+        $result = lc_register_agent($signupValues['name'], $signupValues['email'], $password);
+        if (!empty($result['success'])) {
+            header('Location: ' . lc_admin_url('login', ['registered' => '1']));
+            exit;
         }
-        header('Location: ' . lc_admin_url());
-        exit;
+        $signupError = $result['error'] ?? 'Could not create account.';
+    } else {
+        $tab = 'login';
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $remember = !empty($_POST['remember']);
+
+        if (lc_login_agent($email, $password)) {
+            if ($remember) {
+                $cookieOpts['expires'] = time() + 60 * 60 * 24 * 30;
+                setcookie($rememberCookie, $email, $cookieOpts);
+            } else {
+                $cookieOpts['expires'] = time() - 3600;
+                setcookie($rememberCookie, '', $cookieOpts);
+            }
+            header('Location: ' . lc_admin_url());
+            exit;
+        }
+        $rememberEmail = $email;
+        $rememberChecked = $remember;
+        $error = 'Invalid email or password.';
     }
-    $rememberEmail = $email;
-    $rememberChecked = $remember;
-    $error = 'Invalid email or password.';
 }
 ?>
 <!DOCTYPE html>
@@ -40,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — <?= htmlspecialchars(LC_APP_NAME) ?></title>
+    <title><?= $tab === 'signup' ? 'Sign up' : 'Login' ?> — <?= htmlspecialchars(LC_APP_NAME) ?></title>
     <?php require __DIR__ . '/includes/head-assets.php'; ?>
     <style>
         html { overflow-y: scroll; }
@@ -50,12 +76,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             will-change: auto;
         }
         .lc-auth-sub {
-            margin: 0 0 1.65rem;
+            margin: 0 0 1.25rem;
             font-size: 0.9rem;
             line-height: 1.55;
             color: #64748b;
         }
         .lc-auth-sub strong { color: #334155; font-weight: 600; }
+        .lc-auth-tabs {
+            display: flex;
+            gap: 0.35rem;
+            margin: 0 0 1.35rem;
+            padding: 0.3rem;
+            background: #f1f5f9;
+            border-radius: 12px;
+        }
+        .lc-auth-tabs a {
+            flex: 1;
+            text-align: center;
+            text-decoration: none;
+            padding: 0.55rem 0.75rem;
+            border-radius: 9px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #64748b;
+            transition: background 0.15s, color 0.15s;
+        }
+        .lc-auth-tabs a:hover { color: #334155; }
+        .lc-auth-tabs a.is-active {
+            background: #fff;
+            color: #0f172a;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
         .lc-auth-form .lc-form label.lc-auth-label {
             display: block;
             margin: 0.85rem 0 0.4rem;
@@ -70,6 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .lc-auth-form input[type="email"],
         .lc-auth-form input[type="password"],
+        .lc-auth-form input[type="text"],
         .lc-auth-form .lc-auth-password-input {
             width: 100%;
             box-sizing: border-box;
@@ -112,6 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: #f1f5f9;
         }
         .lc-auth-form input[type="email"]:focus,
+        .lc-auth-form input[type="text"]:focus,
         .lc-auth-form .lc-auth-password-input:focus {
             outline: none;
             border-color: var(--lc-primary);
@@ -160,49 +213,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .lc-auth-form .lc-auth-submit:focus {
             transform: none;
         }
+        .lc-auth-switch {
+            margin: 1.1rem 0 0;
+            text-align: center;
+            font-size: 0.88rem;
+            color: #64748b;
+        }
+        .lc-auth-switch a {
+            color: var(--lc-primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .lc-auth-switch a:hover { text-decoration: underline; }
     </style>
 </head>
 <body class="lc-auth-body">
 <div class="lc-auth-card">
     <div class="lc-auth-logo"><i class="ti ti-headset"></i></div>
-    <h1>Agent Login</h1>
-    <p class="lc-auth-sub">Sign in to your <strong>Live Support Workspace</strong> — manage chats, assist visitors, and collaborate with your team in real time. <em>(Deploy v1)</em></p>
-    <?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($error) ?></div><?php endif; ?>
-    <form method="post" class="lc-form lc-auth-form">
-        <label class="lc-auth-label" for="lc-login-email">Email address</label>
-        <input type="email" id="lc-login-email" name="email" required autofocus placeholder="you@company.com" value="<?= htmlspecialchars($rememberEmail) ?>">
+    <h1><?= $tab === 'signup' ? 'Create account' : 'Agent Login' ?></h1>
+    <p class="lc-auth-sub"><?= $tab === 'signup'
+        ? 'Create your <strong>Live Support Workspace</strong> account, then sign in to manage chats and your team.'
+        : 'Sign in to your <strong>Live Support Workspace</strong> — manage chats, assist visitors, and collaborate with your team in real time. <em>(Deploy v1)</em>' ?></p>
 
-        <label class="lc-auth-label" for="lc-login-password">Password</label>
-        <div class="lc-auth-password-wrap">
-            <input type="password" class="lc-auth-password-input" id="lc-login-password" name="password" required placeholder="Enter your password" autocomplete="current-password">
-            <button type="button" class="lc-auth-password-toggle" id="lc-login-password-toggle" aria-label="Show password" title="Show password">
-                <i class="ti ti-eye" id="lc-login-password-icon"></i>
-            </button>
-        </div>
+    <div class="lc-auth-tabs">
+        <a href="<?= htmlspecialchars(lc_admin_url('login')) ?>" class="<?= $tab === 'login' ? 'is-active' : '' ?>">Sign in</a>
+        <a href="<?= htmlspecialchars(lc_admin_url('login', ['tab' => 'signup'])) ?>" class="<?= $tab === 'signup' ? 'is-active' : '' ?>">Sign up</a>
+    </div>
 
-        <div class="lc-auth-remember">
-            <input type="checkbox" name="remember" value="1" id="lc-login-remember"<?= $rememberChecked ? ' checked' : '' ?>>
-            <label for="lc-login-remember" class="lc-auth-remember-label">Remember me on this device</label>
-        </div>
+    <?php if ($tab === 'login'): ?>
+        <?php if ($success): ?><div class="lc-alert lc-alert-success"><i class="ti ti-circle-check"></i> <?= htmlspecialchars($success) ?></div><?php endif; ?>
+        <?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($error) ?></div><?php endif; ?>
+        <form method="post" class="lc-form lc-auth-form" autocomplete="on">
+            <input type="hidden" name="mode" value="login">
+            <label class="lc-auth-label" for="lc-login-email">Email address</label>
+            <input type="email" id="lc-login-email" name="email" required autofocus placeholder="you@company.com" value="<?= htmlspecialchars($rememberEmail) ?>" autocomplete="username">
 
-        <button type="submit" class="lc-btn lc-btn-primary lc-btn-block lc-auth-submit"><i class="ti ti-login"></i> Sign In</button>
-    </form>
+            <label class="lc-auth-label" for="lc-login-password">Password</label>
+            <div class="lc-auth-password-wrap">
+                <input type="password" class="lc-auth-password-input" id="lc-login-password" name="password" required placeholder="Enter your password" autocomplete="current-password">
+                <button type="button" class="lc-auth-password-toggle" id="lc-login-password-toggle" aria-label="Show password" title="Show password">
+                    <i class="ti ti-eye" id="lc-login-password-icon"></i>
+                </button>
+            </div>
+
+            <div class="lc-auth-remember">
+                <input type="checkbox" name="remember" value="1" id="lc-login-remember"<?= $rememberChecked ? ' checked' : '' ?>>
+                <label for="lc-login-remember" class="lc-auth-remember-label">Remember me on this device</label>
+            </div>
+
+            <button type="submit" class="lc-btn lc-btn-primary lc-btn-block lc-auth-submit"><i class="ti ti-login"></i> Sign In</button>
+        </form>
+        <p class="lc-auth-switch">Don't have an account? <a href="<?= htmlspecialchars(lc_admin_url('login', ['tab' => 'signup'])) ?>">Sign up</a></p>
+    <?php else: ?>
+        <?php if ($signupError): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= htmlspecialchars($signupError) ?></div><?php endif; ?>
+        <form method="post" class="lc-form lc-auth-form" autocomplete="on">
+            <input type="hidden" name="mode" value="signup">
+
+            <label class="lc-auth-label" for="lc-signup-name">Your name</label>
+            <input type="text" id="lc-signup-name" name="name" required autofocus placeholder="Full name" value="<?= htmlspecialchars($signupValues['name']) ?>" autocomplete="name">
+
+            <label class="lc-auth-label" for="lc-signup-email">Email address</label>
+            <input type="email" id="lc-signup-email" name="email" required placeholder="you@company.com" value="<?= htmlspecialchars($signupValues['email']) ?>" autocomplete="email">
+
+            <label class="lc-auth-label" for="lc-signup-password">Password</label>
+            <div class="lc-auth-password-wrap">
+                <input type="password" class="lc-auth-password-input" id="lc-signup-password" name="password" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password">
+                <button type="button" class="lc-auth-password-toggle" id="lc-signup-password-toggle" aria-label="Show password" title="Show password">
+                    <i class="ti ti-eye" id="lc-signup-password-icon"></i>
+                </button>
+            </div>
+
+            <button type="submit" class="lc-btn lc-btn-primary lc-btn-block lc-auth-submit"><i class="ti ti-user-plus"></i> Create account</button>
+        </form>
+        <p class="lc-auth-switch">Already have an account? <a href="<?= htmlspecialchars(lc_admin_url('login')) ?>">Sign in</a></p>
+    <?php endif; ?>
 </div>
 <script>
 (function () {
-    var input = document.getElementById('lc-login-password');
-    var btn = document.getElementById('lc-login-password-toggle');
-    var icon = document.getElementById('lc-login-password-icon');
-    if (!input || !btn || !icon) return;
-
-    btn.addEventListener('click', function () {
-        var show = input.type === 'password';
-        input.type = show ? 'text' : 'password';
-        icon.className = show ? 'ti ti-eye-off' : 'ti ti-eye';
-        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-        btn.setAttribute('title', show ? 'Hide password' : 'Show password');
-        input.focus();
-    });
+    function bindToggle(inputId, btnId, iconId) {
+        var input = document.getElementById(inputId);
+        var btn = document.getElementById(btnId);
+        var icon = document.getElementById(iconId);
+        if (!input || !btn || !icon) return;
+        btn.addEventListener('click', function () {
+            var show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            icon.className = show ? 'ti ti-eye-off' : 'ti ti-eye';
+            btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+            btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+            input.focus();
+        });
+    }
+    bindToggle('lc-login-password', 'lc-login-password-toggle', 'lc-login-password-icon');
+    bindToggle('lc-signup-password', 'lc-signup-password-toggle', 'lc-signup-password-icon');
 })();
 </script>
 </body>
