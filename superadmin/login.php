@@ -44,7 +44,7 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= LC_BASE_URL ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
     <style>
         :root {
             --sa-ink: #0c1222;
@@ -309,7 +309,7 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
             </div>
             <?php endif; ?>
 
-            <form method="post" action="<?= htmlspecialchars(lc_superadmin_url('login'), ENT_QUOTES, 'UTF-8') ?>" autocomplete="on" novalidate>
+            <form method="post" action="" autocomplete="on" novalidate>
                 <div class="sa-field">
                     <label for="sa-email">Email</label>
                     <div class="sa-input">

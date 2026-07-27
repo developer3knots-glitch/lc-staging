@@ -45,6 +45,39 @@ function lc_sanitize(?string $value): string
 }
 
 /**
+ * Public site root URL (never ends with /admin or /superadmin).
+ * Recomputes from the current request so old config.php (without "superadmin"
+ * in the strip list) cannot double-prefix URLs like /superadmin/superadmin.
+ */
+function lc_base_url(): string
+{
+    static $resolved = null;
+    if ($resolved !== null) {
+        return $resolved;
+    }
+
+    if (PHP_SAPI === 'cli') {
+        $resolved = defined('LC_BASE_URL') ? rtrim((string) LC_BASE_URL, '/') : '';
+        return $resolved;
+    }
+
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $fwd = strtolower(trim(explode(',', (string) $_SERVER['HTTP_X_FORWARDED_PROTO'])[0]));
+        if ($fwd === 'http' || $fwd === 'https') {
+            $protocol = $fwd;
+        }
+    }
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
+    $basePath = preg_replace('#/(admin|api|widget|install|superadmin)(/.*)?$#', '', $scriptDir);
+    $basePath = rtrim((string) $basePath, '/');
+    $resolved = $protocol . '://' . $host . $basePath;
+
+    return $resolved;
+}
+
+/**
  * Build a public URL without the .php extension.
  *
  * @param array<string, scalar|null> $query
@@ -61,7 +94,7 @@ function lc_url(string $path = '', array $query = []): string
         }
     }
 
-    $url = rtrim(LC_BASE_URL, '/');
+    $url = rtrim(lc_base_url(), '/');
     if ($path !== '') {
         $url .= '/' . $path;
     }
