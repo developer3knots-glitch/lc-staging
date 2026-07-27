@@ -10,6 +10,7 @@ require_once __DIR__ . '/tickets.php';
 require_once __DIR__ . '/attachments.php';
 require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
+require_once __DIR__ . '/superadmin.php';
 
 function lc_cors_headers(): void
 {
@@ -91,6 +92,24 @@ function lc_admin_url(string $page = '', array $query = []): string
     }
 
     return lc_url('admin/' . $page, $query);
+}
+
+/**
+ * Super Admin panel URL helper.
+ *
+ * @param array<string, scalar|null> $query
+ */
+function lc_superadmin_url(string $page = '', array $query = []): string
+{
+    $page = trim(str_replace('\\', '/', $page), '/');
+    if (substr($page, -4) === '.php') {
+        $page = substr($page, 0, -4);
+    }
+    if ($page === '' || $page === 'index') {
+        return lc_url('superadmin', $query);
+    }
+
+    return lc_url('superadmin/' . $page, $query);
 }
 
 function lc_setting(string $key, $default = ''): string
