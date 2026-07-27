@@ -43,154 +43,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $users = lc_superadmin_list_users();
 $platform = lc_superadmin_platform_stats();
 
-$pageTitle = 'User Monitoring';
+$pageTitle = 'Monitoring';
 $activeNav = 'users';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-agents-page">
-    <?php if ($message): ?><div class="lc-alert lc-alert-success"><i class="ti ti-circle-check"></i> <?= lc_sanitize($message) ?></div><?php endif; ?>
-    <?php if ($error): ?><div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($error) ?></div><?php endif; ?>
+<?php if ($message): ?><div class="sa-alert sa-alert-ok"><i class="ti ti-circle-check"></i> <?= lc_sanitize($message) ?></div><?php endif; ?>
+<?php if ($error): ?><div class="sa-alert sa-alert-err"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($error) ?></div><?php endif; ?>
 
-    <div class="lc-hero lc-hero-pro lc-hero-agents">
-        <div class="lc-hero-glow lc-hero-glow-1"></div>
-        <div class="lc-hero-glow lc-hero-glow-2"></div>
-        <div class="lc-hero-main">
-            <div class="lc-hero-eyebrow"><i class="ti ti-shield-lock"></i> Platform Monitoring</div>
-            <h1 class="lc-hero-title">All Users</h1>
-            <p class="lc-hero-sub">Complete monitoring — view reports, edit accounts, enable/disable, or delete any workspace user.</p>
+<section class="sa-hero">
+    <div class="sa-hero-inner">
+        <div>
+            <div class="sa-eyebrow"><i class="ti ti-shield-lock"></i> Platform console</div>
+            <h2>User monitoring</h2>
+            <p class="sa-hero-lead">Watch every workspace operator — open full reports, edit accounts, or remove access in one place.</p>
         </div>
-        <div class="lc-hero-metrics lc-hero-metrics-4">
-            <div class="lc-hero-metric is-accent">
-                <span class="lc-hero-metric-val"><?= (int) $platform['users'] ?></span>
-                <span class="lc-hero-metric-label">Users</span>
+        <div class="sa-stat-grid">
+            <div class="sa-stat is-accent">
+                <span class="sa-stat-val"><?= (int) $platform['users'] ?></span>
+                <span class="sa-stat-label">Users</span>
             </div>
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= (int) $platform['workspaces'] ?></span>
-                <span class="lc-hero-metric-label">Workspaces</span>
+            <div class="sa-stat">
+                <span class="sa-stat-val"><?= (int) $platform['workspaces'] ?></span>
+                <span class="sa-stat-label">Workspaces</span>
             </div>
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= (int) $platform['chats'] ?></span>
-                <span class="lc-hero-metric-label">All chats</span>
+            <div class="sa-stat">
+                <span class="sa-stat-val"><?= (int) $platform['chats'] ?></span>
+                <span class="sa-stat-label">All chats</span>
             </div>
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= (int) $platform['online_agents'] ?></span>
-                <span class="lc-hero-metric-label">Online now</span>
+            <div class="sa-stat">
+                <span class="sa-stat-val"><?= (int) $platform['online_agents'] ?></span>
+                <span class="sa-stat-label">Online now</span>
             </div>
         </div>
     </div>
+</section>
 
-    <div class="lc-hero-metrics lc-hero-metrics-4" style="margin-top:1rem;">
-        <div class="lc-hero-metric">
-            <span class="lc-hero-metric-val"><?= (int) $platform['active_chats'] ?></span>
-            <span class="lc-hero-metric-label">Active chats</span>
-        </div>
-        <div class="lc-hero-metric">
-            <span class="lc-hero-metric-val"><?= (int) $platform['waiting_chats'] ?></span>
-            <span class="lc-hero-metric-label">Waiting</span>
-        </div>
-        <div class="lc-hero-metric">
-            <span class="lc-hero-metric-val"><?= (int) $platform['messages'] ?></span>
-            <span class="lc-hero-metric-label">Messages</span>
-        </div>
-        <div class="lc-hero-metric">
-            <span class="lc-hero-metric-val"><?= (int) $platform['brands'] ?></span>
-            <span class="lc-hero-metric-label">Brands</span>
-        </div>
+<div class="sa-pulse-row">
+    <div class="sa-pulse">
+        <div class="sa-pulse-top"><i class="ti ti-message-circle"></i></div>
+        <strong><?= (int) $platform['active_chats'] ?></strong>
+        <span>Active chats</span>
     </div>
-
-    <div class="lc-card lc-card-pro" style="margin-top:1.25rem;">
-        <div class="lc-card-head" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-            <h3 style="margin:0;"><i class="ti ti-users"></i> Users directory</h3>
-            <div class="lc-agents-search-wrap" style="max-width:300px;width:100%;">
-                <i class="ti ti-search"></i>
-                <input type="search" id="lc-sa-users-search" placeholder="Search name, email, workspace…" autocomplete="off">
-            </div>
-        </div>
-        <div class="lc-card-body" style="padding:0;overflow-x:auto;">
-            <table class="lc-table" style="width:100%;border-collapse:collapse;font-size:.86rem;">
-                <thead>
-                    <tr style="text-align:left;background:#f8fafc;border-bottom:1px solid var(--lc-border);">
-                        <th style="padding:.75rem 1rem;">User</th>
-                        <th style="padding:.75rem 1rem;">Workspace</th>
-                        <th style="padding:.75rem 1rem;">Role</th>
-                        <th style="padding:.75rem 1rem;">Activity</th>
-                        <th style="padding:.75rem 1rem;">Status</th>
-                        <th style="padding:.75rem 1rem;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="lc-sa-users-body">
-                    <?php if ($users === []): ?>
-                    <tr>
-                        <td colspan="6" style="padding:1.5rem 1rem;color:#64748b;">No users found.</td>
-                    </tr>
-                    <?php else: ?>
-                    <?php foreach ($users as $u):
-                        $isOwner = !empty($u['owner_agent_id']) && (int) $u['owner_agent_id'] === (int) $u['id'];
-                        $workspace = trim((string) ($u['company_name'] ?? ''));
-                        if ($workspace === '') {
-                            $workspace = $u['account_id'] ? ('Workspace #' . (int) $u['account_id']) : 'Unassigned';
-                        }
-                        $search = strtolower($u['name'] . ' ' . $u['email'] . ' ' . $workspace . ' ' . ($u['role'] ?? ''));
-                        $uid = (int) $u['id'];
-                    ?>
-                    <tr data-search="<?= lc_sanitize($search) ?>" style="border-bottom:1px solid var(--lc-border);<?= empty($u['is_active']) ? 'opacity:.65;' : '' ?>">
-                        <td style="padding:.85rem 1rem;">
-                            <strong><?= lc_sanitize($u['name']) ?></strong>
-                            <?php if ($isOwner): ?><span class="lc-badge lc-badge-active" style="margin-left:.35rem;">Owner</span><?php endif; ?>
-                            <div style="color:#64748b;font-size:.8rem;margin-top:.15rem;"><?= lc_sanitize($u['email']) ?></div>
-                            <div style="color:#94a3b8;font-size:.72rem;margin-top:.2rem;">Joined <?= !empty($u['created_at']) ? lc_sanitize(substr((string) $u['created_at'], 0, 10)) : '—' ?></div>
-                        </td>
-                        <td style="padding:.85rem 1rem;">
-                            <?= lc_sanitize($workspace) ?>
-                            <div style="color:#94a3b8;font-size:.75rem;margin-top:.15rem;">
-                                <?= (int) ($u['team_size'] ?? 0) ?> team · <?= (int) ($u['brands_count'] ?? 0) ?> brands
-                            </div>
-                        </td>
-                        <td style="padding:.85rem 1rem;">
-                            <span class="lc-agent-role-tag is-<?= lc_sanitize($u['role']) ?>"><?= lc_sanitize(ucfirst((string) $u['role'])) ?></span>
-                        </td>
-                        <td style="padding:.85rem 1rem;">
-                            <div><strong><?= (int) ($u['chats_handled'] ?? 0) ?></strong> chats</div>
-                            <div style="color:#64748b;font-size:.78rem;"><?= (int) ($u['messages_sent'] ?? 0) ?> messages · <?= (int) ($u['chats_active'] ?? 0) ?> active</div>
-                        </td>
-                        <td style="padding:.85rem 1rem;">
-                            <div><span class="lc-status-dot <?= lc_sanitize($u['status'] ?? 'offline') ?>"></span> <?= lc_sanitize(ucfirst((string) ($u['status'] ?? 'offline'))) ?></div>
-                            <div style="color:#64748b;font-size:.78rem;margin-top:.25rem;"><?= !empty($u['is_active']) ? 'Active' : 'Disabled' ?></div>
-                            <div style="color:#94a3b8;font-size:.72rem;"><?= !empty($u['last_seen']) ? lc_time_span($u['last_seen']) : 'Never' ?></div>
-                        </td>
-                        <td style="padding:.85rem 1rem;white-space:nowrap;">
-                            <div style="display:flex;flex-wrap:wrap;gap:.35rem;">
-                                <a href="<?= lc_superadmin_url('user', ['id' => $uid]) ?>" class="lc-btn lc-btn-primary lc-btn-sm">
-                                    <i class="ti ti-report-analytics"></i> Report
-                                </a>
-                                <a href="<?= lc_superadmin_url('user', ['id' => $uid, 'edit' => 1]) ?>" class="lc-btn lc-btn-secondary lc-btn-sm">
-                                    <i class="ti ti-pencil"></i> Edit
-                                </a>
-                                <form method="post" style="display:inline;" onsubmit="return confirm('<?= !empty($u['is_active']) ? 'Disable' : 'Enable' ?> this user?');">
-                                    <input type="hidden" name="action" value="toggle">
-                                    <input type="hidden" name="user_id" value="<?= $uid ?>">
-                                    <button type="submit" class="lc-btn lc-btn-secondary lc-btn-sm">
-                                        <i class="ti ti-<?= !empty($u['is_active']) ? 'ban' : 'check' ?>"></i>
-                                    </button>
-                                </form>
-                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this user permanently? Chats will stay, agent will be removed.');">
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="user_id" value="<?= $uid ?>">
-                                    <button type="submit" class="lc-btn lc-btn-danger lc-btn-sm">
-                                        <i class="ti ti-trash"></i>
-                                    </button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+    <div class="sa-pulse">
+        <div class="sa-pulse-top"><i class="ti ti-hourglass is-warn"></i></div>
+        <strong><?= (int) $platform['waiting_chats'] ?></strong>
+        <span>Waiting queue</span>
+    </div>
+    <div class="sa-pulse">
+        <div class="sa-pulse-top"><i class="ti ti-mail is-blue"></i></div>
+        <strong><?= (int) $platform['messages'] ?></strong>
+        <span>Messages</span>
+    </div>
+    <div class="sa-pulse">
+        <div class="sa-pulse-top"><i class="ti ti-tags is-rose"></i></div>
+        <strong><?= (int) $platform['brands'] ?></strong>
+        <span>Brands</span>
     </div>
 </div>
+
+<section class="sa-panel">
+    <div class="sa-panel-head">
+        <h3><i class="ti ti-users"></i> Users directory</h3>
+        <div class="sa-search">
+            <i class="ti ti-search"></i>
+            <input type="search" id="lc-sa-users-search" placeholder="Search name, email, workspace…" autocomplete="off">
+        </div>
+    </div>
+    <div class="sa-table-wrap">
+        <table class="sa-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Workspace</th>
+                    <th>Role</th>
+                    <th>Activity</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="lc-sa-users-body">
+                <?php if ($users === []): ?>
+                <tr>
+                    <td colspan="6" style="color:var(--sa-muted);padding:1.5rem 1.1rem;">No users found.</td>
+                </tr>
+                <?php else: ?>
+                <?php foreach ($users as $u):
+                    $isOwner = !empty($u['owner_agent_id']) && (int) $u['owner_agent_id'] === (int) $u['id'];
+                    $workspace = trim((string) ($u['company_name'] ?? ''));
+                    if ($workspace === '') {
+                        $workspace = $u['account_id'] ? ('Workspace #' . (int) $u['account_id']) : 'Unassigned';
+                    }
+                    $search = strtolower($u['name'] . ' ' . $u['email'] . ' ' . $workspace . ' ' . ($u['role'] ?? ''));
+                    $uid = (int) $u['id'];
+                    $role = (string) ($u['role'] ?? 'agent');
+                ?>
+                <tr data-search="<?= lc_sanitize($search) ?>" class="<?= empty($u['is_active']) ? 'is-disabled' : '' ?>">
+                    <td>
+                        <div class="sa-user-name">
+                            <?= lc_sanitize($u['name']) ?>
+                            <?php if ($isOwner): ?><span class="sa-chip sa-chip-owner">Owner</span><?php endif; ?>
+                        </div>
+                        <div class="sa-user-email"><?= lc_sanitize($u['email']) ?></div>
+                        <div class="sa-user-meta">Joined <?= !empty($u['created_at']) ? lc_sanitize(substr((string) $u['created_at'], 0, 10)) : '-' ?></div>
+                    </td>
+                    <td>
+                        <div class="sa-user-name"><?= lc_sanitize($workspace) ?></div>
+                        <div class="sa-user-meta"><?= (int) ($u['team_size'] ?? 0) ?> team · <?= (int) ($u['brands_count'] ?? 0) ?> brands</div>
+                    </td>
+                    <td>
+                        <span class="sa-chip <?= $role === 'admin' ? 'sa-chip-admin' : 'sa-chip-agent' ?>"><?= lc_sanitize(ucfirst($role)) ?></span>
+                    </td>
+                    <td>
+                        <div class="sa-user-name"><?= (int) ($u['chats_handled'] ?? 0) ?> chats</div>
+                        <div class="sa-user-meta"><?= (int) ($u['messages_sent'] ?? 0) ?> messages · <?= (int) ($u['chats_active'] ?? 0) ?> active</div>
+                    </td>
+                    <td>
+                        <div><span class="sa-dot <?= lc_sanitize($u['status'] ?? 'offline') ?>"></span><?= lc_sanitize(ucfirst((string) ($u['status'] ?? 'offline'))) ?></div>
+                        <div class="sa-user-meta" style="margin-top:.35rem;">
+                            <span class="sa-chip <?= !empty($u['is_active']) ? 'sa-chip-on' : 'sa-chip-off' ?>"><?= !empty($u['is_active']) ? 'Active' : 'Disabled' ?></span>
+                        </div>
+                        <div class="sa-user-meta"><?= !empty($u['last_seen']) ? lc_time_span($u['last_seen']) : 'Never' ?></div>
+                    </td>
+                    <td>
+                        <div class="sa-actions">
+                            <a href="<?= lc_superadmin_url('user', ['id' => $uid]) ?>" class="sa-btn sa-btn-primary sa-btn-sm"><i class="ti ti-report-analytics"></i> Report</a>
+                            <a href="<?= lc_superadmin_url('user', ['id' => $uid, 'edit' => 1]) ?>" class="sa-btn sa-btn-secondary sa-btn-sm"><i class="ti ti-pencil"></i></a>
+                            <form method="post" onsubmit="return confirm('<?= !empty($u['is_active']) ? 'Disable' : 'Enable' ?> this user?');">
+                                <input type="hidden" name="action" value="toggle">
+                                <input type="hidden" name="user_id" value="<?= $uid ?>">
+                                <button type="submit" class="sa-btn sa-btn-secondary sa-btn-sm"><i class="ti ti-<?= !empty($u['is_active']) ? 'ban' : 'check' ?>"></i></button>
+                            </form>
+                            <form method="post" onsubmit="return confirm('Delete this user permanently?');">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="user_id" value="<?= $uid ?>">
+                                <button type="submit" class="sa-btn sa-btn-danger sa-btn-sm"><i class="ti ti-trash"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
 
 <script>
 (function () {
