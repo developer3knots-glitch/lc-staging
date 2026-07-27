@@ -6,7 +6,7 @@ if (!isset($superAdmin)) {
     $superAdmin = lc_require_superadmin();
 }
 $navItems = [
-    ['id' => 'users', 'page' => '', 'icon' => 'ti-users', 'label' => 'All Users'],
+    ['id' => 'users', 'page' => '', 'icon' => 'ti-users', 'label' => 'Monitoring'],
 ];
 ?>
 <!DOCTYPE html>
@@ -57,7 +57,7 @@ $navItems = [
             <button type="button" class="lc-sidebar-toggle" id="lc-sidebar-toggle" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
             <div class="lc-topbar-title">
                 <h2><?= lc_sanitize($pageTitle ?? 'Super Admin') ?></h2>
-                <p class="lc-topbar-sub">Platform console</p>
+                <p class="lc-topbar-sub">Full platform monitoring</p>
             </div>
         </header>
         <main class="lc-content">

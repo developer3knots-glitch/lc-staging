@@ -166,7 +166,7 @@ function lc_logout_superadmin(): void
 }
 
 /**
- * All workspace users (agents) across all accounts — read-only list for super admin.
+ * All workspace users (agents) across all accounts — with monitoring stats.
  * @return list<array<string, mixed>>
  */
 function lc_superadmin_list_users(): array
@@ -176,7 +176,7 @@ function lc_superadmin_list_users(): array
         lc_ensure_accounts_schema();
     }
     try {
-        return lc_db()->query('
+        return lc_db()->query("
             SELECT
                 a.id,
                 a.name,
@@ -187,14 +187,293 @@ function lc_superadmin_list_users(): array
                 a.last_seen,
                 a.created_at,
                 a.account_id,
+                a.brand_id,
+                a.avatar,
                 acc.company_name,
                 acc.slug AS account_slug,
-                acc.owner_agent_id
+                acc.owner_agent_id,
+                acc.is_active AS account_is_active,
+                acc.created_at AS account_created_at,
+                (SELECT COUNT(*) FROM conversations c WHERE c.agent_id = a.id) AS chats_handled,
+                (SELECT COUNT(*) FROM conversations c WHERE c.agent_id = a.id AND c.status = 'active') AS chats_active,
+                (SELECT COUNT(*) FROM conversations c WHERE c.agent_id = a.id AND c.status = 'closed') AS chats_closed,
+                (SELECT COUNT(*) FROM messages m WHERE m.sender_type = 'agent' AND m.sender_id = a.id) AS messages_sent,
+                (SELECT COUNT(*) FROM agents ax WHERE ax.account_id = a.account_id) AS team_size,
+                (SELECT COUNT(*) FROM brands b WHERE b.account_id = a.account_id) AS brands_count
             FROM agents a
             LEFT JOIN accounts acc ON acc.id = a.account_id
             ORDER BY COALESCE(acc.id, 0) ASC, a.id ASC
-        ')->fetchAll();
+        ")->fetchAll();
     } catch (Throwable $e) {
         return [];
     }
+}
+
+function lc_superadmin_get_user(int $id): ?array
+{
+    if ($id < 1) {
+        return null;
+    }
+    lc_ensure_superadmin_schema();
+    if (function_exists('lc_ensure_accounts_schema')) {
+        lc_ensure_accounts_schema();
+    }
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT
+                a.*,
+                acc.company_name,
+                acc.slug AS account_slug,
+                acc.owner_agent_id,
+                acc.is_active AS account_is_active,
+                acc.created_at AS account_created_at,
+                b.name AS brand_name,
+                b.brand_key
+            FROM agents a
+            LEFT JOIN accounts acc ON acc.id = a.account_id
+            LEFT JOIN brands b ON b.id = a.brand_id
+            WHERE a.id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Full monitoring report for one user / their workspace.
+ * @return array<string, mixed>|null
+ */
+function lc_superadmin_user_report(int $id): ?array
+{
+    $user = lc_superadmin_get_user($id);
+    if (!$user) {
+        return null;
+    }
+
+    $pdo = lc_db();
+    $accountId = isset($user['account_id']) ? (int) $user['account_id'] : 0;
+
+    $stats = [
+        'chats_handled' => 0,
+        'chats_waiting' => 0,
+        'chats_active' => 0,
+        'chats_closed' => 0,
+        'messages_sent' => 0,
+        'workspace_chats_total' => 0,
+        'workspace_visitors' => 0,
+        'team_size' => 0,
+        'brands_count' => 0,
+        'canned_count' => 0,
+    ];
+
+    try {
+        $st = $pdo->prepare('SELECT COUNT(*) FROM conversations WHERE agent_id = ?');
+        $st->execute([$id]);
+        $stats['chats_handled'] = (int) $st->fetchColumn();
+
+        $st = $pdo->prepare("SELECT status, COUNT(*) AS c FROM conversations WHERE agent_id = ? GROUP BY status");
+        $st->execute([$id]);
+        foreach ($st->fetchAll() as $row) {
+            $key = 'chats_' . $row['status'];
+            if (isset($stats[$key])) {
+                $stats[$key] = (int) $row['c'];
+            }
+        }
+
+        $st = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE sender_type = 'agent' AND sender_id = ?");
+        $st->execute([$id]);
+        $stats['messages_sent'] = (int) $st->fetchColumn();
+
+        if ($accountId > 0) {
+            $st = $pdo->prepare('SELECT COUNT(*) FROM agents WHERE account_id = ?');
+            $st->execute([$accountId]);
+            $stats['team_size'] = (int) $st->fetchColumn();
+
+            $st = $pdo->prepare('SELECT COUNT(*) FROM brands WHERE account_id = ?');
+            $st->execute([$accountId]);
+            $stats['brands_count'] = (int) $st->fetchColumn();
+
+            $st = $pdo->prepare('SELECT COUNT(*) FROM canned_replies WHERE account_id = ?');
+            $st->execute([$accountId]);
+            $stats['canned_count'] = (int) $st->fetchColumn();
+
+            $st = $pdo->prepare('SELECT COUNT(*) FROM conversations c INNER JOIN brands b ON b.id = c.brand_id WHERE b.account_id = ?');
+            $st->execute([$accountId]);
+            $stats['workspace_chats_total'] = (int) $st->fetchColumn();
+
+            $st = $pdo->prepare('
+                SELECT COUNT(DISTINCT c.visitor_id)
+                FROM conversations c
+                INNER JOIN brands b ON b.id = c.brand_id
+                WHERE b.account_id = ?
+            ');
+            $st->execute([$accountId]);
+            $stats['workspace_visitors'] = (int) $st->fetchColumn();
+        }
+    } catch (Throwable $e) {
+    }
+
+    $recentChats = [];
+    try {
+        $st = $pdo->prepare("
+            SELECT c.id, c.status, c.started_at, c.last_message_at, c.closed_at,
+                   v.name AS visitor_name, v.email AS visitor_email, v.country AS visitor_country,
+                   b.name AS brand_name
+            FROM conversations c
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            LEFT JOIN brands b ON b.id = c.brand_id
+            WHERE c.agent_id = ?
+            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
+            LIMIT 20
+        ");
+        $st->execute([$id]);
+        $recentChats = $st->fetchAll();
+    } catch (Throwable $e) {
+    }
+
+    $team = [];
+    $brands = [];
+    if ($accountId > 0) {
+        try {
+            $st = $pdo->prepare('SELECT id, name, email, role, status, is_active, last_seen FROM agents WHERE account_id = ? ORDER BY id ASC');
+            $st->execute([$accountId]);
+            $team = $st->fetchAll();
+        } catch (Throwable $e) {
+        }
+        try {
+            $st = $pdo->prepare('SELECT id, name, brand_key, widget_color, is_active, created_at FROM brands WHERE account_id = ? ORDER BY id ASC');
+            $st->execute([$accountId]);
+            $brands = $st->fetchAll();
+        } catch (Throwable $e) {
+        }
+    }
+
+    return [
+        'user' => $user,
+        'stats' => $stats,
+        'recent_chats' => $recentChats,
+        'team' => $team,
+        'brands' => $brands,
+    ];
+}
+
+/**
+ * @param array{name?:string,email?:string,role?:string,status?:string,is_active?:int|bool,password?:string,brand_id?:int|null} $data
+ * @return array{success:bool,error?:string}
+ */
+function lc_superadmin_update_user(int $id, array $data): array
+{
+    $user = lc_superadmin_get_user($id);
+    if (!$user) {
+        return ['success' => false, 'error' => 'User not found.'];
+    }
+
+    $name = trim((string) ($data['name'] ?? $user['name']));
+    $email = strtolower(trim((string) ($data['email'] ?? $user['email'])));
+    $role = (($data['role'] ?? $user['role']) === 'admin') ? 'admin' : 'agent';
+    $status = (string) ($data['status'] ?? $user['status']);
+    if (!in_array($status, ['online', 'away', 'offline'], true)) {
+        $status = 'offline';
+    }
+    $isActive = !empty($data['is_active']) ? 1 : 0;
+    $password = (string) ($data['password'] ?? '');
+
+    if ($name === '' || $email === '') {
+        return ['success' => false, 'error' => 'Name and email are required.'];
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Invalid email address.'];
+    }
+
+    try {
+        $pdo = lc_db();
+        $chk = $pdo->prepare('SELECT id FROM agents WHERE email = ? AND id != ? LIMIT 1');
+        $chk->execute([$email, $id]);
+        if ($chk->fetch()) {
+            return ['success' => false, 'error' => 'Email already used by another user.'];
+        }
+
+        if ($password !== '') {
+            if (strlen($password) < 6) {
+                return ['success' => false, 'error' => 'Password must be at least 6 characters.'];
+            }
+            $pdo->prepare('UPDATE agents SET name = ?, email = ?, role = ?, status = ?, is_active = ?, password = ? WHERE id = ?')
+                ->execute([$name, $email, $role, $status, $isActive, password_hash($password, PASSWORD_DEFAULT), $id]);
+        } else {
+            $pdo->prepare('UPDATE agents SET name = ?, email = ?, role = ?, status = ?, is_active = ? WHERE id = ?')
+                ->execute([$name, $email, $role, $status, $isActive, $id]);
+        }
+
+        return ['success' => true];
+    } catch (Throwable $e) {
+        return ['success' => false, 'error' => 'Could not update user.'];
+    }
+}
+
+/**
+ * Delete a user (agent). Conversations stay (agent_id set null via FK).
+ * @return array{success:bool,error?:string}
+ */
+function lc_superadmin_delete_user(int $id): array
+{
+    $user = lc_superadmin_get_user($id);
+    if (!$user) {
+        return ['success' => false, 'error' => 'User not found.'];
+    }
+
+    try {
+        $pdo = lc_db();
+        $accountId = isset($user['account_id']) ? (int) $user['account_id'] : 0;
+
+        // If account owner, hand ownership to another admin/agent in same workspace
+        if ($accountId > 0 && (int) ($user['owner_agent_id'] ?? 0) === $id) {
+            $next = $pdo->prepare("SELECT id FROM agents WHERE account_id = ? AND id != ? ORDER BY (role = 'admin') DESC, id ASC LIMIT 1");
+            $next->execute([$accountId, $id]);
+            $nextId = (int) $next->fetchColumn();
+            $pdo->prepare('UPDATE accounts SET owner_agent_id = ? WHERE id = ?')
+                ->execute([$nextId > 0 ? $nextId : null, $accountId]);
+        }
+
+        $pdo->prepare('UPDATE canned_replies SET created_by = NULL WHERE created_by = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM agents WHERE id = ?')->execute([$id]);
+
+        return ['success' => true];
+    } catch (Throwable $e) {
+        return ['success' => false, 'error' => 'Could not delete user. They may still be linked to records.'];
+    }
+}
+
+/**
+ * Platform-wide monitoring summary for Super Admin dashboard.
+ * @return array<string, int>
+ */
+function lc_superadmin_platform_stats(): array
+{
+    $out = [
+        'users' => 0,
+        'workspaces' => 0,
+        'brands' => 0,
+        'chats' => 0,
+        'active_chats' => 0,
+        'waiting_chats' => 0,
+        'messages' => 0,
+        'online_agents' => 0,
+    ];
+    try {
+        $pdo = lc_db();
+        $out['users'] = (int) $pdo->query('SELECT COUNT(*) FROM agents')->fetchColumn();
+        $out['workspaces'] = (int) $pdo->query('SELECT COUNT(*) FROM accounts')->fetchColumn();
+        $out['brands'] = (int) $pdo->query('SELECT COUNT(*) FROM brands')->fetchColumn();
+        $out['chats'] = (int) $pdo->query('SELECT COUNT(*) FROM conversations')->fetchColumn();
+        $out['active_chats'] = (int) $pdo->query("SELECT COUNT(*) FROM conversations WHERE status = 'active'")->fetchColumn();
+        $out['waiting_chats'] = (int) $pdo->query("SELECT COUNT(*) FROM conversations WHERE status = 'waiting'")->fetchColumn();
+        $out['messages'] = (int) $pdo->query('SELECT COUNT(*) FROM messages')->fetchColumn();
+        $out['online_agents'] = (int) $pdo->query("SELECT COUNT(*) FROM agents WHERE status = 'online' AND is_active = 1")->fetchColumn();
+    } catch (Throwable $e) {
+    }
+    return $out;
 }
