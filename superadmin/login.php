@@ -7,6 +7,7 @@ if (!lc_installed()) {
 }
 
 lc_ensure_superadmin_schema();
+lc_seed_default_superadmin(true);
 
 if (lc_auth_superadmin()) {
     header('Location: ' . lc_superadmin_url());
@@ -16,10 +17,17 @@ if (lc_auth_superadmin()) {
 $defaults = lc_superadmin_defaults();
 $emailValue = '';
 $error = '';
+$dbOk = true;
+try {
+    lc_db()->query('SELECT 1 FROM super_admins LIMIT 1');
+} catch (Throwable $e) {
+    $dbOk = false;
+    $error = 'Super Admin database table could not be prepared. Check DB permissions.';
+}
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $emailValue = strtolower(trim($_POST['email'] ?? ''));
-    $password = $_POST['password'] ?? '';
+if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $emailValue = strtolower(trim((string) ($_POST['email'] ?? '')));
+    $password = (string) ($_POST['password'] ?? '');
     if ($emailValue === '' || $password === '') {
         $error = 'Email and password are required.';
     } elseif (lc_login_superadmin($emailValue, $password)) {
@@ -28,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error = 'Invalid email or password.';
     }
-} else {
+} elseif ($emailValue === '') {
     $emailValue = $defaults['email'];
 }
 

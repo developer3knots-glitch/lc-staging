@@ -31,38 +31,46 @@ function lc_ensure_superadmin_schema(): void
             PRIMARY KEY (`id`),
             UNIQUE KEY `idx_superadmin_email` (`email`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        lc_seed_default_superadmin();
+        lc_seed_default_superadmin(true);
     } catch (Throwable $e) {
     }
 }
 
 /**
- * Exactly one super admin. Creates if empty; repairs missing default email row.
+ * Keep exactly one active Super Admin with the known default credentials.
+ * @param bool $forcePasswordReset When true, password is reset to the configured default.
  */
-function lc_seed_default_superadmin(): void
+function lc_seed_default_superadmin(bool $forcePasswordReset = false): void
 {
     try {
         $pdo = lc_db();
-        $defaults = lc_superadmin_defaults();
-        $count = (int) $pdo->query('SELECT COUNT(*) FROM super_admins')->fetchColumn();
+        $d = lc_superadmin_defaults();
+        $row = $pdo->query('SELECT id, email, password, is_active FROM super_admins ORDER BY id ASC LIMIT 1')->fetch();
 
-        if ($count === 0) {
-            $stmt = $pdo->prepare('INSERT INTO super_admins (name, email, password, is_active) VALUES (?, ?, ?, 1)');
-            $stmt->execute([
-                $defaults['name'],
-                $defaults['email'],
-                password_hash($defaults['password'], PASSWORD_DEFAULT),
-            ]);
+        if (!$row) {
+            $pdo->prepare('INSERT INTO super_admins (name, email, password, is_active) VALUES (?, ?, ?, 1)')
+                ->execute([$d['name'], $d['email'], password_hash($d['password'], PASSWORD_DEFAULT)]);
             return;
         }
 
-        // Ensure configured email exists (one platform operator)
-        $chk = $pdo->prepare('SELECT id FROM super_admins WHERE email = ? LIMIT 1');
-        $chk->execute([$defaults['email']]);
-        if (!$chk->fetch()) {
-            // Table already has someone else — do not add a second account
+        $id = (int) $row['id'];
+        $emailOk = strcasecmp((string) $row['email'], $d['email']) === 0;
+        $passOk = password_verify($d['password'], (string) $row['password']);
+        $activeOk = !empty($row['is_active']);
+
+        if (!$forcePasswordReset && $emailOk && $passOk && $activeOk) {
+            // Still remove extras
+            $pdo->prepare('DELETE FROM super_admins WHERE id != ?')->execute([$id]);
             return;
         }
+
+        $hash = ($passOk && !$forcePasswordReset)
+            ? (string) $row['password']
+            : password_hash($d['password'], PASSWORD_DEFAULT);
+
+        $pdo->prepare('UPDATE super_admins SET name = ?, email = ?, password = ?, is_active = 1 WHERE id = ?')
+            ->execute([$d['name'], $d['email'], $hash, $id]);
+        $pdo->prepare('DELETE FROM super_admins WHERE id != ?')->execute([$id]);
     } catch (Throwable $e) {
     }
 }
@@ -102,46 +110,54 @@ function lc_require_superadmin(): array
 
 function lc_login_superadmin(string $email, string $password): bool
 {
-    lc_ensure_superadmin_schema();
-    $email = strtolower(trim($email));
-    $defaults = lc_superadmin_defaults();
+    try {
+        lc_ensure_superadmin_schema();
+        lc_seed_default_superadmin(true);
 
-    $stmt = lc_db()->prepare('SELECT * FROM super_admins WHERE LOWER(email) = ? AND is_active = 1 LIMIT 1');
-    $stmt->execute([$email]);
-    $row = $stmt->fetch();
+        $email = strtolower(trim($email));
+        $password = (string) $password;
+        $d = lc_superadmin_defaults();
+        $defaultEmail = strtolower($d['email']);
 
-    // Self-heal: empty table or wrong hash for default credentials
-    if (!$row && $email === strtolower($defaults['email']) && $password === $defaults['password']) {
-        $pdo = lc_db();
-        $count = (int) $pdo->query('SELECT COUNT(*) FROM super_admins')->fetchColumn();
-        if ($count === 0) {
-            $ins = $pdo->prepare('INSERT INTO super_admins (name, email, password, is_active) VALUES (?, ?, ?, 1)');
-            $ins->execute([$defaults['name'], $defaults['email'], password_hash($defaults['password'], PASSWORD_DEFAULT)]);
-            $stmt->execute([$email]);
-            $row = $stmt->fetch();
+        // Hard reset path for the only platform account
+        if ($email === $defaultEmail && hash_equals($d['password'], $password)) {
+            $pdo = lc_db();
+            $hash = password_hash($d['password'], PASSWORD_DEFAULT);
+            $row = $pdo->query('SELECT id FROM super_admins ORDER BY id ASC LIMIT 1')->fetch();
+            if ($row) {
+                $pdo->prepare('UPDATE super_admins SET name = ?, email = ?, password = ?, is_active = 1 WHERE id = ?')
+                    ->execute([$d['name'], $d['email'], $hash, (int) $row['id']]);
+                $pdo->prepare('DELETE FROM super_admins WHERE id != ?')->execute([(int) $row['id']]);
+                $id = (int) $row['id'];
+            } else {
+                $pdo->prepare('INSERT INTO super_admins (name, email, password, is_active) VALUES (?, ?, ?, 1)')
+                    ->execute([$d['name'], $d['email'], $hash]);
+                $id = (int) $pdo->lastInsertId();
+            }
+            if ($id < 1) {
+                return false;
+            }
+            $_SESSION['super_admin_id'] = $id;
+            $_SESSION['super_admin_name'] = $d['name'];
+            unset($_SESSION['agent_id'], $_SESSION['agent_name'], $_SESSION['agent_role']);
+            return true;
         }
-    }
 
-    if ($row && !password_verify($password, (string) $row['password'])) {
-        // Reset hash when typing the configured default password for that email
-        if ($email === strtolower($defaults['email']) && $password === $defaults['password']) {
-            $hash = password_hash($defaults['password'], PASSWORD_DEFAULT);
-            lc_db()->prepare('UPDATE super_admins SET password = ?, is_active = 1 WHERE id = ?')
-                ->execute([$hash, (int) $row['id']]);
-            $row['password'] = $hash;
-        } else {
+        $pdo = lc_db();
+        $stmt = $pdo->prepare('SELECT * FROM super_admins WHERE LOWER(email) = ? AND is_active = 1 LIMIT 1');
+        $stmt->execute([$email]);
+        $row = $stmt->fetch();
+        if (!$row || !password_verify($password, (string) $row['password'])) {
             return false;
         }
-    }
 
-    if (!$row || !password_verify($password, (string) $row['password'])) {
+        $_SESSION['super_admin_id'] = (int) $row['id'];
+        $_SESSION['super_admin_name'] = $row['name'];
+        unset($_SESSION['agent_id'], $_SESSION['agent_name'], $_SESSION['agent_role']);
+        return true;
+    } catch (Throwable $e) {
         return false;
     }
-
-    $_SESSION['super_admin_id'] = (int) $row['id'];
-    $_SESSION['super_admin_name'] = $row['name'];
-    unset($_SESSION['agent_id'], $_SESSION['agent_name'], $_SESSION['agent_role']);
-    return true;
 }
 
 function lc_logout_superadmin(): void
