@@ -245,6 +245,179 @@ function lc_superadmin_get_user(int $id): ?array
 }
 
 /**
+ * Dedicated agent performance report for Super Admin.
+ *
+ * @return array{agent:array,stats:array,chats:list,logs:list}|null
+ */
+function lc_superadmin_agent_report(int $agentId): ?array
+{
+    $agent = lc_superadmin_get_user($agentId);
+    if (!$agent) {
+        return null;
+    }
+
+    $pdo = lc_db();
+    $stats = [
+        'chats_total' => 0,
+        'chats_active' => 0,
+        'chats_waiting' => 0,
+        'chats_closed' => 0,
+        'messages_sent' => 0,
+    ];
+
+    try {
+        $st = $pdo->prepare('SELECT COUNT(*) FROM conversations WHERE agent_id = ?');
+        $st->execute([$agentId]);
+        $stats['chats_total'] = (int) $st->fetchColumn();
+
+        $st = $pdo->prepare("SELECT status, COUNT(*) AS c FROM conversations WHERE agent_id = ? GROUP BY status");
+        $st->execute([$agentId]);
+        foreach ($st->fetchAll() as $row) {
+            $key = 'chats_' . $row['status'];
+            if (isset($stats[$key])) {
+                $stats[$key] = (int) $row['c'];
+            }
+        }
+
+        $st = $pdo->prepare("SELECT COUNT(*) FROM messages WHERE sender_type = 'agent' AND sender_id = ?");
+        $st->execute([$agentId]);
+        $stats['messages_sent'] = (int) $st->fetchColumn();
+    } catch (Throwable $e) {
+    }
+
+    $chats = [];
+    try {
+        $st = $pdo->prepare("
+            SELECT c.id, c.status, c.started_at, c.accepted_at, c.last_message_at, c.closed_at,
+                   v.name AS visitor_name, v.email AS visitor_email, v.country AS visitor_country,
+                   b.name AS brand_name,
+                   (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
+                   (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'agent' AND sender_id = ?) AS agent_messages
+            FROM conversations c
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            LEFT JOIN brands b ON b.id = c.brand_id
+            WHERE c.agent_id = ?
+            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
+            LIMIT 200
+        ");
+        $st->execute([$agentId, $agentId]);
+        $chats = $st->fetchAll() ?: [];
+    } catch (Throwable $e) {
+    }
+
+    $logs = lc_superadmin_agent_activity_logs($agentId, 80);
+
+    return [
+        'agent' => $agent,
+        'stats' => $stats,
+        'chats' => $chats,
+        'logs' => $logs,
+    ];
+}
+
+/**
+ * Activity timeline built from chats + agent messages (no separate audit table).
+ *
+ * @return list<array{type:string,label:string,detail:string,at:?string,conversation_id:?int}>
+ */
+function lc_superadmin_agent_activity_logs(int $agentId, int $limit = 80): array
+{
+    if ($agentId < 1) {
+        return [];
+    }
+    $limit = max(1, min(150, $limit));
+    $events = [];
+    $pdo = lc_db();
+
+    try {
+        $st = $pdo->prepare("
+            SELECT c.id, c.accepted_at, c.closed_at, c.status, c.started_at,
+                   v.name AS visitor_name, b.name AS brand_name
+            FROM conversations c
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            LEFT JOIN brands b ON b.id = c.brand_id
+            WHERE c.agent_id = ?
+            ORDER BY COALESCE(c.last_message_at, c.accepted_at, c.started_at) DESC
+            LIMIT 100
+        ");
+        $st->execute([$agentId]);
+        foreach ($st->fetchAll() as $row) {
+            $visitor = $row['visitor_name'] ?: 'Visitor';
+            $brand = $row['brand_name'] ? (' · ' . $row['brand_name']) : '';
+            $cid = (int) $row['id'];
+            if (!empty($row['accepted_at'])) {
+                $events[] = [
+                    'type' => 'accepted',
+                    'label' => 'Accepted chat',
+                    'detail' => '#' . $cid . ' · ' . $visitor . $brand,
+                    'at' => $row['accepted_at'],
+                    'conversation_id' => $cid,
+                ];
+            }
+            if (!empty($row['closed_at'])) {
+                $events[] = [
+                    'type' => 'closed',
+                    'label' => 'Closed chat',
+                    'detail' => '#' . $cid . ' · ' . $visitor . $brand,
+                    'at' => $row['closed_at'],
+                    'conversation_id' => $cid,
+                ];
+            }
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $st = $pdo->prepare("
+            SELECT m.id, m.message, m.created_at, m.conversation_id, m.sender_type,
+                   v.name AS visitor_name
+            FROM messages m
+            INNER JOIN conversations c ON c.id = m.conversation_id
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            WHERE (m.sender_type = 'agent' AND m.sender_id = ?)
+               OR (m.sender_type = 'system' AND m.sender_id = ?)
+            ORDER BY m.id DESC
+            LIMIT 60
+        ");
+        $st->execute([$agentId, $agentId]);
+        foreach ($st->fetchAll() as $row) {
+            $cid = (int) $row['conversation_id'];
+            $visitor = $row['visitor_name'] ?: 'Visitor';
+            $msg = trim((string) ($row['message'] ?? ''));
+            if (function_exists('mb_strlen') && mb_strlen($msg) > 90) {
+                $msg = mb_substr($msg, 0, 90) . '…';
+            } elseif (strlen($msg) > 90) {
+                $msg = substr($msg, 0, 90) . '…';
+            }
+            if (($row['sender_type'] ?? '') === 'system') {
+                $events[] = [
+                    'type' => 'system',
+                    'label' => 'System event',
+                    'detail' => '#' . $cid . ' · ' . ($msg !== '' ? $msg : ('Chat with ' . $visitor)),
+                    'at' => $row['created_at'],
+                    'conversation_id' => $cid,
+                ];
+            } else {
+                $events[] = [
+                    'type' => 'message',
+                    'label' => 'Sent message',
+                    'detail' => '#' . $cid . ' · ' . $visitor . ($msg !== '' ? (': ' . $msg) : ''),
+                    'at' => $row['created_at'],
+                    'conversation_id' => $cid,
+                ];
+            }
+        }
+    } catch (Throwable $e) {
+    }
+
+    usort($events, static function ($a, $b) {
+        return strcmp((string) ($b['at'] ?? ''), (string) ($a['at'] ?? ''));
+    });
+
+    return array_slice($events, 0, $limit);
+}
+
+/**
  * Chats handled by a workspace agent (for reports / inbox).
  *
  * @return list<array<string, mixed>>

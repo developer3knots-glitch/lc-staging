@@ -380,13 +380,9 @@ $tabUrl = static function (string $tab) use ($user): string {
                                 · <?= !empty($t['is_active']) ? 'Active' : 'Disabled' ?>
                             </td>
                             <td>
-                                <?php if ((int) $t['id'] !== (int) $user['id']): ?>
-                                <a href="<?= lc_superadmin_url('user', ['id' => (int) $t['id'], 'tab' => 'chats']) ?>" class="sa-btn sa-btn-primary sa-btn-sm">
+                                <a href="<?= lc_superadmin_url('agent', ['id' => (int) $t['id'], 'from' => (int) $user['id']]) ?>" class="sa-btn sa-btn-primary sa-btn-sm">
                                     <i class="ti ti-report-analytics"></i> View Report
                                 </a>
-                                <?php else: ?>
-                                <span class="sa-muted-inline">Current report</span>
-                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
