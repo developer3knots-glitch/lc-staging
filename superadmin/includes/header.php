@@ -18,9 +18,9 @@ $base = htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8');
     <title><?= lc_sanitize($pageTitle ?? 'Super Admin') ?> - <?= lc_sanitize(LC_APP_NAME) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= $base ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
-    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=2">
+    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=3">
 </head>
 <body class="sa-body">
 <div class="sa-app" id="sa-app">

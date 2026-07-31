@@ -1,6 +1,6 @@
 /**
  * LiveChat Admin — Professional UI
- * Icons: Tabler Icons | Font: Inter
+ * Icons: Tabler Icons | Font: Work Sans
  */
 
 :root {
@@ -26,7 +26,7 @@
 body,
 .lc-admin-body {
     margin: 0;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Work Sans', system-ui, -apple-system, sans-serif;
     background: var(--lc-bg);
     color: var(--lc-ink);
     -webkit-font-smoothing: antialiased;

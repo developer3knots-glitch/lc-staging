@@ -51,7 +51,7 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
     <title>Super Admin Login - <?= $appName ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
     <style>
         :root {
@@ -65,11 +65,12 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
             --sa-muted: #5b6b86;
             --sa-danger: #c62828;
             --sa-danger-bg: #fff1f1;
+            --sa-font: "Work Sans", system-ui, sans-serif;
         }
         * { box-sizing: border-box; }
         html, body { margin: 0; min-height: 100%; }
         body.sa-login {
-            font-family: "Instrument Sans", sans-serif;
+            font-family: var(--sa-font);
             color: var(--sa-ink);
             background: var(--sa-ink);
             min-height: 100vh;
@@ -148,9 +149,9 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
         }
         .sa-brand strong {
             display: block;
-            font-family: Newsreader, Georgia, serif;
+            font-family: var(--sa-font);
             font-size: 1.55rem;
-            font-weight: 600;
+            font-weight: 700;
             letter-spacing: -.02em;
             line-height: 1.15;
         }
@@ -176,9 +177,9 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
         }
         .sa-card h1 {
             margin: 0;
-            font-family: Newsreader, Georgia, serif;
+            font-family: var(--sa-font);
             font-size: 1.7rem;
-            font-weight: 600;
+            font-weight: 700;
             letter-spacing: -.02em;
             color: var(--sa-ink);
         }
@@ -231,7 +232,7 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
             border: 1px solid #d7e0ef;
             border-radius: 12px;
             background: #f7f9fc;
-            font: 500 .95rem/1.2 "Instrument Sans", sans-serif;
+            font: 500 .95rem/1.2 var(--sa-font);
             color: var(--sa-ink);
             transition: border-color .15s, box-shadow .15s, background .15s;
         }
@@ -268,7 +269,7 @@ $emailAttr = htmlspecialchars($emailValue, ENT_QUOTES, 'UTF-8');
             border: 0;
             border-radius: 12px;
             cursor: pointer;
-            font: 700 .95rem/1 "Instrument Sans", sans-serif;
+            font: 700 .95rem/1 var(--sa-font);
             letter-spacing: .02em;
             color: #042f24;
             background: linear-gradient(135deg, #3ee0b5 0%, #12b886 100%);

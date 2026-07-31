@@ -268,12 +268,12 @@
         if (document.getElementById('lc-widget-styles')) return;
         var font = document.createElement('link');
         font.rel = 'stylesheet';
-        font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+        font.href = 'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap';
         document.head.appendChild(font);
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=10';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=11';
         document.head.appendChild(link);
     }
 

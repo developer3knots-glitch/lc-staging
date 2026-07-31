@@ -18,8 +18,8 @@
   --sa-radius: 18px;
   --sa-radius-sm: 12px;
   --sa-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  --sa-font: "Instrument Sans", system-ui, sans-serif;
-  --sa-display: "Newsreader", Georgia, serif;
+  --sa-font: "Work Sans", system-ui, sans-serif;
+  --sa-display: "Work Sans", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
