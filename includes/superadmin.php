@@ -176,6 +176,7 @@ function lc_superadmin_list_users(): array
         lc_ensure_accounts_schema();
     }
     try {
+        // Workspace owners / primary users only — team agents stay inside each user's report.
         return lc_db()->query("
             SELECT
                 a.id,
@@ -201,8 +202,8 @@ function lc_superadmin_list_users(): array
                 (SELECT COUNT(*) FROM agents ax WHERE ax.account_id = a.account_id) AS team_size,
                 (SELECT COUNT(*) FROM brands b WHERE b.account_id = a.account_id) AS brands_count
             FROM agents a
-            LEFT JOIN accounts acc ON acc.id = a.account_id
-            ORDER BY COALESCE(acc.id, 0) ASC, a.id ASC
+            INNER JOIN accounts acc ON acc.id = a.account_id AND acc.owner_agent_id = a.id
+            ORDER BY acc.id ASC, a.id ASC
         ")->fetchAll();
     } catch (Throwable $e) {
         return [];
@@ -482,7 +483,7 @@ function lc_superadmin_platform_stats(): array
     ];
     try {
         $pdo = lc_db();
-        $out['users'] = (int) $pdo->query('SELECT COUNT(*) FROM agents')->fetchColumn();
+        $out['users'] = (int) $pdo->query('SELECT COUNT(*) FROM accounts WHERE owner_agent_id IS NOT NULL')->fetchColumn();
         $out['workspaces'] = (int) $pdo->query('SELECT COUNT(*) FROM accounts')->fetchColumn();
         $out['brands'] = (int) $pdo->query('SELECT COUNT(*) FROM brands')->fetchColumn();
         $out['chats'] = (int) $pdo->query('SELECT COUNT(*) FROM conversations')->fetchColumn();
