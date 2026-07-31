@@ -593,6 +593,17 @@ html, body.sa-body {
   flex-wrap: wrap;
   margin-bottom: 1rem;
 }
+.sa-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.sa-muted-inline {
+  color: var(--sa-faint);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
 
 .sa-grid-2 {
   display: grid;

@@ -94,7 +94,17 @@ $tabUrl = static function (string $tab) use ($user): string {
 <?php if ($error): ?><div class="sa-alert sa-alert-err"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($error) ?></div><?php endif; ?>
 
 <div class="sa-toolbar">
-    <a href="<?= lc_superadmin_url() ?>" class="sa-btn sa-btn-secondary sa-btn-sm"><i class="ti ti-arrow-left"></i> All users</a>
+    <div class="sa-toolbar-left">
+        <a href="<?= lc_superadmin_url() ?>" class="sa-btn sa-btn-secondary sa-btn-sm"><i class="ti ti-arrow-left"></i> All users</a>
+        <?php
+        $ownerId = (int) ($user['owner_agent_id'] ?? 0);
+        if ($ownerId > 0 && $ownerId !== (int) $user['id']):
+        ?>
+        <a href="<?= lc_superadmin_url('user', ['id' => $ownerId, 'tab' => 'agents']) ?>" class="sa-btn sa-btn-ghost sa-btn-sm">
+            <i class="ti ti-users-group"></i> Back to workspace
+        </a>
+        <?php endif; ?>
+    </div>
     <div class="sa-actions">
         <?php if (!$editMode): ?>
         <a href="<?= lc_superadmin_url('user', ['id' => (int) $user['id'], 'edit' => 1]) ?>" class="sa-btn sa-btn-primary sa-btn-sm"><i class="ti ti-pencil"></i> Edit user</a>
@@ -122,7 +132,7 @@ $tabUrl = static function (string $tab) use ($user): string {
         <div class="sa-hero-report-main">
             <div class="sa-hero-avatar"><?= lc_sanitize(strtoupper(substr($user['name'], 0, 1))) ?></div>
             <div>
-                <div class="sa-eyebrow"><i class="ti ti-user-search"></i> User report</div>
+                <div class="sa-eyebrow"><i class="ti ti-user-search"></i> <?= $isOwner ? 'User report' : 'Agent report' ?></div>
                 <h2><?= lc_sanitize($user['name']) ?></h2>
                 <p class="sa-hero-lead">
                     <?= lc_sanitize($user['email']) ?>
@@ -370,8 +380,12 @@ $tabUrl = static function (string $tab) use ($user): string {
                                 · <?= !empty($t['is_active']) ? 'Active' : 'Disabled' ?>
                             </td>
                             <td>
-                                <?php if ((int) $t['id'] !== (int) $user['id'] && ($t['role'] ?? '') === 'admin'): ?>
-                                <a href="<?= lc_superadmin_url('user', ['id' => (int) $t['id']]) ?>" class="sa-btn sa-btn-secondary sa-btn-sm">Open</a>
+                                <?php if ((int) $t['id'] !== (int) $user['id']): ?>
+                                <a href="<?= lc_superadmin_url('user', ['id' => (int) $t['id'], 'tab' => 'chats']) ?>" class="sa-btn sa-btn-primary sa-btn-sm">
+                                    <i class="ti ti-report-analytics"></i> View Report
+                                </a>
+                                <?php else: ?>
+                                <span class="sa-muted-inline">Current report</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
