@@ -208,11 +208,12 @@ require __DIR__ . '/includes/header.php';
                     <th>Status</th>
                     <th>Started</th>
                     <th>Last message</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
                 <?php if ($report['recent_chats'] === []): ?>
-                <tr><td colspan="6" style="color:var(--sa-muted);padding:1.2rem 1.1rem;">No chats handled by this user yet.</td></tr>
+                <tr><td colspan="7" style="color:var(--sa-muted);padding:1.2rem 1.1rem;">No chats handled by this user yet.</td></tr>
                 <?php else: ?>
                 <?php foreach ($report['recent_chats'] as $c): ?>
                 <tr>
@@ -225,6 +226,16 @@ require __DIR__ . '/includes/header.php';
                     <td><?= lc_sanitize(ucfirst((string) ($c['status'] ?? ''))) ?></td>
                     <td><?= !empty($c['started_at']) ? lc_time_span($c['started_at']) : '-' ?></td>
                     <td><?= !empty($c['last_message_at']) ? lc_time_span($c['last_message_at']) : '-' ?></td>
+                    <td>
+                        <button type="button"
+                            class="sa-btn sa-btn-primary sa-btn-sm sa-view-chat"
+                            data-chat-id="<?= (int) $c['id'] ?>"
+                            data-visitor="<?= lc_sanitize($c['visitor_name'] ?? 'Visitor') ?>"
+                            data-brand="<?= lc_sanitize($c['brand_name'] ?? '') ?>"
+                            data-status="<?= lc_sanitize((string) ($c['status'] ?? '')) ?>">
+                            <i class="ti ti-message-2"></i> View Chat
+                        </button>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
                 <?php endif; ?>
@@ -232,6 +243,147 @@ require __DIR__ . '/includes/header.php';
         </table>
     </div>
 </section>
+
+<div class="sa-chat-modal" id="sa-chat-modal" hidden>
+    <div class="sa-chat-modal-backdrop" data-sa-chat-close></div>
+    <div class="sa-chat-box" role="dialog" aria-modal="true" aria-labelledby="sa-chat-title">
+        <div class="sa-chat-box-head">
+            <div class="sa-chat-box-title">
+                <div class="sa-chat-box-avatar"><i class="ti ti-message-chatbot"></i></div>
+                <div>
+                    <strong id="sa-chat-title">Chat</strong>
+                    <span id="sa-chat-meta">Loading…</span>
+                </div>
+            </div>
+            <button type="button" class="sa-btn sa-btn-ghost sa-btn-sm" data-sa-chat-close aria-label="Close">
+                <i class="ti ti-x"></i>
+            </button>
+        </div>
+        <div class="sa-chat-box-body" id="sa-chat-messages">
+            <div class="sa-chat-loading"><i class="ti ti-loader-2"></i> Loading conversation…</div>
+        </div>
+        <div class="sa-chat-box-foot">
+            <span id="sa-chat-foot-status">Read-only monitoring view</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var modal = document.getElementById('sa-chat-modal');
+    var titleEl = document.getElementById('sa-chat-title');
+    var metaEl = document.getElementById('sa-chat-meta');
+    var bodyEl = document.getElementById('sa-chat-messages');
+    var footEl = document.getElementById('sa-chat-foot-status');
+    var apiBase = <?= json_encode(rtrim(lc_base_url(), '/') . '/api/superadmin-chat.php', JSON_UNESCAPED_SLASHES) ?>;
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function formatTime(iso) {
+        if (!iso) return '';
+        try {
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (e) { return ''; }
+    }
+
+    function attachmentHtml(att) {
+        if (!att || !att.url) return '';
+        var name = esc(att.name || 'Attachment');
+        var kind = att.kind || '';
+        if (kind === 'image') {
+            return '<a class="sa-chat-attach sa-chat-attach-img" href="' + esc(att.url) + '" target="_blank" rel="noopener">' +
+                '<img src="' + esc(att.url) + '" alt="' + name + '"></a>';
+        }
+        return '<a class="sa-chat-attach" href="' + esc(att.url) + '" target="_blank" rel="noopener">' +
+            '<i class="ti ti-paperclip"></i> ' + name + '</a>';
+    }
+
+    function renderMessages(messages, visitorName) {
+        if (!messages || !messages.length) {
+            bodyEl.innerHTML = '<div class="sa-chat-empty">No messages in this conversation.</div>';
+            return;
+        }
+        var html = '';
+        messages.forEach(function (m) {
+            var type = m.sender_type || 'system';
+            if (type === 'system') {
+                html += '<div class="sa-chat-msg system">' + esc(m.message || '') + '</div>';
+                return;
+            }
+            var who = type === 'agent'
+                ? esc(m.agent_name || 'Agent')
+                : esc(visitorName || 'Visitor');
+            var text = m.message ? '<div class="sa-chat-text">' + esc(m.message).replace(/\n/g, '<br>') + '</div>' : '';
+            var att = m.attachment ? attachmentHtml(m.attachment) : '';
+            html += '<div class="sa-chat-msg ' + esc(type) + '">' +
+                '<div class="sa-chat-who">' + who + '</div>' +
+                text + att +
+                '<div class="sa-chat-time">' + esc(formatTime(m.created_at)) + '</div>' +
+                '</div>';
+        });
+        bodyEl.innerHTML = html;
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
+
+    function openModal(btn) {
+        var id = btn.getAttribute('data-chat-id');
+        var visitor = btn.getAttribute('data-visitor') || 'Visitor';
+        var brand = btn.getAttribute('data-brand') || '';
+        var status = btn.getAttribute('data-status') || '';
+        titleEl.textContent = visitor + ' · #' + id;
+        metaEl.textContent = [brand, status ? (status.charAt(0).toUpperCase() + status.slice(1)) : ''].filter(Boolean).join(' · ');
+        footEl.textContent = 'Read-only monitoring view';
+        bodyEl.innerHTML = '<div class="sa-chat-loading"><i class="ti ti-loader-2"></i> Loading conversation…</div>';
+        modal.hidden = false;
+        document.body.classList.add('sa-chat-open');
+
+        fetch(apiBase + '?conversation_id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success) {
+                    bodyEl.innerHTML = '<div class="sa-chat-empty">' + esc((data && data.error) || 'Failed to load chat.') + '</div>';
+                    return;
+                }
+                var c = data.conversation || {};
+                var vName = c.visitor_name || visitor;
+                titleEl.textContent = vName + ' · #' + (c.id || id);
+                metaEl.textContent = [
+                    c.brand_name || brand,
+                    c.status ? (c.status.charAt(0).toUpperCase() + c.status.slice(1)) : '',
+                    c.agent_name ? ('Agent: ' + c.agent_name) : ''
+                ].filter(Boolean).join(' · ');
+                footEl.textContent = (data.messages || []).length + ' messages · read-only';
+                renderMessages(data.messages, vName);
+            })
+            .catch(function () {
+                bodyEl.innerHTML = '<div class="sa-chat-empty">Failed to load chat.</div>';
+            });
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        document.body.classList.remove('sa-chat-open');
+    }
+
+    document.querySelectorAll('.sa-view-chat').forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn); });
+    });
+    modal.querySelectorAll('[data-sa-chat-close]').forEach(function (el) {
+        el.addEventListener('click', closeModal);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+})();
+</script>
 
 <?php if ($report['team'] !== []): ?>
 <section class="sa-panel" style="margin-bottom:1rem;">

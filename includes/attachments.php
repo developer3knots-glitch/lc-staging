@@ -400,7 +400,7 @@ function lc_attachment_message_select_sql(): string
             m.attachment_path, m.attachment_original_name, m.attachment_mime, m.attachment_size, m.attachment_kind';
 }
 
-function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $agent): void
+function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $agent, bool $isSuperAdmin = false): void
 {
     lc_ensure_attachments_schema();
     $stmt = lc_db()->prepare('
@@ -420,7 +420,9 @@ function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $ag
     }
 
     $allowed = false;
-    if ($agent) {
+    if ($isSuperAdmin) {
+        $allowed = true;
+    } elseif ($agent) {
         $conv = lc_get_conversation((int) $row['conversation_id']);
         if ($conv && lc_agent_can_view_conversation($agent, $conv)) {
             $allowed = true;
