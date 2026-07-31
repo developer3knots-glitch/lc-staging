@@ -20,9 +20,9 @@ $base = htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8');
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= $base ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
-    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=4">
+    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=5">
 </head>
-<body class="sa-body">
+<body class="sa-body<?= !empty($bodyClass) ? ' ' . lc_sanitize($bodyClass) : '' ?>">
 <div class="sa-app" id="sa-app">
     <div class="sa-backdrop" id="sa-backdrop"></div>
     <aside class="sa-sidebar" id="sa-sidebar">
@@ -59,7 +59,7 @@ $base = htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8');
             <button type="button" class="sa-menu-btn" id="sa-menu-btn" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
             <div>
                 <h1><?= lc_sanitize($pageTitle ?? 'Super Admin') ?></h1>
-                <p>Full platform monitoring</p>
+                <p><?= lc_sanitize($pageSub ?? 'Full platform monitoring') ?></p>
             </div>
         </header>
-        <main class="sa-content">
+        <main class="sa-content<?= !empty($contentClass) ? ' ' . lc_sanitize($contentClass) : '' ?>">

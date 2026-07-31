@@ -244,6 +244,39 @@ function lc_superadmin_get_user(int $id): ?array
 }
 
 /**
+ * Chats handled by a workspace agent (for reports / inbox).
+ *
+ * @return list<array<string, mixed>>
+ */
+function lc_superadmin_agent_chats(int $agentId, int $limit = 50): array
+{
+    if ($agentId < 1) {
+        return [];
+    }
+    $limit = max(1, min(200, $limit));
+    try {
+        $st = lc_db()->prepare("
+            SELECT c.id, c.status, c.started_at, c.last_message_at, c.closed_at, c.agent_id,
+                   v.name AS visitor_name, v.email AS visitor_email, v.country AS visitor_country,
+                   b.name AS brand_name,
+                   a.name AS agent_name,
+                   (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message
+            FROM conversations c
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            LEFT JOIN brands b ON b.id = c.brand_id
+            LEFT JOIN agents a ON a.id = c.agent_id
+            WHERE c.agent_id = ?
+            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
+            LIMIT {$limit}
+        ");
+        $st->execute([$agentId]);
+        return $st->fetchAll() ?: [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
  * Full monitoring report for one user / their workspace.
  * @return array<string, mixed>|null
  */
@@ -317,23 +350,7 @@ function lc_superadmin_user_report(int $id): ?array
     } catch (Throwable $e) {
     }
 
-    $recentChats = [];
-    try {
-        $st = $pdo->prepare("
-            SELECT c.id, c.status, c.started_at, c.last_message_at, c.closed_at,
-                   v.name AS visitor_name, v.email AS visitor_email, v.country AS visitor_country,
-                   b.name AS brand_name
-            FROM conversations c
-            LEFT JOIN visitors v ON v.id = c.visitor_id
-            LEFT JOIN brands b ON b.id = c.brand_id
-            WHERE c.agent_id = ?
-            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
-            LIMIT 20
-        ");
-        $st->execute([$id]);
-        $recentChats = $st->fetchAll();
-    } catch (Throwable $e) {
-    }
+    $recentChats = lc_superadmin_agent_chats($id, 20);
 
     $team = [];
     $brands = [];
