@@ -14,6 +14,10 @@
     siteUrl = siteUrl.replace(/\/$/, '');
 
     var brandKey = (script && script.getAttribute('data-brand')) || 'default';
+    // Default ON: panel opens with the page; also re-opens on agent/system messages
+    var autoOpenOnLoad = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase() !== 'false';
+    var autoOpenOnMessage = ((script && script.getAttribute('data-auto-open-msg')) || 'true').toLowerCase() !== 'false';
+    var didAutoOpenOnLoad = false;
 
     var STORAGE_KEY = 'lc_visitor_uid_' + brandKey;
     var visitorUid = localStorage.getItem(STORAGE_KEY);
@@ -883,6 +887,7 @@
                 pendingResumeConvId = null;
                 showChatView();
                 initChat({ resumeConversationId: resumeId, keepMessages: false });
+                scheduleAutoOpenOnLoad();
                 return;
             }
             if (resumeId && !identityOk) {
@@ -891,6 +896,7 @@
                 pendingResumeConvId = null;
             }
             showPrechatForm(true);
+            scheduleAutoOpenOnLoad();
             return;
         }
 
@@ -898,9 +904,11 @@
         if (resumeId) {
             showChatView();
             initChat({ resumeConversationId: resumeId, keepMessages: false });
+            scheduleAutoOpenOnLoad();
             return;
         }
         startDirectChat();
+        scheduleAutoOpenOnLoad();
     }
 
     /**
@@ -1031,35 +1039,68 @@
         persistPanelOpen(false);
     }
 
-    function togglePanel() {
+    /**
+     * Open the chat panel. Safe to call repeatedly (no-op if already open).
+     * @param {{ silenceFlow?: boolean }} options
+     *   silenceFlow — UI only; entry routing / poll already active
+     */
+    function openPanel(options) {
+        options = options || {};
         if (isOpen) {
-            minimizePanel();
+            var badgeOpen = document.getElementById('lc-bubble-badge');
+            if (badgeOpen) badgeOpen.style.display = 'none';
             return;
         }
         isOpen = true;
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
-        panel.style.display = 'flex';
+        if (panel) panel.style.display = 'flex';
         if (bubble) bubble.classList.add('lcw-open');
         persistPanelOpen(true);
         hideTeaser(false);
-        if (!chatClosed) {
-            if (conversationId) {
-                showChatView();
-                if (!pollTimer) {
-                    pollTimer = setInterval(pollMessages, pollMs);
-                    pollMessages(true);
+        if (!options.silenceFlow) {
+            if (!chatClosed) {
+                if (conversationId) {
+                    showChatView();
+                    if (!pollTimer) {
+                        pollTimer = setInterval(pollMessages, pollMs);
+                        pollMessages(true);
+                    }
+                } else {
+                    beginNewConversationFlow();
                 }
             } else {
-                // Always re-fetch settings so form ON/OFF matches dashboard (enterprise)
-                beginNewConversationFlow();
+                document.getElementById('lc-panel-ended').style.display = 'flex';
+                document.getElementById('lc-panel-toolbar').style.display = 'flex';
+                document.getElementById('lc-panel-head').style.display = 'none';
             }
-        } else {
-            document.getElementById('lc-panel-ended').style.display = 'flex';
-            document.getElementById('lc-panel-toolbar').style.display = 'flex';
-            document.getElementById('lc-panel-head').style.display = 'none';
+        } else if (conversationId && !chatClosed) {
+            showChatView();
+            if (!pollTimer) {
+                pollTimer = setInterval(pollMessages, pollMs);
+                pollMessages(false);
+            }
         }
-        document.getElementById('lc-bubble-badge').style.display = 'none';
+        var badge = document.getElementById('lc-bubble-badge');
+        if (badge) badge.style.display = 'none';
+    }
+
+    function togglePanel() {
+        if (isOpen) {
+            minimizePanel();
+            return;
+        }
+        openPanel();
+    }
+
+    /** First paint on each page: open widget like LiveChat pro widgets */
+    function scheduleAutoOpenOnLoad() {
+        if (!autoOpenOnLoad || didAutoOpenOnLoad) return;
+        didAutoOpenOnLoad = true;
+        // Next frame so DOM + theme CSS are ready
+        setTimeout(function () {
+            openPanel({ silenceFlow: true });
+        }, 80);
     }
 
     function setComposeEnabled(enabled) {
@@ -1521,31 +1562,13 @@
 
     function resumeChatOnLoad() {
         clearSiteNavigation();
-
-        var storedConv = getStoredConversationId();
-        var hadPanelOpen = chatStore().getItem(PANEL_OPEN_KEY) === '1';
-
-        if (!storedConv && !hadPanelOpen) return;
-
         if (isDocumentReload()) {
             clearReloadNavigation();
         }
-
-        var shouldOpen = chatStore().getItem(PANEL_OPEN_KEY) === '1';
-        if (shouldOpen) {
-            isOpen = true;
-            document.getElementById('lc-panel').style.display = 'flex';
-            // Route decides form vs chat after live settings — do not force prechat/direct
-            updateStatus('Connecting…', false);
-        }
-
-        lastMsgId = 0;
-        chatClosed = false;
-        leaveCloseSent = false;
-
-        if (storedConv || shouldOpen) {
-            beginNewConversationFlow();
-        }
+        // Conversation routing: buildWidget → loadWidgetSettings → routeVisitorEntry
+        // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
+        // (Do not start a second chat flow here — that created duplicate conversations.)
+        lastMsgId = getStoredLastMsgId() || 0;
     }
 
     function pollMessages(isHistoryLoad) {
@@ -1615,10 +1638,15 @@
                         appendMessage(m);
                         if (m.id > lastMsgId) lastMsgId = m.id;
                         persistLastMsgId(lastMsgId);
-                        if (!isOpen && m.sender_type !== 'visitor') {
-                            document.getElementById('lc-bubble-badge').style.display = 'flex';
-                            playNotifySound();
-                        } else if (isNewIncoming && isOpen) {
+                        if (isNewIncoming) {
+                            if (!isOpen) {
+                                if (autoOpenOnMessage) {
+                                    openPanel({ silenceFlow: true });
+                                } else {
+                                    var badge = document.getElementById('lc-bubble-badge');
+                                    if (badge) badge.style.display = 'flex';
+                                }
+                            }
                             playNotifySound();
                         }
                     }
