@@ -640,11 +640,26 @@
 }
 
 .lcw-msg {
-    padding: 0.62rem 0.9rem;
+    padding: 0.55rem 0.72rem 0.4rem;
     border-radius: 16px;
     font-size: 0.86rem;
     line-height: 1.5;
     word-break: break-word;
+}
+.lcw-msg-body { min-width: 0; }
+.lcw-msg-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.28rem;
+    margin-top: 0.22rem;
+    line-height: 1;
+}
+.lcw-msg-time,
+.lcw-msg-foot .lc-time {
+    font-size: 0.62rem;
+    opacity: 0.78;
+    white-space: nowrap;
 }
 .lcw-msg-row {
     display: flex;
@@ -668,6 +683,8 @@
     color: var(--lcw-ink);
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
 }
+.lcw-agent .lcw-msg-time,
+.lcw-agent .lcw-msg-foot .lc-time { color: #94a3b8; opacity: 1; }
 .lcw-system {
     align-self: center;
     background: rgba(255, 255, 255, 0.9);
@@ -677,6 +694,7 @@
     border-radius: 999px;
     border: 1px solid var(--lcw-border);
 }
+/* legacy meta (older messages if any) */
 .lcw-msg-meta {
     font-size: 0.64rem;
     color: #94a3b8;
@@ -684,21 +702,34 @@
     padding: 0 0.15rem;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    justify-content: flex-end;
+    gap: 0.28rem;
 }
 .lcw-msg-read,
 .lcw-msg-ticks {
-    font-weight: 700;
-    letter-spacing: -0.08em;
-    font-size: 0.78rem;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
     line-height: 1;
-    margin-left: 0.1rem;
+    opacity: 1;
 }
-.lcw-msg-ticks.is-sent { color: #94a3b8; }
-.lcw-msg-ticks.is-delivered { color: #94a3b8; }
-.lcw-msg-ticks.is-read { color: #22c55e; }
-.lcw-msg-ticks.is-pending { color: #cbd5e1; font-size: 0.68rem; letter-spacing: 0; }
-.lcw-msg-pending { opacity: 0.65; }
+.lcw-msg-ticks .lcw-tick-svg {
+    display: block;
+    width: 16px;
+    height: 11px;
+}
+.lcw-msg-ticks.is-sent .lcw-tick-svg { width: 12px; }
+.lcw-msg-ticks.is-pending .lcw-tick-svg { width: 12px; height: 12px; }
+/* Visitor (own) green bubbles — match agent inbox */
+.lcw-visitor .lcw-msg-ticks.is-sent,
+.lcw-visitor .lcw-msg-ticks.is-delivered { color: rgba(255, 255, 255, 0.82); }
+.lcw-visitor .lcw-msg-ticks.is-read { color: #53bdeb; }
+.lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }
+.lcw-msg-pending { opacity: 0.72; }
+/* Outer meta fallback colors */
+.lcw-msg-meta .lcw-msg-ticks.is-sent,
+.lcw-msg-meta .lcw-msg-ticks.is-delivered { color: #94a3b8; }
+.lcw-msg-meta .lcw-msg-ticks.is-read { color: #53bdeb; }
 
 .lcw-join-event {
     align-self: center;

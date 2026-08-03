@@ -281,15 +281,28 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
+    /** Official dual-check SVGs (same as widget visitor ticks). */
+    function tickSvg(double) {
+        if (double) {
+            return '<svg class="lc-tick-svg" viewBox="0 0 16 11" width="16" height="11" aria-hidden="true" focusable="false">' +
+                '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+                '<path fill="currentColor" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
+                '</svg>';
+        }
+        return '<svg class="lc-tick-svg" viewBox="0 0 12 11" width="12" height="11" aria-hidden="true" focusable="false">' +
+            '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+            '</svg>';
+    }
+
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'read') {
-            return '<span class="lc-msg-ticks is-read" title="Read" aria-label="Read"><i class="ti ti-checks"></i></span>';
+            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered"><i class="ti ti-checks"></i></span>';
+            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
         }
-        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent"><i class="ti ti-check"></i></span>';
+        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
     }
 
     function applyReceipts(receipts) {
@@ -321,16 +334,18 @@
             ? window.LCChatFiles.renderAttachmentHtml(m.attachment, m.message)
             : esc(m.message);
         var html = '<div class="lc-msg ' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + m.id + '">';
-        html += bodyHtml;
-        html += '<div class="lc-msg-time">';
+        html += '<div class="lc-msg-body">' + bodyHtml + '</div>';
+        html += '<div class="lc-msg-foot">';
+        html += '<span class="lc-msg-time">';
         html += timeHtml(m.created_at);
-        if (label && cls !== 'system') {
+        if (label && cls !== 'system' && cls !== 'agent') {
             html += ' · ' + esc(label);
         }
-        // Ticks only on own (agent) messages — WhatsApp style
+        html += '</span>';
+        // Ticks only on own (agent) messages — WhatsApp / LiveChat style
         if (cls === 'agent') {
             var status = m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent'));
-            html += ' ' + msgTicksHtml(status);
+            html += msgTicksHtml(status);
         }
         html += '</div>';
         html += '</div>';

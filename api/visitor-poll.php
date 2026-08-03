@@ -6,6 +6,8 @@ $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
 $visitorUid = trim($_GET['visitor_uid'] ?? '');
 $chatToken = trim($_GET['chat_token'] ?? '');
+// viewing=1 when widget panel is open — only then mark agent msgs as read (WhatsApp-style)
+$isViewing = isset($_GET['viewing']) && (string) $_GET['viewing'] === '1';
 
 if ($conversationId < 1 || $visitorUid === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
@@ -51,9 +53,11 @@ try {
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
-    // Agent messages → delivered + read while visitor is polling this open chat
+    // Delivered when visitor device polls; read only while chat panel is open
     lc_mark_messages_delivered($conversationId, 'agent');
-    lc_mark_messages_read($conversationId, 'agent');
+    if ($isViewing) {
+        lc_mark_messages_read($conversationId, 'agent');
+    }
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');
     $lastVisitorRead = false;

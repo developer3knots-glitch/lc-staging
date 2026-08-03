@@ -273,7 +273,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=12';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=13';
         document.head.appendChild(link);
     }
 
@@ -1326,8 +1326,10 @@
             updateStatus('Chatting with ' + agentName, true);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
-                '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' + messageBodyHtml(m) + '</div>' +
-                '<div class="lcw-msg-meta">' + timeHtml + '</div></div>';
+                '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
+                '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
+                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
+                '</div></div>';
             box.appendChild(row);
         } else if (m.sender_type === 'visitor') {
             var wrap = document.createElement('div');
@@ -1336,8 +1338,10 @@
             var status = m._pending ? 'pending' : (m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             var ticks = msgTicksHtml(status);
             wrap.innerHTML =
-                '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' + messageBodyHtml(m) + '</div>' +
-                '<div class="lcw-msg-meta">' + timeHtml + ticks + '</div>';
+                '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
+                '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
+                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span>' + ticks + '</div>' +
+                '</div>';
             box.appendChild(wrap);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
@@ -1356,18 +1360,32 @@
         if (window.LCTime) window.LCTime.scan(box);
     }
 
+    /** Same official SVGs as agent inbox ticks. */
+    function tickSvg(double) {
+        if (double) {
+            return '<svg class="lcw-tick-svg" viewBox="0 0 16 11" width="16" height="11" aria-hidden="true" focusable="false">' +
+                '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+                '<path fill="currentColor" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
+                '</svg>';
+        }
+        return '<svg class="lcw-tick-svg" viewBox="0 0 12 11" width="12" height="11" aria-hidden="true" focusable="false">' +
+            '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+            '</svg>';
+    }
+
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'pending') {
-            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending">⏳</span>';
+            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending">' +
+                '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
-            return '<span class="lcw-msg-ticks is-read" title="Read" aria-label="Read">✓✓</span>';
+            return '<span class="lcw-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">✓✓</span>';
+            return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
         }
-        return '<span class="lcw-msg-ticks is-sent" title="Sent" aria-label="Sent">✓</span>';
+        return '<span class="lcw-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
     }
 
     function updateVisitorTicks(msgKey, status) {
@@ -1375,8 +1393,8 @@
         if (!root) return;
         var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read');
         if (!existing) {
-            var meta = root.querySelector('.lcw-msg-meta');
-            if (meta) meta.insertAdjacentHTML('beforeend', msgTicksHtml(status));
+            var foot = root.querySelector('.lcw-msg-foot') || root.querySelector('.lcw-msg-meta');
+            if (foot) foot.insertAdjacentHTML('beforeend', msgTicksHtml(status));
             return;
         }
         var wrap = document.createElement('div');
@@ -1428,7 +1446,14 @@
     function pollMessages(isHistoryLoad) {
         if (!conversationId) return;
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId + '&last_id=' + fetchLastId + '&visitor_uid=' + encodeURIComponent(visitorUid) + '&chat_token=' + encodeURIComponent(chatToken || ''))
+        // viewing=1 only when panel open → agent ticks switch to "seen"
+        var viewing = (isOpen && document.getElementById('lc-panel') &&
+            document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
+        fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
+            '&last_id=' + fetchLastId +
+            '&visitor_uid=' + encodeURIComponent(visitorUid) +
+            '&chat_token=' + encodeURIComponent(chatToken || '') +
+            '&viewing=' + viewing)
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
