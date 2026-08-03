@@ -11,40 +11,47 @@ $accountId = lc_agent_account_id($agent);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'save_system') {
-        lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
-        lc_set_account_setting($accountId, 'poll_interval_ms', (string) max(800, (int) ($_POST['poll_interval_ms'] ?? 1500)));
-        $message = 'System settings saved successfully.';
-    } elseif ($action === 'save_tickets') {
-        lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
-        lc_set_account_setting($accountId, 'ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
-        $message = 'Ticket settings saved successfully.';
-    } elseif ($action === 'save_countries') {
-        $countryCodes = $_POST['blocked_countries'] ?? [];
-        if (!is_array($countryCodes)) {
-            $countryCodes = [];
+    try {
+        if ($action === 'save_system') {
+            $poll = (int) ($_POST['poll_interval_ms'] ?? 1500);
+            $poll = max(800, min(5000, $poll));
+            lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
+            lc_set_account_setting($accountId, 'poll_interval_ms', (string) $poll);
+            $message = 'System settings saved successfully.';
+        } elseif ($action === 'save_tickets') {
+            lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
+            lc_set_account_setting($accountId, 'ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
+            $message = 'Ticket settings saved successfully.';
+        } elseif ($action === 'save_countries') {
+            $countryCodes = $_POST['blocked_countries'] ?? [];
+            if (!is_array($countryCodes)) {
+                $countryCodes = [];
+            }
+            lc_save_blocked_country_codes($countryCodes, $accountId);
+            $message = 'Country block list updated.';
+        } elseif ($action === 'block_ip') {
+            $ip = trim((string) ($_POST['ip_address'] ?? ''));
+            $reason = trim((string) ($_POST['ip_reason'] ?? ''));
+            if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+                $error = 'Enter a valid IP address.';
+            } elseif (lc_is_local_ip($ip)) {
+                $error = 'Local network IPs cannot be blocked.';
+            } elseif (lc_block_ip($ip, (int) $agent['id'], $reason, $accountId)) {
+                $message = 'IP ' . $ip . ' has been blocked.';
+            } else {
+                $error = 'Unable to block that IP.';
+            }
+        } elseif ($action === 'unblock_ip') {
+            $ip = trim((string) ($_POST['ip_address'] ?? ''));
+            if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
+                $message = 'IP ' . $ip . ' has been unblocked.';
+            } else {
+                $error = 'IP not found in block list.';
+            }
         }
-        lc_save_blocked_country_codes($countryCodes, $accountId);
-        $message = 'Country block list updated.';
-    } elseif ($action === 'block_ip') {
-        $ip = trim((string) ($_POST['ip_address'] ?? ''));
-        $reason = trim((string) ($_POST['ip_reason'] ?? ''));
-        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
-            $error = 'Enter a valid IP address.';
-        } elseif (lc_is_local_ip($ip)) {
-            $error = 'Local network IPs cannot be blocked.';
-        } elseif (lc_block_ip($ip, (int) $agent['id'], $reason, $accountId)) {
-            $message = 'IP ' . $ip . ' has been blocked.';
-        } else {
-            $error = 'Unable to block that IP.';
-        }
-    } elseif ($action === 'unblock_ip') {
-        $ip = trim((string) ($_POST['ip_address'] ?? ''));
-        if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
-            $message = 'IP ' . $ip . ' has been unblocked.';
-        } else {
-            $error = 'IP not found in block list.';
-        }
+    } catch (Throwable $e) {
+        $error = 'Could not save settings. Please try again.';
+        error_log('LiveChat settings save error: ' . $e->getMessage());
     }
 }
 

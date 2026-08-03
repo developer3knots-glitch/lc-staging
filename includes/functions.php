@@ -164,8 +164,21 @@ function lc_setting(string $key, $default = ''): string
 
 function lc_set_setting(string $key, string $value): void
 {
-    $stmt = lc_db()->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
-    $stmt->execute([$key, $value]);
+    try {
+        $stmt = lc_db()->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
+        $stmt->execute([$key, $value]);
+    } catch (Throwable $e) {
+        try {
+            $upd = lc_db()->prepare('UPDATE settings SET setting_value = ? WHERE setting_key = ?');
+            $upd->execute([$value, $key]);
+            if ($upd->rowCount() < 1) {
+                $ins = lc_db()->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)');
+                $ins->execute([$key, $value]);
+            }
+        } catch (Throwable $e2) {
+            throw $e2;
+        }
+    }
 }
 
 function lc_uid(): string

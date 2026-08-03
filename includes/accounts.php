@@ -37,15 +37,6 @@ function lc_ensure_accounts_schema(): void
                     PRIMARY KEY (`id`),
                     UNIQUE KEY `idx_account_slug` (`slug`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                $pdo->exec("CREATE TABLE IF NOT EXISTS `account_settings` (
-                    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                    `account_id` INT UNSIGNED NOT NULL,
-                    `setting_key` VARCHAR(80) NOT NULL,
-                    `setting_value` TEXT NULL,
-                    PRIMARY KEY (`id`),
-                    UNIQUE KEY `idx_account_setting` (`account_id`, `setting_key`),
-                    KEY `idx_account_settings_account` (`account_id`)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
             } else {
                 foreach (array_filter(array_map('trim', explode(';', $sql))) as $statement) {
                     if ($statement !== '') {
@@ -56,6 +47,24 @@ function lc_ensure_accounts_schema(): void
                     }
                 }
             }
+        }
+
+        // Always ensure account_settings exists (partial migrations may create accounts only)
+        try {
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `account_settings` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `account_id` INT UNSIGNED NOT NULL,
+                `setting_key` VARCHAR(80) NOT NULL,
+                `setting_value` TEXT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `idx_account_setting` (`account_id`, `setting_key`),
+                KEY `idx_account_settings_account` (`account_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        } catch (Throwable $e) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE account_settings ADD UNIQUE KEY `idx_account_setting` (`account_id`, `setting_key`)');
+        } catch (Throwable $e) {
         }
 
         try {
@@ -360,13 +369,26 @@ function lc_get_account(int $id): ?array
     return $row ?: null;
 }
 
+/** Shared request cache for account settings. */
+function &lc_account_setting_cache(): array
+{
+    static $cache = [];
+    return $cache;
+}
+
+function lc_account_setting_cache_set(int $accountId, string $key, string $value): void
+{
+    $cache = &lc_account_setting_cache();
+    $cache[$accountId . ':' . $key] = $value;
+}
+
 function lc_account_setting(int $accountId, string $key, $default = ''): string
 {
     if ($accountId < 1) {
         return lc_setting($key, $default);
     }
     lc_ensure_accounts_schema();
-    static $cache = [];
+    $cache = &lc_account_setting_cache();
     $ck = $accountId . ':' . $key;
     if (array_key_exists($ck, $cache)) {
         return $cache[$ck];
@@ -394,12 +416,27 @@ function lc_set_account_setting(int $accountId, string $key, string $value): voi
         return;
     }
     lc_ensure_accounts_schema();
-    $stmt = lc_db()->prepare('
-        INSERT INTO account_settings (account_id, setting_key, setting_value)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-    ');
-    $stmt->execute([$accountId, $key, $value]);
+    try {
+        $stmt = lc_db()->prepare('
+            INSERT INTO account_settings (account_id, setting_key, setting_value)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ');
+        $stmt->execute([$accountId, $key, $value]);
+    } catch (Throwable $e) {
+        // Table missing unique key / race: update then insert, then fall back to global settings
+        try {
+            $upd = lc_db()->prepare('UPDATE account_settings SET setting_value = ? WHERE account_id = ? AND setting_key = ?');
+            $upd->execute([$value, $accountId, $key]);
+            if ($upd->rowCount() < 1) {
+                $ins = lc_db()->prepare('INSERT INTO account_settings (account_id, setting_key, setting_value) VALUES (?, ?, ?)');
+                $ins->execute([$accountId, $key, $value]);
+            }
+        } catch (Throwable $e2) {
+            lc_set_setting($key, $value);
+        }
+    }
+    lc_account_setting_cache_set($accountId, $key, $value);
 }
 
 /**
