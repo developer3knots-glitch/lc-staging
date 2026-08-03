@@ -83,19 +83,10 @@
     }
 
     function setVisitorMeta(htmlOrText, isHtml) {
+        // Context bar hidden on LiveChat desk — details live in the right rail
         if (!visitorMetaEl) return;
-        var content = htmlOrText || '';
-        if (!content) {
-            visitorMetaEl.hidden = true;
-            visitorMetaEl.innerHTML = '';
-            return;
-        }
-        visitorMetaEl.hidden = false;
-        if (isHtml) {
-            visitorMetaEl.innerHTML = content;
-        } else {
-            visitorMetaEl.textContent = content;
-        }
+        visitorMetaEl.hidden = true;
+        visitorMetaEl.innerHTML = '';
     }
 
     function formatVisitorMeta(c, extraSuffix) {
@@ -152,11 +143,69 @@
 
     function updateHeaderAvatar(name) {
         var av = document.getElementById('lc-chat-header-av');
-        if (!av) {
+        if (av) {
+            av.textContent = visitorInitials(name);
+            av.style.background = avatarColor(name);
+        }
+        var dav = document.getElementById('lc-details-av');
+        if (dav) {
+            dav.textContent = visitorInitials(name);
+            dav.style.background = avatarColor(name);
+        }
+    }
+
+    function setText(id, text) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.textContent = text || '—';
+        }
+    }
+
+    function showDetailsPanel(show) {
+        var empty = document.getElementById('lc-chat-details-empty');
+        var body = document.getElementById('lc-chat-details-body');
+        if (empty) {
+            empty.hidden = !!show;
+        }
+        if (body) {
+            body.hidden = !show;
+        }
+    }
+
+    function renderDetailsRail(c, extraNote) {
+        if (!c) {
+            showDetailsPanel(false);
             return;
         }
-        av.textContent = visitorInitials(name);
-        av.style.background = avatarColor(name);
+        showDetailsPanel(true);
+        var name = c.visitor_name || 'Visitor';
+        setText('lc-details-name', name);
+        setText('lc-details-email', c.visitor_email || 'No email');
+        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || '—');
+        setText('lc-details-country', c.visitor_country || '—');
+        setText('lc-details-brand', c.brand_name || '—');
+        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '—' : 'Unassigned'));
+        setText('lc-details-ticket', c.reference || currentReference || '—');
+
+        var pageEl = document.getElementById('lc-details-page');
+        var page = c.visitor_page || c.page_url || '';
+        if (pageEl) {
+            if (page) {
+                pageEl.textContent = page;
+                pageEl.title = page;
+                if (/^https?:\/\//i.test(page)) {
+                    pageEl.href = page;
+                    pageEl.removeAttribute('aria-disabled');
+                } else {
+                    pageEl.removeAttribute('href');
+                    pageEl.setAttribute('aria-disabled', 'true');
+                }
+            } else {
+                pageEl.textContent = '—';
+                pageEl.removeAttribute('href');
+            }
+        }
+        updateHeaderAvatar(name);
     }
 
     function updateChatReference(ref) {
@@ -172,6 +221,7 @@
             transferRefCodeEl.textContent = ref;
             transferRefEl.hidden = false;
         }
+        setText('lc-details-ticket', ref);
     }
 
     function copyChatReference() {
@@ -844,6 +894,14 @@
         if (transferRefEl) transferRefEl.hidden = true;
         setVisitorMeta('', false);
         if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
+        showDetailsPanel(true);
+        setText('lc-details-name', 'Loading…');
+        setText('lc-details-email', '—');
+        setText('lc-details-ip', '—');
+        setText('lc-details-country', '—');
+        setText('lc-details-brand', '—');
+        setText('lc-details-agent', '—');
+        setText('lc-details-ticket', '—');
         updateBlockIpMenu();
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
@@ -1034,23 +1092,26 @@
     }
 
     function renderVisitorDetails(c, ipBlocked) {
-        if (!visitorDetailsEl) {
-            return;
-        }
         if (typeof ipBlocked === 'boolean') {
             currentIpBlocked = ipBlocked;
         }
-        if (c.visitor_ip) {
+        if (c && c.visitor_ip) {
             currentVisitorIp = c.visitor_ip;
         }
-        var html = '';
-        if (c.visitor_ip || currentVisitorIp) {
-            html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip || currentVisitorIp) + '</span>';
+        // Compact chips under name (optional) — desk puts full data in right rail
+        if (visitorDetailsEl) {
+            var html = '';
+            if (c && (c.visitor_ip || currentVisitorIp)) {
+                html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip || currentVisitorIp) + '</span>';
+            }
+            if (c && c.visitor_country) {
+                html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
+            }
+            visitorDetailsEl.innerHTML = html;
         }
-        if (c.visitor_country) {
-            html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
+        if (c) {
+            renderDetailsRail(c);
         }
-        visitorDetailsEl.innerHTML = html;
         updateBlockIpMenu();
     }
 
@@ -1069,6 +1130,7 @@
                         lastMsgId = 0;
                         needsFullHistory = false;
                         chatTransferredAway = false;
+                        showDetailsPanel(false);
                         loadConversations();
                     }
                     return;
@@ -1131,6 +1193,7 @@
                     visitorNameEl.textContent = c.visitor_name || 'Visitor';
                     updateHeaderAvatar(c.visitor_name || 'Visitor');
                     renderVisitorDetails(c, !!c.ip_blocked);
+                    renderDetailsRail(c, 'Chat closed');
                     if (c.reference) {
                         updateChatReference(c.reference);
                     }

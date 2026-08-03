@@ -2,30 +2,30 @@
 require_once __DIR__ . '/../includes/auth.php';
 $agent = lc_require_auth();
 $selectedId = (int) ($_GET['id'] ?? 0);
-$pageTitle = 'Live Chats';
+$pageTitle = 'Chats';
 $activeNav = 'chats';
 $extraScripts = ['lc-chat-attachments.js', 'admin-chat.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
 <div class="lc-chats-pro">
-    <div class="lc-chat-layout lc-chat-layout-pro" id="lc-chat-app" data-agent-id="<?= (int)$agent['id'] ?>" data-agent-role="<?= lc_sanitize($agent['role']) ?>" data-selected="<?= $selectedId ?>">
+    <div class="lc-chat-layout lc-chat-layout-pro lc-chat-desk" id="lc-chat-app" data-agent-id="<?= (int)$agent['id'] ?>" data-agent-role="<?= lc_sanitize($agent['role']) ?>" data-selected="<?= $selectedId ?>">
         <aside class="lc-chat-list lc-chat-inbox-pro">
             <div class="lc-chat-inbox-head">
                 <div class="lc-chat-inbox-title">
-                    <strong>Inbox</strong>
-                    <span>Conversations</span>
+                    <strong>Chats</strong>
+                    <span class="lc-chat-inbox-live"><span class="lc-status-dot online"></span> Live inbox</span>
                 </div>
                 <span id="lc-waiting-badge" class="lc-chat-inbox-waiting" style="display:none">0</span>
             </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
-                <input type="search" id="lc-inbox-search" placeholder="Search…" autocomplete="off" aria-label="Search conversations">
+                <input type="search" id="lc-inbox-search" placeholder="Search customers…" autocomplete="off" aria-label="Search conversations">
             </div>
             <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
                 <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
-                <button type="button" class="lc-chat-tab" data-tab="waiting" role="tab">Waiting</button>
-                <button type="button" class="lc-chat-tab" data-tab="active" role="tab">Active</button>
+                <button type="button" class="lc-chat-tab" data-tab="waiting" role="tab">Unassigned</button>
+                <button type="button" class="lc-chat-tab" data-tab="active" role="tab">My chats</button>
             </div>
             <div class="lc-chat-items" id="lc-conversation-list">
                 <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading…</div>
@@ -36,10 +36,10 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-chat-panel-empty" id="lc-chat-empty">
                 <div class="lc-chat-empty-art">
                     <span class="lc-chat-empty-ring"></span>
-                    <span class="lc-chat-empty-icon"><i class="ti ti-messages"></i></span>
+                    <span class="lc-chat-empty-icon"><i class="ti ti-message-circle"></i></span>
                 </div>
-                <h3>Pick a conversation</h3>
-                <p>Select a chat from the inbox to view messages, visitor details, and page journey.</p>
+                <h3>Select a chat</h3>
+                <p>Pick a conversation from the list to reply, transfer, or close.</p>
             </div>
 
             <div id="lc-chat-active" class="lc-chat-active-pro" style="display:none">
@@ -55,7 +55,7 @@ require __DIR__ . '/includes/header.php';
                                     <button type="button" class="lc-chat-ref-copy" id="lc-chat-ref-copy" title="Copy ticket reference" aria-label="Copy ticket reference"><i class="ti ti-copy"></i></button>
                                 </div>
                             </div>
-                            <div class="lc-visitor-details lc-visitor-details-pro" id="lc-chat-visitor-details"></div>
+                            <div class="lc-visitor-details lc-visitor-details-pro lc-visitor-details-inline" id="lc-chat-visitor-details"></div>
                         </div>
                     </div>
                     <div class="lc-chat-header-actions">
@@ -78,7 +78,7 @@ require __DIR__ . '/includes/header.php';
                                     <i class="ti ti-ban"></i> <span id="lc-block-ip-label">Block IP</span>
                                 </button>
                                 <button type="button" class="lc-chat-more-item is-danger" id="lc-close-chat" role="menuitem">
-                                    <i class="ti ti-x"></i> Close
+                                    <i class="ti ti-x"></i> Close chat
                                 </button>
                             </div>
                             <div class="lc-transfer-panel" id="lc-transfer-panel" hidden>
@@ -86,7 +86,7 @@ require __DIR__ . '/includes/header.php';
                                     <strong><i class="ti ti-arrows-exchange"></i> Transfer chat</strong>
                                     <button type="button" class="lc-transfer-close" id="lc-transfer-close" title="Close"><i class="ti ti-x"></i></button>
                                 </div>
-                                <p class="lc-transfer-hint">Select an online agent to take over this conversation. The ticket reference stays the same — full chat history moves with it.</p>
+                                <p class="lc-transfer-hint">Select an online agent. Ticket reference stays the same.</p>
                                 <div class="lc-transfer-ref" id="lc-transfer-ref" hidden>
                                     <span class="lc-transfer-ref-label"><i class="ti ti-ticket"></i></span>
                                     <code id="lc-transfer-ref-code">—</code>
@@ -95,45 +95,95 @@ require __DIR__ . '/includes/header.php';
                                     <div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents…</div>
                                 </div>
                                 <label class="lc-transfer-note-label" for="lc-transfer-note">Note for the next agent (optional)</label>
-                                <textarea id="lc-transfer-note" rows="2" maxlength="500" placeholder="Brief context for the receiving agent…"></textarea>
+                                <textarea id="lc-transfer-note" rows="2" maxlength="500" placeholder="Brief context…"></textarea>
                                 <button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-transfer-submit" id="lc-transfer-submit" disabled>
-                                    <i class="ti ti-send"></i> Transfer chat
+                                    <i class="ti ti-send"></i> Transfer
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- Kept for JS hooks; content mirrored to right details rail -->
                 <div class="lc-chat-context-bar" id="lc-chat-visitor-meta" hidden></div>
-
-                <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">
-                    <button type="button" class="lc-journey-bar" id="lc-journey-toggle" aria-expanded="false" aria-controls="lc-journey-track-wrap">
-                        <span class="lc-journey-bar-icon" aria-hidden="true"><i class="ti ti-route"></i></span>
-                        <span class="lc-journey-bar-text">
-                            <strong>Page journey</strong>
-                            <span class="lc-journey-bar-summary" id="lc-journey-summary">Visitor path on your site</span>
-                        </span>
-                        <span class="lc-journey-bar-count" id="lc-journey-count">0 pages</span>
-                        <i class="ti ti-chevron-down lc-journey-bar-chevron" aria-hidden="true"></i>
-                    </button>
-                    <div class="lc-journey-track-wrap" id="lc-journey-track-wrap" hidden>
-                        <div class="lc-journey-track" id="lc-page-journey-list"></div>
-                    </div>
-                </div>
 
                 <div class="lc-chat-messages lc-chat-messages-pro" id="lc-messages"></div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro">
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
-                        <textarea id="lc-reply-input" rows="1" placeholder="Type your reply…"></textarea>
+                        <textarea id="lc-reply-input" rows="1" placeholder="Type a message…"></textarea>
                         <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
                         <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
                     </div>
-                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> new line</p>
+                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line</p>
                 </div>
             </div>
         </div>
+
+        <aside class="lc-chat-details" id="lc-chat-details" aria-label="Customer details">
+            <div class="lc-chat-details-empty" id="lc-chat-details-empty">
+                <i class="ti ti-user-circle"></i>
+                <p>Customer details appear when you open a chat.</p>
+            </div>
+            <div class="lc-chat-details-body" id="lc-chat-details-body" hidden>
+                <div class="lc-details-section">
+                    <h4 class="lc-details-heading">Customer</h4>
+                    <div class="lc-details-customer">
+                        <div class="lc-details-av" id="lc-details-av">V</div>
+                        <div>
+                            <strong id="lc-details-name">Visitor</strong>
+                            <span class="lc-details-email" id="lc-details-email">—</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="lc-details-section">
+                    <h4 class="lc-details-heading">Details</h4>
+                    <dl class="lc-details-list">
+                        <div class="lc-details-row">
+                            <dt><i class="ti ti-world"></i> IP</dt>
+                            <dd id="lc-details-ip">—</dd>
+                        </div>
+                        <div class="lc-details-row">
+                            <dt><i class="ti ti-map-pin"></i> Location</dt>
+                            <dd id="lc-details-country">—</dd>
+                        </div>
+                        <div class="lc-details-row">
+                            <dt><i class="ti ti-tag"></i> Brand</dt>
+                            <dd id="lc-details-brand">—</dd>
+                        </div>
+                        <div class="lc-details-row">
+                            <dt><i class="ti ti-user"></i> Agent</dt>
+                            <dd id="lc-details-agent">—</dd>
+                        </div>
+                        <div class="lc-details-row">
+                            <dt><i class="ti ti-ticket"></i> Ticket</dt>
+                            <dd id="lc-details-ticket">—</dd>
+                        </div>
+                    </dl>
+                </div>
+                <div class="lc-details-section">
+                    <h4 class="lc-details-heading">Current page</h4>
+                    <a class="lc-details-page" id="lc-details-page" href="#" target="_blank" rel="noopener noreferrer">—</a>
+                </div>
+                <div class="lc-details-section lc-details-journey-section">
+                    <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">
+                        <button type="button" class="lc-journey-bar" id="lc-journey-toggle" aria-expanded="false" aria-controls="lc-journey-track-wrap">
+                            <span class="lc-journey-bar-icon" aria-hidden="true"><i class="ti ti-route"></i></span>
+                            <span class="lc-journey-bar-text">
+                                <strong>Visited pages</strong>
+                                <span class="lc-journey-bar-summary" id="lc-journey-summary">Path on your site</span>
+                            </span>
+                            <span class="lc-journey-bar-count" id="lc-journey-count">0</span>
+                            <i class="ti ti-chevron-down lc-journey-bar-chevron" aria-hidden="true"></i>
+                        </button>
+                        <div class="lc-journey-track-wrap" id="lc-journey-track-wrap" hidden>
+                            <div class="lc-journey-track" id="lc-page-journey-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
     </div>
 </div>
 

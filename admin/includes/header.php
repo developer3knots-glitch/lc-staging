@@ -39,9 +39,9 @@ if ($agent['role'] === 'admin') {
         </div>
         <nav class="lc-nav">
             <?php foreach ($navItems as $item): ?>
-                <a href="<?= lc_admin_url($item['page']) ?>" class="lc-nav-link <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>">
+                <a href="<?= lc_admin_url($item['page']) ?>" class="lc-nav-link <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>" title="<?= lc_sanitize($item['label']) ?>">
                     <span class="lc-nav-icon"><i class="ti <?= lc_sanitize($item['icon']) ?>"></i></span>
-                    <span><?= lc_sanitize($item['label']) ?></span>
+                    <span class="lc-nav-text"><?= lc_sanitize($item['label']) ?></span>
                 </a>
             <?php endforeach; ?>
         </nav>
@@ -62,11 +62,13 @@ if ($agent['role'] === 'admin') {
         </div>
     </aside>
     <div class="lc-main">
-        <header class="lc-topbar">
+        <header class="lc-topbar<?= (($activeNav ?? '') === 'chats') ? ' lc-topbar-desk' : '' ?>">
             <button type="button" class="lc-sidebar-toggle" id="lc-sidebar-toggle" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
             <div class="lc-topbar-title">
                 <h2><?= lc_sanitize($pageTitle ?? 'Dashboard') ?></h2>
+                <?php if (($activeNav ?? '') !== 'chats'): ?>
                 <p class="lc-topbar-sub">Support operations console</p>
+                <?php endif; ?>
             </div>
             <div class="lc-topbar-actions">
                 <div class="lc-status-control" id="lc-status-control">
