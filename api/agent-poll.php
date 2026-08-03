@@ -48,6 +48,16 @@ try {
         }
     }
 
+    $ipHistory = [];
+    if ($lastId === 0) {
+        $ipHistory = lc_conversations_related_by_ip(
+            (string) ($conv['visitor_ip'] ?? ''),
+            $conversationId,
+            $agent,
+            12
+        );
+    }
+
     lc_json([
         'success' => true,
         'conversation' => array_merge(
@@ -58,6 +68,7 @@ try {
         'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
+        'related_by_ip' => $ipHistory,
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

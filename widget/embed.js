@@ -864,39 +864,27 @@
     }
 
     /**
-     * LiveChat-style entry:
-     * - Form ON + new chat (or incomplete name/email) → pre-chat form
-     * - Form ON + open chat with known visitor → resume chat (no form)
-     * - Form OFF → direct chat / resume
+     * Entry rules (enterprise):
+     * - No auto-resume of old chats by IP / past device
+     * - Session continue: sessionStorage conversation id only
+     * - Ticket resume: separate form when setting ON (visitor + agent share history)
+     * - Form ON → gate identity; Form OFF → direct chat
      */
     function routeVisitorEntry(data) {
         if (!data || !data.success) return;
         applyWidgetSettings(data);
 
         var identityOk = !!data.visitor_identity_complete;
-        var hasActive = !!(data.has_active_chat && data.conversation_id);
-        var stored = getStoredConversationId();
-        var resumeId = null;
-        if (stored) {
-            resumeId = stored;
-        } else if (hasActive) {
-            resumeId = data.conversation_id;
-        }
-
-        // Prefer explicit resume targets set before form (incomplete identity gate)
-        if (pendingResumeConvId) {
-            resumeId = pendingResumeConvId;
-        }
+        // Session-only reconnect — never use server has_active_chat for silent resume
+        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
 
         if (prechatFormEnabled) {
-            // Resume only when visitor already has name+email (completed pre-chat earlier)
             if (resumeId && identityOk) {
                 pendingResumeConvId = null;
                 showChatView();
                 initChat({ resumeConversationId: resumeId, keepMessages: false });
                 return;
             }
-            // New chat, or returning after form was turned on without identity → show form
             if (resumeId && !identityOk) {
                 pendingResumeConvId = resumeId;
             } else {

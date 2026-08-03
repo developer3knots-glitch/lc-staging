@@ -15,7 +15,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=21"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=22"></script>
 <?php endforeach; ?>
 </body>
 </html>

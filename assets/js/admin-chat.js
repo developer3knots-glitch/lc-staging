@@ -25,6 +25,9 @@
     var journeyEl = document.getElementById('lc-page-journey');
     var journeyListEl = document.getElementById('lc-page-journey-list');
     var journeyCountEl = document.getElementById('lc-journey-count');
+    var ipHistoryEl = document.getElementById('lc-ip-history');
+    var ipHistoryListEl = document.getElementById('lc-ip-history-list');
+    var ipHistoryCountEl = document.getElementById('lc-ip-history-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
     var cannedSelect = document.getElementById('lc-canned-select');
     var transferWrap = document.getElementById('lc-transfer-wrap');
@@ -508,6 +511,50 @@
         journeyListEl.scrollLeft = journeyListEl.scrollWidth;
     }
 
+    function resetIpHistoryPanel() {
+        if (ipHistoryEl) ipHistoryEl.style.display = 'none';
+        if (ipHistoryListEl) ipHistoryListEl.innerHTML = '';
+        if (ipHistoryCountEl) ipHistoryCountEl.textContent = '0';
+        var wrap = document.getElementById('lc-ip-history-list-wrap');
+        var toggle = document.getElementById('lc-ip-history-toggle');
+        if (wrap) wrap.hidden = true;
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.classList.remove('is-open');
+        }
+    }
+
+    function renderIpHistory(items) {
+        if (!ipHistoryEl || !ipHistoryListEl) return;
+        items = items || [];
+        if (!items.length) {
+            resetIpHistoryPanel();
+            return;
+        }
+        ipHistoryEl.style.display = 'block';
+        if (ipHistoryCountEl) ipHistoryCountEl.textContent = String(items.length);
+        var html = '';
+        items.forEach(function (row) {
+            var status = (row.status || 'closed').toLowerCase();
+            var when = row.last_message_at || row.started_at || '';
+            var timeHtml = when && window.LCTime
+                ? '<span class="lc-time" data-timestamp="' + esc(window.LCTime.toIso(when)) + '">' + esc(window.LCTime.formatRelative(when)) + '</span>'
+                : '';
+            html += '<button type="button" class="lc-ip-history-item" data-id="' + parseInt(row.id, 10) + '">';
+            html += '<span class="lc-ip-history-item-top">';
+            html += '<code class="lc-ip-history-ref">' + esc(row.reference || ('#' + row.id)) + '</code>';
+            html += '<span class="lc-ip-history-status is-' + esc(status) + '">' + esc(status) + '</span>';
+            html += '</span>';
+            if (row.preview) {
+                html += '<span class="lc-ip-history-preview">' + esc(row.preview) + '</span>';
+            }
+            html += '<span class="lc-ip-history-meta">' + timeHtml + '</span>';
+            html += '</button>';
+        });
+        ipHistoryListEl.innerHTML = html;
+        if (window.LCTime) window.LCTime.scan(ipHistoryListEl);
+    }
+
     function loadPageJourney(reset) {
         if (!selectedId || !journeyEl) return;
         var since = reset ? 0 : lastJourneyId;
@@ -759,6 +806,7 @@
             journeyToggle.setAttribute('aria-expanded', 'false');
             journeyToggle.classList.remove('is-open');
         }
+        resetIpHistoryPanel();
         loadCanned();
         loadPageJourney(true);
         pollMessages();
@@ -996,6 +1044,9 @@
                     closeMoreMenu();
                     setVisitorMeta(formatVisitorMeta(c, 'Chat closed'), true);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
+                    if (data.related_by_ip !== undefined) {
+                        renderIpHistory(data.related_by_ip);
+                    }
                     loadConversations();
                     return;
                 }
@@ -1028,6 +1079,9 @@
                 if (data.receipts) applyReceipts(data.receipts);
                 messagesEl.scrollTop = messagesEl.scrollHeight;
                 if (window.LCTime) window.LCTime.scan(messagesEl);
+                if (data.related_by_ip !== undefined) {
+                    renderIpHistory(data.related_by_ip);
+                }
                 loadPageJourney(false);
             });
     }
@@ -1191,6 +1245,27 @@
             journeyToggle.classList.toggle('is-open', willOpen);
             if (willOpen) {
                 scrollJourneyToEnd();
+            }
+        });
+    }
+
+    var ipHistoryToggle = document.getElementById('lc-ip-history-toggle');
+    var ipHistoryWrap = document.getElementById('lc-ip-history-list-wrap');
+    if (ipHistoryToggle && ipHistoryWrap) {
+        ipHistoryToggle.addEventListener('click', function () {
+            var willOpen = ipHistoryWrap.hidden;
+            ipHistoryWrap.hidden = !willOpen;
+            ipHistoryToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            ipHistoryToggle.classList.toggle('is-open', willOpen);
+        });
+    }
+    if (ipHistoryListEl) {
+        ipHistoryListEl.addEventListener('click', function (e) {
+            var btn = e.target.closest('.lc-ip-history-item');
+            if (!btn) return;
+            var id = parseInt(btn.getAttribute('data-id'), 10);
+            if (id > 0 && id !== selectedId) {
+                openConversation(id);
             }
         });
     }

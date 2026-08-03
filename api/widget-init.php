@@ -88,18 +88,21 @@ try {
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
     if ($settingsOnly) {
-        $existing = lc_find_resumable_conversation($visitorId, $brandId);
+        // Never auto-resume old chats for visitors (same IP / same device).
+        // Session continue uses explicit resume_conversation_id from the client only.
+        // Ticket resume is a separate API when ticket_resume_enabled.
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => (bool) $existing,
-            'conversation_id' => $existing ? (int) $existing['id'] : null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
         ]);
     }
 
     $conv = null;
+    // Explicit session / reconnect only — not IP and not silent find_resumable
     if ($resumeConvId > 0) {
         $stmt = $db->prepare("SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active') LIMIT 1");
         $stmt->execute([$resumeConvId, $visitorId, $brandId]);
@@ -110,10 +113,6 @@ try {
                 $conv = $reopened;
             }
         }
-    }
-
-    if (!$conv) {
-        $conv = lc_find_resumable_conversation($visitorId, $brandId);
     }
 
     if (!$conv) {
@@ -186,7 +185,9 @@ try {
     lc_json([
         'success' => true,
         'conversation_id' => $convId,
-        'reference' => lc_ticket_display_enabled() ? lc_conversation_reference($convId) : '',
+        'reference' => lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null)
+            ? lc_conversation_reference($convId)
+            : '',
         'chat_token' => $chatToken,
         'visitor_id' => $visitorId,
         'brand_id' => $brandId,
@@ -198,6 +199,8 @@ try {
         'attachments' => lc_attachment_public_config(),
         'visitor_ip' => $visitorInfo['ip_address'] ?? $ip,
         'visitor_country' => $visitorInfo['country'] ?? '',
+        'ticket_display_enabled' => lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null),
+        'ticket_resume_enabled' => lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

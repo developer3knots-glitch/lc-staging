@@ -8,8 +8,22 @@ $message = '';
 $error = '';
 $accountId = lc_agent_account_id($agent);
 
+// Flash messages from Post-Redirect-Get (avoids browser resubmit alert on refresh)
+if (!empty($_SESSION['lc_settings_flash'])) {
+    $flash = $_SESSION['lc_settings_flash'];
+    unset($_SESSION['lc_settings_flash']);
+    if (!empty($flash['message'])) {
+        $message = (string) $flash['message'];
+    }
+    if (!empty($flash['error'])) {
+        $error = (string) $flash['error'];
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    $flashMessage = '';
+    $flashError = '';
 
     try {
         if ($action === 'save_system') {
@@ -23,42 +37,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (function_exists('lc_set_setting')) {
                 lc_set_setting('prechat_form_enabled', $prechatOn);
             }
-            $message = 'System settings saved successfully.';
+            $flashMessage = 'System settings saved successfully.';
         } elseif ($action === 'save_tickets') {
-            lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
-            lc_set_account_setting($accountId, 'ticket_resume_enabled', isset($_POST['ticket_resume_enabled']) ? '1' : '0');
-            $message = 'Ticket settings saved successfully.';
+            $displayOn = isset($_POST['ticket_display_enabled']) ? '1' : '0';
+            $resumeOn = isset($_POST['ticket_resume_enabled']) ? '1' : '0';
+            lc_set_account_setting($accountId, 'ticket_display_enabled', $displayOn);
+            lc_set_account_setting($accountId, 'ticket_resume_enabled', $resumeOn);
+            if (function_exists('lc_set_setting')) {
+                lc_set_setting('ticket_display_enabled', $displayOn);
+                lc_set_setting('ticket_resume_enabled', $resumeOn);
+            }
+            $flashMessage = 'Ticket settings saved successfully.';
         } elseif ($action === 'save_countries') {
             $countryCodes = $_POST['blocked_countries'] ?? [];
             if (!is_array($countryCodes)) {
                 $countryCodes = [];
             }
             lc_save_blocked_country_codes($countryCodes, $accountId);
-            $message = 'Country block list updated.';
+            $flashMessage = 'Country block list updated.';
         } elseif ($action === 'block_ip') {
             $ip = trim((string) ($_POST['ip_address'] ?? ''));
             $reason = trim((string) ($_POST['ip_reason'] ?? ''));
             if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
-                $error = 'Enter a valid IP address.';
+                $flashError = 'Enter a valid IP address.';
             } elseif (lc_is_local_ip($ip)) {
-                $error = 'Local network IPs cannot be blocked.';
+                $flashError = 'Local network IPs cannot be blocked.';
             } elseif (lc_block_ip($ip, (int) $agent['id'], $reason, $accountId)) {
-                $message = 'IP ' . $ip . ' has been blocked.';
+                $flashMessage = 'IP ' . $ip . ' has been blocked.';
             } else {
-                $error = 'Unable to block that IP.';
+                $flashError = 'Unable to block that IP.';
             }
         } elseif ($action === 'unblock_ip') {
             $ip = trim((string) ($_POST['ip_address'] ?? ''));
             if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
-                $message = 'IP ' . $ip . ' has been unblocked.';
+                $flashMessage = 'IP ' . $ip . ' has been unblocked.';
             } else {
-                $error = 'IP not found in block list.';
+                $flashError = 'IP not found in block list.';
             }
         }
     } catch (Throwable $e) {
-        $error = 'Could not save settings. Please try again.';
+        $flashError = 'Could not save settings. Please try again.';
         error_log('LiveChat settings save error: ' . $e->getMessage());
     }
+
+    $_SESSION['lc_settings_flash'] = [
+        'message' => $flashMessage,
+        'error' => $flashError,
+    ];
+    header('Location: ' . lc_admin_url('settings'));
+    exit;
 }
 
 $blockedCountries = lc_get_blocked_country_codes($accountId);
@@ -182,7 +209,7 @@ require __DIR__ . '/includes/header.php';
                     <span class="lc-card-sub">Visitor widget features</span>
                 </div>
                 <div class="lc-card-body">
-                    <p class="lc-settings-desc">Control official ticket features for visitors. Tickets are always stored in the database and visible to agents in the admin panel.</p>
+                    <p class="lc-settings-desc">Visitor-facing ticket features only. Tickets are always saved for agents. Returning visitors do <strong>not</strong> see old chats automatically — only via ticket resume when enabled below.</p>
                     <form method="post" class="lc-form lc-settings-system-form">
                         <input type="hidden" name="action" value="save_tickets">
                         <div class="lc-settings-tiles">
@@ -193,8 +220,8 @@ require __DIR__ . '/includes/header.php';
                                         <input type="checkbox" name="ticket_display_enabled" <?= $ticketDisplayEnabled ? 'checked' : '' ?>>
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
-                                            <strong>Show ticket reference to visitors</strong>
-                                            <small>Displays the official ticket ID in the widget header, chat message, and closed-chat screen</small>
+                                            <strong>Show tickets to visitors</strong>
+                                            <small>Ticket ID in widget header, system chat message, and closed screen. Off = visitors never see ticket numbers</small>
                                         </span>
                                     </label>
                                 </div>
@@ -206,8 +233,8 @@ require __DIR__ . '/includes/header.php';
                                         <input type="checkbox" name="ticket_resume_enabled" <?= $ticketResumeEnabled ? 'checked' : '' ?>>
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
-                                            <strong>Allow visitors to resume with ticket</strong>
-                                            <small>Visitors can enter ticket + email to continue a previous conversation on any device</small>
+                                            <strong>Resume chat by ticket</strong>
+                                            <small>Visitor enters ticket + email → both visitor and agent open the <em>same</em> old conversation. Off = no resume form</small>
                                         </span>
                                     </label>
                                 </div>

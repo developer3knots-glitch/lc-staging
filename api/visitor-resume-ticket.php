@@ -27,7 +27,7 @@ try {
     lc_ensure_ticket_schema();
     lc_ensure_attachments_schema();
 
-    if (!lc_ticket_resume_enabled()) {
+    if (!lc_ticket_resume_enabled((int) ($brand['account_id'] ?? 0) > 0 ? (int) $brand['account_id'] : null)) {
         lc_json(['success' => false, 'error' => 'Ticket resume is not enabled for this site'], 403);
     }
 
@@ -81,7 +81,7 @@ try {
     lc_json([
         'success' => true,
         'conversation_id' => $convId,
-        'reference' => ($result['reference'] ?? '') && lc_ticket_display_enabled()
+        'reference' => ($result['reference'] ?? '') && lc_ticket_display_enabled((int) ($brand['account_id'] ?? 0) > 0 ? (int) $brand['account_id'] : null)
             ? ($result['reference'] ?? lc_conversation_reference($convId))
             : '',
         'chat_token' => $chatToken,
@@ -94,6 +94,8 @@ try {
         'settings' => $brandSettings,
         'attachments' => lc_attachment_public_config(),
         'resumed_by_ticket' => true,
+        'ticket_display_enabled' => lc_ticket_display_enabled((int) ($brand['account_id'] ?? 0) > 0 ? (int) $brand['account_id'] : null),
+        'ticket_resume_enabled' => true,
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
