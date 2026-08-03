@@ -778,12 +778,16 @@ body,
 }
 .lc-chat-messages {
     flex: 1;
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
     background: #f8fafc;
+    min-width: 0;
+    min-height: 0;
+    overscroll-behavior: contain;
 }
 .lc-msg {
     max-width: 75%;
@@ -4142,26 +4146,32 @@ body.lc-page-chats .lc-content {
 .lc-session-divider {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin: 0.85rem 0.35rem;
-    width: 100%;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+    align-self: stretch;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     user-select: none;
     pointer-events: none;
+    flex-shrink: 0;
 }
 .lc-session-divider::before,
 .lc-session-divider::after {
     content: '';
-    flex: 1 1 auto;
+    flex: 1 1 0;
     height: 1px;
     background: #e2e8f0;
-    min-width: 1rem;
+    min-width: 0.5rem;
+    max-width: 100%;
 }
 .lc-session-divider-inner {
     flex: 0 1 auto;
-    max-width: min(92%, 28rem);
+    max-width: min(85%, 22rem);
+    min-width: 0;
     text-align: center;
-    padding: 0.28rem 0.7rem;
+    padding: 0.28rem 0.65rem;
     border-radius: 999px;
     background: #f1f5f9;
     border: 1px solid #e2e8f0;
@@ -4170,6 +4180,9 @@ body.lc-page-chats .lc-content {
     letter-spacing: 0.02em;
     color: #64748b;
     line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .lc-session-divider.is-ended .lc-session-divider-inner {
     background: #f8fafc;
@@ -4289,6 +4302,7 @@ body.lc-page-chats .lc-content {
         linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     padding: 1.15rem;
     gap: 0.75rem;
+    overflow-x: hidden;
 }
 .lc-chats-pro .lc-msg {
     max-width: min(78%, 520px);
@@ -4311,6 +4325,8 @@ body.lc-page-chats .lc-content {
     color: #64748b;
     font-size: 0.72rem;
     padding: 0.4rem 0.85rem;
+    max-width: min(92%, 420px);
+    box-sizing: border-box;
 }
 .lc-chat-compose-pro {
     padding: 0.85rem 1rem 0.65rem;

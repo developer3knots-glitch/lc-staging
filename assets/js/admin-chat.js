@@ -10,6 +10,7 @@
     var currentTab = 'all';
     var lastMsgId = 0;
     var needsFullHistory = false;
+    var stickToBottom = true;
     var pollTimer = null;
     var listTimer = null;
     var cannedLoaded = false;
@@ -317,6 +318,26 @@
             var next = wrap.firstChild;
             if (next) el.replaceWith(next);
         });
+    }
+
+    function isMessagesNearBottom(threshold) {
+        if (!messagesEl) return true;
+        var gap = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+        return gap <= (threshold == null ? 100 : threshold);
+    }
+
+    function scrollMessagesToBottom(force) {
+        if (!messagesEl) return;
+        if (force || stickToBottom || isMessagesNearBottom()) {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            stickToBottom = true;
+        }
+    }
+
+    function onMessagesScroll() {
+        if (!messagesEl) return;
+        // User reading history — do not yank to bottom on poll
+        stickToBottom = isMessagesNearBottom(120);
     }
 
     function renderMessage(m, opts) {
@@ -807,6 +828,7 @@
         selectedId = id;
         lastMsgId = 0;
         needsFullHistory = true;
+        stickToBottom = true;
         messagesEl.innerHTML = '';
         emptyEl.style.display = 'none';
         activeEl.style.display = 'flex';
@@ -1072,24 +1094,26 @@
                     }
                     if (data.receipts) applyReceipts(data.receipts);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
-                    var currentMark = messagesEl.querySelector('.lc-session-divider.is-current');
-                    if (currentMark && data.prior_threads && data.prior_threads.length) {
-                        currentMark.scrollIntoView({ block: 'start', behavior: 'auto' });
-                    } else {
-                        messagesEl.scrollTop = messagesEl.scrollHeight;
-                    }
+                    // Land on current chat (bottom), not with scrollIntoView (causes page jump)
+                    stickToBottom = true;
+                    scrollMessagesToBottom(true);
                 }
 
                 function paintIncremental() {
+                    var added = 0;
                     (data.messages || []).forEach(function (m) {
                         if (m.id > lastMsgId) {
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
+                            added += 1;
                         }
                     });
                     if (data.receipts) applyReceipts(data.receipts);
-                    messagesEl.scrollTop = messagesEl.scrollHeight;
                     if (window.LCTime) window.LCTime.scan(messagesEl);
+                    // Only stick to bottom for new messages when agent is already near bottom
+                    if (added > 0) {
+                        scrollMessagesToBottom(false);
+                    }
                 }
 
                 if (c.status === 'closed') {
@@ -1151,6 +1175,7 @@
             body: JSON.stringify({ conversation_id: selectedId, message: msg })
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (data.success) {
+                stickToBottom = true;
                 pollMessages();
                 return;
             }
@@ -1418,6 +1443,10 @@
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);
     pollTimer = setInterval(pollMessages, pollMs);
+
+    if (messagesEl) {
+        messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });
+    }
 
     if (selectedId) openConversation(selectedId);
 })();
