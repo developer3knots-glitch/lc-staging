@@ -48,6 +48,7 @@
     var visitorUploadBusy = false;
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
+    var prechatFormEnabled = false; // default: direct chat (matches server)
     var settingsSyncTimer = null;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
@@ -273,7 +274,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=13';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=14';
         document.head.appendChild(link);
     }
 
@@ -474,8 +475,12 @@
         if (attachBtn && fileInput) {
             attachBtn.addEventListener('click', function () {
                 if (!conversationId) {
-                    showPrechatForm();
-                    showPrechatError('Please start a conversation before sending files.');
+                    if (prechatFormEnabled) {
+                        showPrechatForm();
+                        showPrechatError('Please start a conversation before sending files.');
+                    } else {
+                        startDirectChat();
+                    }
                     return;
                 }
                 fileInput.click();
@@ -581,9 +586,17 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
-        showPrechatForm();
-        if (errorMsg && errorMsg !== 'Pre-chat form required') {
-            showPrechatError(errorMsg);
+        if (prechatFormEnabled) {
+            showPrechatForm();
+            if (errorMsg && errorMsg !== 'Pre-chat form required') {
+                showPrechatError(errorMsg);
+            }
+            return;
+        }
+        showChatView();
+        updateStatus('Could not connect', false);
+        if (errorMsg) {
+            appendMessage({ sender_type: 'system', message: errorMsg });
         }
     }
 
@@ -789,6 +802,9 @@
     function applyWidgetSettings(data) {
         if (!data || !data.settings) return;
         settings = data.settings;
+        if (settings.prechat_form_enabled !== undefined) {
+            prechatFormEnabled = !!settings.prechat_form_enabled;
+        }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
@@ -843,6 +859,69 @@
                 showChatView();
                 initChat({ resumeConversationId: data.conversation_id, keepMessages: false });
             }
+        });
+    }
+
+    /**
+     * New visitor / no open conversation: form if enabled, else direct live chat.
+     */
+    function beginNewConversationFlow() {
+        fetchWidgetSettings(function (data) {
+            applyWidgetSettings(data);
+            if (data.has_active_chat && data.conversation_id) {
+                showChatView();
+                initChat({ resumeConversationId: data.conversation_id, keepMessages: false });
+                return;
+            }
+            if (prechatFormEnabled) {
+                showPrechatForm();
+            } else {
+                startDirectChat();
+            }
+        });
+    }
+
+    function startDirectChat(options) {
+        options = options || {};
+        if (prechatFormEnabled) {
+            showPrechatForm();
+            return;
+        }
+        showChatView();
+        updateStatus('Connecting…', agentsOnline > 0);
+        setWaitingState(false);
+        var payload = {
+            visitor_uid: visitorUid,
+            brand_key: brandKey,
+            name: localStorage.getItem('lc_visitor_name') || '',
+            email: localStorage.getItem('lc_visitor_email') || '',
+            page_url: window.location.href,
+            website_url: ''
+        };
+        if (options.initialMessage) {
+            payload.initial_message = options.initialMessage;
+        }
+        fetch(siteUrl + '/api/widget-init.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.success) {
+                if (data.error === 'Pre-chat form required') {
+                    prechatFormEnabled = true;
+                    showPrechatForm();
+                    return;
+                }
+                handleInitFailure(data.error || 'Could not start chat.');
+                return;
+            }
+            hideTeaser(true);
+            handleChatStarted(data, { keepMessages: false });
+        })
+        .catch(function () {
+            handleInitFailure('Connection error. Please try again.');
         });
     }
 
@@ -942,7 +1021,7 @@
                     updateStatus('Reconnecting…', false);
                     initChat({ resumeConversationId: stored });
                 } else {
-                    showPrechatForm();
+                    beginNewConversationFlow();
                 }
             }
         } else {
@@ -1054,7 +1133,7 @@
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
         document.getElementById('lc-prechat-message').value = '';
         showPrechatError('');
-        showPrechatForm();
+        beginNewConversationFlow();
     }
 
     function handleChatStarted(data, options) {
@@ -1430,7 +1509,7 @@
                 showChatView();
                 updateStatus('Reconnecting…', false);
             } else {
-                showPrechatForm();
+                beginNewConversationFlow();
             }
         }
 
@@ -1587,8 +1666,15 @@
         if (!msg) return;
 
         if (!conversationId) {
-            showPrechatForm();
-            showPrechatError('Please complete the form to start chatting.');
+            if (prechatFormEnabled) {
+                showPrechatForm();
+                showPrechatError('Please complete the form to start chatting.');
+                return;
+            }
+            var firstMsg = msg;
+            input.value = '';
+            autoResizeTextarea(input);
+            startDirectChat({ initialMessage: firstMsg });
             return;
         }
 

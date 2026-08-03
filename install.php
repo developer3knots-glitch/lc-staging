@@ -53,7 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
             ('poll_interval_ms', '1500'),
             ('ticket_prefix', 'LC'),
             ('ticket_display_enabled', '0'),
-            ('ticket_resume_enabled', '0')");
+            ('ticket_resume_enabled', '0'),
+            ('prechat_form_enabled', '0')");
         $pdo->exec("INSERT IGNORE INTO canned_replies (title, message) VALUES
             ('Greeting', 'Hello! Thank you for contacting us. How may I assist you?'),
             ('Please wait', 'Please give me a moment while I check that for you.'),
@@ -112,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$installed) {
         $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_prefix', 'LC')");
         $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_display_enabled', '0')");
         $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('ticket_resume_enabled', '0')");
+        $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('prechat_form_enabled', '0')");
         $ticketRows = $pdo->query("SELECT id, started_at FROM conversations WHERE ticket_reference IS NULL OR ticket_reference = ''");
         while ($row = $ticketRows->fetch(PDO::FETCH_ASSOC)) {
             $id = (int) $row['id'];

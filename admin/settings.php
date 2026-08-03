@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $poll = max(800, min(5000, $poll));
             lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             lc_set_account_setting($accountId, 'poll_interval_ms', (string) $poll);
+            lc_set_account_setting($accountId, 'prechat_form_enabled', isset($_POST['prechat_form_enabled']) ? '1' : '0');
             $message = 'System settings saved successfully.';
         } elseif ($action === 'save_tickets') {
             lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
@@ -62,6 +63,7 @@ asort($allCountries);
 
 $pollMs = (int) lc_account_setting($accountId, 'poll_interval_ms', '1500');
 $autoAssign = lc_account_setting($accountId, 'auto_assign', '1') === '1';
+$prechatFormEnabled = lc_prechat_form_enabled($accountId);
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
 
@@ -146,6 +148,19 @@ require __DIR__ . '/includes/header.php';
                                         <span class="lc-settings-toggle-text">
                                             <strong>Auto-assign chats</strong>
                                             <small>Waiting chats go to the next available online agent</small>
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon blue"><i class="ti ti-forms"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="prechat_form_enabled" <?= $prechatFormEnabled ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Pre-chat form</strong>
+                                            <small>Require name, email &amp; message before chat. When off, visitors open live chat directly</small>
                                         </span>
                                     </label>
                                 </div>

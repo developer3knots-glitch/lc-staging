@@ -103,14 +103,22 @@ try {
     }
 
     if (!$conv) {
-        if ($initialMessage === '') {
-            lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
-        }
-        if ($name === '') {
-            lc_json(['success' => false, 'error' => 'Name is required'], 400);
-        }
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
+        $brandAccountId = (int) ($brand['account_id'] ?? 0);
+        $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
+
+        if ($prechatRequired) {
+            if ($initialMessage === '') {
+                lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
+            }
+            if ($name === '') {
+                lc_json(['success' => false, 'error' => 'Name is required'], 400);
+            }
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
+            }
+        } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            // Optional email from storage — ignore invalid, do not block chat
+            $email = '';
         }
 
         $ins = $db->prepare("INSERT INTO conversations (visitor_id, brand_id, status, page_url, last_message_at) VALUES (?, ?, 'waiting', ?, NOW())");
@@ -120,12 +128,14 @@ try {
         $welcome = $brand['welcome_message'] ?: 'Hi! How can we help you today?';
         $msg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
         $msg->execute([$convId, 'system', $welcome]);
-        if (lc_ticket_display_enabled()) {
+        if (lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null)) {
             $msg->execute([$convId, 'system', lc_conversation_reference_message($convId)]);
         }
 
-        $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
-        $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
+        if ($initialMessage !== '') {
+            $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+            $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
+        }
         lc_touch_conversation($convId);
         lc_assign_agent($convId);
         $status = 'waiting';

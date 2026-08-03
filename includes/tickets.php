@@ -205,6 +205,21 @@ function lc_ticket_resume_enabled(?int $accountId = null): bool
     return lc_setting('ticket_resume_enabled', '0') === '1';
 }
 
+/**
+ * When enabled, visitors must fill the pre-chat form (name, email, message) before chatting.
+ * Default off → open widget goes straight into live chat.
+ */
+function lc_prechat_form_enabled(?int $accountId = null): bool
+{
+    if ($accountId === null) {
+        $accountId = function_exists('lc_current_account_id') ? lc_current_account_id() : 0;
+    }
+    if ($accountId > 0) {
+        return lc_account_setting($accountId, 'prechat_form_enabled', '0') === '1';
+    }
+    return lc_setting('prechat_form_enabled', '0') === '1';
+}
+
 function lc_conversation_reference_message(int $conversationId, ?string $startedAt = null): string
 {
     $ref = lc_conversation_reference($conversationId, $startedAt);

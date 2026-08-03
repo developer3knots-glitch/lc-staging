@@ -152,7 +152,7 @@ function lc_brand_embed_code(array $brand): string
     $url = LC_BASE_URL;
     $key = $brand['brand_key'];
     return '<script src="' . $url . '/assets/js/lc-time.js?v=1"></script>' . "\n"
-        . '<script src="' . $url . '/widget/embed.js?v=22" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
+        . '<script src="' . $url . '/widget/embed.js?v=23" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
 }
 
 function lc_brand_settings(array $brand): array
@@ -170,5 +170,6 @@ function lc_brand_settings(array $brand): array
         'poll_interval_ms' => $poll,
         'ticket_display_enabled' => lc_ticket_display_enabled($accountId > 0 ? $accountId : null),
         'ticket_resume_enabled' => lc_ticket_resume_enabled($accountId > 0 ? $accountId : null),
+        'prechat_form_enabled' => lc_prechat_form_enabled($accountId > 0 ? $accountId : null),
     ];
 }
