@@ -10,6 +10,25 @@ $brands = lc_get_all_brands(true, $accountId > 0 ? $accountId : null);
 $message = '';
 $error = '';
 $presets = lc_avatar_presets();
+$openEditId = (int) ($_GET['edit'] ?? 0);
+
+/**
+ * Load agent row only if it belongs to this account (tenant scope).
+ */
+$lcLoadScopedAgent = static function (PDO $db, int $id, int $accountId): ?array {
+    if ($id < 1) {
+        return null;
+    }
+    if ($accountId > 0) {
+        $stmt = $db->prepare('SELECT * FROM agents WHERE id = ? AND account_id = ? LIMIT 1');
+        $stmt->execute([$id, $accountId]);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM agents WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+    }
+    $row = $stmt->fetch();
+    return $row ?: null;
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -30,13 +49,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Invalid brand selection.';
             }
         }
-        $avatar = lc_avatar_resolve_from_request($_POST, $_FILES);
         if ($error === '' && $name && $email && $pass) {
-            $stmt = $db->prepare('INSERT INTO agents (account_id, name, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar]);
-            $message = 'Team member added successfully.';
+            if (strlen($pass) < 6) {
+                $error = 'Password must be at least 6 characters.';
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error = 'Please enter a valid email address.';
+            } else {
+                $dup = $db->prepare('SELECT id FROM agents WHERE email = ? LIMIT 1');
+                $dup->execute([$email]);
+                if ($dup->fetch()) {
+                    $error = 'This email is already registered.';
+                } else {
+                    $avatar = lc_avatar_resolve_from_request($_POST, $_FILES);
+                    $stmt = $db->prepare('INSERT INTO agents (account_id, name, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute([$accountId > 0 ? $accountId : null, $name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar]);
+                    $message = 'Team member added successfully.';
+                }
+            }
         } elseif ($error === '') {
             $error = 'Name, email and password are required.';
+        }
+    } elseif ($action === 'edit' && !empty($_POST['id'])) {
+        $id = (int) $_POST['id'];
+        $openEditId = $id;
+        $existing = $lcLoadScopedAgent($db, $id, $accountId);
+        if (!$existing) {
+            $error = 'Agent not found.';
+        } else {
+            $name = trim($_POST['name'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $pass = (string) ($_POST['password'] ?? '');
+            $passConfirm = (string) ($_POST['password_confirm'] ?? '');
+            $role = ($_POST['role'] ?? '') === 'admin' ? 'admin' : 'agent';
+            $brandId = !empty($_POST['brand_id']) ? (int) $_POST['brand_id'] : null;
+
+            // Protect own account: keep admin so you cannot lock yourself out of this page
+            $isSelf = $id === (int) ($currentAgent['id'] ?? 0);
+            if ($isSelf) {
+                $role = 'admin';
+                $brandId = null;
+            } elseif ($role === 'admin') {
+                $brandId = null;
+            }
+
+            if ($brandId && $accountId > 0) {
+                $chk = $db->prepare('SELECT id FROM brands WHERE id = ? AND account_id = ? LIMIT 1');
+                $chk->execute([$brandId, $accountId]);
+                if (!$chk->fetch()) {
+                    $brandId = null;
+                    $error = 'Invalid brand selection.';
+                }
+            }
+
+            if ($error === '' && ($name === '' || $email === '')) {
+                $error = 'Name and email are required.';
+            } elseif ($error === '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error = 'Please enter a valid email address.';
+            } elseif ($error === '' && $pass !== '') {
+                if (strlen($pass) < 6) {
+                    $error = 'Password must be at least 6 characters.';
+                } elseif ($pass !== $passConfirm) {
+                    $error = 'Password confirmation does not match.';
+                }
+            }
+
+            if ($error === '') {
+                $dup = $db->prepare('SELECT id FROM agents WHERE email = ? AND id != ? LIMIT 1');
+                $dup->execute([$email, $id]);
+                if ($dup->fetch()) {
+                    $error = 'This email is already used by another agent.';
+                }
+            }
+
+            if ($error === '') {
+                $avatar = (string) ($existing['avatar'] ?? '');
+                $uploaded = lc_avatar_save_upload($_FILES['avatar_upload'] ?? []);
+                if ($uploaded) {
+                    $avatar = $uploaded;
+                } elseif (!empty($_POST['avatar_preset'])) {
+                    $preset = trim((string) $_POST['avatar_preset']);
+                    if (isset($presets[$preset])) {
+                        $avatar = 'preset:' . $preset;
+                    }
+                }
+
+                if ($pass !== '') {
+                    $sql = 'UPDATE agents SET name = ?, email = ?, password = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
+                    $params = [$name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar, $id];
+                } else {
+                    $sql = 'UPDATE agents SET name = ?, email = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
+                    $params = [$name, $email, $role, $brandId, $avatar, $id];
+                }
+                if ($accountId > 0) {
+                    $sql .= ' AND account_id = ?';
+                    $params[] = $accountId;
+                }
+                $db->prepare($sql)->execute($params);
+
+                // Refresh session display name/avatar if editing self
+                if ($isSelf) {
+                    $_SESSION['agent_name'] = $name;
+                    if (isset($_SESSION['agent_email'])) {
+                        $_SESSION['agent_email'] = $email;
+                    }
+                }
+
+                $message = $pass !== ''
+                    ? 'Agent updated and password changed.'
+                    : 'Agent updated successfully.';
+                $openEditId = $id;
+            }
         }
     } elseif ($action === 'toggle' && !empty($_POST['id'])) {
         $sql = 'UPDATE agents SET is_active = IF(is_active=1,0,1) WHERE id = ? AND id != ?';
@@ -142,8 +264,15 @@ require __DIR__ . '/includes/header.php';
                     $isSelf = (int) $a['id'] === (int) $currentAgent['id'];
                     $brandLabel = $a['role'] === 'admin' ? 'All brands' : ($a['brand_name'] ?? 'Unassigned');
                     $status = $a['status'] ?? 'offline';
+                    $isEditing = $openEditId === (int) $a['id'];
+                    $presetId = lc_avatar_preset_id($a['avatar'] ?? null) ?: '01';
+                    $previewUrl = lc_avatar_url($a['avatar'] ?? null, $a['name']);
+                    if ($previewUrl === '') {
+                        $previewUrl = LC_BASE_URL . '/assets/img/avatars/preset-' . $presetId . '.svg';
+                    }
+                    $editPanelId = 'lc-agent-edit-' . (int) $a['id'];
                 ?>
-                <article class="lc-agent-card<?= empty($a['is_active']) ? ' is-disabled' : '' ?><?= $isSelf ? ' is-self' : '' ?>"
+                <article class="lc-agent-card<?= empty($a['is_active']) ? ' is-disabled' : '' ?><?= $isSelf ? ' is-self' : '' ?><?= $isEditing ? ' is-editing' : '' ?>"
                     data-search="<?= lc_sanitize(strtolower($a['name'] . ' ' . $a['email'] . ' ' . $brandLabel)) ?>">
                     <div class="lc-agent-card-top">
                         <div class="lc-agent-card-avatar">
@@ -176,18 +305,89 @@ require __DIR__ . '/includes/header.php';
                             <span class="lc-agent-meta-val"><?= !empty($a['is_active']) ? 'Active' : 'Disabled' ?></span>
                         </div>
                     </div>
-                    <?php if (!$isSelf): ?>
-                    <div class="lc-agent-card-actions">
-                        <form method="post" onsubmit="return confirm('<?= !empty($a['is_active']) ? 'Disable' : 'Enable' ?> this agent?');">
+                    <div class="lc-agent-card-actions lc-agent-card-actions-row">
+                        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-agent-edit-toggle" data-target="<?= lc_sanitize($editPanelId) ?>" aria-expanded="<?= $isEditing ? 'true' : 'false' ?>">
+                            <i class="ti ti-pencil"></i> Edit
+                        </button>
+                        <?php if (!$isSelf): ?>
+                        <form method="post" class="lc-agent-toggle-form" onsubmit="return confirm('<?= !empty($a['is_active']) ? 'Disable' : 'Enable' ?> this agent?');">
                             <input type="hidden" name="action" value="toggle">
                             <input type="hidden" name="id" value="<?= (int) $a['id'] ?>">
-                            <button type="submit" class="lc-btn <?= !empty($a['is_active']) ? 'lc-btn-danger' : 'lc-btn-primary' ?> lc-btn-sm lc-btn-block">
+                            <button type="submit" class="lc-btn <?= !empty($a['is_active']) ? 'lc-btn-danger' : 'lc-btn-primary' ?> lc-btn-sm">
                                 <i class="ti ti-<?= !empty($a['is_active']) ? 'ban' : 'check' ?>"></i>
-                                <?= !empty($a['is_active']) ? 'Disable agent' : 'Enable agent' ?>
+                                <?= !empty($a['is_active']) ? 'Disable' : 'Enable' ?>
                             </button>
                         </form>
+                        <?php endif; ?>
                     </div>
-                    <?php endif; ?>
+
+                    <div class="lc-agent-edit-panel" id="<?= lc_sanitize($editPanelId) ?>"<?= $isEditing ? '' : ' hidden' ?>>
+                        <form method="post" class="lc-form lc-agent-edit-form" enctype="multipart/form-data" data-agent-form>
+                            <input type="hidden" name="action" value="edit">
+                            <input type="hidden" name="id" value="<?= (int) $a['id'] ?>">
+
+                            <div class="lc-avatar-picker lc-avatar-picker-pro" data-avatar-picker>
+                                <div class="lc-avatar-picker-preview">
+                                    <img src="<?= lc_sanitize($previewUrl) ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview>
+                                </div>
+                                <div class="lc-avatar-picker-body">
+                                    <p class="lc-avatar-picker-hint">Change preset or upload a photo (optional).</p>
+                                    <div class="lc-avatar-presets">
+                                        <?php foreach ($presets as $pid => $meta): ?>
+                                        <label class="lc-avatar-preset<?= $pid === $presetId ? ' selected' : '' ?>" title="<?= lc_sanitize($meta['label']) ?>">
+                                            <input type="radio" name="avatar_preset" value="<?= lc_sanitize($pid) ?>"<?= $pid === $presetId ? ' checked' : '' ?>>
+                                            <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>" class="lc-avatar lc-avatar-md">
+                                        </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="lc-avatar-upload">
+                                        <label class="lc-btn lc-btn-secondary lc-btn-sm">
+                                            <i class="ti ti-upload"></i> Upload photo
+                                            <input type="file" name="avatar_upload" accept="image/jpeg,image/png,image/webp" hidden data-avatar-upload>
+                                        </label>
+                                        <span class="lc-avatar-upload-name" data-avatar-upload-name>No file selected</span>
+                                        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" data-avatar-clear style="display:none"><i class="ti ti-x"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <label>Name</label>
+                            <input type="text" name="name" required value="<?= lc_sanitize($a['name']) ?>" placeholder="Full name">
+                            <label>Email (login)</label>
+                            <input type="email" name="email" required value="<?= lc_sanitize($a['email']) ?>" placeholder="agent@company.com">
+
+                            <?php if ($isSelf): ?>
+                                <input type="hidden" name="role" value="admin">
+                                <p class="lc-agent-brand-hint"><i class="ti ti-lock"></i> Your role stays Admin so you keep full access.</p>
+                            <?php else: ?>
+                            <label>Role</label>
+                            <select name="role" data-role-select>
+                                <option value="agent"<?= $a['role'] === 'agent' ? ' selected' : '' ?>>Agent — handles chats</option>
+                                <option value="admin"<?= $a['role'] === 'admin' ? ' selected' : '' ?>>Admin — full access</option>
+                            </select>
+                            <div data-brand-wrap<?= $a['role'] === 'admin' ? ' style="display:none"' : '' ?>>
+                                <label>Assign brand</label>
+                                <select name="brand_id">
+                                    <option value="">All brands (any inbox)</option>
+                                    <?php foreach ($brands as $b): ?>
+                                        <option value="<?= (int) $b['id'] ?>"<?= (int) ($a['brand_id'] ?? 0) === (int) $b['id'] ? ' selected' : '' ?>><?= lc_sanitize($b['name']) ?> only</option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="lc-agent-brand-hint">Brand limits inbox visibility. Transfers work across all brands.</p>
+                            </div>
+                            <?php endif; ?>
+
+                            <label>New password <span class="lc-muted-text">(optional)</span></label>
+                            <input type="password" name="password" minlength="6" autocomplete="new-password" placeholder="Leave blank to keep current">
+                            <label>Confirm new password</label>
+                            <input type="password" name="password_confirm" minlength="6" autocomplete="new-password" placeholder="Repeat new password">
+
+                            <div class="lc-agent-edit-actions">
+                                <button type="submit" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-device-floppy"></i> Save changes</button>
+                                <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-agent-edit-close" data-target="<?= lc_sanitize($editPanelId) ?>">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
                 </article>
                 <?php endforeach; ?>
             </div>
@@ -199,13 +399,13 @@ require __DIR__ . '/includes/header.php';
                     <h3><i class="ti ti-user-plus"></i> Add Team Member</h3>
                 </div>
                 <div class="lc-card-body">
-                    <form method="post" class="lc-form lc-agent-create-form" enctype="multipart/form-data" id="lc-agent-form">
+                    <form method="post" class="lc-form lc-agent-create-form" enctype="multipart/form-data" data-agent-form>
                         <input type="hidden" name="action" value="add">
 
                         <label>Profile avatar</label>
-                        <div class="lc-avatar-picker lc-avatar-picker-pro">
+                        <div class="lc-avatar-picker lc-avatar-picker-pro" data-avatar-picker>
                             <div class="lc-avatar-picker-preview" id="lc-avatar-preview">
-                                <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-01.svg') ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" id="lc-avatar-preview-img">
+                                <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-01.svg') ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview id="lc-avatar-preview-img">
                             </div>
                             <div class="lc-avatar-picker-body">
                                 <p class="lc-avatar-picker-hint">Preset avatar ya apni photo upload karein (JPG, PNG, WebP — max 2MB).</p>
@@ -218,12 +418,12 @@ require __DIR__ . '/includes/header.php';
                                     <?php endforeach; ?>
                                 </div>
                                 <div class="lc-avatar-upload">
-                                    <label class="lc-btn lc-btn-secondary lc-btn-sm" for="lc-avatar-upload-input">
+                                    <label class="lc-btn lc-btn-secondary lc-btn-sm">
                                         <i class="ti ti-upload"></i> Upload photo
+                                        <input type="file" name="avatar_upload" id="lc-avatar-upload-input" accept="image/jpeg,image/png,image/webp" hidden data-avatar-upload>
                                     </label>
-                                    <input type="file" name="avatar_upload" id="lc-avatar-upload-input" accept="image/jpeg,image/png,image/webp" hidden>
-                                    <span class="lc-avatar-upload-name" id="lc-avatar-upload-name">No file selected</span>
-                                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-avatar-clear-upload" style="display:none"><i class="ti ti-x"></i></button>
+                                    <span class="lc-avatar-upload-name" id="lc-avatar-upload-name" data-avatar-upload-name>No file selected</span>
+                                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-avatar-clear-upload" data-avatar-clear style="display:none"><i class="ti ti-x"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -235,11 +435,11 @@ require __DIR__ . '/includes/header.php';
                         <label>Password</label>
                         <input type="password" name="password" required placeholder="Min. 6 characters" minlength="6">
                         <label>Role</label>
-                        <select name="role" id="lc-agent-role">
+                        <select name="role" id="lc-agent-role" data-role-select>
                             <option value="agent">Agent — handles chats</option>
                             <option value="admin">Admin — full access</option>
                         </select>
-                        <div id="lc-agent-brand-wrap">
+                        <div id="lc-agent-brand-wrap" data-brand-wrap>
                             <label>Assign brand</label>
                             <select name="brand_id">
                                 <option value="">All brands (any inbox)</option>
@@ -260,7 +460,7 @@ require __DIR__ . '/includes/header.php';
                         <i class="ti ti-shield-check"></i>
                         <div>
                             <strong>Roles explained</strong>
-                            <p><strong>Admin</strong> — brands, agents, settings, all chats.<br><strong>Agent</strong> — live inbox only, scoped to assigned brand if set.</p>
+                            <p><strong>Admin</strong> — brands, agents, settings, all chats.<br><strong>Agent</strong> — live inbox only, scoped to assigned brand if set.<br><strong>Edit</strong> — name, email, role, brand, avatar; leave password blank to keep current.</p>
                         </div>
                     </div>
                 </div>

@@ -2731,6 +2731,45 @@ a.lc-conv-item:hover {
     color: var(--lc-ink);
 }
 .lc-agent-card-actions { margin-top: 0.15rem; }
+.lc-agent-card-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: stretch;
+}
+.lc-agent-card-actions-row .lc-btn { flex: 1 1 auto; }
+.lc-agent-toggle-form { flex: 1 1 auto; margin: 0; }
+.lc-agent-toggle-form .lc-btn { width: 100%; }
+.lc-agent-card.is-editing {
+    border-color: color-mix(in srgb, var(--lc-primary) 45%, #e2e8f0);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+}
+.lc-agent-edit-panel {
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid #e2e8f0;
+}
+.lc-agent-edit-panel[hidden] { display: none !important; }
+.lc-agent-edit-form label {
+    display: block;
+    margin: 0.55rem 0 0.28rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #475569;
+}
+.lc-agent-edit-form input[type="text"],
+.lc-agent-edit-form input[type="email"],
+.lc-agent-edit-form input[type="password"],
+.lc-agent-edit-form select {
+    width: 100%;
+    box-sizing: border-box;
+}
+.lc-agent-edit-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.9rem;
+}
 .lc-agents-compose { position: sticky; top: 5.5rem; }
 .lc-avatar-picker-pro {
     flex-direction: column;

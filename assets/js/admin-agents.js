@@ -2,14 +2,9 @@
     'use strict';
 
     var base = window.LC_BASE_URL || '';
+
     var searchInput = document.getElementById('lc-agents-search');
     var grid = document.getElementById('lc-agents-grid');
-    var previewImg = document.getElementById('lc-avatar-preview-img');
-    var uploadInput = document.getElementById('lc-avatar-upload-input');
-    var uploadName = document.getElementById('lc-avatar-upload-name');
-    var clearUpload = document.getElementById('lc-avatar-clear-upload');
-    var roleSelect = document.getElementById('lc-agent-role');
-    var brandWrap = document.getElementById('lc-agent-brand-wrap');
 
     if (searchInput && grid) {
         searchInput.addEventListener('input', function () {
@@ -21,8 +16,14 @@
         });
     }
 
-    if (previewImg) {
-        var presetLabels = document.querySelectorAll('.lc-avatar-preset');
+    function initAvatarPicker(root) {
+        var previewImg = root.querySelector('[data-avatar-preview]');
+        if (!previewImg) return;
+
+        var uploadInput = root.querySelector('[data-avatar-upload]');
+        var uploadName = root.querySelector('[data-avatar-upload-name]');
+        var clearUpload = root.querySelector('[data-avatar-clear]');
+        var presetLabels = root.querySelectorAll('.lc-avatar-preset');
 
         function selectPreset(label) {
             presetLabels.forEach(function (el) { el.classList.remove('selected'); });
@@ -55,17 +56,88 @@
                 if (uploadInput) uploadInput.value = '';
                 if (uploadName) uploadName.textContent = 'No file selected';
                 clearUpload.style.display = 'none';
-                var checked = document.querySelector('input[name="avatar_preset"]:checked');
+                var checked = root.querySelector('input[name="avatar_preset"]:checked');
                 previewImg.src = base + '/assets/img/avatars/preset-' + (checked ? checked.value : '01') + '.svg';
             });
         }
     }
 
-    if (roleSelect && brandWrap) {
-        function syncBrandVisibility() {
-            brandWrap.style.display = roleSelect.value === 'admin' ? 'none' : 'block';
+    document.querySelectorAll('[data-avatar-picker]').forEach(initAvatarPicker);
+
+    function syncBrandForSelect(select) {
+        if (!select) return;
+        var form = select.closest('form') || select.closest('[data-agent-form]') || select.parentElement;
+        var wrap = form ? form.querySelector('[data-brand-wrap]') : null;
+        if (!wrap && select.id === 'lc-agent-role') {
+            wrap = document.getElementById('lc-agent-brand-wrap');
         }
-        roleSelect.addEventListener('change', syncBrandVisibility);
-        syncBrandVisibility();
+        if (wrap) {
+            wrap.style.display = select.value === 'admin' ? 'none' : 'block';
+        }
     }
+
+    document.querySelectorAll('[data-role-select]').forEach(function (select) {
+        select.addEventListener('change', function () { syncBrandForSelect(select); });
+        syncBrandForSelect(select);
+    });
+
+    function setEditPanel(targetId, open) {
+        var panel = document.getElementById(targetId);
+        if (!panel) return;
+        panel.hidden = !open;
+        var card = panel.closest('.lc-agent-card');
+        if (card) card.classList.toggle('is-editing', open);
+        document.querySelectorAll('.lc-agent-edit-toggle[data-target="' + targetId + '"]').forEach(function (btn) {
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        if (open) {
+            try {
+                panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            } catch (e) { /* ignore */ }
+        }
+    }
+
+    document.querySelectorAll('.lc-agent-edit-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var targetId = btn.getAttribute('data-target');
+            var panel = document.getElementById(targetId);
+            if (!panel) return;
+            var willOpen = panel.hidden;
+            // Close other edit panels
+            document.querySelectorAll('.lc-agent-edit-panel').forEach(function (p) {
+                if (p.id !== targetId) setEditPanel(p.id, false);
+            });
+            setEditPanel(targetId, willOpen);
+        });
+    });
+
+    document.querySelectorAll('.lc-agent-edit-close').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var targetId = btn.getAttribute('data-target');
+            if (targetId) setEditPanel(targetId, false);
+        });
+    });
+
+    // Soft validation for optional password pair
+    document.querySelectorAll('.lc-agent-edit-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            var pass = form.querySelector('input[name="password"]');
+            var conf = form.querySelector('input[name="password_confirm"]');
+            if (!pass || !conf) return;
+            var p = pass.value || '';
+            var c = conf.value || '';
+            if (p === '' && c === '') return;
+            if (p.length < 6) {
+                e.preventDefault();
+                alert('Password must be at least 6 characters, or leave both fields blank.');
+                pass.focus();
+                return;
+            }
+            if (p !== c) {
+                e.preventDefault();
+                alert('Password confirmation does not match.');
+                conf.focus();
+            }
+        });
+    });
 })();
