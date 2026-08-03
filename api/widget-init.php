@@ -43,11 +43,16 @@ try {
     $stmt->execute([$visitorUid]);
     $visitor = $stmt->fetch();
 
+    $brandAccountId = (int) ($brand['account_id'] ?? 0);
+    $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
+
     if (!$visitor && $settingsOnly) {
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
             'has_active_chat' => false,
+            'conversation_id' => null,
+            'visitor_identity_complete' => false,
             'agents_online' => $onlineCount,
         ]);
     }
@@ -65,6 +70,8 @@ try {
             $country,
         ]);
         $visitorId = (int) $db->lastInsertId();
+        $visitorName = $name;
+        $visitorEmail = $email;
     } else {
         $visitorId = (int) $visitor['id'];
         lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
@@ -72,7 +79,13 @@ try {
             $upd = $db->prepare('UPDATE visitors SET name = COALESCE(NULLIF(?, ""), name), email = COALESCE(NULLIF(?, ""), email) WHERE id = ?');
             $upd->execute([$name, $email, $visitorId]);
         }
+        $visitorName = $name !== '' ? $name : trim((string) ($visitor['name'] ?? ''));
+        $visitorEmail = $email !== '' ? $email : trim((string) ($visitor['email'] ?? ''));
     }
+
+    $identityComplete = $visitorName !== ''
+        && $visitorEmail !== ''
+        && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
     if ($settingsOnly) {
         $existing = lc_find_resumable_conversation($visitorId, $brandId);
@@ -81,6 +94,7 @@ try {
             'settings' => $brandSettings,
             'has_active_chat' => (bool) $existing,
             'conversation_id' => $existing ? (int) $existing['id'] : null,
+            'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
         ]);
     }
@@ -103,9 +117,7 @@ try {
     }
 
     if (!$conv) {
-        $brandAccountId = (int) ($brand['account_id'] ?? 0);
-        $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
-
+        // Form required: name + email + first message (LiveChat-style gate)
         if ($prechatRequired) {
             if ($initialMessage === '') {
                 lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
@@ -142,6 +154,12 @@ try {
     } else {
         $convId = (int) $conv['id'];
         $status = $conv['status'];
+        // Form re-entry after identity was missing: attach first message to open chat
+        if ($initialMessage !== '') {
+            $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+            $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
+            lc_touch_conversation($convId);
+        }
     }
 
     $chatToken = lc_issue_chat_token($convId);

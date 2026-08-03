@@ -49,6 +49,7 @@
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
     var prechatFormEnabled = false; // default: direct chat (matches server)
+    var pendingResumeConvId = null;
     var settingsSyncTimer = null;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
@@ -699,7 +700,7 @@
         });
     }
 
-    function showPrechatForm() {
+    function showPrechatForm(skipSettingsFetch) {
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
         document.getElementById('lc-panel-messages').style.display = 'none';
@@ -710,7 +711,10 @@
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
         hideTicketResumePanel();
-        loadWidgetSettings();
+        // Do not re-fetch settings here when already routing — avoids stealing form → active chat
+        if (!skipSettingsFetch) {
+            loadWidgetSettings();
+        }
     }
 
     function showChatView() {
@@ -803,7 +807,8 @@
         if (!data || !data.settings) return;
         settings = data.settings;
         if (settings.prechat_form_enabled !== undefined) {
-            prechatFormEnabled = !!settings.prechat_form_enabled;
+            var pf = settings.prechat_form_enabled;
+            prechatFormEnabled = pf === true || pf === 1 || pf === '1';
         }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
         var name = settings.site_name || 'LiveChat';
@@ -854,37 +859,75 @@
 
     function loadWidgetSettings() {
         fetchWidgetSettings(function (data) {
-            applyWidgetSettings(data);
-            if (data.has_active_chat && data.conversation_id) {
-                showChatView();
-                initChat({ resumeConversationId: data.conversation_id, keepMessages: false });
-            }
+            routeVisitorEntry(data);
         });
     }
 
     /**
-     * New visitor / no open conversation: form if enabled, else direct live chat.
+     * LiveChat-style entry:
+     * - Form ON + new chat (or incomplete name/email) → pre-chat form
+     * - Form ON + open chat with known visitor → resume chat (no form)
+     * - Form OFF → direct chat / resume
+     */
+    function routeVisitorEntry(data) {
+        if (!data || !data.success) return;
+        applyWidgetSettings(data);
+
+        var identityOk = !!data.visitor_identity_complete;
+        var hasActive = !!(data.has_active_chat && data.conversation_id);
+        var stored = getStoredConversationId();
+        var resumeId = null;
+        if (stored) {
+            resumeId = stored;
+        } else if (hasActive) {
+            resumeId = data.conversation_id;
+        }
+
+        // Prefer explicit resume targets set before form (incomplete identity gate)
+        if (pendingResumeConvId) {
+            resumeId = pendingResumeConvId;
+        }
+
+        if (prechatFormEnabled) {
+            // Resume only when visitor already has name+email (completed pre-chat earlier)
+            if (resumeId && identityOk) {
+                pendingResumeConvId = null;
+                showChatView();
+                initChat({ resumeConversationId: resumeId, keepMessages: false });
+                return;
+            }
+            // New chat, or returning after form was turned on without identity → show form
+            if (resumeId && !identityOk) {
+                pendingResumeConvId = resumeId;
+            } else {
+                pendingResumeConvId = null;
+            }
+            showPrechatForm(true);
+            return;
+        }
+
+        pendingResumeConvId = null;
+        if (resumeId) {
+            showChatView();
+            initChat({ resumeConversationId: resumeId, keepMessages: false });
+            return;
+        }
+        startDirectChat();
+    }
+
+    /**
+     * New visitor / reopen panel with no memory of current chat in this page cycle.
      */
     function beginNewConversationFlow() {
         fetchWidgetSettings(function (data) {
-            applyWidgetSettings(data);
-            if (data.has_active_chat && data.conversation_id) {
-                showChatView();
-                initChat({ resumeConversationId: data.conversation_id, keepMessages: false });
-                return;
-            }
-            if (prechatFormEnabled) {
-                showPrechatForm();
-            } else {
-                startDirectChat();
-            }
+            routeVisitorEntry(data);
         });
     }
 
     function startDirectChat(options) {
         options = options || {};
         if (prechatFormEnabled) {
-            showPrechatForm();
+            showPrechatForm(true);
             return;
         }
         showChatView();
@@ -901,6 +944,9 @@
         if (options.initialMessage) {
             payload.initial_message = options.initialMessage;
         }
+        if (options.resumeConversationId) {
+            payload.resume_conversation_id = options.resumeConversationId;
+        }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -911,7 +957,7 @@
             if (!data.success) {
                 if (data.error === 'Pre-chat form required') {
                     prechatFormEnabled = true;
-                    showPrechatForm();
+                    showPrechatForm(true);
                     return;
                 }
                 handleInitFailure(data.error || 'Could not start chat.');
@@ -961,7 +1007,8 @@
                 email: email,
                 initial_message: message,
                 page_url: window.location.href,
-                website_url: honeypot
+                website_url: honeypot,
+                resume_conversation_id: pendingResumeConvId || 0
             })
         })
         .then(function (r) { return r.json(); })
@@ -973,6 +1020,7 @@
                 showPrechatError(data.error || 'Could not start chat. Please try again.');
                 return;
             }
+            pendingResumeConvId = null;
             hideTeaser(true);
             showChatView();
             handleChatStarted(data, { keepMessages: false });
@@ -1015,14 +1063,8 @@
                     pollMessages(true);
                 }
             } else {
-                var stored = getStoredConversationId();
-                if (stored) {
-                    showChatView();
-                    updateStatus('Reconnecting…', false);
-                    initChat({ resumeConversationId: stored });
-                } else {
-                    beginNewConversationFlow();
-                }
+                // Always re-fetch settings so form ON/OFF matches dashboard (enterprise)
+                beginNewConversationFlow();
             }
         } else {
             document.getElementById('lc-panel-ended').style.display = 'flex';
@@ -1505,20 +1547,16 @@
         if (shouldOpen) {
             isOpen = true;
             document.getElementById('lc-panel').style.display = 'flex';
-            if (storedConv) {
-                showChatView();
-                updateStatus('Reconnecting…', false);
-            } else {
-                beginNewConversationFlow();
-            }
+            // Route decides form vs chat after live settings — do not force prechat/direct
+            updateStatus('Connecting…', false);
         }
 
         lastMsgId = 0;
         chatClosed = false;
         leaveCloseSent = false;
 
-        if (storedConv) {
-            initChat({ resumeConversationId: storedConv, keepMessages: false });
+        if (storedConv || shouldOpen) {
+            beginNewConversationFlow();
         }
     }
 

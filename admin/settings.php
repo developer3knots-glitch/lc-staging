@@ -17,7 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $poll = max(800, min(5000, $poll));
             lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             lc_set_account_setting($accountId, 'poll_interval_ms', (string) $poll);
-            lc_set_account_setting($accountId, 'prechat_form_enabled', isset($_POST['prechat_form_enabled']) ? '1' : '0');
+            $prechatOn = isset($_POST['prechat_form_enabled']) ? '1' : '0';
+            lc_set_account_setting($accountId, 'prechat_form_enabled', $prechatOn);
+            // Keep global fallback in sync (brands without account_id / legacy installs)
+            if (function_exists('lc_set_setting')) {
+                lc_set_setting('prechat_form_enabled', $prechatOn);
+            }
             $message = 'System settings saved successfully.';
         } elseif ($action === 'save_tickets') {
             lc_set_account_setting($accountId, 'ticket_display_enabled', isset($_POST['ticket_display_enabled']) ? '1' : '0');
@@ -160,7 +165,7 @@ require __DIR__ . '/includes/header.php';
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
                                             <strong>Pre-chat form</strong>
-                                            <small>Require name, email &amp; message before chat. When off, visitors open live chat directly</small>
+                                            <small>Require name, email &amp; first message before a <em>new</em> chat. Active chats keep going without the form (LiveChat standard)</small>
                                         </span>
                                     </label>
                                 </div>
