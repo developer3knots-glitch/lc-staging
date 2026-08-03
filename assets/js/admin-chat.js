@@ -526,6 +526,8 @@
 
     function renderIpHistory(items) {
         if (!ipHistoryEl || !ipHistoryListEl) return;
+        // undefined = skip (incremental poll); empty array = hide
+        if (items === undefined || items === null) return;
         items = items || [];
         if (!items.length) {
             resetIpHistoryPanel();
@@ -553,6 +555,14 @@
         });
         ipHistoryListEl.innerHTML = html;
         if (window.LCTime) window.LCTime.scan(ipHistoryListEl);
+        // Auto-expand so agent always sees prior history
+        var wrap = document.getElementById('lc-ip-history-list-wrap');
+        var toggle = document.getElementById('lc-ip-history-toggle');
+        if (wrap) wrap.hidden = false;
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', 'true');
+            toggle.classList.add('is-open');
+        }
     }
 
     function loadPageJourney(reset) {

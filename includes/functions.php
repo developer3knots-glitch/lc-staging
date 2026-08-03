@@ -623,24 +623,47 @@ function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
 }
 
 /**
- * Prior conversations that share the visitor public IP (agent-only context).
+ * Prior conversations for the same visitor IP and/or visitor record (agent-only).
  * Visitor widgets never use this list for auto-resume.
  *
  * @return list<array{id:int,status:string,reference:string,visitor_name:string,started_at:?string,last_message_at:?string,preview:string}>
  */
-function lc_conversations_related_by_ip(string $ip, int $excludeConversationId, ?array $agent = null, int $limit = 12): array
-{
+function lc_conversations_related_by_ip(
+    string $ip,
+    int $excludeConversationId,
+    ?array $agent = null,
+    int $limit = 12,
+    int $visitorId = 0
+): array {
     $ip = trim($ip);
-    if ($ip === '' || $excludeConversationId < 0) {
-        return [];
-    }
-    // Shared office / loopback IPs produce noisy matches — skip
-    if (function_exists('lc_is_local_ip') && lc_is_local_ip($ip)) {
+    if ($excludeConversationId < 1 && $visitorId < 1 && $ip === '') {
         return [];
     }
 
     $limit = max(1, min(30, $limit));
-    $params = [$ip, $excludeConversationId];
+    $params = [];
+    $orParts = [];
+
+    // Same device/browser visitor record (most reliable on shared NAT / XAMPP)
+    if ($visitorId > 0) {
+        $orParts[] = 'c.visitor_id = ?';
+        $params[] = $visitorId;
+    }
+    // Public IP match (skip empty / loopback noise only)
+    $ipUsable = $ip !== ''
+        && $ip !== '0.0.0.0'
+        && $ip !== '127.0.0.1'
+        && $ip !== '::1';
+    if ($ipUsable) {
+        $orParts[] = 'v.ip_address = ?';
+        $params[] = $ip;
+    }
+
+    if (!$orParts) {
+        return [];
+    }
+
+    $params[] = $excludeConversationId;
     $sql = '
         SELECT c.id, c.status, c.started_at, c.last_message_at, c.ticket_reference,
                v.name AS visitor_name,
@@ -649,17 +672,17 @@ function lc_conversations_related_by_ip(string $ip, int $excludeConversationId, 
                 ORDER BY m.id DESC LIMIT 1) AS last_message
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
-        WHERE v.ip_address = ?
+        WHERE (' . implode(' OR ', $orParts) . ')
           AND c.id <> ?
     ';
 
     if ($agent && function_exists('lc_agent_account_id')) {
         $accountId = lc_agent_account_id($agent);
         if ($accountId > 0) {
-            $sql .= ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+            $sql .= ' AND (c.brand_id IS NULL OR c.brand_id IN (SELECT id FROM brands WHERE account_id = ?))';
             $params[] = $accountId;
         } elseif (!empty($agent['brand_id'])) {
-            $sql .= ' AND c.brand_id = ?';
+            $sql .= ' AND (c.brand_id IS NULL OR c.brand_id = ?)';
             $params[] = (int) $agent['brand_id'];
         }
     }
@@ -670,8 +693,13 @@ function lc_conversations_related_by_ip(string $ip, int $excludeConversationId, 
         $stmt = lc_db()->prepare($sql);
         $stmt->execute($params);
         $out = [];
+        $seen = [];
         foreach ($stmt->fetchAll() as $row) {
             $id = (int) $row['id'];
+            if (isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
             $preview = trim((string) ($row['last_message'] ?? ''));
             if (function_exists('mb_substr') && mb_strlen($preview) > 80) {
                 $preview = mb_substr($preview, 0, 80) . '…';
@@ -682,7 +710,10 @@ function lc_conversations_related_by_ip(string $ip, int $excludeConversationId, 
             if (function_exists('lc_conversation_reference')) {
                 $ref = lc_conversation_reference($id, $row['started_at'] ?? null);
             } else {
-                $ref = (string) ($row['ticket_reference'] ?? '');
+                $ref = (string) ($row['ticket_reference'] ?? ('#' . $id));
+            }
+            if ($ref === '') {
+                $ref = '#' . $id;
             }
             $out[] = [
                 'id' => $id,
