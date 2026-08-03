@@ -53,25 +53,37 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-chat-header-title-row">
                                 <strong id="lc-chat-visitor-name">Visitor</strong>
                                 <div class="lc-chat-ref" id="lc-chat-ref" hidden>
-                                    <span class="lc-chat-ref-label">Ticket</span>
+                                    <span class="lc-chat-ref-icon" title="Ticket reference" aria-hidden="true"><i class="ti ti-ticket"></i></span>
                                     <code class="lc-chat-ref-code" id="lc-chat-ref-code">—</code>
                                     <button type="button" class="lc-chat-ref-copy" id="lc-chat-ref-copy" title="Copy ticket reference" aria-label="Copy ticket reference"><i class="ti ti-copy"></i></button>
                                 </div>
                             </div>
                             <div class="lc-visitor-details lc-visitor-details-pro" id="lc-chat-visitor-details"></div>
-                            <div class="lc-chat-visitor-meta" id="lc-chat-visitor-meta"></div>
                         </div>
                     </div>
                     <div class="lc-chat-header-actions">
-                        <div class="lc-chat-action-canned">
-                            <i class="ti ti-bolt"></i>
-                            <select id="lc-canned-select" class="lc-status-select lc-canned-select-pro"><option value="">Canned reply</option></select>
-                        </div>
                         <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none"><i class="ti ti-check"></i> Accept</button>
-                        <div class="lc-transfer-wrap" id="lc-transfer-wrap" style="display:none">
-                            <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-transfer-chat" aria-expanded="false">
-                                <i class="ti ti-arrows-exchange"></i> Transfer
+                        <div class="lc-chat-more-wrap" id="lc-chat-more-wrap">
+                            <button type="button" class="lc-chat-more-btn" id="lc-chat-more-btn" aria-label="Chat actions" aria-haspopup="true" aria-expanded="false" title="More actions">
+                                <i class="ti ti-dots-vertical"></i>
                             </button>
+                            <div class="lc-chat-more-menu" id="lc-chat-more-menu" role="menu" hidden>
+                                <div class="lc-chat-more-canned" role="none">
+                                    <span class="lc-chat-more-canned-label"><i class="ti ti-bolt"></i> Canned reply</span>
+                                    <select id="lc-canned-select" class="lc-status-select lc-canned-select-pro" aria-label="Canned reply"><option value="">Select a reply…</option></select>
+                                </div>
+                                <div class="lc-transfer-wrap" id="lc-transfer-wrap" style="display:none" role="none">
+                                    <button type="button" class="lc-chat-more-item" id="lc-transfer-chat" role="menuitem" aria-expanded="false">
+                                        <i class="ti ti-arrows-exchange"></i> Transfer
+                                    </button>
+                                </div>
+                                <button type="button" class="lc-chat-more-item lc-chat-more-block" id="lc-block-ip-btn" role="menuitem" hidden>
+                                    <i class="ti ti-ban"></i> <span id="lc-block-ip-label">Block IP</span>
+                                </button>
+                                <button type="button" class="lc-chat-more-item is-danger" id="lc-close-chat" role="menuitem">
+                                    <i class="ti ti-x"></i> Close
+                                </button>
+                            </div>
                             <div class="lc-transfer-panel" id="lc-transfer-panel" hidden>
                                 <div class="lc-transfer-panel-head">
                                     <strong><i class="ti ti-arrows-exchange"></i> Transfer chat</strong>
@@ -79,7 +91,7 @@ require __DIR__ . '/includes/header.php';
                                 </div>
                                 <p class="lc-transfer-hint">Select an online agent to take over this conversation. The ticket reference stays the same — full chat history moves with it.</p>
                                 <div class="lc-transfer-ref" id="lc-transfer-ref" hidden>
-                                    <span class="lc-transfer-ref-label">Ticket</span>
+                                    <span class="lc-transfer-ref-label"><i class="ti ti-ticket"></i></span>
                                     <code id="lc-transfer-ref-code">—</code>
                                 </div>
                                 <div class="lc-transfer-agents" id="lc-transfer-agents">
@@ -92,9 +104,10 @@ require __DIR__ . '/includes/header.php';
                                 </button>
                             </div>
                         </div>
-                        <button type="button" class="lc-btn lc-btn-danger lc-btn-sm" id="lc-close-chat"><i class="ti ti-x"></i> Close</button>
                     </div>
                 </div>
+
+                <div class="lc-chat-context-bar" id="lc-chat-visitor-meta" hidden></div>
 
                 <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">
                     <button type="button" class="lc-journey-bar" id="lc-journey-toggle" aria-expanded="false" aria-controls="lc-journey-track-wrap">

@@ -34,6 +34,11 @@
     var transferNoteEl = document.getElementById('lc-transfer-note');
     var transferSubmitBtn = document.getElementById('lc-transfer-submit');
     var transferCloseBtn = document.getElementById('lc-transfer-close');
+    var moreWrap = document.getElementById('lc-chat-more-wrap');
+    var moreBtn = document.getElementById('lc-chat-more-btn');
+    var moreMenu = document.getElementById('lc-chat-more-menu');
+    var blockIpBtn = document.getElementById('lc-block-ip-btn');
+    var blockIpLabel = document.getElementById('lc-block-ip-label');
     var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
     var isAdmin = app.dataset.agentRole === 'admin';
     var selectedTransferAgentId = 0;
@@ -51,6 +56,70 @@
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
     var transferRefEl = document.getElementById('lc-transfer-ref');
     var transferRefCodeEl = document.getElementById('lc-transfer-ref-code');
+
+    function closeMoreMenu() {
+        if (!moreMenu || !moreBtn) return;
+        moreMenu.hidden = true;
+        moreBtn.setAttribute('aria-expanded', 'false');
+        if (moreWrap) moreWrap.classList.remove('is-open');
+    }
+
+    function openMoreMenu() {
+        if (!moreMenu || !moreBtn) return;
+        moreMenu.hidden = false;
+        moreBtn.setAttribute('aria-expanded', 'true');
+        if (moreWrap) moreWrap.classList.add('is-open');
+    }
+
+    function toggleMoreMenu() {
+        if (!moreMenu) return;
+        if (moreMenu.hidden) {
+            openMoreMenu();
+        } else {
+            closeMoreMenu();
+        }
+    }
+
+    function setVisitorMeta(htmlOrText, isHtml) {
+        if (!visitorMetaEl) return;
+        var content = htmlOrText || '';
+        if (!content) {
+            visitorMetaEl.hidden = true;
+            visitorMetaEl.innerHTML = '';
+            return;
+        }
+        visitorMetaEl.hidden = false;
+        if (isHtml) {
+            visitorMetaEl.innerHTML = content;
+        } else {
+            visitorMetaEl.textContent = content;
+        }
+    }
+
+    function formatVisitorMeta(c, extraSuffix) {
+        var page = c.visitor_page || c.page_url || '';
+        var agent = c.agent_name || '';
+        var parts = [];
+        if (page) {
+            var href = page;
+            if (!/^https?:\/\//i.test(href) && href.indexOf('/') === 0) {
+                href = href;
+            }
+            var safeUrl = esc(page);
+            if (/^https?:\/\//i.test(page)) {
+                parts.push('<a class="lc-chat-context-link" href="' + esc(page) + '" target="_blank" rel="noopener noreferrer" title="' + safeUrl + '"><i class="ti ti-link"></i> <span>' + safeUrl + '</span></a>');
+            } else {
+                parts.push('<span class="lc-chat-context-page" title="' + safeUrl + '"><i class="ti ti-link"></i> <span>' + safeUrl + '</span></span>');
+            }
+        }
+        if (agent) {
+            parts.push('<span class="lc-chat-context-agent"><i class="ti ti-user"></i> Agent: ' + esc(agent) + '</span>');
+        }
+        if (extraSuffix) {
+            parts.push('<span class="lc-chat-context-extra">' + esc(extraSuffix) + '</span>');
+        }
+        return parts.join('<span class="lc-chat-context-sep" aria-hidden="true">·</span>');
+    }
 
     function visitorInitials(name) {
         name = (name || 'Visitor').trim();
@@ -591,7 +660,7 @@
         replyInput.disabled = !canCompose;
         document.getElementById('lc-send-reply').disabled = !canCompose;
         acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
-        if (transferWrap) transferWrap.style.display = transfer ? 'inline-flex' : 'none';
+        if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
         chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
     }
@@ -621,10 +690,16 @@
         lastJourneyId = 0;
         chatTransferredAway = false;
         closeTransferPanel();
+        closeMoreMenu();
         transferAgentsLoaded = false;
         currentReference = '';
+        currentVisitorIp = '';
+        currentIpBlocked = false;
         if (chatRefEl) chatRefEl.hidden = true;
         if (transferRefEl) transferRefEl.hidden = true;
+        setVisitorMeta('', false);
+        if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
+        updateBlockIpMenu();
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
         journeyViewsRaw = [];
@@ -644,18 +719,25 @@
         });
     }
 
-    function blockIpButtonHtml() {
-        if (currentIpBlocked) {
-            return '<button type="button" class="lc-block-ip-btn is-blocked" id="lc-block-ip-btn" title="Remove IP from block list"><i class="ti ti-lock-open"></i> Unblock IP</button>';
+    function updateBlockIpMenu() {
+        if (!blockIpBtn) return;
+        var ip = currentVisitorIp || '';
+        if (!ip) {
+            blockIpBtn.hidden = true;
+            return;
         }
-        return '<button type="button" class="lc-block-ip-btn" id="lc-block-ip-btn" title="Block this IP from chat widget"><i class="ti ti-ban"></i> Block IP</button>';
-    }
-
-    function bindBlockIpButton() {
-        var blockBtn = document.getElementById('lc-block-ip-btn');
-        if (blockBtn) {
-            blockBtn.addEventListener('click', onBlockIpClick);
+        blockIpBtn.hidden = false;
+        blockIpBtn.classList.toggle('is-blocked', !!currentIpBlocked);
+        if (blockIpLabel) {
+            blockIpLabel.textContent = currentIpBlocked ? 'Unblock IP' : 'Block IP';
         }
+        var icon = blockIpBtn.querySelector('i');
+        if (icon) {
+            icon.className = currentIpBlocked ? 'ti ti-lock-open' : 'ti ti-ban';
+        }
+        blockIpBtn.title = currentIpBlocked
+            ? 'Remove IP from block list'
+            : 'Block this IP from chat widget';
     }
 
     function showIpModal(opts) {
@@ -817,18 +899,14 @@
             currentVisitorIp = c.visitor_ip;
         }
         var html = '';
-        if (c.brand_name) {
-            html += '<span class="is-brand"><i class="ti ti-tag"></i> ' + esc(c.brand_name) + '</span>';
-        }
         if (c.visitor_ip || currentVisitorIp) {
             html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip || currentVisitorIp) + '</span>';
-            html += blockIpButtonHtml();
         }
         if (c.visitor_country) {
             html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
         }
         visitorDetailsEl.innerHTML = html;
-        bindBlockIpButton();
+        updateBlockIpMenu();
     }
 
     function pollMessages() {
@@ -865,7 +943,8 @@
                     acceptBtn.style.display = 'none';
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
-                    visitorMetaEl.textContent = (c.visitor_page || c.page_url || '') + ' · Chat closed';
+                    closeMoreMenu();
+                    setVisitorMeta(formatVisitorMeta(c, 'Chat closed'), true);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     loadConversations();
                     return;
@@ -884,9 +963,7 @@
                 if (c.reference) {
                     updateChatReference(c.reference);
                 }
-                var meta = c.visitor_page || c.page_url || '';
-                if (c.agent_name) meta += (meta ? ' · ' : '') + 'Agent: ' + c.agent_name;
-                visitorMetaEl.textContent = meta;
+                setVisitorMeta(formatVisitorMeta(c), true);
                 updateChatActions(c, data.can_compose);
 
                 if (lastMsgId === 0 && data.messages.length) {
@@ -953,6 +1030,7 @@
     document.getElementById('lc-close-chat').addEventListener('click', function () {
         if (!selectedId || !confirm('Close this chat?')) return;
         closeTransferPanel();
+        closeMoreMenu();
         fetch(base + '/api/agent-close.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -966,17 +1044,39 @@
         });
     });
 
-    cannedSelect.addEventListener('change', function () {
-        if (cannedSelect.value) {
-            replyInput.value = cannedSelect.value;
-            cannedSelect.value = '';
-            replyInput.focus();
-        }
-    });
+    if (cannedSelect) {
+        cannedSelect.addEventListener('change', function () {
+            if (cannedSelect.value) {
+                replyInput.value = cannedSelect.value;
+                cannedSelect.value = '';
+                closeMoreMenu();
+                replyInput.focus();
+            }
+        });
+    }
+
+    if (moreBtn) {
+        moreBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (transferPanel && !transferPanel.hidden) {
+                closeTransferPanel();
+            }
+            toggleMoreMenu();
+        });
+    }
+
+    if (blockIpBtn) {
+        blockIpBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            closeMoreMenu();
+            onBlockIpClick();
+        });
+    }
 
     if (transferBtn) {
         transferBtn.addEventListener('click', function (e) {
             e.stopPropagation();
+            closeMoreMenu();
             if (transferPanel && !transferPanel.hidden) {
                 closeTransferPanel();
             } else {
@@ -1005,8 +1105,21 @@
         transferSubmitBtn.addEventListener('click', submitTransfer);
     }
     document.addEventListener('click', function (e) {
-        if (!transferPanel || transferPanel.hidden || !transferWrap) return;
-        if (!transferWrap.contains(e.target)) closeTransferPanel();
+        if (moreWrap && moreMenu && !moreMenu.hidden && !moreWrap.contains(e.target)) {
+            closeMoreMenu();
+        }
+        if (!transferPanel || transferPanel.hidden || !moreWrap) return;
+        if (!moreWrap.contains(e.target)) closeTransferPanel();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            if (moreMenu && !moreMenu.hidden) {
+                closeMoreMenu();
+            }
+            if (transferPanel && !transferPanel.hidden) {
+                closeTransferPanel();
+            }
+        }
     });
 
     var inboxSearchEl = document.getElementById('lc-inbox-search');
