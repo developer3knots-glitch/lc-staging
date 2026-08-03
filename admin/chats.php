@@ -13,25 +13,22 @@ require __DIR__ . '/includes/header.php';
         <aside class="lc-chat-list lc-chat-inbox-pro">
             <div class="lc-chat-inbox-head">
                 <div class="lc-chat-inbox-title">
-                    <div class="lc-brand-icon lc-chat-inbox-icon" aria-hidden="true"><i class="ti ti-messages"></i></div>
-                    <div>
-                        <strong>Inbox</strong>
-                        <span>Live conversations</span>
-                    </div>
+                    <strong>Inbox</strong>
+                    <span>Conversations</span>
                 </div>
                 <span id="lc-waiting-badge" class="lc-chat-inbox-waiting" style="display:none">0</span>
             </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
-                <input type="search" id="lc-inbox-search" placeholder="Search visitors…" autocomplete="off" aria-label="Search conversations">
+                <input type="search" id="lc-inbox-search" placeholder="Search…" autocomplete="off" aria-label="Search conversations">
             </div>
-            <div class="lc-chat-tabs lc-chat-tabs-pro">
-                <button type="button" class="lc-chat-tab active" data-tab="all"><i class="ti ti-layout-grid"></i> All</button>
-                <button type="button" class="lc-chat-tab" data-tab="waiting"><i class="ti ti-clock"></i> Waiting</button>
-                <button type="button" class="lc-chat-tab" data-tab="active"><i class="ti ti-message-circle"></i> Active</button>
+            <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
+                <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
+                <button type="button" class="lc-chat-tab" data-tab="waiting" role="tab">Waiting</button>
+                <button type="button" class="lc-chat-tab" data-tab="active" role="tab">Active</button>
             </div>
             <div class="lc-chat-items" id="lc-conversation-list">
-                <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading conversations…</div>
+                <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading…</div>
             </div>
         </aside>
 
