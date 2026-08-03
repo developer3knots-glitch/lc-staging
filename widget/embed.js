@@ -67,6 +67,7 @@
     setupReloadDetection();
     setupSiteNavigationDetection();
     initPageTracker();
+    loadNotifySoundScript();
 
     function setupSiteNavigationDetection() {
         function markIfInternalLink(e) {
@@ -1368,18 +1369,55 @@
     }
 
     function playNotifySound() {
+        if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+            window.LCNotifySound.play();
+            return;
+        }
+        // Fallback soft chime if shared script not loaded yet
         try {
-            var ctx = new (window.AudioContext || window.webkitAudioContext)();
-            var osc = ctx.createOscillator();
-            var gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = 880;
-            gain.gain.value = 0.04;
-            osc.start();
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-            osc.stop(ctx.currentTime + 0.15);
+            var AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            if (!playNotifySound._ctx) {
+                playNotifySound._ctx = new AC();
+            }
+            var c = playNotifySound._ctx;
+            if (c.state === 'suspended') {
+                c.resume();
+            }
+            var notes = [
+                { freq: 880, delay: 0, dur: 0.42 },
+                { freq: 1318.5, delay: 0.1, dur: 0.48 }
+            ];
+            notes.forEach(function (note) {
+                var t0 = c.currentTime + note.delay;
+                var osc = c.createOscillator();
+                var gain = c.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = note.freq;
+                gain.gain.setValueAtTime(0.0001, t0);
+                gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + note.dur);
+                osc.connect(gain);
+                gain.connect(c.destination);
+                osc.start(t0);
+                osc.stop(t0 + note.dur + 0.02);
+            });
         } catch (ignore) {}
+    }
+
+    function loadNotifySoundScript() {
+        if (window.LCNotifySound) {
+            return;
+        }
+        var existing = document.querySelector('script[data-lc-notify]');
+        if (existing) {
+            return;
+        }
+        var s = document.createElement('script');
+        s.src = siteUrl + '/assets/js/lc-notify-sound.js?v=1';
+        s.async = true;
+        s.setAttribute('data-lc-notify', '1');
+        document.head.appendChild(s);
     }
 
     function statusWithDot(text, online) {

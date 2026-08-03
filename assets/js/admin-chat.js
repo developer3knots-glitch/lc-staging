@@ -58,6 +58,15 @@
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
     var transferRefEl = document.getElementById('lc-transfer-ref');
     var transferRefCodeEl = document.getElementById('lc-transfer-ref-code');
+    var inboxSoundReady = false;
+    var lastInboxWaiting = 0;
+    var lastInboxUnread = 0;
+
+    function playIncomingSound() {
+        if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+            window.LCNotifySound.play();
+        }
+    }
 
     function closeMoreMenu() {
         if (!moreMenu || !moreBtn) return;
@@ -697,6 +706,23 @@
                 } else {
                     badge.style.display = 'none';
                 }
+
+                var unreadTotal = 0;
+                (data.conversations || []).forEach(function (c) {
+                    unreadTotal += parseInt(c.unread, 10) || 0;
+                });
+                var waiting = parseInt(data.waiting_count, 10) || 0;
+                // New queue activity or unread visitor msgs (not first paint)
+                if (inboxSoundReady) {
+                    if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
+                        playIncomingSound();
+                    }
+                } else {
+                    inboxSoundReady = true;
+                }
+                lastInboxWaiting = waiting;
+                lastInboxUnread = unreadTotal;
+
                 if (!data.conversations.length) {
                     lastConversations = [];
                     paintConversationList([]);
@@ -1163,11 +1189,18 @@
 
                 function paintIncremental() {
                     var added = 0;
+                    var playSound = false;
                     (data.messages || []).forEach(function (m) {
                         if (m.id > lastMsgId) {
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
+                            // Incoming only — not agent’s own replies echoing back
+                            if (m.sender_type === 'visitor' || m.sender_type === 'system') {
+                                if (m.sender_type === 'visitor') {
+                                    playSound = true;
+                                }
+                            }
                         }
                     });
                     if (data.receipts) applyReceipts(data.receipts);
@@ -1175,6 +1208,9 @@
                     // Only stick to bottom for new messages when agent is already near bottom
                     if (added > 0) {
                         scrollMessagesToBottom(false);
+                    }
+                    if (playSound) {
+                        playIncomingSound();
                     }
                 }
 
