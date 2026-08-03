@@ -7,6 +7,8 @@ if (!$agent) {
 
 $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
+// full=1 only on first open (client) — loads continuous prior conversation history
+$fullLoad = (int) ($_GET['full'] ?? 0) === 1;
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid conversation'], 400);
@@ -40,6 +42,10 @@ try {
         $messages[] = lc_format_message_row($row);
     }
 
+    $cursorStmt = lc_db()->prepare('SELECT COALESCE(MAX(id), 0) FROM messages WHERE conversation_id = ?');
+    $cursorStmt->execute([$conversationId]);
+    $messageCursor = (int) $cursorStmt->fetchColumn();
+
     // Visitor messages delivered as soon as pulled; read while agent is viewing this chat
     if (lc_agent_can_handle_conversation($agent, $conv) || lc_agent_can_view_conversation($agent, $conv)) {
         lc_mark_messages_delivered($conversationId, 'visitor');
@@ -55,19 +61,20 @@ try {
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
         ),
         'messages' => $messages,
+        'message_cursor' => $messageCursor,
         'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ];
 
-    // Only on full history load — omit on subsequent polls so UI is not wiped
-    if ($lastId === 0) {
-        $payload['related_by_ip'] = lc_conversations_related_by_ip(
+    // Full open only: prior same-visitor chats for LiveChat-style continuous timeline (agent-only)
+    if ($fullLoad) {
+        $payload['prior_threads'] = lc_agent_prior_threads_with_messages(
             (string) ($conv['visitor_ip'] ?? ''),
             $conversationId,
             $agent,
-            12,
-            (int) ($conv['visitor_id'] ?? 0)
+            (int) ($conv['visitor_id'] ?? 0),
+            8
         );
     }
 

@@ -121,21 +121,6 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="lc-ip-history lc-ip-history-pro" id="lc-ip-history" style="display:none">
-                    <button type="button" class="lc-journey-bar lc-ip-history-toggle" id="lc-ip-history-toggle" aria-expanded="false" aria-controls="lc-ip-history-list-wrap">
-                        <span class="lc-journey-bar-icon" aria-hidden="true"><i class="ti ti-history"></i></span>
-                        <span class="lc-journey-bar-text">
-                            <strong>Past chats (same IP)</strong>
-                            <span class="lc-journey-bar-summary" id="lc-ip-history-summary">Agent-only history — visitor does not see this</span>
-                        </span>
-                        <span class="lc-journey-bar-count" id="lc-ip-history-count">0</span>
-                        <i class="ti ti-chevron-down lc-journey-bar-chevron" aria-hidden="true"></i>
-                    </button>
-                    <div class="lc-ip-history-list-wrap" id="lc-ip-history-list-wrap" hidden>
-                        <div class="lc-ip-history-list" id="lc-ip-history-list"></div>
-                    </div>
-                </div>
-
                 <div class="lc-chat-messages lc-chat-messages-pro" id="lc-messages"></div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro">

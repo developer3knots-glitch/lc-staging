@@ -731,6 +731,88 @@ function lc_conversations_related_by_ip(
     }
 }
 
+/**
+ * Agent-only continuous history: full message threads for prior same-visitor/IP chats.
+ * Oldest first so the inbox can paint LiveChat-style session markers + messages in one scroll.
+ *
+ * @return list<array{id:int,status:string,reference:string,started_at:?string,ended_at:?string,messages:list<array<string,mixed>>}>
+ */
+function lc_agent_prior_threads_with_messages(
+    string $ip,
+    int $excludeConversationId,
+    ?array $agent = null,
+    int $visitorId = 0,
+    int $threadLimit = 8
+): array {
+    $metas = lc_conversations_related_by_ip($ip, $excludeConversationId, $agent, $threadLimit, $visitorId);
+    if (!$metas) {
+        return [];
+    }
+    // Related is newest-first; reverse for chronological timeline (top = older)
+    $metas = array_reverse($metas);
+    $ids = [];
+    $byId = [];
+    foreach ($metas as $meta) {
+        $id = (int) ($meta['id'] ?? 0);
+        if ($id < 1) {
+            continue;
+        }
+        $ids[] = $id;
+        $byId[$id] = $meta;
+    }
+    if (!$ids) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT ' . lc_attachment_message_select_sql() . ',
+                   m.conversation_id,
+                   CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
+                   CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
+            FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id
+            WHERE m.conversation_id IN (' . $placeholders . ')
+            ORDER BY m.id ASC
+        ');
+        $stmt->execute($ids);
+        $grouped = [];
+        foreach ($ids as $id) {
+            $grouped[$id] = [];
+        }
+        // Cap total prior messages so poll stays light (last N per thread if over cap)
+        $maxTotal = 250;
+        $rows = $stmt->fetchAll();
+        if (count($rows) > $maxTotal) {
+            $rows = array_slice($rows, -$maxTotal);
+        }
+        foreach ($rows as $row) {
+            $cid = (int) ($row['conversation_id'] ?? 0);
+            if (!isset($grouped[$cid])) {
+                continue;
+            }
+            $grouped[$cid][] = lc_format_message_row($row);
+        }
+
+        $threads = [];
+        foreach ($ids as $id) {
+            $meta = $byId[$id];
+            $threads[] = [
+                'id' => $id,
+                'status' => (string) ($meta['status'] ?? 'closed'),
+                'reference' => (string) ($meta['reference'] ?? ('#' . $id)),
+                'started_at' => $meta['started_at'] ?? null,
+                'ended_at' => $meta['last_message_at'] ?? $meta['started_at'] ?? null,
+                'messages' => $grouped[$id] ?? [],
+            ];
+        }
+        return $threads;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 function lc_touch_conversation(int $conversationId): void
 {
     $stmt = lc_db()->prepare('UPDATE conversations SET last_message_at = NOW() WHERE id = ?');
