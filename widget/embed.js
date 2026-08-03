@@ -273,7 +273,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=11';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=12';
         document.head.appendChild(link);
     }
 
@@ -1294,8 +1294,7 @@
         var msgKey = m.id ? String(m.id) : (m._tempId || '');
         if (msgKey && document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]')) {
             if (options.updateRead && m.sender_type === 'visitor') {
-                var existing = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"] .lcw-msg-read');
-                if (existing) existing.textContent = m.is_read ? '✓✓' : '✓';
+                updateVisitorTicks(msgKey, m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             }
             return;
         }
@@ -1334,10 +1333,11 @@
             var wrap = document.createElement('div');
             wrap.className = 'lcw-msg-wrap lcw-visitor-wrap' + (m._pending ? ' lcw-msg-pending' : '');
             if (msgKey) wrap.setAttribute('data-msg-id', msgKey);
-            var readMark = m._pending ? '' : '<span class="lcw-msg-read">' + (m.is_read ? '✓✓' : '✓') + '</span>';
+            var status = m._pending ? 'pending' : (m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
+            var ticks = msgTicksHtml(status);
             wrap.innerHTML =
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' + messageBodyHtml(m) + '</div>' +
-                '<div class="lcw-msg-meta">' + timeHtml + readMark + '</div>';
+                '<div class="lcw-msg-meta">' + timeHtml + ticks + '</div>';
             box.appendChild(wrap);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
@@ -1354,6 +1354,42 @@
         }
         box.scrollTop = box.scrollHeight;
         if (window.LCTime) window.LCTime.scan(box);
+    }
+
+    function msgTicksHtml(status) {
+        status = status || 'sent';
+        if (status === 'pending') {
+            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending">⏳</span>';
+        }
+        if (status === 'read') {
+            return '<span class="lcw-msg-ticks is-read" title="Read" aria-label="Read">✓✓</span>';
+        }
+        if (status === 'delivered') {
+            return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">✓✓</span>';
+        }
+        return '<span class="lcw-msg-ticks is-sent" title="Sent" aria-label="Sent">✓</span>';
+    }
+
+    function updateVisitorTicks(msgKey, status) {
+        var root = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]');
+        if (!root) return;
+        var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read');
+        if (!existing) {
+            var meta = root.querySelector('.lcw-msg-meta');
+            if (meta) meta.insertAdjacentHTML('beforeend', msgTicksHtml(status));
+            return;
+        }
+        var wrap = document.createElement('div');
+        wrap.innerHTML = msgTicksHtml(status);
+        if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
+    }
+
+    function applyReceipts(receipts) {
+        if (!receipts || !receipts.length) return;
+        receipts.forEach(function (r) {
+            var status = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
+            updateVisitorTicks(String(r.id), status);
+        });
     }
 
     function resumeChatOnLoad() {
@@ -1430,7 +1466,16 @@
                     updateStatus('Team online', true);
                 }
 
-                if (data.last_visitor_read !== undefined && lastMsgId) {
+                if (data.receipts && data.receipts.length) {
+                    applyReceipts(data.receipts);
+                } else if (data.last_visitor_delivery_status && lastMsgId) {
+                    appendMessage({
+                        id: lastMsgId,
+                        sender_type: 'visitor',
+                        delivery_status: data.last_visitor_delivery_status,
+                        is_read: data.last_visitor_read
+                    }, { updateRead: true });
+                } else if (data.last_visitor_read !== undefined && lastMsgId) {
                     appendMessage({ id: lastMsgId, sender_type: 'visitor', is_read: data.last_visitor_read }, { updateRead: true });
                 }
 

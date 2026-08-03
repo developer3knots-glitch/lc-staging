@@ -33,6 +33,7 @@ try {
     }
 
     lc_ensure_attachments_schema();
+    lc_ensure_message_receipts_schema();
 
     $stmt = $db->prepare('
         SELECT ' . lc_attachment_message_select_sql() . ',
@@ -50,28 +51,30 @@ try {
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
-    // Mark agent messages as read
-    if (!empty($messages)) {
-        $db->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = "agent" AND is_read = 0')->execute([$conversationId]);
-    }
+    // Agent messages → delivered + read while visitor is polling this open chat
+    lc_mark_messages_delivered($conversationId, 'agent');
+    lc_mark_messages_read($conversationId, 'agent');
 
+    $receipts = lc_fetch_message_receipts($conversationId, 'visitor');
     $lastVisitorRead = false;
-    $readStmt = $db->prepare('SELECT is_read FROM messages WHERE conversation_id = ? AND sender_type = "visitor" ORDER BY id DESC LIMIT 1');
-    $readStmt->execute([$conversationId]);
-    $readRow = $readStmt->fetch();
-    if ($readRow) {
-        $lastVisitorRead = (bool) $readRow['is_read'];
+    $lastStatus = 'sent';
+    if ($receipts) {
+        $last = $receipts[count($receipts) - 1];
+        $lastVisitorRead = !empty($last['is_read']);
+        $lastStatus = $last['delivery_status'] ?? 'sent';
     }
 
     lc_json([
         'success' => true,
         'messages' => $messages,
+        'receipts' => $receipts,
         'status' => $conv['status'],
         'reference' => lc_ticket_display_enabled() ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null) : '',
         'agent_name' => $conv['agent_name'],
         'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),
         'agents_online' => lc_get_online_agents_count(),
         'last_visitor_read' => $lastVisitorRead,
+        'last_visitor_delivery_status' => $lastStatus,
         'ticket_display_enabled' => lc_ticket_display_enabled(),
         'ticket_resume_enabled' => lc_ticket_resume_enabled(),
     ]);

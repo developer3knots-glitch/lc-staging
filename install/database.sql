@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS `messages` (
     `attachment_size` INT UNSIGNED DEFAULT NULL,
     `attachment_kind` ENUM('image','document') DEFAULT NULL,
     `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+    `delivered_at` DATETIME NULL DEFAULT NULL,
+    `read_at` DATETIME NULL DEFAULT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`conversation_id`) REFERENCES `conversations`(`id`) ON DELETE CASCADE,
     INDEX `idx_conversation` (`conversation_id`),

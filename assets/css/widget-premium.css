@@ -686,7 +686,18 @@
     align-items: center;
     gap: 0.3rem;
 }
-.lcw-msg-read { color: var(--lcw-primary); font-weight: 600; letter-spacing: -0.05em; }
+.lcw-msg-read,
+.lcw-msg-ticks {
+    font-weight: 700;
+    letter-spacing: -0.08em;
+    font-size: 0.78rem;
+    line-height: 1;
+    margin-left: 0.1rem;
+}
+.lcw-msg-ticks.is-sent { color: #94a3b8; }
+.lcw-msg-ticks.is-delivered { color: #94a3b8; }
+.lcw-msg-ticks.is-read { color: #22c55e; }
+.lcw-msg-ticks.is-pending { color: #cbd5e1; font-size: 0.68rem; letter-spacing: 0; }
 .lcw-msg-pending { opacity: 0.65; }
 
 .lcw-join-event {

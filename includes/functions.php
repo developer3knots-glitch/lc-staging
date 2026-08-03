@@ -782,3 +782,148 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
     }
     return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
 }
+
+/**
+ * Message delivery ticks (WhatsApp-style): sent → delivered → read
+ */
+function lc_ensure_message_receipts_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    try {
+        $pdo->exec('ALTER TABLE messages ADD COLUMN delivered_at DATETIME NULL DEFAULT NULL AFTER is_read');
+    } catch (Throwable $e) {
+    }
+    try {
+        $pdo->exec('ALTER TABLE messages ADD COLUMN read_at DATETIME NULL DEFAULT NULL AFTER delivered_at');
+    } catch (Throwable $e) {
+    }
+    try {
+        // Backfill older read messages
+        $pdo->exec('UPDATE messages SET delivered_at = COALESCE(delivered_at, created_at), read_at = COALESCE(read_at, created_at) WHERE is_read = 1 AND (delivered_at IS NULL OR read_at IS NULL)');
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_message_delivery_status(array $row): string
+{
+    if (!empty($row['read_at']) || !empty($row['is_read'])) {
+        return 'read';
+    }
+    if (!empty($row['delivered_at'])) {
+        return 'delivered';
+    }
+    return 'sent';
+}
+
+/**
+ * Mark peer messages as delivered (recipient received them).
+ * $peerSenderType = who sent the messages being marked (visitor|agent)
+ */
+function lc_mark_messages_delivered(int $conversationId, string $peerSenderType): void
+{
+    if ($conversationId < 1 || !in_array($peerSenderType, ['visitor', 'agent'], true)) {
+        return;
+    }
+    lc_ensure_message_receipts_schema();
+    try {
+        lc_db()->prepare('
+            UPDATE messages
+            SET delivered_at = COALESCE(delivered_at, NOW())
+            WHERE conversation_id = ? AND sender_type = ? AND delivered_at IS NULL
+        ')->execute([$conversationId, $peerSenderType]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Mark peer messages as read (and delivered). Used when conversation is open.
+ */
+function lc_mark_messages_read(int $conversationId, string $peerSenderType): void
+{
+    if ($conversationId < 1 || !in_array($peerSenderType, ['visitor', 'agent'], true)) {
+        return;
+    }
+    lc_ensure_message_receipts_schema();
+    try {
+        lc_db()->prepare('
+            UPDATE messages
+            SET delivered_at = COALESCE(delivered_at, NOW()),
+                read_at = COALESCE(read_at, NOW()),
+                is_read = 1
+            WHERE conversation_id = ?
+              AND sender_type = ?
+              AND (is_read = 0 OR read_at IS NULL OR delivered_at IS NULL)
+        ')->execute([$conversationId, $peerSenderType]);
+    } catch (Throwable $e) {
+        try {
+            lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = ? AND is_read = 0')
+                ->execute([$conversationId, $peerSenderType]);
+        } catch (Throwable $e2) {
+        }
+    }
+}
+
+/**
+ * Receipt status for own messages (for tick updates on sender UI).
+ * @return list<array{id:int,delivery_status:string,is_read:bool,is_delivered:bool}>
+ */
+function lc_fetch_message_receipts(int $conversationId, string $ownSenderType, int $limit = 80): array
+{
+    if ($conversationId < 1 || !in_array($ownSenderType, ['visitor', 'agent'], true)) {
+        return [];
+    }
+    lc_ensure_message_receipts_schema();
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT id, is_read, delivered_at, read_at
+            FROM messages
+            WHERE conversation_id = ? AND sender_type = ?
+            ORDER BY id DESC
+            LIMIT ' . (int) max(1, min(200, $limit)) . '
+        ');
+        $stmt->execute([$conversationId, $ownSenderType]);
+        $out = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $status = lc_message_delivery_status($row);
+            $out[] = [
+                'id' => (int) $row['id'],
+                'delivery_status' => $status,
+                'is_read' => $status === 'read',
+                'is_delivered' => $status === 'delivered' || $status === 'read',
+            ];
+        }
+        return array_reverse($out);
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Mark visitor messages as delivered when agent sees them in inbox list.
+ */
+function lc_mark_inbox_messages_delivered(array $conversationIds): void
+{
+    $ids = array_values(array_filter(array_map('intval', $conversationIds), static function ($id) {
+        return $id > 0;
+    }));
+    if (!$ids) {
+        return;
+    }
+    lc_ensure_message_receipts_schema();
+    try {
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        lc_db()->prepare("
+            UPDATE messages
+            SET delivered_at = COALESCE(delivered_at, NOW())
+            WHERE conversation_id IN ($placeholders)
+              AND sender_type = 'visitor'
+              AND delivered_at IS NULL
+        ")->execute($ids);
+    } catch (Throwable $e) {
+    }
+}

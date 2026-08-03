@@ -46,6 +46,12 @@ try {
     }
     unset($row);
 
+    // Inbox open → visitor messages are delivered (double gray), not yet read until chat opened
+    $convIds = array_map(static function ($r) {
+        return (int) $r['id'];
+    }, $conversations);
+    lc_mark_inbox_messages_delivered($convIds);
+
     $agentBrandId = lc_agent_brand_id($agent);
     $accountId = lc_agent_account_id($agent);
 

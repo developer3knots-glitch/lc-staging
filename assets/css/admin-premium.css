@@ -797,6 +797,23 @@ body,
 .lc-msg.agent { align-self: flex-end; background: var(--lc-primary); color: #fff; border-bottom-right-radius: 4px; }
 .lc-msg.system { align-self: center; background: #e2e8f0; color: #475569; font-size: 0.72rem; padding: 0.35rem 0.75rem; border-radius: 999px; }
 .lc-msg-time { font-size: 0.66rem; opacity: 0.65; margin-top: 0.25rem; }
+.lc-msg-ticks {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.25rem;
+    vertical-align: middle;
+    opacity: 1;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+.lc-msg-ticks i { font-size: inherit; }
+.lc-msg-ticks.is-sent { color: rgba(255, 255, 255, 0.75); }
+.lc-msg-ticks.is-delivered { color: rgba(255, 255, 255, 0.85); }
+.lc-msg-ticks.is-read { color: #bbf7d0; }
+.lc-msg.agent .lc-msg-time { display: flex; align-items: center; justify-content: flex-end; gap: 0.15rem; flex-wrap: wrap; }
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-delivered { color: rgba(255, 255, 255, 0.8); }
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read { color: #dcfce7; filter: drop-shadow(0 0 0.5px rgba(0,0,0,0.2)); }
 .lc-chat-compose {
     padding: 0.85rem 1rem;
     border-top: 1px solid var(--lc-border);

@@ -281,6 +281,30 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
+    function msgTicksHtml(status) {
+        status = status || 'sent';
+        if (status === 'read') {
+            return '<span class="lc-msg-ticks is-read" title="Read" aria-label="Read"><i class="ti ti-checks"></i></span>';
+        }
+        if (status === 'delivered') {
+            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered"><i class="ti ti-checks"></i></span>';
+        }
+        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent"><i class="ti ti-check"></i></span>';
+    }
+
+    function applyReceipts(receipts) {
+        if (!receipts || !receipts.length || !messagesEl) return;
+        receipts.forEach(function (r) {
+            var el = messagesEl.querySelector('.lc-msg[data-id="' + r.id + '"] .lc-msg-ticks');
+            if (!el) return;
+            var status = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
+            var wrap = document.createElement('div');
+            wrap.innerHTML = msgTicksHtml(status);
+            var next = wrap.firstChild;
+            if (next) el.replaceWith(next);
+        });
+    }
+
     function renderMessage(m) {
         var cls = m.sender_type;
         if (cls === 'system' && (m.message || '').indexOf('support ticket reference') !== -1) {
@@ -298,7 +322,17 @@
             : esc(m.message);
         var html = '<div class="lc-msg ' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + m.id + '">';
         html += bodyHtml;
-        html += '<div class="lc-msg-time">' + timeHtml(m.created_at) + (label && cls !== 'system' ? ' · ' + esc(label) : '') + '</div>';
+        html += '<div class="lc-msg-time">';
+        html += timeHtml(m.created_at);
+        if (label && cls !== 'system') {
+            html += ' · ' + esc(label);
+        }
+        // Ticks only on own (agent) messages — WhatsApp style
+        if (cls === 'agent') {
+            var status = m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent'));
+            html += ' ' + msgTicksHtml(status);
+        }
+        html += '</div>';
         html += '</div>';
         return html;
     }
@@ -938,6 +972,7 @@
                             lastMsgId = m.id;
                         }
                     });
+                    if (data.receipts) applyReceipts(data.receipts);
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
                     acceptBtn.style.display = 'none';
@@ -975,6 +1010,7 @@
                         lastMsgId = m.id;
                     }
                 });
+                if (data.receipts) applyReceipts(data.receipts);
                 messagesEl.scrollTop = messagesEl.scrollHeight;
                 if (window.LCTime) window.LCTime.scan(messagesEl);
                 loadPageJourney(false);

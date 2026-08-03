@@ -14,6 +14,7 @@ if ($conversationId < 1) {
 
 try {
     lc_ensure_attachments_schema();
+    lc_ensure_message_receipts_schema();
     $conv = lc_get_conversation($conversationId);
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
@@ -39,9 +40,12 @@ try {
         $messages[] = lc_format_message_row($row);
     }
 
-    if (!empty($messages) && lc_agent_can_handle_conversation($agent, $conv)) {
-        lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = "visitor" AND is_read = 0')
-            ->execute([$conversationId]);
+    // Visitor messages delivered as soon as pulled; read while agent is viewing this chat
+    if (lc_agent_can_handle_conversation($agent, $conv) || lc_agent_can_view_conversation($agent, $conv)) {
+        lc_mark_messages_delivered($conversationId, 'visitor');
+        if (lc_agent_can_handle_conversation($agent, $conv) || (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'] || ($conv['status'] ?? '') === 'waiting') {
+            lc_mark_messages_read($conversationId, 'visitor');
+        }
     }
 
     lc_json([
@@ -51,6 +55,7 @@ try {
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
         ),
         'messages' => $messages,
+        'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ]);

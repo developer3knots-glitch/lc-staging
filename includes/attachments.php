@@ -339,8 +339,13 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
         'created_at' => $row['created_at'] ?? null,
     ];
 
-    if ($row['sender_type'] === 'visitor') {
-        $msg['is_read'] = (bool) ($row['is_read'] ?? false);
+    if ($row['sender_type'] === 'visitor' || $row['sender_type'] === 'agent') {
+        $status = function_exists('lc_message_delivery_status')
+            ? lc_message_delivery_status($row)
+            : (!empty($row['is_read']) ? 'read' : 'sent');
+        $msg['delivery_status'] = $status;
+        $msg['is_read'] = $status === 'read';
+        $msg['is_delivered'] = $status === 'delivered' || $status === 'read';
     }
     if (!empty($row['agent_name'])) {
         $msg['agent_name'] = $row['agent_name'];
@@ -397,6 +402,7 @@ function lc_fetch_message_by_id(int $messageId): ?array
 function lc_attachment_message_select_sql(): string
 {
     return 'm.id, m.sender_type, m.message, m.created_at, m.sender_id, m.is_read,
+            m.delivered_at, m.read_at,
             m.attachment_path, m.attachment_original_name, m.attachment_mime, m.attachment_size, m.attachment_kind';
 }
 
