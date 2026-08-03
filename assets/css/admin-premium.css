@@ -3250,17 +3250,57 @@ a.lc-conv-item:hover {
 }
 
 /* ─── Live Chats Pro (inbox ~ LiveChat console width) ─── */
-.lc-chats-pro {
-    max-width: 100%;
+/* Full-bleed: use entire right column (no side padding / gap) */
+body.lc-page-chats {
+    overflow: hidden;
+}
+body.lc-page-chats .lc-app {
+    height: 100vh;
+    min-height: 100vh;
+    max-width: none;
+    width: 100%;
+}
+body.lc-page-chats .lc-main {
+    flex: 1 1 auto;
     min-width: 0;
-    margin: -1.35rem -1.5rem -2rem;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    overflow: hidden;
+}
+body.lc-page-chats .lc-content {
+    padding: 0 !important;
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    max-width: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+}
+.lc-chats-pro {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
 }
 .lc-chat-layout-pro {
     --lc-inbox-w: 280px;
+    display: grid;
     grid-template-columns: var(--lc-inbox-w) minmax(0, 1fr);
     gap: 0;
-    height: calc(100vh - 64px);
-    min-height: 480px;
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
     border-radius: 0;
 }
 .lc-chat-inbox-pro {
@@ -3272,6 +3312,18 @@ a.lc-conv-item:hover {
     box-shadow: none;
     background: #fff;
     min-width: 0;
+    min-height: 0;
+}
+.lc-chat-panel-pro {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    background: #fff;
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    height: 100%;
 }
 .lc-chat-inbox-head {
     display: flex;
@@ -3530,13 +3582,6 @@ a.lc-conv-item:hover {
     margin-top: 0.2rem;
     font-size: 0.72rem;
     line-height: 1.4;
-}
-.lc-chat-panel-pro {
-    border-radius: 0;
-    border: none;
-    box-shadow: none;
-    background: #fff;
-    min-width: 0;
 }
 .lc-chats-pro .lc-chat-panel-empty {
     padding: 3rem 2rem;
@@ -4321,14 +4366,22 @@ a.lc-conv-item:hover {
     .lc-chat-layout-pro { --lc-inbox-w: 240px; }
 }
 @media (max-width: 900px) {
-    .lc-chats-pro {
-        margin: -1rem -1rem -1.5rem;
+    body.lc-page-chats {
+        overflow: auto;
+    }
+    body.lc-page-chats .lc-app {
+        height: auto;
+        min-height: 100vh;
+    }
+    body.lc-page-chats .lc-content {
+        overflow: auto;
     }
     .lc-chat-layout-pro {
         --lc-inbox-w: 100%;
         grid-template-columns: 1fr;
         height: auto;
         min-height: 0;
+        flex: none;
     }
     .lc-chat-inbox-pro {
         width: 100%;
@@ -4337,7 +4390,9 @@ a.lc-conv-item:hover {
         border-bottom: 1px solid var(--lc-border);
     }
     .lc-chat-panel-pro {
-        min-height: 480px;
+        min-height: min(70vh, 560px);
+        height: auto;
+        width: 100%;
     }
     .lc-chat-header-pro {
         flex-direction: row;
