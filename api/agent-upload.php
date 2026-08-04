@@ -44,6 +44,7 @@ try {
         lc_json(['success' => false, 'error' => $saved['error'] ?? 'Upload failed'], 400);
     }
 
+    lc_clear_typing($conversationId, 'agent');
     lc_touch_conversation($conversationId);
     $row = lc_fetch_message_by_id((int) $saved['message_id']);
     lc_json([

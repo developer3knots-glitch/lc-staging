@@ -38,6 +38,7 @@ try {
     $ins = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'visitor', $conv['visitor_id'], $message]);
     $messageId = (int) $db->lastInsertId();
+    lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
 
     if ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() === 'waiting') {

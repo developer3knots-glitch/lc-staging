@@ -4639,6 +4639,52 @@ body.lc-page-chats .lc-content {
 }
 .lc-ip-modal-actions .lc-btn { min-width: 100px; justify-content: center; }
 
+/* Typing indicator (WhatsApp / LiveChat style) */
+.lc-typing-indicator {
+    flex-shrink: 0;
+    padding: 0.2rem 1rem 0.55rem;
+    background: transparent;
+}
+.lc-typing-indicator[hidden] { display: none !important; }
+.lc-typing-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+.lc-typing-bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.55rem 0.8rem;
+    border-radius: 16px 16px 16px 4px;
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.lc-typing-bubble span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #94a3b8;
+    animation: lc-typing-bounce 1.2s ease-in-out infinite;
+}
+.lc-typing-bubble span:nth-child(2) { animation-delay: 0.15s; }
+.lc-typing-bubble span:nth-child(3) { animation-delay: 0.3s; }
+.lc-typing-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--lc-muted);
+    font-style: italic;
+}
+.lc-chat-desk .lc-typing-indicator {
+    background: #f8fafc;
+    border-top: none;
+}
+@keyframes lc-typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+
 /* ═══════════════════════════════════════════════════════════
    LiveChat-style agent desk
    Icon rail + slim topbar + 3-col (inbox | thread | details)

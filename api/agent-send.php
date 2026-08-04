@@ -40,6 +40,7 @@ try {
 
     $ins = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'agent', $agentId, $message]);
+    lc_clear_typing($conversationId, 'agent');
     lc_touch_conversation($conversationId);
 
     lc_json(['success' => true, 'message_id' => (int) lc_db()->lastInsertId()]);

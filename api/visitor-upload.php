@@ -52,6 +52,7 @@ try {
         lc_json(['success' => false, 'error' => $saved['error'] ?? 'Upload failed'], 400);
     }
 
+    lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
     if ($conv['status'] === 'waiting') {
         lc_assign_agent($conversationId);

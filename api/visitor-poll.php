@@ -68,6 +68,8 @@ try {
         $lastStatus = $last['delivery_status'] ?? 'sent';
     }
 
+    $typing = lc_typing_state_for_viewer($conversationId, 'visitor');
+
     lc_json([
         'success' => true,
         'messages' => $messages,
@@ -81,6 +83,8 @@ try {
         'last_visitor_delivery_status' => $lastStatus,
         'ticket_display_enabled' => lc_ticket_display_enabled(),
         'ticket_resume_enabled' => lc_ticket_resume_enabled(),
+        'peer_typing' => !empty($typing['peer_typing']),
+        'peer_typing_name' => $typing['peer_name'] ?? '',
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS `conversations` (
     `accepted_at` DATETIME DEFAULT NULL,
     `closed_at` DATETIME DEFAULT NULL,
     `last_message_at` DATETIME DEFAULT NULL,
+    `visitor_typing_at` DATETIME DEFAULT NULL,
+    `agent_typing_at` DATETIME DEFAULT NULL,
     FOREIGN KEY (`visitor_id`) REFERENCES `visitors`(`id`) ON DELETE CASCADE,
     FOREIGN KEY (`agent_id`) REFERENCES `agents`(`id`) ON DELETE SET NULL,
     INDEX `idx_status` (`status`),

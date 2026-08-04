@@ -67,6 +67,10 @@ try {
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ];
 
+    $typing = lc_typing_state_for_viewer($conversationId, 'agent');
+    $payload['peer_typing'] = !empty($typing['peer_typing']);
+    $payload['peer_typing_name'] = $typing['peer_name'] ?? '';
+
     // Full open only: prior same-visitor chats for LiveChat-style continuous timeline (agent-only)
     if ($fullLoad) {
         $payload['prior_threads'] = lc_agent_prior_threads_with_messages(

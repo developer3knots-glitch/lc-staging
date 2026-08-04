@@ -55,6 +55,10 @@
     var prechatFormEnabled = false; // default: direct chat (matches server)
     var pendingResumeConvId = null;
     var settingsSyncTimer = null;
+    var ownTypingActive = false;
+    var typingHeartbeatTimer = null;
+    var typingIdleTimer = null;
+    var lastTypingPostAt = 0;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
     try {
@@ -280,7 +284,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=15';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=16';
         document.head.appendChild(link);
     }
 
@@ -417,6 +421,12 @@
                     '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential · <strong id="lc-powered-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
+                '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
+                    '<div class="lcw-typing-row">' +
+                        '<div class="lcw-typing-bubble" aria-hidden="true"><span></span><span></span><span></span></div>' +
+                        '<span class="lcw-typing-label" id="lc-typing-label">Agent is typing…</span>' +
+                    '</div>' +
+                '</div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
                     '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
                         '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
@@ -457,11 +467,15 @@
         });
 
         var inputEl = document.getElementById('lc-input');
-        inputEl.addEventListener('input', function () { autoResizeTextarea(inputEl); });
+        inputEl.addEventListener('input', function () {
+            autoResizeTextarea(inputEl);
+            onVisitorComposeActivity();
+        });
         inputEl.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
         inputEl.addEventListener('paste', function (e) {
+            setTimeout(onVisitorComposeActivity, 0);
             var items = e.clipboardData && e.clipboardData.items;
             if (!items || !conversationId) return;
             for (var i = 0; i < items.length; i++) {
@@ -1120,6 +1134,8 @@
 
     function showEndedState() {
         chatClosed = true;
+        stopOwnTyping();
+        setPeerTypingVisible(false);
         leaveCloseSent = true;
         setWaitingState(false);
         if (pollTimer) {
@@ -1366,6 +1382,93 @@
         isWaitingForAgent = waiting;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
+    }
+
+    function setPeerTypingVisible(show, name) {
+        var el = document.getElementById('lc-typing-indicator');
+        var label = document.getElementById('lc-typing-label');
+        if (!el) return;
+        if (show && !chatClosed) {
+            el.hidden = false;
+            if (label) {
+                var who = (name || (currentAgent && currentAgent.name) || 'Agent').trim() || 'Agent';
+                label.textContent = who + ' is typing…';
+            }
+        } else {
+            el.hidden = true;
+        }
+    }
+
+    function postOwnTyping(isTyping) {
+        if (!conversationId || chatClosed) return;
+        var now = Date.now();
+        if (isTyping && now - lastTypingPostAt < 1800) {
+            return;
+        }
+        lastTypingPostAt = now;
+        ownTypingActive = !!isTyping;
+        fetch(siteUrl + '/api/typing.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                visitor_uid: visitorUid,
+                typing: !!isTyping
+            })
+        }).catch(function () {});
+    }
+
+    function stopOwnTyping() {
+        if (typingHeartbeatTimer) {
+            clearInterval(typingHeartbeatTimer);
+            typingHeartbeatTimer = null;
+        }
+        if (typingIdleTimer) {
+            clearTimeout(typingIdleTimer);
+            typingIdleTimer = null;
+        }
+        if (ownTypingActive && conversationId) {
+            ownTypingActive = false;
+            lastTypingPostAt = 0;
+            fetch(siteUrl + '/api/typing.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conversation_id: conversationId,
+                    visitor_uid: visitorUid,
+                    typing: false
+                })
+            }).catch(function () {});
+        } else {
+            ownTypingActive = false;
+        }
+    }
+
+    function onVisitorComposeActivity() {
+        if (!conversationId || chatClosed) return;
+        var input = document.getElementById('lc-input');
+        if (!input) return;
+        var hasText = (input.value || '').trim().length > 0;
+        if (!hasText) {
+            stopOwnTyping();
+            return;
+        }
+        postOwnTyping(true);
+        if (!typingHeartbeatTimer) {
+            typingHeartbeatTimer = setInterval(function () {
+                var el = document.getElementById('lc-input');
+                if (!conversationId || chatClosed || !el || !(el.value || '').trim()) {
+                    stopOwnTyping();
+                    return;
+                }
+                lastTypingPostAt = 0;
+                postOwnTyping(true);
+            }, 2000);
+        }
+        if (typingIdleTimer) clearTimeout(typingIdleTimer);
+        typingIdleTimer = setTimeout(function () {
+            stopOwnTyping();
+        }, 2500);
     }
 
     function playNotifySound() {
@@ -1677,6 +1780,7 @@
                         if (m.id > lastMsgId) lastMsgId = m.id;
                         persistLastMsgId(lastMsgId);
                         if (isNewIncoming) {
+                            setPeerTypingVisible(false);
                             if (!isOpen) {
                                 if (autoOpenOnMessage) {
                                     openPanel({ silenceFlow: true });
@@ -1689,6 +1793,13 @@
                         }
                     }
                 });
+
+                if (data.status === 'closed') {
+                    setPeerTypingVisible(false);
+                    stopOwnTyping();
+                } else {
+                    setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
+                }
             });
     }
 
@@ -1703,6 +1814,7 @@
         if (!file || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
             return;
         }
+        stopOwnTyping();
         visitorUploadBusy = true;
         var attachBtn = document.getElementById('lc-attach-file');
         if (attachBtn) attachBtn.classList.add('is-busy');
@@ -1756,6 +1868,7 @@
         var input = document.getElementById('lc-input');
         var msg = input.value.trim();
         if (!msg) return;
+        stopOwnTyping();
 
         if (!conversationId) {
             if (prechatFormEnabled) {

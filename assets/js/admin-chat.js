@@ -61,11 +61,96 @@
     var inboxSoundReady = false;
     var lastInboxWaiting = 0;
     var lastInboxUnread = 0;
+    var typingEl = document.getElementById('lc-typing-indicator');
+    var typingLabelEl = document.getElementById('lc-typing-label');
+    var ownTypingActive = false;
+    var typingHeartbeatTimer = null;
+    var typingIdleTimer = null;
+    var lastTypingPostAt = 0;
 
     function playIncomingSound() {
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             window.LCNotifySound.play();
         }
+    }
+
+    function setPeerTypingVisible(show, name) {
+        if (!typingEl) return;
+        if (show) {
+            typingEl.hidden = false;
+            if (typingLabelEl) {
+                var who = (name || 'Visitor').trim() || 'Visitor';
+                typingLabelEl.textContent = who + ' is typing…';
+            }
+        } else {
+            typingEl.hidden = true;
+        }
+    }
+
+    function postOwnTyping(isTyping) {
+        if (!selectedId) return;
+        var now = Date.now();
+        // Throttle true heartbeats; always allow false
+        if (isTyping && now - lastTypingPostAt < 1800) {
+            return;
+        }
+        lastTypingPostAt = now;
+        ownTypingActive = !!isTyping;
+        fetch(base + '/api/typing.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId, typing: !!isTyping })
+        }).catch(function () {});
+    }
+
+    function stopOwnTyping() {
+        if (typingHeartbeatTimer) {
+            clearInterval(typingHeartbeatTimer);
+            typingHeartbeatTimer = null;
+        }
+        if (typingIdleTimer) {
+            clearTimeout(typingIdleTimer);
+            typingIdleTimer = null;
+        }
+        if (ownTypingActive && selectedId) {
+            ownTypingActive = false;
+            lastTypingPostAt = 0;
+            fetch(base + '/api/typing.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: selectedId, typing: false })
+            }).catch(function () {});
+        } else {
+            ownTypingActive = false;
+        }
+    }
+
+    function onAgentComposeActivity() {
+        if (!selectedId || !replyInput || replyInput.disabled) return;
+        var hasText = (replyInput.value || '').trim().length > 0;
+        if (!hasText) {
+            stopOwnTyping();
+            return;
+        }
+        postOwnTyping(true);
+        if (!typingHeartbeatTimer) {
+            typingHeartbeatTimer = setInterval(function () {
+                if (!selectedId || !replyInput || !(replyInput.value || '').trim()) {
+                    stopOwnTyping();
+                    return;
+                }
+                lastTypingPostAt = 0;
+                postOwnTyping(true);
+            }, 2000);
+        }
+        if (typingIdleTimer) {
+            clearTimeout(typingIdleTimer);
+        }
+        typingIdleTimer = setTimeout(function () {
+            stopOwnTyping();
+        }, 2500);
     }
 
     function closeMoreMenu() {
@@ -901,6 +986,8 @@
     }
 
     function openConversation(id) {
+        stopOwnTyping();
+        setPeerTypingVisible(false);
         selectedId = id;
         lastMsgId = 0;
         needsFullHistory = true;
@@ -1211,6 +1298,7 @@
                     }
                     if (playSound) {
                         playIncomingSound();
+                        setPeerTypingVisible(false);
                     }
                 }
 
@@ -1234,6 +1322,7 @@
                         updateChatReference(c.reference);
                     }
                     setVisitorMeta(formatVisitorMeta(c, 'Chat closed'), true);
+                    setPeerTypingVisible(false);
                     loadConversations();
                     return;
                 }
@@ -1260,12 +1349,14 @@
                     paintIncremental();
                 }
                 loadPageJourney(false);
+                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name));
             });
     }
 
     function sendReply() {
         var msg = replyInput.value.trim();
         if (!msg || !selectedId) return;
+        stopOwnTyping();
         replyInput.value = '';
         fetch(base + '/api/agent-send.php', {
             method: 'POST',
@@ -1299,6 +1390,10 @@
     document.getElementById('lc-send-reply').addEventListener('click', sendReply);
     replyInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
+    });
+    replyInput.addEventListener('input', onAgentComposeActivity);
+    replyInput.addEventListener('paste', function () {
+        setTimeout(onAgentComposeActivity, 0);
     });
 
     acceptBtn.addEventListener('click', function () {

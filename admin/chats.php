@@ -109,6 +109,15 @@ require __DIR__ . '/includes/header.php';
 
                 <div class="lc-chat-messages lc-chat-messages-pro" id="lc-messages"></div>
 
+                <div class="lc-typing-indicator" id="lc-typing-indicator" hidden aria-live="polite" aria-atomic="true">
+                    <div class="lc-typing-row">
+                        <div class="lc-typing-bubble" aria-hidden="true">
+                            <span></span><span></span><span></span>
+                        </div>
+                        <span class="lc-typing-label" id="lc-typing-label">Visitor is typing…</span>
+                    </div>
+                </div>
+
                 <div class="lc-chat-compose lc-chat-compose-pro">
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
