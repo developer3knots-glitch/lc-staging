@@ -31,7 +31,26 @@ function lc_find_conversation_by_ip(string $ip, int $brandId): ?array
         LIMIT 1
     ");
     $stmt->execute([$ip, $brandId]);
-    $row = $stmt->fetch();
+
+    return lc_conversation_identity_row($stmt->fetch() ?: null);
+}
+
+function lc_normalize_visitor_email(string $email): string
+{
+    $email = strtolower(trim($email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return '';
+    }
+
+    return $email;
+}
+
+/**
+ * @param array<string,mixed>|null $row
+ * @return array{id:int,status:string,agent_id:?int,visitor_id:int}|null
+ */
+function lc_conversation_identity_row(?array $row): ?array
+{
     if (!$row) {
         return null;
     }
@@ -42,6 +61,32 @@ function lc_find_conversation_by_ip(string $ip, int $brandId): ?array
         'agent_id' => $row['agent_id'] !== null ? (int) $row['agent_id'] : null,
         'visitor_id' => (int) $row['visitor_id'],
     ];
+}
+
+function lc_find_conversation_by_email(string $email, int $brandId): ?array
+{
+    $email = lc_normalize_visitor_email($email);
+    if ($brandId < 1 || $email === '') {
+        return null;
+    }
+
+    $stmt = lc_db()->prepare("
+        SELECT c.id, c.status, c.agent_id, c.visitor_id
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE LOWER(TRIM(v.email)) = ? AND c.brand_id = ?
+        ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$email, $brandId]);
+
+    return lc_conversation_identity_row($stmt->fetch() ?: null);
+}
+
+/** Same IP first, then same email (e.g. test@test.com). */
+function lc_find_conversation_for_visitor(string $ip, int $brandId, string $email = ''): ?array
+{
+    return lc_find_conversation_by_ip($ip, $brandId) ?: lc_find_conversation_by_email($email, $brandId);
 }
 
 function lc_mark_latest_visitor_message_unread(int $conversationId): void
@@ -108,7 +153,14 @@ function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
     $out = [];
     foreach ($conversations as $row) {
         $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $key = lc_ip_usable_for_identity($ip) ? $ip : ('id:' . (int) ($row['id'] ?? 0));
+        $email = lc_normalize_visitor_email((string) ($row['visitor_email'] ?? ''));
+        if (lc_ip_usable_for_identity($ip)) {
+            $key = 'ip:' . $ip;
+        } elseif ($email !== '') {
+            $key = 'em:' . $email;
+        } else {
+            $key = 'id:' . (int) ($row['id'] ?? 0);
+        }
         if (isset($seen[$key])) {
             continue;
         }
@@ -124,10 +176,57 @@ function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
  *
  * @return array{groups:int,messages_moved:int,conversations_removed:int}
  */
+/**
+ * @param list<int> $ids
+ * @return array{ok:bool,moved:int,removed:int}
+ */
+function lc_merge_conversation_ids_into_one(array $ids): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (count($ids) < 2) {
+        return ['ok' => false, 'moved' => 0, 'removed' => 0];
+    }
+
+    $keepId = $ids[0];
+    $dupes = array_values(array_slice($ids, 1));
+    $placeholders = implode(',', array_fill(0, count($dupes), '?'));
+    $db = lc_db();
+
+    $db->beginTransaction();
+    try {
+        $upd = $db->prepare("UPDATE messages SET conversation_id = ? WHERE conversation_id IN ({$placeholders})");
+        $upd->execute(array_merge([$keepId], $dupes));
+        $moved = $upd->rowCount();
+
+        $del = $db->prepare("DELETE FROM conversations WHERE id IN ({$placeholders})");
+        $del->execute($dupes);
+        $removed = $del->rowCount();
+
+        $count = count($dupes);
+        lc_add_system_message(
+            $keepId,
+            'Merged ' . $count . ' earlier chat' . ($count === 1 ? '' : 's') . ' from the same visitor into this thread.'
+        );
+        lc_touch_conversation($keepId);
+        $db->commit();
+
+        return ['ok' => true, 'moved' => $moved, 'removed' => $removed];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $e;
+    }
+}
+
 function lc_merge_same_ip_conversations(): array
 {
     $db = lc_db();
-    $groups = $db->query("
+    $mergedGroups = 0;
+    $movedMessages = 0;
+    $removedConversations = 0;
+
+    $ipGroups = $db->query("
         SELECT v.ip_address AS ip, COALESCE(c.brand_id, 0) AS brand_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
@@ -137,11 +236,7 @@ function lc_merge_same_ip_conversations(): array
         HAVING COUNT(*) > 1
     ")->fetchAll();
 
-    $mergedGroups = 0;
-    $movedMessages = 0;
-    $removedConversations = 0;
-
-    foreach ($groups as $g) {
+    foreach ($ipGroups as $g) {
         $stmt = $db->prepare("
             SELECT c.id
             FROM conversations c
@@ -156,37 +251,47 @@ function lc_merge_same_ip_conversations(): array
         $ids = array_map(static function ($row) {
             return (int) $row['id'];
         }, $stmt->fetchAll());
-        if (count($ids) < 2) {
+        $res = lc_merge_conversation_ids_into_one($ids);
+        if ($res['ok']) {
+            $mergedGroups++;
+            $movedMessages += $res['moved'];
+            $removedConversations += $res['removed'];
+        }
+    }
+
+    $emailGroups = $db->query("
+        SELECT LOWER(TRIM(v.email)) AS email, COALESCE(c.brand_id, 0) AS brand_id
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE v.email IS NOT NULL AND TRIM(v.email) <> ''
+        GROUP BY LOWER(TRIM(v.email)), COALESCE(c.brand_id, 0)
+        HAVING COUNT(*) > 1
+    ")->fetchAll();
+
+    foreach ($emailGroups as $g) {
+        $email = lc_normalize_visitor_email((string) $g['email']);
+        if ($email === '') {
             continue;
         }
-
-        $keepId = $ids[0];
-        $dupes = array_values(array_slice($ids, 1));
-        $placeholders = implode(',', array_fill(0, count($dupes), '?'));
-
-        $db->beginTransaction();
-        try {
-            $upd = $db->prepare("UPDATE messages SET conversation_id = ? WHERE conversation_id IN ({$placeholders})");
-            $upd->execute(array_merge([$keepId], $dupes));
-            $movedMessages += $upd->rowCount();
-
-            $del = $db->prepare("DELETE FROM conversations WHERE id IN ({$placeholders})");
-            $del->execute($dupes);
-            $removedConversations += $del->rowCount();
-
-            $count = count($dupes);
-            lc_add_system_message(
-                $keepId,
-                'Merged ' . $count . ' earlier chat' . ($count === 1 ? '' : 's') . ' from the same IP into this thread.'
-            );
-            lc_touch_conversation($keepId);
-            $db->commit();
+        $stmt = $db->prepare("
+            SELECT c.id
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE LOWER(TRIM(v.email)) = ? AND COALESCE(c.brand_id, 0) = ?
+            ORDER BY
+                CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END,
+                COALESCE(c.last_message_at, c.started_at) DESC,
+                c.id DESC
+        ");
+        $stmt->execute([$email, (int) $g['brand_id']]);
+        $ids = array_map(static function ($row) {
+            return (int) $row['id'];
+        }, $stmt->fetchAll());
+        $res = lc_merge_conversation_ids_into_one($ids);
+        if ($res['ok']) {
             $mergedGroups++;
-        } catch (Throwable $e) {
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
-            throw $e;
+            $movedMessages += $res['moved'];
+            $removedConversations += $res['removed'];
         }
     }
 
