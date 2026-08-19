@@ -774,9 +774,10 @@
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lcw-visitor .lcw-msg-ticks.is-read {
-    color: #53bdeb;
-    background: none;
-    padding: 0;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 3px;
+    padding: 1px 3px 0;
     filter: none;
 }
 .lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }

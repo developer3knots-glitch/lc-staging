@@ -284,7 +284,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=18';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=17';
         document.head.appendChild(link);
     }
 
@@ -895,7 +895,7 @@
 
         var identityOk = !!data.visitor_identity_complete;
         // Session-only reconnect — never use server has_active_chat for silent resume
-        var resumeId = getStoredConversationId() || pendingResumeConvId || data.conversation_id || null;
+        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
 
         if (prechatFormEnabled) {
             if (resumeId && identityOk) {
