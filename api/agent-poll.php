@@ -70,6 +70,7 @@ try {
     $typing = lc_typing_state_for_viewer($conversationId, 'agent');
     $payload['peer_typing'] = !empty($typing['peer_typing']);
     $payload['peer_typing_name'] = $typing['peer_name'] ?? '';
+    $payload['peer_typing_preview'] = (string) ($typing['peer_typing_preview'] ?? '');
 
     // Full open only: prior same-visitor chats for LiveChat-style continuous timeline (agent-only)
     if ($fullLoad) {

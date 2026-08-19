@@ -47,7 +47,8 @@ try {
         }
 
         // Light rate limit: skip spam; still update every valid heartbeat
-        lc_set_typing($conversationId, 'visitor', $isTyping);
+                $draft = lc_sanitize_typing_preview((string) ($input['draft'] ?? ''));
+        lc_set_typing($conversationId, 'visitor', $isTyping, $draft);
         lc_json(['success' => true, 'typing' => $isTyping]);
     }
 
