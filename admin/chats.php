@@ -116,6 +116,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <span class="lc-typing-label" id="lc-typing-label">Visitor is typing…</span>
                     </div>
+                    <div class="lc-typing-preview" id="lc-typing-preview" hidden></div>
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro">

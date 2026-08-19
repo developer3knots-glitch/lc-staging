@@ -284,7 +284,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=20';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=21';
         document.head.appendChild(link);
     }
 
@@ -1402,18 +1402,21 @@
     function postOwnTyping(isTyping) {
         if (!conversationId || chatClosed) return;
         var now = Date.now();
-        if (isTyping && now - lastTypingPostAt < 1800) {
+        if (isTyping && now - lastTypingPostAt < 700) {
             return;
         }
         lastTypingPostAt = now;
         ownTypingActive = !!isTyping;
+        var input = document.getElementById('lc-input');
+        var draft = (isTyping && input) ? String(input.value || '') : '';
         fetch(siteUrl + '/api/typing.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
-                typing: !!isTyping
+                typing: !!isTyping,
+                draft: draft
             })
         }).catch(function () {});
     }

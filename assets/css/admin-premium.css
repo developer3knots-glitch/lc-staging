@@ -4741,6 +4741,21 @@ body.lc-page-chats .lc-content {
     background: #f8fafc;
     border-top: none;
 }
+.lc-typing-preview {
+    margin: 0.35rem 0 0 2.1rem;
+    max-width: min(72%, 420px);
+    padding: 0.5rem 0.75rem;
+    background: #fff;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px 10px 10px 4px;
+    font-size: 0.86rem;
+    line-height: 1.4;
+    color: #0f172a;
+    font-style: italic;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.lc-typing-preview[hidden] { display: none !important; }
 @keyframes lc-typing-bounce {
     0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
     30% { transform: translateY(-4px); opacity: 1; }
