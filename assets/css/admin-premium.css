@@ -890,10 +890,9 @@ body.lc-admin-body {
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #ffffff;
-    background: rgba(15, 23, 42, 0.28);
-    border-radius: 3px;
-    padding: 1px 3px 0;
+    color: #53bdeb;
+    background: none;
+    padding: 0;
     filter: none;
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
@@ -902,10 +901,9 @@ body.lc-admin-body {
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #ffffff;
-    background: rgba(15, 23, 42, 0.28);
-    border-radius: 3px;
-    padding: 1px 3px 0;
+    color: #53bdeb;
+    background: none;
+    padding: 0;
     filter: none;
 }
 .lc-chat-compose {
