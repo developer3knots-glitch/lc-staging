@@ -118,3 +118,81 @@ function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
 
     return $out;
 }
+
+/**
+ * Move all messages from duplicate same-IP chats into one conversation, then delete extras.
+ *
+ * @return array{groups:int,messages_moved:int,conversations_removed:int}
+ */
+function lc_merge_same_ip_conversations(): array
+{
+    $db = lc_db();
+    $groups = $db->query("
+        SELECT v.ip_address AS ip, COALESCE(c.brand_id, 0) AS brand_id
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE v.ip_address IS NOT NULL
+          AND v.ip_address NOT IN ('', '0.0.0.0', '127.0.0.1', '::1')
+        GROUP BY v.ip_address, COALESCE(c.brand_id, 0)
+        HAVING COUNT(*) > 1
+    ")->fetchAll();
+
+    $mergedGroups = 0;
+    $movedMessages = 0;
+    $removedConversations = 0;
+
+    foreach ($groups as $g) {
+        $stmt = $db->prepare("
+            SELECT c.id
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE v.ip_address = ? AND COALESCE(c.brand_id, 0) = ?
+            ORDER BY
+                CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END,
+                COALESCE(c.last_message_at, c.started_at) DESC,
+                c.id DESC
+        ");
+        $stmt->execute([(string) $g['ip'], (int) $g['brand_id']]);
+        $ids = array_map(static function ($row) {
+            return (int) $row['id'];
+        }, $stmt->fetchAll());
+        if (count($ids) < 2) {
+            continue;
+        }
+
+        $keepId = $ids[0];
+        $dupes = array_values(array_slice($ids, 1));
+        $placeholders = implode(',', array_fill(0, count($dupes), '?'));
+
+        $db->beginTransaction();
+        try {
+            $upd = $db->prepare("UPDATE messages SET conversation_id = ? WHERE conversation_id IN ({$placeholders})");
+            $upd->execute(array_merge([$keepId], $dupes));
+            $movedMessages += $upd->rowCount();
+
+            $del = $db->prepare("DELETE FROM conversations WHERE id IN ({$placeholders})");
+            $del->execute($dupes);
+            $removedConversations += $del->rowCount();
+
+            $count = count($dupes);
+            lc_add_system_message(
+                $keepId,
+                'Merged ' . $count . ' earlier chat' . ($count === 1 ? '' : 's') . ' from the same IP into this thread.'
+            );
+            lc_touch_conversation($keepId);
+            $db->commit();
+            $mergedGroups++;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    return [
+        'groups' => $mergedGroups,
+        'messages_moved' => $movedMessages,
+        'conversations_removed' => $removedConversations,
+    ];
+}
