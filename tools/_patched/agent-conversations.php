@@ -1,5 +1,10 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+$ipResume = __DIR__ . '/../includes/ip-resume.php';
+if (is_file($ipResume)) {
+    require_once $ipResume;
+}
+
 $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
@@ -13,10 +18,12 @@ $agentId = (int) $agent['id'];
 try {
     lc_ensure_brands_schema();
     lc_ensure_ticket_schema();
-    try {
-        lc_merge_same_ip_conversations();
-    } catch (Throwable $mergeErr) {
-        // inbox still loads
+    if (function_exists('lc_merge_same_ip_conversations')) {
+        try {
+            lc_merge_same_ip_conversations();
+        } catch (Throwable $mergeErr) {
+            // inbox still loads; list is collapsed below
+        }
     }
     $db = lc_db();
     [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
@@ -50,7 +57,26 @@ try {
         unset($row['ticket_reference']);
     }
     unset($row);
-    $conversations = array_slice(lc_dedupe_inbox_conversations_by_ip($conversations), 0, 50);
+
+    $seen = [];
+    $collapsed = [];
+    foreach ($conversations as $row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $email = strtolower(trim((string) ($row['visitor_email'] ?? '')));
+        if ($ip !== '' && $ip !== '0.0.0.0' && $ip !== '127.0.0.1' && $ip !== '::1') {
+            $key = 'ip:' . $ip;
+        } elseif ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $key = 'em:' . $email;
+        } else {
+            $key = 'id:' . (int) $row['id'];
+        }
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $collapsed[] = $row;
+    }
+    $conversations = array_slice($collapsed, 0, 50);
 
     $convIds = array_map(static function ($r) {
         return (int) $r['id'];
