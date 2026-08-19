@@ -12,7 +12,6 @@ require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
-require_once __DIR__ . '/ip-resume.php';
 
 function lc_cors_headers(): void
 {
