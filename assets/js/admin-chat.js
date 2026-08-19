@@ -74,16 +74,31 @@
         }
     }
 
-    function setPeerTypingVisible(show, name) {
+    function setPeerTypingVisible(show, name, preview) {
         if (!typingEl) return;
+        var previewEl = document.getElementById('lc-typing-preview');
         if (show) {
             typingEl.hidden = false;
+            var who = (name || 'Visitor').trim() || 'Visitor';
+            var text = (preview || '').replace(/\s+/g, ' ').trim();
             if (typingLabelEl) {
-                var who = (name || 'Visitor').trim() || 'Visitor';
-                typingLabelEl.textContent = who + ' is typing…';
+                typingLabelEl.textContent = text ? (who + ' is typing: ' + text) : (who + ' is typing…');
+            }
+            if (previewEl) {
+                if (text) {
+                    previewEl.hidden = false;
+                    previewEl.textContent = text;
+                } else {
+                    previewEl.hidden = true;
+                    previewEl.textContent = '';
+                }
             }
         } else {
             typingEl.hidden = true;
+            if (previewEl) {
+                previewEl.hidden = true;
+                previewEl.textContent = '';
+            }
         }
     }
 
@@ -1349,7 +1364,7 @@
                     paintIncremental();
                 }
                 loadPageJourney(false);
-                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name));
+                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
             });
     }
 
