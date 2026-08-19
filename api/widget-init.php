@@ -47,12 +47,11 @@ try {
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
 
     if (!$visitor && $settingsOnly) {
-        $ipThread = lc_find_conversation_by_ip($ip, $brandId);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => $ipThread !== null,
-            'conversation_id' => $ipThread['id'] ?? null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => false,
             'agents_online' => $onlineCount,
         ]);
@@ -88,22 +87,24 @@ try {
         && $visitorEmail !== ''
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
-    $ipThread = lc_find_conversation_by_ip($ip, $brandId);
-
     if ($settingsOnly) {
+        // Never auto-resume old chats for visitors (same IP / same device).
+        // Session continue uses explicit resume_conversation_id from the client only.
+        // Ticket resume is a separate API when ticket_resume_enabled.
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => $ipThread !== null,
-            'conversation_id' => $ipThread['id'] ?? null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
         ]);
     }
 
     $conv = null;
+    // Explicit session / reconnect only — not IP and not silent find_resumable
     if ($resumeConvId > 0) {
-        $stmt = $db->prepare("SELECT id, status, agent_id, visitor_id FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active') LIMIT 1");
+        $stmt = $db->prepare("SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active') LIMIT 1");
         $stmt->execute([$resumeConvId, $visitorId, $brandId]);
         $conv = $stmt->fetch();
         if (!$conv) {
@@ -114,11 +115,8 @@ try {
         }
     }
 
-    if (!$conv && $ipThread) {
-        $conv = lc_resume_conversation_by_ip($ipThread, $visitorId);
-    }
-
     if (!$conv) {
+        // Form required: name + email + first message (LiveChat-style gate)
         if ($prechatRequired) {
             if ($initialMessage === '') {
                 lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
@@ -130,6 +128,7 @@ try {
                 lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
             }
         } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            // Optional email from storage — ignore invalid, do not block chat
             $email = '';
         }
 
@@ -154,6 +153,7 @@ try {
     } else {
         $convId = (int) $conv['id'];
         $status = $conv['status'];
+        // Form re-entry after identity was missing: attach first message to open chat
         if ($initialMessage !== '') {
             $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
