@@ -1,5 +1,5 @@
 /**
- * LiveChat Widget ΓÇö embed on any website
+ * LiveChat Widget — embed on any website
  * <script src="http://localhost/livechat/widget/embed.js" data-site="http://localhost/livechat"></script>
  */
 (function () {
@@ -317,7 +317,7 @@
             '<div id="lc-teaser" class="lcw-teaser" style="display:none" role="button" tabindex="0">' +
                 '<button type="button" class="lcw-teaser-close" id="lc-teaser-close" aria-label="Dismiss">&times;</button>' +
                 '<p class="lcw-teaser-title" id="lc-teaser-title">Questions? We\'re here to help.</p>' +
-                '<p class="lcw-teaser-text" id="lc-teaser-text">Chat with our team ΓÇö we typically reply within a few minutes.</p>' +
+                '<p class="lcw-teaser-text" id="lc-teaser-text">Chat with our team — we typically reply within a few minutes.</p>' +
             '</div>' +
             '<button type="button" id="lc-bubble" aria-label="Open chat">' +
                 '<span id="lc-bubble-icon">' + ICON_CHAT + '</span>' +
@@ -337,7 +337,7 @@
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
                         '<div>' +
                             '<strong id="lc-panel-title">LiveChat</strong>' +
-                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>ConnectingΓÇª</small>' +
+                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting…</small>' +
                             '<span id="lc-panel-ref" class="lcw-ref-badge" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
                         '</div>' +
                     '</div>' +
@@ -352,7 +352,7 @@
                 '</div>' +
                 '<div id="lc-waiting-bar" class="lcw-waiting-bar">' +
                     '<span class="lcw-typing-dots"><span></span><span></span><span></span></span>' +
-                    '<span id="lc-waiting-text">Connecting you with a team memberΓÇª</span>' +
+                    '<span id="lc-waiting-text">Connecting you with a team member…</span>' +
                 '</div>' +
                 '<div id="lc-panel-prechat" class="lcw-prechat" style="display:none">' +
                     '<div id="lc-prechat-status" class="lcw-status-card">' +
@@ -367,7 +367,7 @@
                     '<div class="lcw-form-card" id="lc-prechat-start-panel">' +
                         '<div class="lcw-form-card-head">' +
                             '<h3 class="lcw-form-title">Start a conversation</h3>' +
-                            '<p class="lcw-form-subtitle">Tell us a little about yourself ΓÇö our team will take it from here.</p>' +
+                            '<p class="lcw-form-subtitle">Tell us a little about yourself — our team will take it from here.</p>' +
                         '</div>' +
                         '<form id="lc-prechat-form" class="lcw-prechat-form">' +
                             '<div class="lcw-field">' +
@@ -380,7 +380,7 @@
                             '</div>' +
                             '<div class="lcw-field">' +
                                 '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
-                                '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or requestΓÇª"></textarea>' +
+                                '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or request…"></textarea>' +
                             '</div>' +
                             '<input type="text" name="website_url" id="lc-prechat-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                             '<div id="lc-prechat-error" class="lcw-prechat-error" style="display:none"></div>' +
@@ -418,13 +418,13 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
-                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential ┬╖ <strong id="lc-powered-name">LiveChat</strong></div>' +
+                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential · <strong id="lc-powered-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
                 '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
                     '<div class="lcw-typing-row">' +
                         '<div class="lcw-typing-bubble" aria-hidden="true"><span></span><span></span><span></span></div>' +
-                        '<span class="lcw-typing-label" id="lc-typing-label">Agent is typingΓÇª</span>' +
+                        '<span class="lcw-typing-label" id="lc-typing-label">Agent is typing…</span>' +
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
@@ -434,7 +434,7 @@
                     '<p class="lcw-ended-title">Thanks for chatting!</p>' +
                     '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
                     '<p class="lcw-ended-note">This conversation has been closed.</p>' +
-                    '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">ΓÇö</code></p>' +
+                    '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +
                     '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
                     '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                 '</div>' +
@@ -443,7 +443,7 @@
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div class="lcw-compose-inner">' +
                         '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
-                        '<textarea id="lc-input" rows="1" placeholder="Write a messageΓÇª"></textarea>' +
+                        '<textarea id="lc-input" rows="1" placeholder="Write a message…"></textarea>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
@@ -668,7 +668,7 @@
         showTicketResumePanel();
         var refCode = document.getElementById('lc-ended-ref-code');
         var refInput = document.getElementById('lc-ticket-ref');
-        if (refCode && refInput && refCode.textContent && refCode.textContent !== 'ΓÇö') {
+        if (refCode && refInput && refCode.textContent && refCode.textContent !== '—') {
             refInput.value = refCode.textContent.trim();
         }
     }
@@ -730,7 +730,7 @@
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
         hideTicketResumePanel();
-        // Do not re-fetch settings here when already routing ΓÇö avoids stealing form ΓåÆ active chat
+        // Do not re-fetch settings here when already routing — avoids stealing form → active chat
         if (!skipSettingsFetch) {
             loadWidgetSettings();
         }
@@ -887,14 +887,14 @@
      * - No auto-resume of old chats by IP / past device
      * - Session continue: sessionStorage conversation id only
      * - Ticket resume: separate form when setting ON (visitor + agent share history)
-     * - Form ON ΓåÆ gate identity; Form OFF ΓåÆ direct chat
+     * - Form ON → gate identity; Form OFF → direct chat
      */
     function routeVisitorEntry(data) {
         if (!data || !data.success) return;
         applyWidgetSettings(data);
 
         var identityOk = !!data.visitor_identity_complete;
-        // Session-only reconnect ΓÇö never use server has_active_chat for silent resume
+        // Session-only reconnect — never use server has_active_chat for silent resume
         var resumeId = getStoredConversationId() || pendingResumeConvId || data.conversation_id || null;
 
         if (prechatFormEnabled) {
@@ -942,7 +942,7 @@
             return;
         }
         showChatView();
-        updateStatus('ConnectingΓÇª', agentsOnline > 0);
+        updateStatus('Connecting…', agentsOnline > 0);
         setWaitingState(false);
         var payload = {
             visitor_uid: visitorUid,
@@ -1003,7 +1003,7 @@
         var btn = document.getElementById('lc-prechat-submit');
         btn.disabled = true;
         btn.classList.add('is-loading');
-        btn.querySelector('.lcw-btn-label').textContent = 'ConnectingΓÇª';
+        btn.querySelector('.lcw-btn-label').textContent = 'Connecting…';
 
         localStorage.setItem('lc_visitor_name', name);
         localStorage.setItem('lc_visitor_email', email);
@@ -1057,7 +1057,7 @@
     /**
      * Open the chat panel. Safe to call repeatedly (no-op if already open).
      * @param {{ silenceFlow?: boolean }} options
-     *   silenceFlow ΓÇö UI only; entry routing / poll already active
+     *   silenceFlow — UI only; entry routing / poll already active
      */
     function openPanel(options) {
         options = options || {};
@@ -1254,7 +1254,7 @@
             updateStatus('Chatting with ' + data.agent.name, true);
         } else if (data.status === 'waiting') {
             setWaitingState(true);
-            updateStatus('Waiting for an agentΓÇª', agentsOnline > 0);
+            updateStatus('Waiting for an agent…', agentsOnline > 0);
         } else {
             setWaitingState(false);
             updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
@@ -1274,7 +1274,7 @@
         var resumeConvId = options.resumeConversationId || null;
         if (resumeConvId) {
             showChatView();
-            updateStatus('ReconnectingΓÇª', false);
+            updateStatus('Reconnecting…', false);
         }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
@@ -1361,7 +1361,7 @@
         var name = settings.site_name || 'Our team';
         document.getElementById('lc-teaser-title').textContent = 'Questions? ' + name + ' is here.';
         document.getElementById('lc-teaser-text').textContent = agentsOnline > 0
-            ? 'Our team is online ΓÇö typical reply within a few minutes.'
+            ? 'Our team is online — typical reply within a few minutes.'
             : 'Leave a message and we\'ll get back to you shortly.';
         el.style.display = 'block';
     }
@@ -1392,7 +1392,7 @@
             el.hidden = false;
             if (label) {
                 var who = (name || (currentAgent && currentAgent.name) || 'Agent').trim() || 'Agent';
-                label.textContent = who + ' is typingΓÇª';
+                label.textContent = who + ' is typing…';
             }
         } else {
             el.hidden = true;
@@ -1667,7 +1667,7 @@
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'pending') {
-            return '<span class="lcw-msg-ticks is-pending" title="SendingΓÇª" aria-label="Sending">' +
+            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending">' +
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
@@ -1706,16 +1706,16 @@
         if (isDocumentReload()) {
             clearReloadNavigation();
         }
-        // Conversation routing: buildWidget ΓåÆ loadWidgetSettings ΓåÆ routeVisitorEntry
+        // Conversation routing: buildWidget → loadWidgetSettings → routeVisitorEntry
         // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
-        // (Do not start a second chat flow here ΓÇö that created duplicate conversations.)
+        // (Do not start a second chat flow here — that created duplicate conversations.)
         lastMsgId = getStoredLastMsgId() || 0;
     }
 
     function pollMessages(isHistoryLoad) {
         if (!conversationId) return;
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        // viewing=1 only when panel open ΓåÆ agent ticks switch to "seen"
+        // viewing=1 only when panel open → agent ticks switch to "seen"
         var viewing = (isOpen && document.getElementById('lc-panel') &&
             document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
@@ -1755,7 +1755,7 @@
                     updateStatus('Chatting with ' + data.agent_name, true);
                 } else if (data.status === 'waiting') {
                     setWaitingState(true);
-                    updateStatus('Waiting for an agentΓÇª', agentsOnline > 0);
+                    updateStatus('Waiting for an agent…', agentsOnline > 0);
                 } else if (agentsOnline > 0) {
                     updateStatus('Team online', true);
                 }
