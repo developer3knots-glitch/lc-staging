@@ -12,7 +12,6 @@ require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
-require_once __DIR__ . '/ip-resume.php';
 
 function lc_cors_headers(): void
 {
@@ -329,7 +328,7 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return true;
     }
 
-    // Active chat owned by another agent ΓÇö live access only for the assignee.
+    // Active chat owned by another agent — live access only for the assignee.
     return false;
 }
 
@@ -379,7 +378,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
             $accountFilter = " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
             $accountParams = [$accountId];
         } else {
-            // No workspace ΓÇö show nothing (never leak other tenants)
+            // No workspace — show nothing (never leak other tenants)
             return ['1=0', []];
         }
         if ($tab === 'waiting') {
@@ -537,7 +536,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         $upd->execute([$targetAgentId, $conversationId]);
         if (!$upd->rowCount()) {
             $db->rollBack();
-            return ['ok' => false, 'error' => 'Transfer failed ΓÇö chat may have been closed'];
+            return ['ok' => false, 'error' => 'Transfer failed — chat may have been closed'];
         }
 
         $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
@@ -704,9 +703,9 @@ function lc_conversations_related_by_ip(
             $seen[$id] = true;
             $preview = trim((string) ($row['last_message'] ?? ''));
             if (function_exists('mb_substr') && mb_strlen($preview) > 80) {
-                $preview = mb_substr($preview, 0, 80) . 'ΓÇª';
+                $preview = mb_substr($preview, 0, 80) . '…';
             } elseif (strlen($preview) > 80) {
-                $preview = substr($preview, 0, 80) . 'ΓÇª';
+                $preview = substr($preview, 0, 80) . '…';
             }
             $ref = '';
             if (function_exists('lc_conversation_reference')) {
@@ -977,7 +976,7 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
 }
 
 /**
- * Message delivery ticks (WhatsApp-style): sent ΓåÆ delivered ΓåÆ read
+ * Message delivery ticks (WhatsApp-style): sent → delivered → read
  */
 function lc_ensure_message_receipts_schema(): void
 {

@@ -47,7 +47,7 @@ try {
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
 
     if (!$visitor && $settingsOnly) {
-        $ipThread = lc_find_conversation_by_ip($ip, $brandId);
+        $ipThread = lc_find_conversation_for_visitor($ip, $brandId, $email);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
@@ -88,7 +88,7 @@ try {
         && $visitorEmail !== ''
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
-    $ipThread = lc_find_conversation_by_ip($ip, $brandId);
+    $ipThread = lc_find_conversation_for_visitor($ip, $brandId, $visitorEmail ?: $email);
 
     if ($settingsOnly) {
         lc_json([

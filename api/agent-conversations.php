@@ -13,11 +13,6 @@ $agentId = (int) $agent['id'];
 try {
     lc_ensure_brands_schema();
     lc_ensure_ticket_schema();
-    try {
-        lc_merge_same_ip_conversations();
-    } catch (Throwable $mergeErr) {
-        // inbox still loads
-    }
     $db = lc_db();
     [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
 
@@ -40,7 +35,7 @@ try {
         ORDER BY
             CASE c.status WHEN 'waiting' THEN 0 ELSE 1 END,
             COALESCE(c.last_message_at, c.started_at) DESC
-        LIMIT 200
+        LIMIT 50
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute(array_merge([$agentId], $params));
@@ -50,8 +45,8 @@ try {
         unset($row['ticket_reference']);
     }
     unset($row);
-    $conversations = array_slice(lc_dedupe_inbox_conversations_by_ip($conversations), 0, 50);
 
+    // Inbox open → visitor messages are delivered (double gray), not yet read until chat opened
     $convIds = array_map(static function ($r) {
         return (int) $r['id'];
     }, $conversations);
