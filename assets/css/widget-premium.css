@@ -770,14 +770,15 @@
 /* Visitor (own) green bubbles — white ticks (cyan washes out on brand green) */
 .lcw-visitor .lcw-msg-ticks.is-sent,
 .lcw-visitor .lcw-msg-ticks.is-delivered {
-    color: rgba(255, 255, 255, 0.85);
-    filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
+    color: rgba(255, 255, 255, 0.55);
+    background: none;
+    padding: 0;
+    filter: none;
 }
 .lcw-visitor .lcw-msg-ticks.is-read {
-    color: #ffffff;
-    background: rgba(15, 23, 42, 0.28);
-    border-radius: 3px;
-    padding: 1px 3px 0;
+    color: #53bdeb !important;
+    background: none !important;
+    padding: 0 !important;
     filter: none;
 }
 .lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }
