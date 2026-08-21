@@ -45,6 +45,11 @@ try {
 
     $brandAccountId = (int) ($brand['account_id'] ?? 0);
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
+    // Pre-chat off: never accept browser-stale name/email (shows as "test" after form disabled)
+    if (!$prechatRequired) {
+        $name = '';
+        $email = '';
+    }
 
     if (!$visitor && $settingsOnly) {
         $ipThread = lc_find_conversation_for_visitor($ip, $brandId, $email);
