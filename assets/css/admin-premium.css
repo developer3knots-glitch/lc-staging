@@ -1,5 +1,5 @@
 /**
- * LiveChat Admin — Professional UI
+ * LiveChat Admin ΓÇö Professional UI
  * Icons: Tabler Icons | Font: Work Sans
  */
 
@@ -33,7 +33,7 @@ body,
     overflow-x: clip;
 }
 
-/* Shell: only main pane scrolls — sidebar stays pinned (brand + nav + user footer) */
+/* Shell: only main pane scrolls ΓÇö sidebar stays pinned (brand + nav + user footer) */
 html {
     height: 100%;
 }
@@ -43,7 +43,7 @@ body.lc-admin-body {
     overflow: hidden;
 }
 
-/* ─── Auth ─── */
+/* ΓöÇΓöÇΓöÇ Auth ΓöÇΓöÇΓöÇ */
 .lc-auth-body {
     min-height: 100vh;
     display: flex;
@@ -78,7 +78,7 @@ body.lc-admin-body {
 .lc-auth-card h1 { margin: 0 0 0.35rem; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; }
 .lc-auth-sub { color: var(--lc-muted); margin: 0 0 1.5rem; font-size: 0.88rem; }
 
-/* ─── Layout ─── */
+/* ΓöÇΓöÇΓöÇ Layout ΓöÇΓöÇΓöÇ */
 .lc-app {
     display: flex;
     height: 100%;
@@ -208,7 +208,7 @@ body.lc-admin-body {
 .lc-agent-name { color: #fff; font-weight: 600; font-size: 0.84rem; }
 .lc-agent-status-line { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: #94a3b8; margin-top: 0.1rem; }
 
-/* ─── Avatars ─── */
+/* ΓöÇΓöÇΓöÇ Avatars ΓöÇΓöÇΓöÇ */
 .lc-avatar {
     display: inline-block;
     width: 40px;
@@ -439,7 +439,7 @@ body.lc-admin-body {
     -webkit-overflow-scrolling: touch;
 }
 
-/* ─── Hero ─── */
+/* ΓöÇΓöÇΓöÇ Hero ΓöÇΓöÇΓöÇ */
 .lc-hero {
     border-radius: var(--lc-radius-lg);
     padding: 1.4rem 1.5rem;
@@ -492,7 +492,7 @@ body.lc-admin-body {
 .lc-hero-stat-val { font-size: 1.65rem; font-weight: 800; display: block; line-height: 1.1; }
 .lc-hero-stat small { font-size: 0.72rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* ─── KPI ─── */
+/* ΓöÇΓöÇΓöÇ KPI ΓöÇΓöÇΓöÇ */
 .lc-kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -528,7 +528,7 @@ body.lc-admin-body {
 .lc-kpi-name { font-size: 0.72rem; color: var(--lc-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .lc-kpi-val { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin-top: 0.1rem; }
 
-/* ─── Cards ─── */
+/* ΓöÇΓöÇΓöÇ Cards ΓöÇΓöÇΓöÇ */
 .lc-card {
     background: var(--lc-surface);
     border: 1px solid var(--lc-border);
@@ -557,7 +557,7 @@ body.lc-admin-body {
 .lc-card-head h3 i { color: var(--lc-primary); font-size: 1rem; }
 .lc-card-body { padding: 1rem 1.15rem; }
 
-/* ─── Chat ─── */
+/* ΓöÇΓöÇΓöÇ Chat ΓöÇΓöÇΓöÇ */
 .lc-chat-layout {
     display: grid;
     grid-template-columns: 340px 1fr;
@@ -883,18 +883,17 @@ body.lc-admin-body {
     height: 11px;
 }
 .lc-msg-ticks.is-sent .lc-tick-svg { width: 12px; }
-/* On agent (own) green bubbles — high contrast (lime washes out WA-blue #53bdeb) */
+/* On agent (own) green bubbles ΓÇö high contrast (lime washes out WA-blue #53bdeb) */
 .lc-msg.agent .lc-msg-ticks.is-sent,
 .lc-msg.agent .lc-msg-ticks.is-delivered {
     color: rgba(255, 255, 255, 0.85);
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #ffffff;
-    background: rgba(15, 23, 42, 0.28);
-    border-radius: 3px;
-    padding: 1px 3px 0;
-    filter: none;
+    color: #53bdeb !important;
+    background: none !important;
+    padding: 0 !important;
+    filter: none !important;
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-delivered {
@@ -902,11 +901,10 @@ body.lc-admin-body {
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #ffffff;
-    background: rgba(15, 23, 42, 0.28);
-    border-radius: 3px;
-    padding: 1px 3px 0;
-    filter: none;
+    color: #53bdeb !important;
+    background: none !important;
+    padding: 0 !important;
+    filter: none !important;
 }
 .lc-chat-compose {
     padding: 0.85rem 1rem;
@@ -933,7 +931,7 @@ body.lc-admin-body {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-primary) 18%, transparent);
 }
 
-/* ─── Visitor meta chips ─── */
+/* ΓöÇΓöÇΓöÇ Visitor meta chips ΓöÇΓöÇΓöÇ */
 .lc-visitor-details { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
 .lc-visitor-details span {
     display: inline-flex;
@@ -976,7 +974,7 @@ body.lc-admin-body {
 .lc-block-ip-btn.is-blocked:hover { background: #dcfce7; }
 .lc-block-ip-btn i { font-size: 0.78rem; line-height: 1; }
 
-/* ─── Country blocking picker ─── */
+/* ΓöÇΓöÇΓöÇ Country blocking picker ΓöÇΓöÇΓöÇ */
 .lc-country-picker {
     border: 1px solid var(--lc-border);
     border-radius: 12px;
@@ -1055,7 +1053,7 @@ body.lc-admin-body {
     .lc-ip-block-row { grid-template-columns: 1fr; }
 }
 
-/* ─── Page journey timeline ─── */
+/* ΓöÇΓöÇΓöÇ Page journey timeline ΓöÇΓöÇΓöÇ */
 .lc-page-journey {
     border-bottom: 1px solid var(--lc-border);
     background: #fff;
@@ -1140,7 +1138,7 @@ body.lc-admin-body {
     text-overflow: ellipsis;
 }
 
-/* ─── Forms & buttons ─── */
+/* ΓöÇΓöÇΓöÇ Forms & buttons ΓöÇΓöÇΓöÇ */
 .lc-form label:not(.lc-settings-toggle):not(.lc-country-option) {
     display: block;
     font-size: 0.74rem;
@@ -1204,7 +1202,7 @@ body.lc-admin-body {
 .lc-btn-sm { padding: 0.38rem 0.75rem; font-size: 0.78rem; }
 .lc-btn-block { width: 100%; }
 
-/* ─── Tables ─── */
+/* ΓöÇΓöÇΓöÇ Tables ΓöÇΓöÇΓöÇ */
 .lc-table { width: 100%; border-collapse: collapse; }
 .lc-table th {
     background: #f8fafc;
@@ -1276,7 +1274,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: 0.84rem; color: 
 
 .lc-kpi-icon.red { background: #fef2f2; color: #dc2626; }
 
-/* ─── Advanced Dashboard ─── */
+/* ΓöÇΓöÇΓöÇ Advanced Dashboard ΓöÇΓöÇΓöÇ */
 .lc-content {
     background:
         radial-gradient(circle at top right, color-mix(in srgb, var(--lc-primary) 6%, transparent), transparent 32%),
@@ -1749,7 +1747,7 @@ a.lc-conv-item:hover {
     .lc-history-form-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Chat History ─── */
+/* ΓöÇΓöÇΓöÇ Chat History ΓöÇΓöÇΓöÇ */
 .lc-hero-history {
     background:
         radial-gradient(circle at 12% 85%, rgba(139, 92, 246, 0.22), transparent 40%),
@@ -2064,7 +2062,7 @@ a.lc-conv-item:hover {
     .lc-sidebar-backdrop { display: none !important; }
 }
 
-/* ─── Canned Replies ─── */
+/* ΓöÇΓöÇΓöÇ Canned Replies ΓöÇΓöÇΓöÇ */
 .lc-hero-canned {
     background:
         radial-gradient(circle at 15% 80%, rgba(245, 158, 11, 0.28), transparent 42%),
@@ -2321,7 +2319,7 @@ a.lc-conv-item:hover {
     }
 }
 
-/* ─── Brands ─── */
+/* ΓöÇΓöÇΓöÇ Brands ΓöÇΓöÇΓöÇ */
 .lc-hero-brands {
     background:
         radial-gradient(circle at 10% 75%, rgba(20, 184, 166, 0.25), transparent 42%),
@@ -2626,7 +2624,7 @@ a.lc-conv-item:hover {
     .lc-brand-edit-grid { grid-template-columns: 1fr; }
 }
 
-/* ─── Agents ─── */
+/* ΓöÇΓöÇΓöÇ Agents ΓöÇΓöÇΓöÇ */
 .lc-hero-agents {
     background:
         radial-gradient(circle at 12% 80%, rgba(99, 102, 241, 0.28), transparent 42%),
@@ -2902,7 +2900,7 @@ a.lc-conv-item:hover {
     .lc-agent-card-meta { grid-template-columns: 1fr; gap: 0.35rem; }
 }
 
-/* ─── Settings ─── */
+/* ΓöÇΓöÇΓöÇ Settings ΓöÇΓöÇΓöÇ */
 .lc-settings-page {
     max-width: 100%;
     min-width: 0;
@@ -3404,7 +3402,7 @@ a.lc-conv-item:hover {
     .lc-settings-aside .lc-settings-section { position: static; }
 }
 
-/* ─── Live Chats Pro (inbox ~ LiveChat console width) ─── */
+/* ΓöÇΓöÇΓöÇ Live Chats Pro (inbox ~ LiveChat console width) ΓöÇΓöÇΓöÇ */
 /* Full-bleed: use entire right column (no side padding / gap) */
 body.lc-page-chats {
     overflow: hidden;
@@ -4744,10 +4742,10 @@ body.lc-page-chats .lc-content {
     30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ═══════════════════════════════════════════════════════════
+/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
    LiveChat-style agent desk
    Icon rail + slim topbar + 3-col (inbox | thread | details)
-   ═══════════════════════════════════════════════════════════ */
+   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
 body.lc-page-chats {
     --lc-sidebar-w: 68px;
 }

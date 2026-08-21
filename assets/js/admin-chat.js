@@ -80,7 +80,7 @@
             typingEl.hidden = false;
             if (typingLabelEl) {
                 var who = (name || 'Visitor').trim() || 'Visitor';
-                typingLabelEl.textContent = who + ' is typing…';
+                typingLabelEl.textContent = who + ' is typingΓÇª';
             }
         } else {
             typingEl.hidden = true;
@@ -177,7 +177,7 @@
     }
 
     function setVisitorMeta(htmlOrText, isHtml) {
-        // Context bar hidden on LiveChat desk — details live in the right rail
+        // Context bar hidden on LiveChat desk ΓÇö details live in the right rail
         if (!visitorMetaEl) return;
         visitorMetaEl.hidden = true;
         visitorMetaEl.innerHTML = '';
@@ -205,7 +205,7 @@
         if (extraSuffix) {
             parts.push('<span class="lc-chat-context-extra">' + esc(extraSuffix) + '</span>');
         }
-        return parts.join('<span class="lc-chat-context-sep" aria-hidden="true">·</span>');
+        return parts.join('<span class="lc-chat-context-sep" aria-hidden="true">┬╖</span>');
     }
 
     function visitorInitials(name) {
@@ -251,7 +251,7 @@
     function setText(id, text) {
         var el = document.getElementById(id);
         if (el) {
-            el.textContent = text || '—';
+            el.textContent = text || 'ΓÇö';
         }
     }
 
@@ -275,11 +275,11 @@
         var name = c.visitor_name || 'Visitor';
         setText('lc-details-name', name);
         setText('lc-details-email', c.visitor_email || 'No email');
-        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || '—');
-        setText('lc-details-country', c.visitor_country || '—');
-        setText('lc-details-brand', c.brand_name || '—');
-        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '—' : 'Unassigned'));
-        setText('lc-details-ticket', c.reference || currentReference || '—');
+        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || 'ΓÇö');
+        setText('lc-details-country', c.visitor_country || 'ΓÇö');
+        setText('lc-details-brand', c.brand_name || 'ΓÇö');
+        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? 'ΓÇö' : 'Unassigned'));
+        setText('lc-details-ticket', c.reference || currentReference || 'ΓÇö');
 
         var pageEl = document.getElementById('lc-details-page');
         var page = c.visitor_page || c.page_url || '';
@@ -295,7 +295,7 @@
                     pageEl.setAttribute('aria-disabled', 'true');
                 }
             } else {
-                pageEl.textContent = '—';
+                pageEl.textContent = 'ΓÇö';
                 pageEl.removeAttribute('href');
             }
         }
@@ -371,7 +371,7 @@
         if (c.brand_name) {
             html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
         }
-        html += esc(c.last_message || '—');
+        html += esc(c.last_message || 'ΓÇö');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
         if (c.unread > 0) {
@@ -427,28 +427,29 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
-    /** Official dual-check SVGs (same as widget visitor ticks). */
-    function tickSvg(double) {
+    /** Official dual-check SVGs — read uses hardcoded #53bdeb fill (CSS cannot wash to white). */
+    function tickSvg(double, fillColor) {
+        var fill = fillColor || 'currentColor';
         if (double) {
             return '<svg class="lc-tick-svg" viewBox="0 0 16 11" width="16" height="11" aria-hidden="true" focusable="false">' +
-                '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
-                '<path fill="currentColor" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
+                '<path fill="' + fill + '" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+                '<path fill="' + fill + '" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
                 '</svg>';
         }
         return '<svg class="lc-tick-svg" viewBox="0 0 12 11" width="12" height="11" aria-hidden="true" focusable="false">' +
-            '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+            '<path fill="' + fill + '" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
             '</svg>';
     }
 
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'read') {
-            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
+            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen" style="color:#53bdeb!important">' + tickSvg(true, '#53bdeb') + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
+            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(true, 'rgba(255,255,255,0.55)') + '</span>';
         }
-        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
+        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(false, 'rgba(255,255,255,0.55)') + '</span>';
     }
 
     function applyReceipts(receipts) {
@@ -480,7 +481,7 @@
 
     function onMessagesScroll() {
         if (!messagesEl) return;
-        // User reading history — do not yank to bottom on poll
+        // User reading history ΓÇö do not yank to bottom on poll
         stickToBottom = isMessagesNearBottom(120);
     }
 
@@ -511,7 +512,7 @@
         html += '<span class="lc-msg-time">';
         html += timeHtml(m.created_at);
         if (label && sender !== 'system' && sender !== 'agent') {
-            html += ' · ' + esc(label);
+            html += ' ┬╖ ' + esc(label);
         }
         html += '</span>';
         if (sender === 'agent' && !opts.history) {
@@ -546,22 +547,22 @@
         var extraClass = kind || '';
 
         if (kind === 'archive-note') {
-            text = 'Chat history (agent only) — visitor sees a new session';
+            text = 'Chat history (agent only) ΓÇö visitor sees a new session';
         } else if (kind === 'start') {
             text = 'Previous chat';
-            if (ref) text += ' · <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
-            if (when) text += ' · ' + esc(when);
+            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            if (when) text += ' ┬╖ ' + esc(when);
         } else if (kind === 'ended') {
             extraClass = 'is-ended';
             var endLabel = status === 'closed' ? 'Chat ended' : (status === 'waiting' ? 'Disconnected' : 'Session ended');
             text = endLabel;
-            if (status) text += ' · <span class="lc-session-divider-status">' + esc(status) + '</span>';
-            if (ref) text += ' · <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
-            if (when) text += ' · ' + esc(when);
+            if (status) text += ' ┬╖ <span class="lc-session-divider-status">' + esc(status) + '</span>';
+            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            if (when) text += ' ┬╖ ' + esc(when);
         } else if (kind === 'current') {
             extraClass = 'is-current';
             text = 'Current chat';
-            if (ref) text += ' · <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
         } else {
             text = esc(String(kind || 'Session'));
         }
@@ -572,7 +573,7 @@
 
     /**
      * Paint prior closed threads + markers into a string (not clickable cards).
-     * lastMsgId is intentionally left alone — only current conversation drives polling.
+     * lastMsgId is intentionally left alone ΓÇö only current conversation drives polling.
      */
     function buildPriorThreadsHtml(threads, currentConv) {
         if (!threads || !threads.length) return '';
@@ -664,7 +665,7 @@
             return title;
         }
         if (path.length > 32) {
-            return path.slice(0, 30) + '…';
+            return path.slice(0, 30) + 'ΓÇª';
         }
         return path || '/';
     }
@@ -675,7 +676,7 @@
         var html = '<div class="lc-journey-step' + (isCurrent ? ' is-current' : '') + '" data-id="' + step.id + '" title="' + esc(fullPath) + '">';
         html += '<span class="lc-journey-step-path">' + esc(journeyStepLabel(step)) + '</span>';
         if (step.visit_count > 1) {
-            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">×' + step.visit_count + '</span>';
+            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">├ù' + step.visit_count + '</span>';
         }
         html += '<span class="lc-journey-step-time">' + timeHtml(step.last_visited_at) + '</span>';
         html += '</div>';
@@ -699,7 +700,7 @@
         var html = '';
         steps.forEach(function (step, idx) {
             if (idx > 0) {
-                html += '<span class="lc-journey-sep" aria-hidden="true">›</span>';
+                html += '<span class="lc-journey-sep" aria-hidden="true">ΓÇ║</span>';
             }
             html += renderJourneyStep(step, idx === steps.length - 1);
         });
@@ -711,7 +712,7 @@
             if (uniqueCount === totalVisits) {
                 journeyCountEl.textContent = uniqueCount + (uniqueCount === 1 ? ' page' : ' pages');
             } else {
-                journeyCountEl.textContent = uniqueCount + ' pages · ' + totalVisits + ' visits';
+                journeyCountEl.textContent = uniqueCount + ' pages ┬╖ ' + totalVisits + ' visits';
             }
         }
         updateJourneySummary();
@@ -735,8 +736,8 @@
         var label = journeyStepLabel(current);
         var timeEl = journeyListEl.querySelector('.lc-journey-step.is-current .lc-journey-step-time');
         var timeText = timeEl ? timeEl.textContent.trim() : '';
-        var repeat = current.visit_count > 1 ? ' · ×' + current.visit_count : '';
-        summaryEl.textContent = label + repeat + (timeText ? ' · ' + timeText : '');
+        var repeat = current.visit_count > 1 ? ' ┬╖ ├ù' + current.visit_count : '';
+        summaryEl.textContent = label + repeat + (timeText ? ' ┬╖ ' + timeText : '');
     }
 
     function scrollJourneyToEnd() {
@@ -862,7 +863,7 @@
         html += '<span class="lc-transfer-agent-avatar" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
         html += '<span class="lc-transfer-agent-body">';
         html += '<strong>' + esc(agent.name) + '</strong>';
-        html += '<span>' + esc(statusLabel) + ' · ' + esc(brandLabel) + '</span>';
+        html += '<span>' + esc(statusLabel) + ' ┬╖ ' + esc(brandLabel) + '</span>';
         html += '</span>';
         html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
         html += '</button>';
@@ -871,7 +872,7 @@
 
     function loadTransferAgents() {
         if (!transferAgentsEl || !selectedId) return;
-        transferAgentsEl.innerHTML = '<div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents…</div>';
+        transferAgentsEl.innerHTML = '<div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agentsΓÇª</div>';
         fetch(base + '/api/agent-transfer-agents.php?conversation_id=' + selectedId, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -1008,13 +1009,13 @@
         setVisitorMeta('', false);
         if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
         showDetailsPanel(true);
-        setText('lc-details-name', 'Loading…');
-        setText('lc-details-email', '—');
-        setText('lc-details-ip', '—');
-        setText('lc-details-country', '—');
-        setText('lc-details-brand', '—');
-        setText('lc-details-agent', '—');
-        setText('lc-details-ticket', '—');
+        setText('lc-details-name', 'LoadingΓÇª');
+        setText('lc-details-email', 'ΓÇö');
+        setText('lc-details-ip', 'ΓÇö');
+        setText('lc-details-country', 'ΓÇö');
+        setText('lc-details-brand', 'ΓÇö');
+        setText('lc-details-agent', 'ΓÇö');
+        setText('lc-details-ticket', 'ΓÇö');
         updateBlockIpMenu();
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
@@ -1211,7 +1212,7 @@
         if (c && c.visitor_ip) {
             currentVisitorIp = c.visitor_ip;
         }
-        // Compact chips under name (optional) — desk puts full data in right rail
+        // Compact chips under name (optional) ΓÇö desk puts full data in right rail
         if (visitorDetailsEl) {
             var html = '';
             if (c && (c.visitor_ip || currentVisitorIp)) {
@@ -1282,7 +1283,7 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
-                            // Incoming only — not agent’s own replies echoing back
+                            // Incoming only ΓÇö not agentΓÇÖs own replies echoing back
                             if (m.sender_type === 'visitor' || m.sender_type === 'system') {
                                 if (m.sender_type === 'visitor') {
                                     playSound = true;
