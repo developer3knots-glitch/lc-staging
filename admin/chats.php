@@ -6,14 +6,6 @@ $pageTitle = 'Chats';
 $activeNav = 'chats';
 $extraScripts = ['lc-chat-attachments.js', 'admin-chat.js'];
 require __DIR__ . '/includes/header.php';
-<style id="lc-read-tick-fix">
-.lc-msg.agent .lc-msg-ticks.is-read,
-.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read { color:#53bdeb !important; background:none !important; padding:0 !important; }
-.lc-msg.agent .lc-msg-ticks.is-sent,
-.lc-msg.agent .lc-msg-ticks.is-delivered,
-.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
-.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-delivered { color:rgba(255,255,255,0.55) !important; }
-</style>
 ?>
 
 <div class="lc-chats-pro">

@@ -284,7 +284,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=70';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=17';
         document.head.appendChild(link);
     }
 
@@ -1667,16 +1667,16 @@
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'pending') {
-            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending" style="color:rgba(255,255,255,0.7)!important">' +
+            return '<span class="lcw-msg-ticks is-pending" title="Sending…" aria-label="Sending">' +
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
-            return '<span class="lcw-msg-ticks is-read" title="Seen" aria-label="Seen" style="color:#53bdeb!important">' + tickSvg(true) + '</span>';
+            return '<span class="lcw-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(true) + '</span>';
+            return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
         }
-        return '<span class="lcw-msg-ticks is-sent" title="Sent" aria-label="Sent" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(false) + '</span>';
+        return '<span class="lcw-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
     }
 
     function updateVisitorTicks(msgKey, status) {

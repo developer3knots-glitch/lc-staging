@@ -767,20 +767,18 @@
 }
 .lcw-msg-ticks.is-sent .lcw-tick-svg { width: 12px; }
 .lcw-msg-ticks.is-pending .lcw-tick-svg { width: 12px; height: 12px; }
-/* Visitor own bubbles: delivered faded, READ WhatsApp blue */
+/* Visitor (own) green bubbles — white ticks (cyan washes out on brand green) */
 .lcw-visitor .lcw-msg-ticks.is-sent,
 .lcw-visitor .lcw-msg-ticks.is-delivered {
-    color: rgba(255, 255, 255, 0.55) !important;
-    background: none !important;
-    padding: 0 !important;
-    filter: none !important;
+    color: rgba(255, 255, 255, 0.85);
+    filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lcw-visitor .lcw-msg-ticks.is-read {
-    color: #53bdeb !important;
-    background: none !important;
-    border-radius: 0 !important;
-    padding: 0 !important;
-    filter: none !important;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 3px;
+    padding: 1px 3px 0;
+    filter: none;
 }
 .lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }
 .lcw-msg-pending { opacity: 0.72; }
