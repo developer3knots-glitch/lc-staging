@@ -88,7 +88,7 @@ function lc_login_agent(string $email, string $password): bool
 }
 
 /**
- * Public signup ΓÇö creates an isolated workspace (account + admin + default brand).
+ * Public signup ╬ô├ç├╢ creates an isolated workspace (account + admin + default brand).
  * @return array{success: bool, error?: string, account_id?: int, agent_id?: int}
  */
 function lc_register_agent(string $name, string $email, string $password, string $companyName = ''): array
@@ -139,8 +139,8 @@ function lc_admin_auto_clear_all_chats_once(): void
         return;
     }
     $done = true;
-    // One-shot purge after deploy — removes leftover active/merged test chats
-    $flag = 'purge_all_chats_20260821a';
+    // One-shot purge after deploy ΓÇö removes leftover active/merged test chats
+    $flag = 'purge_all_chats_20260821b';
     try {
         if (lc_setting($flag, '') === '1') {
             return;
