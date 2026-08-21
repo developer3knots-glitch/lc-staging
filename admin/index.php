@@ -62,20 +62,31 @@ $stmt = $db->prepare($waitingSql);
 $stmt->execute($brandParams);
 $waitingChats = $stmt->fetchAll();
 
+if (is_file(__DIR__ . '/../includes/ip-resume.php')) {
+    require_once __DIR__ . '/../includes/ip-resume.php';
+}
+if (function_exists('lc_merge_same_ip_conversations')) {
+    try { lc_merge_same_ip_conversations(); } catch (Throwable $e) {}
+}
 $recentSql = "
     SELECT c.id, c.status, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
-           v.ip_address AS visitor_ip, v.country AS visitor_country,
+           v.ip_address AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg
     FROM conversations c
     JOIN visitors v ON v.id = c.visitor_id
     LEFT JOIN brands b ON b.id = c.brand_id
     WHERE 1=1 {$brandSql}
     ORDER BY COALESCE(c.last_message_at, c.started_at) DESC
-    LIMIT 10
+    LIMIT 40
 ";
 $stmt = $db->prepare($recentSql);
 $stmt->execute($brandParams);
 $recent = $stmt->fetchAll();
+if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
+    $recent = array_slice(lc_dedupe_inbox_conversations_by_ip($recent), 0, 10);
+} else {
+    $recent = array_slice($recent, 0, 10);
+}
 
 $hour = (int) date('G');
 if ($hour < 12) {
