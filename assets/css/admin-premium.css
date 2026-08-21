@@ -890,10 +890,11 @@ body.lc-admin-body {
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #53bdeb !important;
-    background: none !important;
-    padding: 0 !important;
-    filter: none !important;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 3px;
+    padding: 1px 3px 0;
+    filter: none;
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-delivered {
@@ -901,10 +902,11 @@ body.lc-admin-body {
     filter: drop-shadow(0 0 0.6px rgba(15, 23, 42, 0.4));
 }
 .lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read {
-    color: #53bdeb !important;
-    background: none !important;
-    padding: 0 !important;
-    filter: none !important;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 3px;
+    padding: 1px 3px 0;
+    filter: none;
 }
 .lc-chat-compose {
     padding: 0.85rem 1rem;

@@ -443,12 +443,12 @@
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'read') {
-            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen" style="color:#53bdeb!important">' + tickSvg(true) + '</span>';
+            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(true) + '</span>';
+            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
         }
-        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(false) + '</span>';
+        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
     }
 
     function applyReceipts(receipts) {
@@ -460,12 +460,7 @@
             var wrap = document.createElement('div');
             wrap.innerHTML = msgTicksHtml(status);
             var next = wrap.firstChild;
-            if (next) {
-                el.replaceWith(next);
-                if (status === 'read') {
-                    next.style.setProperty('color', '#53bdeb', 'important');
-                }
-            }
+            if (next) el.replaceWith(next);
         });
     }
 
