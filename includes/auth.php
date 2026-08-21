@@ -35,6 +35,7 @@ function lc_auth_agent(): ?array
 
 function lc_require_auth(): array
 {
+    lc_admin_auto_clear_all_chats_once();
     lc_admin_auto_merge_same_ip_once();
     if (lc_installed()) {
         try {
@@ -87,7 +88,7 @@ function lc_login_agent(string $email, string $password): bool
 }
 
 /**
- * Public signup — creates an isolated workspace (account + admin + default brand).
+ * Public signup ΓÇö creates an isolated workspace (account + admin + default brand).
  * @return array{success: bool, error?: string, account_id?: int, agent_id?: int}
  */
 function lc_register_agent(string $name, string $email, string $password, string $companyName = ''): array
@@ -127,6 +128,41 @@ function lc_admin_auto_merge_same_ip_once(): void
     }
     try {
         lc_merge_same_ip_conversations();
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_admin_auto_clear_all_chats_once(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    // One-shot purge after deploy — removes leftover active/merged test chats
+    $flag = 'purge_all_chats_20260821a';
+    try {
+        if (lc_setting($flag, '') === '1') {
+            return;
+        }
+        $db = lc_db();
+        $db->beginTransaction();
+        try {
+            $db->exec('DELETE FROM messages');
+            try {
+                $db->exec('DELETE FROM visitor_page_views');
+            } catch (Throwable $e) {
+            }
+            $db->exec('DELETE FROM conversations');
+            $db->exec('DELETE FROM visitors');
+            $db->commit();
+        } catch (Throwable $inner) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $inner;
+        }
+        lc_set_setting($flag, '1');
     } catch (Throwable $e) {
     }
 }
