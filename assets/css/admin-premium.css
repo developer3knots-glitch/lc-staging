@@ -4732,6 +4732,14 @@ body.lc-page-chats .lc-content {
 }
 .lc-typing-bubble span:nth-child(2) { animation-delay: 0.15s; }
 .lc-typing-bubble span:nth-child(3) { animation-delay: 0.3s; }
+.lc-typing-label.has-preview {
+    font-style: italic;
+    color: #334155;
+    max-width: min(520px, 70vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .lc-typing-label {
     font-size: 0.72rem;
     font-weight: 600;

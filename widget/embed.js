@@ -58,6 +58,7 @@
     var ownTypingActive = false;
     var typingHeartbeatTimer = null;
     var typingIdleTimer = null;
+    var lastTypingDraft = '';
     var lastTypingPostAt = 0;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
@@ -1408,11 +1409,21 @@
 
     function postOwnTyping(isTyping) {
         if (!conversationId || chatClosed) return;
+        var input = document.getElementById('lc-input');
+        var draft = '';
+        if (isTyping && input) {
+            draft = String(input.value || '');
+            if (draft.length > 280) draft = draft.slice(0, 280);
+        }
         var now = Date.now();
-        if (isTyping && now - lastTypingPostAt < 1800) {
+        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 1800) {
+            return;
+        }
+        if (isTyping && draft !== lastTypingDraft && now - lastTypingPostAt < 350) {
             return;
         }
         lastTypingPostAt = now;
+        lastTypingDraft = draft;
         ownTypingActive = !!isTyping;
         fetch(siteUrl + '/api/typing.php', {
             method: 'POST',
@@ -1420,7 +1431,8 @@
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
-                typing: !!isTyping
+                typing: !!isTyping,
+                draft: draft
             })
         }).catch(function () {});
     }
@@ -1437,13 +1449,15 @@
         if (ownTypingActive && conversationId) {
             ownTypingActive = false;
             lastTypingPostAt = 0;
+            lastTypingDraft = '';
             fetch(siteUrl + '/api/typing.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversation_id: conversationId,
                     visitor_uid: visitorUid,
-                    typing: false
+                    typing: false,
+                    draft: ''
                 })
             }).catch(function () {});
         } else {

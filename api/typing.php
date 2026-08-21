@@ -1,6 +1,6 @@
 <?php
 /**
- * Typing heartbeat API — visitor or agent announces they are typing.
+ * Typing heartbeat API ΓÇö visitor or agent announces they are typing.
  * POST JSON: conversation_id, typing (bool), + visitor_uid (visitor) | session (agent)
  */
 require_once __DIR__ . '/../includes/functions.php';
@@ -19,6 +19,10 @@ $isTyping = !empty($input['typing']) && (
     || $input['typing'] === 'true'
 );
 $visitorUid = trim((string) ($input['visitor_uid'] ?? ''));
+$draft = '';
+if (function_exists('lc_sanitize_typing_preview')) {
+    $draft = lc_sanitize_typing_preview((string) ($input['draft'] ?? $input['preview'] ?? ''));
+}
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid conversation'], 400);
@@ -47,7 +51,7 @@ try {
         }
 
         // Light rate limit: skip spam; still update every valid heartbeat
-        lc_set_typing($conversationId, 'visitor', $isTyping);
+        lc_set_typing($conversationId, 'visitor', $isTyping, $isTyping ? $draft : '');
         lc_json(['success' => true, 'typing' => $isTyping]);
     }
 

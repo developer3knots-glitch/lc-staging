@@ -7,7 +7,7 @@ if (!$agent) {
 
 $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
-// full=1 only on first open (client) — loads continuous prior conversation history
+// full=1 only on first open (client) ΓÇö loads continuous prior conversation history
 $fullLoad = (int) ($_GET['full'] ?? 0) === 1;
 
 if ($conversationId < 1) {
@@ -70,6 +70,7 @@ try {
     $typing = lc_typing_state_for_viewer($conversationId, 'agent');
     $payload['peer_typing'] = !empty($typing['peer_typing']);
     $payload['peer_typing_name'] = $typing['peer_name'] ?? '';
+    $payload['peer_typing_preview'] = $typing['peer_typing_preview'] ?? '';
 
     // Full open only: prior same-visitor chats for LiveChat-style continuous timeline (agent-only)
     if ($fullLoad) {

@@ -74,16 +74,29 @@
         }
     }
 
-    function setPeerTypingVisible(show, name) {
+    function setPeerTypingVisible(show, name, preview) {
         if (!typingEl) return;
         if (show) {
             typingEl.hidden = false;
             if (typingLabelEl) {
                 var who = (name || 'Visitor').trim() || 'Visitor';
-                typingLabelEl.textContent = who + ' is typingΓÇª';
+                var draft = (preview || '').trim();
+                if (draft) {
+                    typingLabelEl.classList.add('has-preview');
+                    typingLabelEl.textContent = draft;
+                    typingLabelEl.title = who + ': ' + draft;
+                } else {
+                    typingLabelEl.classList.remove('has-preview');
+                    typingLabelEl.textContent = who + ' is typing\u2026';
+                    typingLabelEl.removeAttribute('title');
+                }
             }
         } else {
             typingEl.hidden = true;
+            if (typingLabelEl) {
+                typingLabelEl.classList.remove('has-preview');
+                typingLabelEl.removeAttribute('title');
+            }
         }
     }
 
@@ -1350,7 +1363,7 @@
                     paintIncremental();
                 }
                 loadPageJourney(false);
-                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name));
+                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
             });
     }
 
