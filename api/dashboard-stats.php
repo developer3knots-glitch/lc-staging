@@ -66,7 +66,12 @@ try {
     $recentSql = "
         SELECT c.id, c.status, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
-               (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg
+               (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
+               (CASE
+                    WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
+                        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'visitor' AND is_read = 0)
+                    ELSE 0
+                END) AS unread
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN brands b ON b.id = c.brand_id
@@ -75,7 +80,7 @@ try {
         LIMIT 40
     ";
     $stmt = $db->prepare($recentSql);
-    $stmt->execute($brandParams);
+    $stmt->execute(array_merge([$agentId], $brandParams));
     $recent = $stmt->fetchAll();
     if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
         $recent = array_slice(lc_dedupe_inbox_conversations_by_ip($recent), 0, 10);
@@ -85,11 +90,11 @@ try {
 
     $recentFormatted = [];
     foreach ($recent as $r) {
-        $msg = $r['last_msg'] ?? '—';
+        $msg = $r['last_msg'] ?? 'ΓÇö';
         if (function_exists('mb_strimwidth')) {
-            $msg = mb_strimwidth($msg, 0, 72, '…');
+            $msg = mb_strimwidth($msg, 0, 72, 'ΓÇª');
         } elseif (strlen($msg) > 72) {
-            $msg = substr($msg, 0, 72) . '…';
+            $msg = substr($msg, 0, 72) . 'ΓÇª';
         }
         $name = $r['visitor_name'] ?: 'Visitor';
         $recentFormatted[] = [
@@ -100,6 +105,7 @@ try {
             'visitor_ip' => $r['visitor_ip'] ?? '',
             'visitor_country' => $r['visitor_country'] ?? '',
             'status' => $r['status'],
+            'unread' => (int) ($r['unread'] ?? 0),
             'last_msg' => $msg,
             'last_message_at' => $r['last_message_at'] ? lc_to_iso8601($r['last_message_at']) : null,
             'chat_url' => lc_admin_url('chats', ['id' => (int) $r['id']]),

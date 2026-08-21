@@ -68,10 +68,16 @@ if (is_file(__DIR__ . '/../includes/ip-resume.php')) {
 if (function_exists('lc_merge_same_ip_conversations')) {
     try { lc_merge_same_ip_conversations(); } catch (Throwable $e) {}
 }
+$agentId = (int) $agent['id'];
 $recentSql = "
     SELECT c.id, c.status, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
            v.ip_address AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
-           (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg
+           (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
+           (CASE
+                WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
+                    (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'visitor' AND is_read = 0)
+                ELSE 0
+            END) AS unread
     FROM conversations c
     JOIN visitors v ON v.id = c.visitor_id
     LEFT JOIN brands b ON b.id = c.brand_id
@@ -80,7 +86,7 @@ $recentSql = "
     LIMIT 40
 ";
 $stmt = $db->prepare($recentSql);
-$stmt->execute($brandParams);
+$stmt->execute(array_merge([$agentId], $brandParams));
 $recent = $stmt->fetchAll();
 if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
     $recent = array_slice(lc_dedupe_inbox_conversations_by_ip($recent), 0, 10);
@@ -115,7 +121,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-sparkles"></i> Live Support Console</div>
             <h1 class="lc-hero-title"><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agent['name']) ?></h1>
-            <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets — everything in one beautiful workspace.</p>
+            <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets ΓÇö everything in one beautiful workspace.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Inbox</a>
                 <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-hero-chip"><i class="ti ti-bolt"></i> Waiting queue</a>
@@ -154,12 +160,12 @@ require __DIR__ . '/includes/header.php';
     <?php if ($unread > 0): ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php else: ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert" style="display:none">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text">0</strong> unread messages ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php endif; ?>
 
@@ -221,7 +227,7 @@ require __DIR__ . '/includes/header.php';
                     <?php foreach ($waitingChats as $w):
                         $name = $w['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $w['id']]);
-                        $msg = mb_strimwidth($w['last_msg'] ?? '—', 0, 72, '…');
+                        $msg = mb_strimwidth($w['last_msg'] ?? 'ΓÇö', 0, 72, 'ΓÇª');
                     ?>
                     <div class="lc-conv-item is-waiting">
                         <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
@@ -258,21 +264,25 @@ require __DIR__ . '/includes/header.php';
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
-                        $msg = mb_strimwidth($r['last_msg'] ?? '—', 0, 72, '…');
+                        $msg = mb_strimwidth($r['last_msg'] ?? 'ΓÇö', 0, 72, 'ΓÇª');
                     ?>
-                    <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item">
+                    <?php $itemUnread = (int) ($r['unread'] ?? 0); ?>
+                    <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>">
                         <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
                         <div class="lc-conv-item-body">
                             <div class="lc-conv-item-top">
                                 <strong><?= lc_sanitize($name) ?></strong>
                                 <?= $statusBadge($r['status']) ?>
+                                <?php if ($itemUnread > 0): ?>
+                                    <span class="lc-badge lc-badge-unread"><?= $itemUnread ?> new</span>
+                                <?php endif; ?>
                             </div>
                             <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
                             <div class="lc-conv-item-meta">
                                 <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
                                 <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
                                 <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
-                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '—' ?></span>
+                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : 'ΓÇö' ?></span>
                             </div>
                         </div>
                         <i class="ti ti-chevron-right lc-conv-item-arrow"></i>

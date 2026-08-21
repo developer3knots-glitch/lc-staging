@@ -28,7 +28,7 @@
 
     function timeCell(iso) {
         if (!iso) {
-            return '—';
+            return 'ΓÇö';
         }
         var label = window.LCTime ? window.LCTime.formatRelative(iso) : '';
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';
@@ -56,10 +56,15 @@
     }
 
     function renderRecentItem(r) {
-        var html = '<a href="' + esc(r.chat_url) + '" class="lc-conv-item">';
+        var unread = parseInt(r.unread, 10) || 0;
+        var html = '<a href="' + esc(r.chat_url) + '" class="lc-conv-item' + (unread > 0 ? ' has-unread' : '') + '">';
         html += '<div class="lc-conv-item-av">' + esc(r.visitor_initials || initials(r.visitor_name)) + '</div>';
         html += '<div class="lc-conv-item-body">';
-        html += '<div class="lc-conv-item-top"><strong>' + esc(r.visitor_name) + '</strong>' + statusBadge(r.status) + '</div>';
+        html += '<div class="lc-conv-item-top"><strong>' + esc(r.visitor_name) + '</strong>' + statusBadge(r.status);
+        if (unread > 0) {
+            html += '<span class="lc-badge lc-badge-unread">' + unread + ' new</span>';
+        }
+        html += '</div>';
         html += '<div class="lc-conv-item-msg">' + esc(r.last_msg) + '</div>';
         html += '<div class="lc-conv-item-meta">';
         html += metaSpan('ti-tag', r.brand_name);

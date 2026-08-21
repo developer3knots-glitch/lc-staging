@@ -1,5 +1,5 @@
 /**
- * LiveChat Admin ΓÇö Professional UI
+ * LiveChat Admin ╬ô├ç├╢ Professional UI
  * Icons: Tabler Icons | Font: Work Sans
  */
 
@@ -33,7 +33,7 @@ body,
     overflow-x: clip;
 }
 
-/* Shell: only main pane scrolls ΓÇö sidebar stays pinned (brand + nav + user footer) */
+/* Shell: only main pane scrolls ╬ô├ç├╢ sidebar stays pinned (brand + nav + user footer) */
 html {
     height: 100%;
 }
@@ -43,7 +43,7 @@ body.lc-admin-body {
     overflow: hidden;
 }
 
-/* ΓöÇΓöÇΓöÇ Auth ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Auth ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-auth-body {
     min-height: 100vh;
     display: flex;
@@ -78,7 +78,7 @@ body.lc-admin-body {
 .lc-auth-card h1 { margin: 0 0 0.35rem; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; }
 .lc-auth-sub { color: var(--lc-muted); margin: 0 0 1.5rem; font-size: 0.88rem; }
 
-/* ΓöÇΓöÇΓöÇ Layout ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Layout ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-app {
     display: flex;
     height: 100%;
@@ -208,7 +208,7 @@ body.lc-admin-body {
 .lc-agent-name { color: #fff; font-weight: 600; font-size: 0.84rem; }
 .lc-agent-status-line { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: #94a3b8; margin-top: 0.1rem; }
 
-/* ΓöÇΓöÇΓöÇ Avatars ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Avatars ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-avatar {
     display: inline-block;
     width: 40px;
@@ -439,7 +439,7 @@ body.lc-admin-body {
     -webkit-overflow-scrolling: touch;
 }
 
-/* ΓöÇΓöÇΓöÇ Hero ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Hero ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-hero {
     border-radius: var(--lc-radius-lg);
     padding: 1.4rem 1.5rem;
@@ -492,7 +492,7 @@ body.lc-admin-body {
 .lc-hero-stat-val { font-size: 1.65rem; font-weight: 800; display: block; line-height: 1.1; }
 .lc-hero-stat small { font-size: 0.72rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* ΓöÇΓöÇΓöÇ KPI ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç KPI ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -528,7 +528,7 @@ body.lc-admin-body {
 .lc-kpi-name { font-size: 0.72rem; color: var(--lc-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .lc-kpi-val { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin-top: 0.1rem; }
 
-/* ΓöÇΓöÇΓöÇ Cards ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Cards ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-card {
     background: var(--lc-surface);
     border: 1px solid var(--lc-border);
@@ -557,7 +557,7 @@ body.lc-admin-body {
 .lc-card-head h3 i { color: var(--lc-primary); font-size: 1rem; }
 .lc-card-body { padding: 1rem 1.15rem; }
 
-/* ΓöÇΓöÇΓöÇ Chat ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Chat ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-chat-layout {
     display: grid;
     grid-template-columns: 340px 1fr;
@@ -883,7 +883,7 @@ body.lc-admin-body {
     height: 11px;
 }
 .lc-msg-ticks.is-sent .lc-tick-svg { width: 12px; }
-/* On agent (own) green bubbles ΓÇö high contrast (lime washes out WA-blue #53bdeb) */
+/* On agent (own) green bubbles ╬ô├ç├╢ high contrast (lime washes out WA-blue #53bdeb) */
 .lc-msg.agent .lc-msg-ticks.is-sent,
 .lc-msg.agent .lc-msg-ticks.is-delivered {
     color: rgba(255, 255, 255, 0.85);
@@ -931,7 +931,7 @@ body.lc-admin-body {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-primary) 18%, transparent);
 }
 
-/* ΓöÇΓöÇΓöÇ Visitor meta chips ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Visitor meta chips ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-visitor-details { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
 .lc-visitor-details span {
     display: inline-flex;
@@ -974,7 +974,7 @@ body.lc-admin-body {
 .lc-block-ip-btn.is-blocked:hover { background: #dcfce7; }
 .lc-block-ip-btn i { font-size: 0.78rem; line-height: 1; }
 
-/* ΓöÇΓöÇΓöÇ Country blocking picker ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Country blocking picker ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-country-picker {
     border: 1px solid var(--lc-border);
     border-radius: 12px;
@@ -1053,7 +1053,7 @@ body.lc-admin-body {
     .lc-ip-block-row { grid-template-columns: 1fr; }
 }
 
-/* ΓöÇΓöÇΓöÇ Page journey timeline ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Page journey timeline ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-page-journey {
     border-bottom: 1px solid var(--lc-border);
     background: #fff;
@@ -1138,7 +1138,7 @@ body.lc-admin-body {
     text-overflow: ellipsis;
 }
 
-/* ΓöÇΓöÇΓöÇ Forms & buttons ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Forms & buttons ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-form label:not(.lc-settings-toggle):not(.lc-country-option) {
     display: block;
     font-size: 0.74rem;
@@ -1202,7 +1202,7 @@ body.lc-admin-body {
 .lc-btn-sm { padding: 0.38rem 0.75rem; font-size: 0.78rem; }
 .lc-btn-block { width: 100%; }
 
-/* ΓöÇΓöÇΓöÇ Tables ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Tables ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-table { width: 100%; border-collapse: collapse; }
 .lc-table th {
     background: #f8fafc;
@@ -1274,7 +1274,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: 0.84rem; color: 
 
 .lc-kpi-icon.red { background: #fef2f2; color: #dc2626; }
 
-/* ΓöÇΓöÇΓöÇ Advanced Dashboard ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Advanced Dashboard ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-content {
     background:
         radial-gradient(circle at top right, color-mix(in srgb, var(--lc-primary) 6%, transparent), transparent 32%),
@@ -1494,6 +1494,11 @@ a.lc-conv-item:hover {
     background: #f8fafc;
     border-color: var(--lc-border);
     transform: translateX(2px);
+}
+.lc-conv-item.has-unread {
+    background: #f0fdf4;
+    border-color: rgba(111, 217, 67, 0.35);
+    box-shadow: inset 3px 0 0 var(--lc-primary);
 }
 .lc-conv-item.is-waiting {
     background: linear-gradient(90deg, #fff7ed 0%, #fff 28%);
@@ -1747,7 +1752,7 @@ a.lc-conv-item:hover {
     .lc-history-form-grid { grid-template-columns: 1fr; }
 }
 
-/* ΓöÇΓöÇΓöÇ Chat History ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Chat History ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-hero-history {
     background:
         radial-gradient(circle at 12% 85%, rgba(139, 92, 246, 0.22), transparent 40%),
@@ -2062,7 +2067,7 @@ a.lc-conv-item:hover {
     .lc-sidebar-backdrop { display: none !important; }
 }
 
-/* ΓöÇΓöÇΓöÇ Canned Replies ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Canned Replies ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-hero-canned {
     background:
         radial-gradient(circle at 15% 80%, rgba(245, 158, 11, 0.28), transparent 42%),
@@ -2319,7 +2324,7 @@ a.lc-conv-item:hover {
     }
 }
 
-/* ΓöÇΓöÇΓöÇ Brands ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Brands ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-hero-brands {
     background:
         radial-gradient(circle at 10% 75%, rgba(20, 184, 166, 0.25), transparent 42%),
@@ -2624,7 +2629,7 @@ a.lc-conv-item:hover {
     .lc-brand-edit-grid { grid-template-columns: 1fr; }
 }
 
-/* ΓöÇΓöÇΓöÇ Agents ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Agents ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-hero-agents {
     background:
         radial-gradient(circle at 12% 80%, rgba(99, 102, 241, 0.28), transparent 42%),
@@ -2900,7 +2905,7 @@ a.lc-conv-item:hover {
     .lc-agent-card-meta { grid-template-columns: 1fr; gap: 0.35rem; }
 }
 
-/* ΓöÇΓöÇΓöÇ Settings ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Settings ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 .lc-settings-page {
     max-width: 100%;
     min-width: 0;
@@ -3402,7 +3407,7 @@ a.lc-conv-item:hover {
     .lc-settings-aside .lc-settings-section { position: static; }
 }
 
-/* ΓöÇΓöÇΓöÇ Live Chats Pro (inbox ~ LiveChat console width) ΓöÇΓöÇΓöÇ */
+/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Live Chats Pro (inbox ~ LiveChat console width) ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
 /* Full-bleed: use entire right column (no side padding / gap) */
 body.lc-page-chats {
     overflow: hidden;
@@ -4742,10 +4747,10 @@ body.lc-page-chats .lc-content {
     30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+/* ╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë
    LiveChat-style agent desk
    Icon rail + slim topbar + 3-col (inbox | thread | details)
-   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+   ╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë */
 body.lc-page-chats {
     --lc-sidebar-w: 68px;
 }
