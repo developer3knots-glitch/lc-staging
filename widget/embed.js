@@ -895,7 +895,7 @@
 
         var identityOk = !!data.visitor_identity_complete;
         // Session-only reconnect — never use server has_active_chat for silent resume
-        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
+        var resumeId = getStoredConversationId() || pendingResumeConvId || data.conversation_id || null;
 
         if (prechatFormEnabled) {
             if (resumeId && identityOk) {
