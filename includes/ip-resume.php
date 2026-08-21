@@ -226,14 +226,13 @@ function lc_merge_same_ip_conversations(): array
     $movedMessages = 0;
     $removedConversations = 0;
 
-    // Same public IP = one thread (brand does not split)
     $ipGroups = $db->query("
-        SELECT v.ip_address AS ip
+        SELECT v.ip_address AS ip, COALESCE(c.brand_id, 0) AS brand_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         WHERE v.ip_address IS NOT NULL
           AND v.ip_address NOT IN ('', '0.0.0.0', '127.0.0.1', '::1')
-        GROUP BY v.ip_address
+        GROUP BY v.ip_address, COALESCE(c.brand_id, 0)
         HAVING COUNT(*) > 1
     ")->fetchAll();
 
@@ -242,13 +241,13 @@ function lc_merge_same_ip_conversations(): array
             SELECT c.id
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
-            WHERE v.ip_address = ?
+            WHERE v.ip_address = ? AND COALESCE(c.brand_id, 0) = ?
             ORDER BY
                 CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END,
                 COALESCE(c.last_message_at, c.started_at) DESC,
                 c.id DESC
         ");
-        $stmt->execute([(string) $g['ip']]);
+        $stmt->execute([(string) $g['ip'], (int) $g['brand_id']]);
         $ids = array_map(static function ($row) {
             return (int) $row['id'];
         }, $stmt->fetchAll());

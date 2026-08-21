@@ -35,7 +35,6 @@ function lc_auth_agent(): ?array
 
 function lc_require_auth(): array
 {
-    lc_admin_auto_merge_same_ip_once();
     if (lc_installed()) {
         try {
             lc_ensure_brands_schema();
@@ -107,26 +106,4 @@ function lc_logout_agent(): void
         setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
     }
     session_destroy();
-}
-
-
-function lc_admin_auto_merge_same_ip_once(): void
-{
-    static $done = false;
-    if ($done) {
-        return;
-    }
-    $done = true;
-    $path = __DIR__ . '/ip-resume.php';
-    if (!is_file($path)) {
-        return;
-    }
-    require_once $path;
-    if (!function_exists('lc_merge_same_ip_conversations')) {
-        return;
-    }
-    try {
-        lc_merge_same_ip_conversations();
-    } catch (Throwable $e) {
-    }
 }
