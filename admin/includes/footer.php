@@ -18,7 +18,5 @@ foreach ($footerScripts as $scriptFile):
 ?>
 <script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=29"></script>
 <?php endforeach; ?>
-<link rel="stylesheet" href="<?= LC_BASE_URL ?>/assets/css/lc-wa-ticks.css?v=1">
-<script src="<?= LC_BASE_URL ?>/assets/js/lc-wa-ticks.js?v=1"></script>
 </body>
 </html>
