@@ -53,11 +53,9 @@ try {
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
-    // Delivered when visitor device polls; read only while chat panel is open
+    // Visitor page/widget polling = delivered + read (admin ticks turn blue)
     lc_mark_messages_delivered($conversationId, 'agent');
-    if ($isViewing) {
-        lc_mark_messages_read($conversationId, 'agent');
-    }
+    lc_mark_messages_read($conversationId, 'agent');
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');
     $lastVisitorRead = false;

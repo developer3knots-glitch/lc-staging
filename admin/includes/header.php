@@ -25,6 +25,22 @@ if ($agent['role'] === 'admin') {
     <title><?= lc_sanitize($pageTitle ?? 'Dashboard') ?> — <?= lc_sanitize(LC_APP_NAME) ?></title>
     <?php require __DIR__ . '/head-assets.php'; ?>
     <style>:root { --lc-primary: <?= lc_sanitize($primary) ?>; --lc-primary-dark: <?= lc_sanitize($primary) ?>; }</style>
+<style id="lc-agent-read-ticks">
+/* Agent bubbles: READ must be WhatsApp blue (widget already works) */
+.lc-msg.agent .lc-msg-ticks.is-read,
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-read{
+  color:#53bdeb !important;
+  background:none !important;
+  padding:0 !important;
+  filter:none !important;
+}
+.lc-msg.agent .lc-msg-ticks.is-sent,
+.lc-msg.agent .lc-msg-ticks.is-delivered,
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-sent,
+.lc-chats-pro .lc-msg.agent .lc-msg-ticks.is-delivered{
+  color:rgba(255,255,255,.55) !important;
+}
+</style>
 </head>
 <body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?>">
 <div class="lc-app" id="lc-app">
