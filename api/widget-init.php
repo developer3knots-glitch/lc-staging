@@ -52,12 +52,11 @@ try {
     }
 
     if (!$visitor && $settingsOnly) {
-        $ipThread = lc_find_conversation_for_visitor($ip, $brandId, $email);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => $ipThread !== null,
-            'conversation_id' => $ipThread['id'] ?? null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => false,
             'agents_online' => $onlineCount,
         ]);
@@ -93,14 +92,13 @@ try {
         && $visitorEmail !== ''
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
-    $ipThread = lc_find_conversation_for_visitor($ip, $brandId, $visitorEmail ?: $email);
-
     if ($settingsOnly) {
+        // Widget: never expose old IP thread for silent resume. Admin keeps combined history.
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => $ipThread !== null,
-            'conversation_id' => $ipThread['id'] ?? null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
         ]);
@@ -119,9 +117,7 @@ try {
         }
     }
 
-    if (!$conv && $ipThread) {
-        $conv = lc_resume_conversation_by_ip($ipThread, $visitorId);
-    }
+    // Visitor always starts a fresh chat thread (no IP auto-resume). Agent UI merges history.
 
     if (!$conv) {
         if ($prechatRequired) {

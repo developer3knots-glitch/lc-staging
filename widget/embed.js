@@ -893,7 +893,8 @@
     /**
      * Entry rules (enterprise):
      * - No auto-resume of old chats by IP / past device
-     * - Session continue: sessionStorage conversation id only
+     * - Session continue: sessionStorage conversation id only (same tab refresh)
+     * - Widget never shows combined IP history — that is admin/agent only
      * - Ticket resume: separate form when setting ON (visitor + agent share history)
      * - Form ON ΓåÆ gate identity; Form OFF ΓåÆ direct chat
      */
@@ -903,7 +904,7 @@
 
         var identityOk = !!data.visitor_identity_complete;
         // Session-only reconnect ΓÇö never use server has_active_chat for silent resume
-        var resumeId = getStoredConversationId() || pendingResumeConvId || data.conversation_id || null;
+        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
 
         if (prechatFormEnabled) {
             if (resumeId && identityOk) {
