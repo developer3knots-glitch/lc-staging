@@ -42,6 +42,28 @@ function lc_input(string $key, $default = null)
     return $_POST[$key] ?? $_GET[$key] ?? $default;
 }
 
+
+/**
+ * Normalize fancy/mojibake punctuation so admin UI never shows garbled dashes.
+ */
+function lc_plain_text(?string $text): string
+{
+    $text = (string) $text;
+    if ($text === '') {
+        return '';
+    }
+    $map = [
+        "\xE2\x80\x94" => ' - ',
+        "\xE2\x80\x93" => '-',
+        "\xE2\x80\xA6" => '...',
+        "\xCE\x93\xC3\x87\xC3\xB6" => ' - ',
+        "\xCE\x93\xC3\x87\xC3\xB4" => '-',
+        "\xCE\x93\xC3\x87\xC2\xAA" => '...',
+        "\xC3\x8F\xC3\x87\xC3\xB4" => ' - ',
+    ];
+    $text = strtr($text, $map);
+    return preg_replace('/\s{2,}/', ' ', $text) ?? $text;
+}
 function lc_sanitize(?string $value): string
 {
     return htmlspecialchars(trim((string) $value), ENT_QUOTES, 'UTF-8');

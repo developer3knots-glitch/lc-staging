@@ -90,7 +90,10 @@ try {
 
     $recentFormatted = [];
     foreach ($recent as $r) {
-        $msg = $r['last_msg'] ?? ' - ';
+        $msg = $r['last_msg'] ?? '-';
+        if (function_exists('lc_plain_text')) {
+            $msg = lc_plain_text((string) $msg);
+        }
         if (function_exists('mb_strimwidth')) {
             $msg = mb_strimwidth($msg, 0, 72, '...');
         } elseif (strlen($msg) > 72) {

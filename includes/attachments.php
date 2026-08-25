@@ -335,7 +335,7 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
     $msg = [
         'id' => (int) $row['id'],
         'sender_type' => $row['sender_type'],
-        'message' => (string) ($row['message'] ?? ''),
+        'message' => (function_exists('lc_plain_text') ? lc_plain_text((string) ($row['message'] ?? '')) : (string) ($row['message'] ?? '')),
         'created_at' => $row['created_at'] ?? null,
     ];
 

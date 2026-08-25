@@ -227,7 +227,7 @@ require __DIR__ . '/includes/header.php';
                     <?php foreach ($waitingChats as $w):
                         $name = $w['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $w['id']]);
-                        $msg = mb_strimwidth($w['last_msg'] ?? ' - ', 0, 72, '...');
+                        $msg = mb_strimwidth($w['last_msg'] ?? '-', 0, 72, '...');
                     ?>
                     <div class="lc-conv-item is-waiting">
                         <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
@@ -264,7 +264,7 @@ require __DIR__ . '/includes/header.php';
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
-                        $msg = mb_strimwidth($r['last_msg'] ?? ' - ', 0, 72, '...');
+                        $msg = mb_strimwidth($r['last_msg'] ?? '-', 0, 72, '...');
                     ?>
                     <?php $itemUnread = (int) ($r['unread'] ?? 0); ?>
                     <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>">

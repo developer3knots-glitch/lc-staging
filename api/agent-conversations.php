@@ -60,6 +60,9 @@ try {
     foreach ($conversations as &$row) {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
         unset($row['ticket_reference']);
+        if (function_exists('lc_plain_text') && isset($row['last_message'])) {
+            $row['last_message'] = lc_plain_text((string) $row['last_message']);
+        }
         if (function_exists('lc_enrich_returning_visitor_flags')) {
             $row = lc_enrich_returning_visitor_flags($row);
         } else {
