@@ -849,7 +849,6 @@
     }
 
     function closeTransferPanel() {
-        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         if (!transferPanel) return;
         transferPanel.hidden = true;
         if (transferBtn) transferBtn.setAttribute('aria-expanded', 'false');
@@ -865,6 +864,7 @@
 
     function openTransferPanel() {
         if (!transferPanel || !selectedId) return;
+        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         transferPanel.hidden = false;
         if (transferBtn) transferBtn.setAttribute('aria-expanded', 'true');
         loadTransferAgents();
@@ -1008,7 +1008,7 @@
 
     function openConversation(id) {
         clearPendingAttachment();
-        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
+        if (id !== selectedId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
@@ -1468,7 +1468,8 @@
 
     function openEmailPanel() {
         if (!selectedId) return;
-        closeTransferPanel();
+        if (transferPanel) transferPanel.hidden = true;
+        if (transferBtn) transferBtn.setAttribute('aria-expanded', 'false');
         closeMoreMenu();
         if (emailTranscriptTo) {
             emailTranscriptTo.value = currentVisitorEmail || '';
@@ -1616,6 +1617,9 @@
             }
             if (transferPanel && !transferPanel.hidden) {
                 closeTransferPanel();
+            }
+            if (emailPanel && !emailPanel.hidden) {
+                closeEmailPanel();
             }
         }
     });
