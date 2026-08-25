@@ -105,14 +105,28 @@ try {
     }
 
     $conv = null;
+    // Widget: resume only for a short live session (page refresh). Older threads stay for admin history only.
+    $resumeMaxIdleSeconds = 90 * 60; // 90 minutes
     if ($resumeConvId > 0) {
-        $stmt = $db->prepare("SELECT id, status, agent_id, visitor_id FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active') LIMIT 1");
+        $stmt = $db->prepare("
+            SELECT id, status, agent_id, visitor_id, last_message_at, started_at
+            FROM conversations
+            WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active')
+            LIMIT 1
+        ");
         $stmt->execute([$resumeConvId, $visitorId, $brandId]);
-        $conv = $stmt->fetch();
+        $conv = $stmt->fetch() ?: null;
         if (!$conv) {
             $reopened = lc_reopen_recent_visitor_close($resumeConvId, $visitorId);
             if ($reopened) {
                 $conv = $reopened;
+            }
+        }
+        if ($conv) {
+            $anchor = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
+            $ts = $anchor ? strtotime((string) $anchor) : false;
+            if ($ts === false || (time() - $ts) > $resumeMaxIdleSeconds) {
+                $conv = null; // force brand-new widget chat
             }
         }
     }
@@ -151,6 +165,15 @@ try {
         }
         lc_touch_conversation($convId);
         lc_assign_agent($convId);
+        // Keep widget on this new thread only; prior chats remain in DB for admin history/merge
+        try {
+            $db->prepare("
+                UPDATE conversations
+                SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
+                WHERE visitor_id = ? AND brand_id = ? AND id <> ? AND status IN ('waiting','active')
+            ")->execute([$visitorId, $brandId, $convId]);
+        } catch (Throwable $e) {
+        }
         $status = 'waiting';
     } else {
         $convId = (int) $conv['id'];

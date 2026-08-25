@@ -904,7 +904,23 @@
 
         var identityOk = !!data.visitor_identity_complete;
         // Session-only reconnect ΓÇö never use server has_active_chat for silent resume
-        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
+        var allowSessionResume = false;
+        try {
+            allowSessionResume = isDocumentReload() || isSiteNavigation();
+        } catch (e) {
+            allowSessionResume = false;
+        }
+        var resumeId = null;
+        if (allowSessionResume) {
+            resumeId = getStoredConversationId() || pendingResumeConvId || null;
+        } else {
+            // New browser visit: widget must show a fresh chat (admin keeps combined history)
+            pendingResumeConvId = null;
+            persistConversationId(null);
+            persistChatToken('');
+            try { chatStore().removeItem(LAST_MSG_KEY); } catch (e2) {}
+            lastMsgId = 0;
+        }
 
         if (prechatFormEnabled) {
             if (resumeId && identityOk) {
