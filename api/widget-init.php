@@ -127,6 +127,18 @@ try {
             $ts = $anchor ? strtotime((string) $anchor) : false;
             if ($ts === false || (time() - $ts) > $resumeMaxIdleSeconds) {
                 $conv = null; // force brand-new widget chat
+            } else {
+                // If this thread already has older history, do not show it on widget — start fresh.
+                try {
+                    $oldestStmt = $db->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
+                    $oldestStmt->execute([(int) $conv['id']]);
+                    $oldest = $oldestStmt->fetchColumn();
+                    $oldestTs = $oldest ? strtotime((string) $oldest) : false;
+                    if ($oldestTs !== false && (time() - $oldestTs) > $resumeMaxIdleSeconds) {
+                        $conv = null;
+                    }
+                } catch (Throwable $e) {
+                }
             }
         }
     }
