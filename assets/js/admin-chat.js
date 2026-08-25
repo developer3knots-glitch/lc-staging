@@ -832,19 +832,8 @@
                 lastConversations = data.conversations;
                 paintConversationList(filterConversations(lastConversations));
 
-                if (selectedId) {
-                    var stillVisible = data.conversations.some(function (c) {
-                        return parseInt(c.id, 10) === selectedId;
-                    });
-                    if (!stillVisible) {
-                        selectedId = 0;
-                        lastMsgId = 0;
-                        activeEl.style.display = 'none';
-                        emptyEl.style.display = 'flex';
-                        messagesEl.innerHTML = '';
-                        chatTransferredAway = false;
-                    }
-                }
+                // Keep the open chat mounted even if inbox hides IP duplicates.
+                // Tearing it down here made the panel vanish after email/list refresh.
             });
     }
 
@@ -1350,7 +1339,6 @@
                     }
                     setVisitorMeta(formatVisitorMeta(c, 'Chat closed'), true);
                     setPeerTypingVisible(false);
-                    loadConversations();
                     return;
                 }
 
@@ -1484,7 +1472,8 @@
     }
 
     function sendChatTranscriptEmail() {
-        if (!selectedId) return;
+        var convId = selectedId;
+        if (!convId) return;
         var email = (emailTranscriptTo && emailTranscriptTo.value || '').trim();
         if (!email) {
             setEmailPanelStatus('Enter the customer email address.', true);
@@ -1501,7 +1490,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId, email: email, scope: scope })
+            body: JSON.stringify({ conversation_id: convId, email: email, scope: scope })
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (emailTranscriptSend) emailTranscriptSend.disabled = false;
             if (data && data.success) {
@@ -1523,14 +1512,24 @@
     if (emailTranscriptBtn) emailTranscriptBtn.addEventListener('click', openEmailPanel);
     if (detailsEmailChatBtn) detailsEmailChatBtn.addEventListener('click', openEmailPanel);
     if (emailPanelClose) emailPanelClose.addEventListener('click', closeEmailPanel);
-    if (emailTranscriptSend) emailTranscriptSend.addEventListener('click', sendChatTranscriptEmail);
+    if (emailTranscriptSend) {
+        emailTranscriptSend.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            sendChatTranscriptEmail();
+        });
+    }
     if (emailTranscriptTo) {
         emailTranscriptTo.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                e.stopPropagation();
                 sendChatTranscriptEmail();
             }
         });
+    }
+    if (emailPanel) {
+        emailPanel.addEventListener('click', function (e) { e.stopPropagation(); });
     }
 
     document.getElementById('lc-close-chat').addEventListener('click', function () {
