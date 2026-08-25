@@ -405,6 +405,30 @@
         return html;
     }
 
+    function syncConversationListStatus(c) {
+        if (!c || !c.id) return;
+        var id = parseInt(c.id, 10);
+        if (!id) return;
+        var status = String(c.status || '');
+        if (!status) return;
+        var found = false;
+        lastConversations = (lastConversations || []).map(function (row) {
+            if (parseInt(row.id, 10) !== id) return row;
+            found = true;
+            var next = Object.assign({}, row, { status: status });
+            if (c.agent_name) next.agent_name = c.agent_name;
+            if (c.agent_id !== undefined && c.agent_id !== null) next.agent_id = c.agent_id;
+            if (c.last_message) next.last_message = c.last_message;
+            if (c.last_message_at) next.last_message_at = c.last_message_at;
+            return next;
+        });
+        if (!found) {
+            // Keep the open chat visible in the list with live status (IP collapse may hide it).
+            lastConversations = [Object.assign({}, c)].concat(lastConversations || []);
+        }
+        paintConversationList(filterConversations(lastConversations));
+    }
+
     function paintConversationList(conversations) {
         var loadingEl = document.getElementById('lc-list-loading');
         if (loadingEl) {
@@ -1262,6 +1286,9 @@
                 }
                 var c = data.conversation;
                 var isFirstLoad = full === 1;
+                if (c) {
+                    syncConversationListStatus(c);
+                }
 
                 function paintFirstLoadFrame() {
                     var html = '';
