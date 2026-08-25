@@ -19,6 +19,11 @@ if (!empty($_SESSION['lc_settings_flash'])) {
         $error = (string) $flash['error'];
     }
 }
+$smtpTestSteps = [];
+if (!empty($_SESSION['lc_smtp_test_steps']) && is_array($_SESSION['lc_smtp_test_steps'])) {
+    $smtpTestSteps = $_SESSION['lc_smtp_test_steps'];
+    unset($_SESSION['lc_smtp_test_steps']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -56,6 +61,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             lc_set_account_setting($accountId, 'smtp_encryption', $enc);
             $flashMessage = 'Email / SMTP settings saved.';
+        } elseif ($action === 'test_smtp') {
+            $override = [
+                'smtp_host' => trim((string) ($_POST['smtp_host'] ?? '')),
+                'smtp_port' => trim((string) ($_POST['smtp_port'] ?? '')),
+                'smtp_user' => trim((string) ($_POST['smtp_user'] ?? '')),
+                'smtp_pass' => (string) ($_POST['smtp_pass'] ?? ''),
+                'smtp_encryption' => trim((string) ($_POST['smtp_encryption'] ?? '')),
+                'smtp_enabled' => '1',
+            ];
+            $result = function_exists('lc_mail_test_smtp')
+                ? lc_mail_test_smtp($accountId, $override)
+                : ['ok' => false, 'error' => 'SMTP test not available'];
+            $_SESSION['lc_smtp_test_steps'] = $result['steps'] ?? [];
+            if (!empty($result['ok'])) {
+                $flashMessage = $result['detail'] ?? 'SMTP connection test passed.';
+            } else {
+                $flashError = $result['error'] ?? 'SMTP connection test failed.';
+            }
         } elseif ($action === 'test_email') {
             $testTo = strtolower(trim((string) ($_POST['test_email_to'] ?? '')));
             if ($testTo === '' || !filter_var($testTo, FILTER_VALIDATE_EMAIL)) {
@@ -303,14 +326,50 @@ require __DIR__ . '/includes/header.php';
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save email settings</button>
                     </form>
                     <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--lc-border)">
-                    <form method="post" class="lc-form" style="display:flex;gap:0.6rem;align-items:flex-end;flex-wrap:wrap">
+                    <div class="lc-smtp-test-block">
+                        <h4 style="margin:0 0 0.35rem;font-size:0.95rem">Test mode — SMTP connection</h4>
+                        <p class="lc-settings-desc" style="margin-bottom:0.75rem">Checks connect → TLS → login only (does not send mail). Uses the fields above; password can be typed here without saving first.</p>
+                        <form method="post" class="lc-form" id="lc-smtp-test-form" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem">
+                            <input type="hidden" name="action" value="test_smtp">
+                            <input type="hidden" name="smtp_host" id="lc-test-smtp-host" value="">
+                            <input type="hidden" name="smtp_port" id="lc-test-smtp-port" value="">
+                            <input type="hidden" name="smtp_user" id="lc-test-smtp-user" value="">
+                            <input type="hidden" name="smtp_pass" id="lc-test-smtp-pass" value="">
+                            <input type="hidden" name="smtp_encryption" id="lc-test-smtp-enc" value="">
+                            <button type="submit" class="lc-btn lc-btn-secondary"><i class="ti ti-plug-connected"></i> Test SMTP connection</button>
+                        </form><?php if (!empty($smtpTestSteps)): ?>
+                        <ul class="lc-smtp-test-steps" style="list-style:none;margin:0;padding:0.5rem 0.75rem;border:1px solid var(--lc-border);border-radius:8px;font-size:0.85rem;background:var(--lc-surface-2, #f8fafc)">
+<?php foreach ($smtpTestSteps as $st): ?>
+                            <li style="padding:0.2rem 0;display:flex;gap:0.5rem;align-items:baseline">
+                                <span style="font-weight:600;min-width:5.5rem;color:<?= !empty($st['ok']) ? '#15803d' : '#b91c1c' ?>"><?= !empty($st['ok']) ? '✓' : '✗' ?> <?= lc_sanitize((string) ($st['step'] ?? '')) ?></span>
+                                <span style="color:var(--lc-muted, #64748b)"><?= lc_sanitize((string) ($st['detail'] ?? '')) ?></span>
+                            </li>
+<?php endforeach; ?>
+                        </ul>
+<?php endif; ?>
+                    </div>
+                    <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--lc-border)">                    <form method="post" class="lc-form" style="display:flex;gap:0.6rem;align-items:flex-end;flex-wrap:wrap">
                         <input type="hidden" name="action" value="test_email">
                         <div class="lc-form-row" style="flex:1;min-width:220px;margin:0">
                             <label for="lc-test-email">Send test email to</label>
                             <input type="email" id="lc-test-email" name="test_email_to" required placeholder="you@gmail.com" value="<?= lc_sanitize($agent['email'] ?? '') ?>">
                         </div>
-                        <button type="submit" class="lc-btn lc-btn-secondary"><i class="ti ti-send"></i> Send test</button>
+                        <button type="submit" class="lc-btn lc-btn-secondary"><i class="ti ti-send"></i> Send test email</button>
                     </form>
+                    <script>
+(function () {
+  var form = document.getElementById('lc-smtp-test-form');
+  if (!form) return;
+  form.addEventListener('submit', function () {
+    var g = function (id) { var el = document.getElementById(id); return el ? el.value : ''; };
+    document.getElementById('lc-test-smtp-host').value = g('lc-smtp-host');
+    document.getElementById('lc-test-smtp-port').value = g('lc-smtp-port');
+    document.getElementById('lc-test-smtp-user').value = g('lc-smtp-user');
+    document.getElementById('lc-test-smtp-pass').value = g('lc-smtp-pass');
+    document.getElementById('lc-test-smtp-enc').value = g('lc-smtp-enc');
+  });
+})();
+                    </script>
                 </div>
             </section>
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-tickets">

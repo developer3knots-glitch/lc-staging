@@ -311,6 +311,195 @@ function lc_mail_send_smtp(
     }
 }
 
+
+/**
+ * Test SMTP connect / TLS / login without sending a message.
+ *
+ * @param array<string,string>|null $override Optional form values (host, port, user, pass, encryption)
+ * @return array{ok:bool,error?:string,steps?:list<array{step:string,ok:bool,detail?:string}>}
+ */
+function lc_mail_test_smtp(?int $accountId = null, ?array $override = null): array
+{
+    $settings = lc_mail_settings($accountId);
+    if (is_array($override)) {
+        foreach (['smtp_host', 'smtp_port', 'smtp_user', 'smtp_encryption'] as $k) {
+            if (isset($override[$k]) && trim((string) $override[$k]) !== '') {
+                $settings[$k] = trim((string) $override[$k]);
+            }
+        }
+        if (isset($override['smtp_pass']) && (string) $override['smtp_pass'] !== '') {
+            $settings['smtp_pass'] = (string) $override['smtp_pass'];
+        }
+        if (isset($override['smtp_enabled'])) {
+            $settings['smtp_enabled'] = ((string) $override['smtp_enabled'] === '1') ? '1' : '0';
+        }
+    }
+
+    $host = trim($settings['smtp_host'] ?? '');
+    $port = (int) ($settings['smtp_port'] ?: 587);
+    $user = trim($settings['smtp_user'] ?? '');
+    $pass = (string) ($settings['smtp_pass'] ?? '');
+    $enc = strtolower(trim($settings['smtp_encryption'] ?: 'tls'));
+    if (!in_array($enc, ['tls', 'ssl', 'none'], true)) {
+        $enc = 'tls';
+    }
+    if ($port < 1) {
+        $port = $enc === 'ssl' ? 465 : 587;
+    }
+
+    $steps = [];
+    $add = static function (string $step, bool $ok, string $detail = '') use (&$steps): void {
+        $row = ['step' => $step, 'ok' => $ok];
+        if ($detail !== '') {
+            $row['detail'] = $detail;
+        }
+        $steps[] = $row;
+    };
+
+    if ($host === '') {
+        return ['ok' => false, 'error' => 'SMTP host is empty. Save host (e.g. mail.yourdomain.com) first.', 'steps' => [
+            ['step' => 'config', 'ok' => false, 'detail' => 'Missing smtp_host'],
+        ]];
+    }
+
+    $remote = ($enc === 'ssl' ? 'ssl://' : '') . $host;
+    $errno = 0;
+    $errstr = '';
+    $fp = @stream_socket_client($remote . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT);
+    if (!$fp) {
+        $add('connect', false, ($errstr ?: 'timeout') . " ({$remote}:{$port})");
+        return ['ok' => false, 'error' => 'Could not connect to SMTP server', 'steps' => $steps];
+    }
+    stream_set_timeout($fp, 15);
+    $add('connect', true, "{$host}:{$port}" . ($enc === 'ssl' ? ' (SSL)' : ''));
+
+    $read = static function () use ($fp): string {
+        $data = '';
+        while (!feof($fp)) {
+            $line = fgets($fp, 515);
+            if ($line === false) {
+                break;
+            }
+            $data .= $line;
+            if (isset($line[3]) && $line[3] === ' ') {
+                break;
+            }
+        }
+        return $data;
+    };
+    $write = static function (string $cmd) use ($fp): void {
+        fwrite($fp, $cmd . "\r\n");
+    };
+    $codeOf = static function (string $resp): int {
+        return (int) substr($resp, 0, 3);
+    };
+
+    try {
+        $greet = $read();
+        $gc = $codeOf($greet);
+        if ($gc !== 220) {
+            $add('greeting', false, trim(substr($greet, 0, 120)));
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP greeting failed', 'steps' => $steps];
+        }
+        $add('greeting', true, trim(substr($greet, 0, 80)));
+
+        $ehloHost = preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost')) ?: 'localhost';
+        $write('EHLO ' . $ehloHost);
+        $ehlo = $read();
+        if ($codeOf($ehlo) !== 250) {
+            $write('HELO ' . $ehloHost);
+            $ehlo = $read();
+            if ($codeOf($ehlo) !== 250) {
+                $add('ehlo', false, trim(substr($ehlo, 0, 120)));
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP EHLO/HELO failed', 'steps' => $steps];
+            }
+        }
+        $add('ehlo', true, 'OK');
+
+        if ($enc === 'tls') {
+            $write('STARTTLS');
+            $tls = $read();
+            if ($codeOf($tls) !== 220) {
+                $add('starttls', false, trim(substr($tls, 0, 120)));
+                fclose($fp);
+                return ['ok' => false, 'error' => 'STARTTLS failed — try SSL/465 or check port', 'steps' => $steps];
+            }
+            if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                $add('starttls', false, 'TLS handshake failed');
+                fclose($fp);
+                return ['ok' => false, 'error' => 'TLS handshake failed', 'steps' => $steps];
+            }
+            $add('starttls', true, 'TLS OK');
+            $write('EHLO ' . $ehloHost);
+            $ehlo = $read();
+            if ($codeOf($ehlo) !== 250) {
+                $add('ehlo_tls', false, trim(substr($ehlo, 0, 120)));
+                fclose($fp);
+                return ['ok' => false, 'error' => 'EHLO after TLS failed', 'steps' => $steps];
+            }
+            $add('ehlo_tls', true, 'OK');
+        } elseif ($enc === 'ssl') {
+            $add('starttls', true, 'Using implicit SSL (skipped STARTTLS)');
+        } else {
+            $add('starttls', true, 'Encryption none (not recommended)');
+        }
+
+        if ($user === '') {
+            $add('auth', false, 'No SMTP username — set mailbox email as username');
+            $write('QUIT');
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP username is empty', 'steps' => $steps];
+        }
+        if ($pass === '') {
+            $add('auth', false, 'No SMTP password saved — enter password and Save, or type it for this test');
+            $write('QUIT');
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP password is empty', 'steps' => $steps];
+        }
+
+        $write('AUTH LOGIN');
+        $auth = $read();
+        if ($codeOf($auth) !== 334) {
+            $add('auth', false, 'AUTH LOGIN not accepted: ' . trim(substr($auth, 0, 80)));
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP AUTH not accepted', 'steps' => $steps];
+        }
+        $write(base64_encode($user));
+        $auth = $read();
+        if ($codeOf($auth) !== 334) {
+            $add('auth', false, 'Username rejected');
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP username rejected', 'steps' => $steps];
+        }
+        $write(base64_encode($pass));
+        $auth = $read();
+        if ($codeOf($auth) !== 235) {
+            $add('auth', false, 'Login failed — check mailbox password');
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP login failed — check email password', 'steps' => $steps];
+        }
+        $add('auth', true, 'Logged in as ' . $user);
+
+        $write('QUIT');
+        fclose($fp);
+        $add('quit', true, 'Connection closed cleanly');
+
+        return [
+            'ok' => true,
+            'steps' => $steps,
+            'detail' => "SMTP OK — {$host}:{$port} ({$enc}), user {$user}",
+        ];
+    } catch (Throwable $e) {
+        if (is_resource($fp)) {
+            fclose($fp);
+        }
+        $add('error', false, substr($e->getMessage(), 0, 120));
+        return ['ok' => false, 'error' => 'SMTP test error: ' . substr($e->getMessage(), 0, 120), 'steps' => $steps];
+    }
+}
+
 /**
  * @return array{ok:bool,error?:string,via?:string}
  */
