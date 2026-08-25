@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=24';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=25';
         document.head.appendChild(link);
     }
 
@@ -430,24 +430,28 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
-                    '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
-                        '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
-                    '</div>' +
-                    '<p class="lcw-ended-title">Thanks for chatting!</p>' +
-                    '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
-                    '<p class="lcw-ended-note">This conversation has been closed.</p>' +
-                    '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">ΓÇö</code></p>' +
-                    '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
-                    '<div class="lcw-email-export" id="lc-email-export">' +
-                        '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
-                        '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
-                            '<label class="lcw-email-export-label" for="lc-email-transcript-input">Send this chat to</label>' +
-                            '<input type="email" id="lc-email-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
-                            '<button type="button" id="lc-email-transcript-send" class="lcw-prechat-btn lcw-email-export-send">Send to email</button>' +
-                            '<p id="lc-email-transcript-status" class="lcw-email-export-status" hidden></p>' +
+                    '<div class="lcw-ended-hero">' +
+                        '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
+                            '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
                         '</div>' +
+                        '<p class="lcw-ended-title">Thanks for chatting!</p>' +
+                        '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
+                        '<p class="lcw-ended-note">This conversation has been closed.</p>' +
+                        '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +
                     '</div>' +
-                    '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
+                    '<div class="lcw-ended-actions">' +
+                        '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
+                        '<div class="lcw-email-export" id="lc-email-export">' +
+                            '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
+                            '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
+                                '<label class="lcw-email-export-label" for="lc-email-transcript-input">Send this chat to</label>' +
+                                '<input type="email" id="lc-email-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
+                                '<button type="button" id="lc-email-transcript-send" class="lcw-prechat-btn lcw-email-export-send">Send to email</button>' +
+                                '<p id="lc-email-transcript-status" class="lcw-email-export-status" hidden></p>' +
+                            '</div>' +
+                        '</div>' +
+                        '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
+                    '</div>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
@@ -1201,6 +1205,8 @@
         }
         var emailPanel = document.getElementById('lc-email-transcript-panel');
         if (emailPanel) emailPanel.hidden = true;
+        var endedEl = document.getElementById('lc-panel-ended');
+        if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
         setEmailTranscriptStatus('', false, 'ended');
         if (currentReference) {
             updateWidgetReference(currentReference);
@@ -1240,13 +1246,20 @@
         if (!panel) return;
         var open = panel.hidden;
         panel.hidden = !open;
+        var ended = document.getElementById('lc-panel-ended');
+        if (ended) ended.classList.toggle('lcw-ended-email-open', open);
         if (open) {
             var input = document.getElementById(ids.input);
             if (input && !input.value) {
                 input.value = localStorage.getItem('lc_visitor_email') || '';
             }
             setEmailTranscriptStatus('', false, which);
-            if (input) input.focus();
+            setTimeout(function () {
+                if (panel.scrollIntoView) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                var actions = document.querySelector('.lcw-ended-actions');
+                if (actions && actions.scrollIntoView) actions.scrollIntoView({ block: 'end', behavior: 'smooth' });
+                if (input) input.focus();
+            }, 40);
         }
     }
 
