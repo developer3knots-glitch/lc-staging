@@ -33,7 +33,7 @@ try {
     $db = lc_db();
     $stmt = $db->prepare('
         SELECT c.id, c.visitor_id, v.email AS visitor_email, v.visitor_uid,
-               b.account_id AS brand_account_id
+               b.name AS brand_name, b.account_id AS brand_account_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN brands b ON b.id = c.brand_id
@@ -65,12 +65,14 @@ try {
     }
 
     $accountId = (int) ($conv['brand_account_id'] ?? 0);
+    $brandName = trim((string) ($built['brand_name'] ?? $conv['brand_name'] ?? ''));
     $sent = lc_mail_send(
         $email,
         (string) $built['subject'],
         (string) $built['text'],
         (string) $built['html'],
-        $accountId > 0 ? $accountId : null
+        $accountId > 0 ? $accountId : null,
+        $brandName !== '' ? $brandName : null
     );
     if (empty($sent['ok'])) {
         lc_json(['success' => false, 'error' => $sent['error'] ?? 'Failed to send email'], 500);

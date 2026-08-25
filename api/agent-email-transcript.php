@@ -65,7 +65,15 @@ try {
     }
 
     $accountId = function_exists('lc_agent_account_id') ? (int) lc_agent_account_id($agent) : 0;
-    $sent = lc_mail_send($email, (string) $built['subject'], (string) $built['text'], (string) $built['html'], $accountId > 0 ? $accountId : null);
+    $brandName = trim((string) ($built['brand_name'] ?? $conv['brand_name'] ?? ''));
+    $sent = lc_mail_send(
+        $email,
+        (string) $built['subject'],
+        (string) $built['text'],
+        (string) $built['html'],
+        $accountId > 0 ? $accountId : null,
+        $brandName !== '' ? $brandName : null
+    );
     if (empty($sent['ok'])) {
         lc_json(['success' => false, 'error' => $sent['error'] ?? 'Failed to send email'], 500);
     }

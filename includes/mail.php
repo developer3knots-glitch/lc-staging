@@ -85,8 +85,13 @@ function lc_mail_from_address(?int $accountId = null): string
     return 'noreply@' . $host;
 }
 
-function lc_mail_from_name(?int $accountId = null): string
+function lc_mail_from_name(?int $accountId = null, ?string $brandName = null): string
 {
+    // Transcript emails: prefer the widget/conversation brand name
+    $brand = trim((string) ($brandName ?? ''));
+    if ($brand !== '') {
+        return $brand;
+    }
     $s = lc_mail_settings($accountId);
     $name = trim($s['mail_from_name']);
     if ($name !== '') {
@@ -101,7 +106,7 @@ function lc_mail_from_name(?int $accountId = null): string
 /**
  * @return array{ok:bool,error?:string,via?:string}
  */
-function lc_mail_send(string $to, string $subject, string $textBody, string $htmlBody = '', ?int $accountId = null): array
+function lc_mail_send(string $to, string $subject, string $textBody, string $htmlBody = '', ?int $accountId = null, ?string $fromNameOverride = null): array
 {
     $to = trim($to);
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
@@ -109,7 +114,7 @@ function lc_mail_send(string $to, string $subject, string $textBody, string $htm
     }
 
     $fromEmail = lc_mail_from_address($accountId);
-    $fromName = lc_mail_from_name($accountId);
+    $fromName = lc_mail_from_name($accountId, $fromNameOverride);
     $subject = trim(preg_replace('/[\r\n]+/', ' ', $subject));
     if ($subject === '') {
         $subject = 'Chat transcript';
@@ -721,6 +726,7 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         'reference' => $reference,
         'visitor_email' => trim((string) ($conv['visitor_email'] ?? '')),
         'visitor_name' => trim((string) ($conv['visitor_name'] ?? '')),
+        'brand_name' => $siteName,
     ];
 }
 

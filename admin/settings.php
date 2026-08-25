@@ -286,8 +286,9 @@ require __DIR__ . '/includes/header.php';
                             <input type="email" id="lc-mail-from" name="mail_from" value="<?= lc_sanitize($mailFrom) ?>" placeholder="noreply@yourdomain.com">
                         </div>
                         <div class="lc-form-row">
-                            <label for="lc-mail-from-name">From name</label>
+                            <label for="lc-mail-from-name">From name (fallback)</label>
                             <input type="text" id="lc-mail-from-name" name="mail_from_name" value="<?= lc_sanitize($mailFromName) ?>" placeholder="LiveChat Support">
+                            <small class="lc-settings-desc" style="margin-top:0.35rem;display:block">Chat transcripts use the <strong>brand name</strong> of the widget/conversation as the From name. This field is only used when brand is missing.</small>
                         </div>
                         <label class="lc-settings-toggle" style="margin:1rem 0">
                             <input type="checkbox" name="smtp_enabled" <?= $smtpEnabled ? 'checked' : '' ?>>
