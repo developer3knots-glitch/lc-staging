@@ -1736,7 +1736,8 @@
         var t = String(m.message || '');
         return /Merged\s+\d+\s+earlier chat/i.test(t)
             || /from the same visitor into this thread/i.test(t)
-            || /Visitor returned\. Previous conversation is open again/i.test(t);
+            || /Visitor returned\. Previous conversation is open again/i.test(t)
+            || /Agent reopened this chat to follow up/i.test(t);
     }
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length) return;
