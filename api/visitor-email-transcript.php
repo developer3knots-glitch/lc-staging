@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/functions.php';
 lc_cors_headers();
 
-if ((\['REQUEST_METHOD'] ?? '') !== 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     lc_json(['success' => false, 'error' => 'Method not allowed'], 405);
 }
 
