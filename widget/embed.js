@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=27';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=28';
         document.head.appendChild(link);
     }
 
@@ -992,11 +992,9 @@
     function showIdleWelcomePreview() {
         var text = idleWelcomeText();
         if (!text) return;
-        var brand = (settings && settings.site_name) || 'Support';
         // Preview only — no conversation / ticket until visitor sends a message
         appendMessage({
-            sender_type: 'agent',
-            agent_name: brand,
+            sender_type: 'system',
             message: text,
             created_at: new Date().toISOString(),
             _idlePreview: true
@@ -1032,6 +1030,7 @@
             input.placeholder = 'Write a message to start chat...';
         }
         showIdleWelcomePreview();
+        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
     }
 
     function startDirectChat(options) {
