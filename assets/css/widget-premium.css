@@ -979,6 +979,9 @@
     cursor: pointer;
     box-shadow: 0 4px 14px color-mix(in srgb, var(--lcw-primary) 30%, transparent);
     transition: filter 0.15s, transform 0.15s;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 280px;
 }
 #lc-new-chat:hover { filter: brightness(1.04); transform: translateY(-1px); }
 
@@ -1032,11 +1035,28 @@
 /* Email transcript export */
 .lcw-email-export {
     width: 100%;
+    max-width: 280px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 0.55rem;
-    margin: 0.15rem 0 0.35rem;
+    margin: 0;
+}
+#lc-panel-ended > .lcw-ended-secondary,
+#lc-panel-ended > .lcw-email-export,
+#lc-panel-ended > #lc-new-chat {
+    width: 100%;
+    max-width: 280px;
+    box-sizing: border-box;
+    align-self: center;
+    margin-left: auto;
+    margin-right: auto;
+}
+#lc-panel-ended .lcw-email-export .lcw-ended-secondary {
+    width: 100%;
+    max-width: none;
+    margin-bottom: 0;
 }
 .lcw-email-export-panel {
     display: flex;
@@ -1195,9 +1215,10 @@
     font-size: 0.84rem;
     font-family: inherit;
     cursor: pointer;
-    margin-bottom: 0.55rem;
+    margin-bottom: 0;
+    box-sizing: border-box;
     width: 100%;
-    max-width: 260px;
+    max-width: 280px;
 }
 .lcw-ended-secondary:hover {
     background: color-mix(in srgb, var(--lcw-primary) 8%, #fff);
