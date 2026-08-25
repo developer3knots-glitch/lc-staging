@@ -15,14 +15,25 @@ if ($conversationId < 1 || $message === '') {
 
 try {
     $conv = lc_get_conversation($conversationId);
-    if (!$conv || !in_array($conv['status'], ['waiting', 'active'], true)) {
-        lc_json(['success' => false, 'error' => 'Conversation closed'], 400);
+    if (!$conv) {
+        lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
     }
     if (!lc_agent_can_view_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
 
     $agentId = (int) $agent['id'];
+    if (($conv['status'] ?? '') === 'closed') {
+        if (!lc_agent_can_handle_conversation($agent, $conv)) {
+            lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
+        }
+        lc_agent_reopen_conversation($conversationId, $agentId);
+        $conv = lc_get_conversation($conversationId) ?: $conv;
+    }
+    if (!in_array($conv['status'] ?? '', ['waiting', 'active'], true)) {
+        lc_json(['success' => false, 'error' => 'Conversation closed'], 400);
+    }
+
     $wasWaiting = $conv['status'] === 'waiting';
 
     if (!lc_agent_can_handle_conversation($agent, $conv)) {

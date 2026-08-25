@@ -358,24 +358,60 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
 
 function lc_agent_can_handle_conversation(array $agent, array $conv): bool
 {
-    if (($conv['status'] ?? '') === 'closed') {
-        return false;
-    }
-
     $agentId = (int) $agent['id'];
     $assignedId = (int) ($conv['agent_id'] ?? 0);
+    $status = (string) ($conv['status'] ?? '');
+
+    // Assigned agent can reopen/message visitor-closed chats (follow-up).
+    if ($status === 'closed') {
+        if ($assignedId === $agentId) {
+            return true;
+        }
+        if ($assignedId === 0 && lc_agent_can_access_conversation($agent, $conv)) {
+            return true;
+        }
+        return false;
+    }
 
     if ($assignedId === $agentId) {
         return true;
     }
 
-    if (($conv['status'] ?? '') === 'waiting' && $assignedId === 0) {
+    if ($status === 'waiting' && $assignedId === 0) {
         return lc_agent_can_access_conversation($agent, $conv);
     }
 
     return false;
 }
 
+
+/**
+ * Reopen a closed conversation so the agent can follow up with the visitor.
+ */
+function lc_agent_reopen_conversation(int $conversationId, int $agentId): bool
+{
+    if ($conversationId < 1 || $agentId < 1) {
+        return false;
+    }
+    try {
+        $stmt = lc_db()->prepare("
+            UPDATE conversations
+            SET status = 'active',
+                closed_at = NULL,
+                agent_id = COALESCE(agent_id, ?),
+                accepted_at = COALESCE(accepted_at, NOW()),
+                last_message_at = NOW()
+            WHERE id = ? AND status = 'closed'
+        ");
+        $stmt->execute([$agentId, $conversationId]);
+        if ($stmt->rowCount() > 0) {
+            lc_add_system_message($conversationId, 'Agent reopened this chat to follow up with the visitor.');
+            return true;
+        }
+    } catch (Throwable $e) {
+    }
+    return false;
+}
 function lc_agent_can_close_conversation(array $agent, array $conv): bool
 {
     if (($conv['status'] ?? '') === 'closed') {
@@ -416,8 +452,10 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         return [
-            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'){$accountFilter}",
-            array_merge([$agentId], $accountParams),
+            "(({$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'))"
+            . " OR ({$a}.status = 'closed' AND {$a}.closed_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)"
+            . " AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL))){$accountFilter}",
+            array_merge([$agentId, $agentId], $accountParams),
         ];
     }
 
@@ -440,8 +478,10 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     return [
-        "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
-        array_merge([$agentId, $brandId], $extraParams),
+        "(({$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)))"
+        . " OR ({$a}.status = 'closed' AND {$a}.closed_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)"
+        . " AND {$a}.brand_id = ? AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL))){$extra}",
+        array_merge([$agentId, $brandId, $brandId, $agentId], $extraParams),
     ];
 }
 

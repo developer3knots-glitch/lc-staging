@@ -143,7 +143,41 @@ try {
         }
     }
 
-    // Visitor always starts a fresh chat thread (no IP auto-resume). Agent UI merges history.
+    // If agent reopened/follow-up is live, visitor rejoins that active thread (not a blank new chat).
+    if (!$conv) {
+        try {
+            $live = $db->prepare("
+                SELECT id, status, agent_id, visitor_id, last_message_at, started_at
+                FROM conversations
+                WHERE visitor_id = ? AND brand_id = ? AND status = 'active'
+                ORDER BY COALESCE(last_message_at, started_at) DESC, id DESC
+                LIMIT 1
+            ");
+            $live->execute([$visitorId, $brandId]);
+            $liveRow = $live->fetch() ?: null;
+            if (!$liveRow && function_exists('lc_ip_usable_for_identity') && lc_ip_usable_for_identity($ip)) {
+                $live = $db->prepare("
+                    SELECT c.id, c.status, c.agent_id, c.visitor_id, c.last_message_at, c.started_at
+                    FROM conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    WHERE v.ip_address = ? AND c.brand_id = ? AND c.status = 'active'
+                    ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
+                    LIMIT 1
+                ");
+                $live->execute([$ip, $brandId]);
+                $liveRow = $live->fetch() ?: null;
+            }
+            if ($liveRow) {
+                $conv = $liveRow;
+                if ((int) ($conv['visitor_id'] ?? 0) !== $visitorId) {
+                    $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ?')->execute([$visitorId, (int) $conv['id']]);
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    }
+
+    // Otherwise visitor starts a fresh chat thread. Agent UI still keeps history/merge.
 
     if (!$conv) {
         if ($prechatRequired) {
@@ -177,12 +211,12 @@ try {
         }
         lc_touch_conversation($convId);
         lc_assign_agent($convId);
-        // Keep widget on this new thread only; prior chats remain in DB for admin history/merge
+        // Close only other waiting queues; keep active follow-up threads intact for agent reach-back
         try {
             $db->prepare("
                 UPDATE conversations
                 SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
-                WHERE visitor_id = ? AND brand_id = ? AND id <> ? AND status IN ('waiting','active')
+                WHERE visitor_id = ? AND brand_id = ? AND id <> ? AND status = 'waiting'
             ")->execute([$visitorId, $brandId, $convId]);
         } catch (Throwable $e) {
         }
