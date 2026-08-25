@@ -226,12 +226,14 @@ function lc_merge_same_ip_conversations(): array
     $movedMessages = 0;
     $removedConversations = 0;
 
-    // Same public IP = one thread (brand does not split)
+    // Archive cleanup only: merge CLOSED threads.
+    // Never move old messages into waiting/active chats — that poisons the visitor widget.
     $ipGroups = $db->query("
         SELECT v.ip_address AS ip
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
-        WHERE v.ip_address IS NOT NULL
+        WHERE c.status = 'closed'
+          AND v.ip_address IS NOT NULL
           AND v.ip_address NOT IN ('', '0.0.0.0', '127.0.0.1', '::1')
         GROUP BY v.ip_address
         HAVING COUNT(*) > 1
@@ -242,11 +244,8 @@ function lc_merge_same_ip_conversations(): array
             SELECT c.id
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
-            WHERE v.ip_address = ?
-            ORDER BY
-                CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END,
-                COALESCE(c.last_message_at, c.started_at) DESC,
-                c.id DESC
+            WHERE v.ip_address = ? AND c.status = 'closed'
+            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         ");
         $stmt->execute([(string) $g['ip']]);
         $ids = array_map(static function ($row) {
@@ -264,7 +263,8 @@ function lc_merge_same_ip_conversations(): array
         SELECT LOWER(TRIM(v.email)) AS email, COALESCE(c.brand_id, 0) AS brand_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
-        WHERE v.email IS NOT NULL AND TRIM(v.email) <> ''
+        WHERE c.status = 'closed'
+          AND v.email IS NOT NULL AND TRIM(v.email) <> ''
         GROUP BY LOWER(TRIM(v.email)), COALESCE(c.brand_id, 0)
         HAVING COUNT(*) > 1
     ")->fetchAll();
@@ -278,11 +278,8 @@ function lc_merge_same_ip_conversations(): array
             SELECT c.id
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
-            WHERE LOWER(TRIM(v.email)) = ? AND COALESCE(c.brand_id, 0) = ?
-            ORDER BY
-                CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END,
-                COALESCE(c.last_message_at, c.started_at) DESC,
-                c.id DESC
+            WHERE LOWER(TRIM(v.email)) = ? AND COALESCE(c.brand_id, 0) = ? AND c.status = 'closed'
+            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         ");
         $stmt->execute([$email, (int) $g['brand_id']]);
         $ids = array_map(static function ($row) {

@@ -37,6 +37,15 @@ try {
     lc_ensure_attachments_schema();
     lc_ensure_message_receipts_schema();
 
+    $reference = lc_ticket_display_enabled()
+        ? (string) lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
+        : '';
+    $floorId = function_exists('lc_visitor_visible_message_floor')
+        ? lc_visitor_visible_message_floor($conversationId, $reference)
+        : 0;
+    // History load (last_id=0) starts at floor; incremental polls keep last_id.
+    $afterId = $lastId > 0 ? $lastId : max(0, $floorId - 1);
+
     $stmt = $db->prepare('
         SELECT ' . lc_attachment_message_select_sql() . ',
                ag.name AS agent_name, ag.avatar AS agent_avatar
@@ -45,7 +54,7 @@ try {
         WHERE m.conversation_id = ? AND m.id > ?
         ORDER BY m.id ASC
     ');
-    $stmt->execute([$conversationId, $lastId]);
+    $stmt->execute([$conversationId, $afterId]);
     $rows = $stmt->fetchAll();
 
     $messages = [];
@@ -77,7 +86,7 @@ try {
         'messages' => $messages,
         'receipts' => $receipts,
         'status' => $conv['status'],
-        'reference' => lc_ticket_display_enabled() ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null) : '',
+        'reference' => $reference,
         'agent_name' => $conv['agent_name'],
         'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),
         'agents_online' => lc_get_online_agents_count(),

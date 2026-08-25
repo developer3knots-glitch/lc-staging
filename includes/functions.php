@@ -292,6 +292,7 @@ function lc_message_hidden_from_visitor(string $message): bool
         'from the same visitor into this thread',
         'Visitor returned. Previous conversation is open again.',
         'Chat history (agent only)',
+        'Agent reopened',
     ];
     foreach ($needles as $n) {
         if (stripos($message, $n) !== false) {
@@ -299,6 +300,53 @@ function lc_message_hidden_from_visitor(string $message): bool
         }
     }
     return false;
+}
+
+/**
+ * Lowest message id the visitor widget may show for this live thread.
+ * After IP-merge, older ticket segments can sit in the same conversation_id —
+ * cut the timeline at the current ticket's intro so the widget stays "fresh".
+ */
+function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
+{
+    if ($conversationId < 1) {
+        return 0;
+    }
+    $db = lc_db();
+    $ticketId = 0;
+    $reference = trim($reference);
+    if ($reference !== '') {
+        try {
+            $stmt = $db->prepare("
+                SELECT id FROM messages
+                WHERE conversation_id = ?
+                  AND sender_type = 'system'
+                  AND message LIKE ?
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$conversationId, '%' . $reference . '%']);
+            $ticketId = (int) $stmt->fetchColumn();
+        } catch (Throwable $e) {
+            $ticketId = 0;
+        }
+    }
+    if ($ticketId < 1) {
+        return 0;
+    }
+    try {
+        $stmt = $db->prepare("
+            SELECT id FROM messages
+            WHERE conversation_id = ? AND id <= ?
+            ORDER BY id DESC
+            LIMIT 4
+        ");
+        $stmt->execute([$conversationId, $ticketId]);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        return $ids ? min($ids) : $ticketId;
+    } catch (Throwable $e) {
+        return $ticketId;
+    }
 }
 function lc_add_system_message(int $conversationId, string $message): void
 {

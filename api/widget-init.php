@@ -143,7 +143,8 @@ try {
         }
     }
 
-    // If agent reopened/follow-up is live, visitor rejoins that active thread (not a blank new chat).
+    // Agent follow-up: same visitor may rejoin a fresh active thread only.
+    // Never attach by IP (that reloads other people/history into the widget).
     if (!$conv) {
         try {
             $live = $db->prepare("
@@ -155,22 +156,24 @@ try {
             ");
             $live->execute([$visitorId, $brandId]);
             $liveRow = $live->fetch() ?: null;
-            if (!$liveRow && function_exists('lc_ip_usable_for_identity') && lc_ip_usable_for_identity($ip)) {
-                $live = $db->prepare("
-                    SELECT c.id, c.status, c.agent_id, c.visitor_id, c.last_message_at, c.started_at
-                    FROM conversations c
-                    JOIN visitors v ON v.id = c.visitor_id
-                    WHERE v.ip_address = ? AND c.brand_id = ? AND c.status = 'active'
-                    ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
-                    LIMIT 1
-                ");
-                $live->execute([$ip, $brandId]);
-                $liveRow = $live->fetch() ?: null;
-            }
             if ($liveRow) {
-                $conv = $liveRow;
-                if ((int) ($conv['visitor_id'] ?? 0) !== $visitorId) {
-                    $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ?')->execute([$visitorId, (int) $conv['id']]);
+                $anchor = $liveRow['last_message_at'] ?? $liveRow['started_at'] ?? null;
+                $ts = $anchor ? strtotime((string) $anchor) : false;
+                $freshEnough = $ts !== false && (time() - $ts) <= $resumeMaxIdleSeconds;
+                if ($freshEnough) {
+                    try {
+                        $oldestStmt = $db->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
+                        $oldestStmt->execute([(int) $liveRow['id']]);
+                        $oldest = $oldestStmt->fetchColumn();
+                        $oldestTs = $oldest ? strtotime((string) $oldest) : false;
+                        if ($oldestTs !== false && (time() - $oldestTs) > $resumeMaxIdleSeconds) {
+                            $freshEnough = false;
+                        }
+                    } catch (Throwable $e) {
+                    }
+                }
+                if ($freshEnough) {
+                    $conv = $liveRow;
                 }
             }
         } catch (Throwable $e) {
