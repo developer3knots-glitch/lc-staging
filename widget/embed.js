@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=21';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=22';
         document.head.appendChild(link);
     }
 
@@ -344,6 +344,9 @@
                         '</div>' +
                     '</div>' +
                     '<div class="lcw-head-actions">' +
+                        '<button type="button" id="lc-email-chat" class="lcw-head-btn" title="Email this chat" aria-label="Email this chat">' +
+                            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>' +
+                        '</button>' +
                         '<button type="button" id="lc-minimize-chat" class="lcw-head-btn" title="Minimize chat" aria-label="Minimize chat">' +
                             ICON_MINIMIZE +
                         '</button>' +
@@ -438,10 +441,28 @@
                     '<p class="lcw-ended-note">This conversation has been closed.</p>' +
                     '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">ΓÇö</code></p>' +
                     '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
+                    '<div class="lcw-email-export" id="lc-email-export">' +
+                        '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
+                        '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
+                            '<label class="lcw-email-export-label" for="lc-email-transcript-input">Send this chat to</label>' +
+                            '<input type="email" id="lc-email-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
+                            '<button type="button" id="lc-email-transcript-send" class="lcw-prechat-btn lcw-email-export-send">Send to email</button>' +
+                            '<p id="lc-email-transcript-status" class="lcw-email-export-status" hidden></p>' +
+                        '</div>' +
+                    '</div>' +
                     '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
+                    '<div class="lcw-email-export lcw-email-export-compose" id="lc-email-export-live">' +
+                        '<button type="button" id="lc-email-transcript-toggle-live" class="lcw-email-export-link">Email this chat to me</button>' +
+                        '<div id="lc-email-transcript-panel-live" class="lcw-email-export-panel" hidden>' +
+                            '<label class="lcw-email-export-label" for="lc-email-transcript-input-live">Send this chat to</label>' +
+                            '<input type="email" id="lc-email-transcript-input-live" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
+                            '<button type="button" id="lc-email-transcript-send-live" class="lcw-prechat-btn lcw-email-export-send">Send to my email</button>' +
+                            '<p id="lc-email-transcript-status-live" class="lcw-email-export-status" hidden></p>' +
+                        '</div>' +
+                    '</div>' +
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
                     '<div class="lcw-compose-inner">' +
@@ -458,8 +479,18 @@
         document.getElementById('lc-toolbar-minimize').addEventListener('click', minimizePanel);
         document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
         document.getElementById('lc-close-chat').addEventListener('click', endChat);
-                document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
+        var emailChatBtn = document.getElementById('lc-email-chat');
+        if (emailChatBtn) emailChatBtn.addEventListener('click', openEmailTranscriptFromChat);
+        document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', openTicketResumeFromEnded);
+        var emailToggle = document.getElementById('lc-email-transcript-toggle');
+        var emailSendBtn = document.getElementById('lc-email-transcript-send');
+        if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
+        if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
+        var emailToggleLive = document.getElementById('lc-email-transcript-toggle-live');
+        var emailSendLive = document.getElementById('lc-email-transcript-send-live');
+        if (emailToggleLive) emailToggleLive.addEventListener('click', function () { toggleEmailTranscriptPanel('live'); });
+        if (emailSendLive) emailSendLive.addEventListener('click', function () { sendChatTranscriptEmail(null, 'live'); });
                 document.getElementById('lc-show-ticket-resume').addEventListener('click', showTicketResumePanel);
         document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
@@ -1182,13 +1213,142 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-panel-ended').style.display = 'flex';
         document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
-                if (currentReference) {
+        var emailInput = document.getElementById('lc-email-transcript-input');
+        if (emailInput && !emailInput.value) {
+            emailInput.value = localStorage.getItem('lc_visitor_email') || '';
+        }
+        var emailPanel = document.getElementById('lc-email-transcript-panel');
+        if (emailPanel) emailPanel.hidden = true;
+        setEmailTranscriptStatus('', false, 'ended');
+        if (currentReference) {
             updateWidgetReference(currentReference);
         }
         syncTicketFeatureUi();
     }
 
-        function hideEndedState() {
+    function emailExportIds(which) {
+        which = which === 'ended' ? 'ended' : 'live';
+        if (which === 'ended') {
+            return {
+                panel: 'lc-email-transcript-panel',
+                input: 'lc-email-transcript-input',
+                send: 'lc-email-transcript-send',
+                status: 'lc-email-transcript-status',
+                sendLabel: 'Send to email'
+            };
+        }
+        return {
+            panel: 'lc-email-transcript-panel-live',
+            input: 'lc-email-transcript-input-live',
+            send: 'lc-email-transcript-send-live',
+            status: 'lc-email-transcript-status-live',
+            sendLabel: 'Send to my email'
+        };
+    }
+
+    function setEmailTranscriptStatus(msg, isError, which) {
+        var ids = emailExportIds(which);
+        var el = document.getElementById(ids.status);
+        if (!el) return;
+        if (!msg) {
+            el.hidden = true;
+            el.textContent = '';
+            el.classList.remove('is-error', 'is-ok');
+            return;
+        }
+        el.hidden = false;
+        el.textContent = msg;
+        el.classList.toggle('is-error', !!isError);
+        el.classList.toggle('is-ok', !isError);
+    }
+
+    function toggleEmailTranscriptPanel(which) {
+        var ids = emailExportIds(which);
+        var panel = document.getElementById(ids.panel);
+        if (!panel) return;
+        var open = panel.hidden;
+        panel.hidden = !open;
+        if (open) {
+            var input = document.getElementById(ids.input);
+            if (input && !input.value) {
+                input.value = localStorage.getItem('lc_visitor_email') || '';
+            }
+            setEmailTranscriptStatus('', false, which);
+            if (input) input.focus();
+        }
+    }
+
+    function openEmailTranscriptFromChat() {
+        if (!conversationId) {
+            appendMessage({ sender_type: 'system', message: 'Start a chat first, then you can email this chat.' });
+            return;
+        }
+        toggleEmailTranscriptPanel('live');
+        var compose = document.getElementById('lc-panel-compose');
+        if (compose && compose.scrollIntoView) {
+            compose.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function sendChatTranscriptEmail(forcedEmail, which) {
+        which = which === 'ended' ? 'ended' : 'live';
+        var ids = emailExportIds(which);
+        if (!conversationId) {
+            setEmailTranscriptStatus('No active chat to export.', true, which);
+            return;
+        }
+        var input = document.getElementById(ids.input);
+        var email = (typeof forcedEmail === 'string' && forcedEmail) ? forcedEmail.trim() : ((input && input.value) || '').trim();
+        if (!email) {
+            setEmailTranscriptStatus('Please enter your email address.', true, which);
+            if (input) input.focus();
+            return;
+        }
+        var sendBtn = document.getElementById(ids.send);
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+        }
+        setEmailTranscriptStatus('Sending this chat...', false, which);
+
+        fetch(siteUrl + '/api/visitor-email-transcript.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                visitor_uid: visitorUid,
+                chat_token: chatToken,
+                widget_loaded_at: widgetLoadedAt || Date.now(),
+                website_url: (document.getElementById('lc-honeypot') || {}).value || '',
+                email: email,
+                brand_key: brandKey
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = ids.sendLabel;
+            }
+            if (data && data.success) {
+                try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
+                if (input) input.value = data.email || email;
+                var hint = (data.hint || '').trim();
+                setEmailTranscriptStatus('Sent! Check your inbox for this chat.' + (hint ? (' ' + hint) : ''), false, which);
+                return;
+            }
+            setEmailTranscriptStatus((data && data.error) || 'Could not send email.', true, which);
+        })
+        .catch(function () {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = ids.sendLabel;
+            }
+            setEmailTranscriptStatus('Connection error. Please try again.', true, which);
+        });
+    }
+
+    function hideEndedState() {
         chatClosed = false;
         leaveCloseSent = false;
         document.getElementById('lc-panel-ended').style.display = 'none';
