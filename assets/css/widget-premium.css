@@ -1083,6 +1083,28 @@
 .lcw-email-export-status.is-error { color: #b91c1c; }
 .lcw-email-export-status.is-ok { color: #15803d; }
 .lcw-email-export-status[hidden] { display: none !important; }
+
+.lcw-email-export-compose {
+    margin: 0 0 0.45rem;
+    align-items: center;
+}
+.lcw-email-export-link {
+    border: none;
+    background: transparent;
+    color: var(--lcw-primary-dark);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    padding: 0.15rem 0.25rem;
+}
+.lcw-email-export-link:hover { color: var(--lcw-primary); }
+.lcw-email-export-compose .lcw-email-export-panel {
+    width: 100%;
+    margin-top: 0.35rem;
+}
 .lcw-msg.has-attachment { max-width: min(88%, 260px); padding: 0.45rem; }
 .lcw-chat-text { margin-bottom: 0.4rem; white-space: pre-wrap; word-break: break-word; }
 .lcw-attach-image {

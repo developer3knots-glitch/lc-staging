@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=19';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=20';
         document.head.appendChild(link);
     }
 
@@ -454,6 +454,15 @@
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose">' +
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
+                    '<div class="lcw-email-export lcw-email-export-compose" id="lc-email-export-live">' +
+                        '<button type="button" id="lc-email-transcript-toggle-live" class="lcw-email-export-link">Email this chat to me</button>' +
+                        '<div id="lc-email-transcript-panel-live" class="lcw-email-export-panel" hidden>' +
+                            '<label class="lcw-email-export-label" for="lc-email-transcript-input-live">Send full transcript to</label>' +
+                            '<input type="email" id="lc-email-transcript-input-live" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
+                            '<button type="button" id="lc-email-transcript-send-live" class="lcw-prechat-btn lcw-email-export-send">Send to my email</button>' +
+                            '<p id="lc-email-transcript-status-live" class="lcw-email-export-status" hidden></p>' +
+                        '</div>' +
+                    '</div>' +
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
                     '<div class="lcw-compose-inner">' +
@@ -476,8 +485,12 @@
         document.getElementById('lc-resume-ticket').addEventListener('click', openTicketResumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
         var emailSendBtn = document.getElementById('lc-email-transcript-send');
-        if (emailToggle) emailToggle.addEventListener('click', toggleEmailTranscriptPanel);
-        if (emailSendBtn) emailSendBtn.addEventListener('click', sendChatTranscriptEmail);
+        if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
+        if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
+        var emailToggleLive = document.getElementById('lc-email-transcript-toggle-live');
+        var emailSendLive = document.getElementById('lc-email-transcript-send-live');
+        if (emailToggleLive) emailToggleLive.addEventListener('click', function () { toggleEmailTranscriptPanel('live'); });
+        if (emailSendLive) emailSendLive.addEventListener('click', function () { sendChatTranscriptEmail(null, 'live'); });
         document.getElementById('lc-show-ticket-resume').addEventListener('click', showTicketResumePanel);
         document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
@@ -1206,15 +1219,36 @@
         }
         var emailPanel = document.getElementById('lc-email-transcript-panel');
         if (emailPanel) emailPanel.hidden = true;
-        setEmailTranscriptStatus('');
+        setEmailTranscriptStatus('', false, 'ended');
         if (currentReference) {
             updateWidgetReference(currentReference);
         }
         syncTicketFeatureUi();
     }
 
-        function setEmailTranscriptStatus(msg, isError) {
-        var el = document.getElementById('lc-email-transcript-status');
+        function emailExportIds(which) {
+        which = which === 'ended' ? 'ended' : 'live';
+        if (which === 'ended') {
+            return {
+                panel: 'lc-email-transcript-panel',
+                input: 'lc-email-transcript-input',
+                send: 'lc-email-transcript-send',
+                status: 'lc-email-transcript-status',
+                sendLabel: 'Send to email'
+            };
+        }
+        return {
+            panel: 'lc-email-transcript-panel-live',
+            input: 'lc-email-transcript-input-live',
+            send: 'lc-email-transcript-send-live',
+            status: 'lc-email-transcript-status-live',
+            sendLabel: 'Send to my email'
+        };
+    }
+
+    function setEmailTranscriptStatus(msg, isError, which) {
+        var ids = emailExportIds(which);
+        var el = document.getElementById(ids.status);
         if (!el) return;
         if (!msg) {
             el.hidden = true;
@@ -1228,17 +1262,18 @@
         el.classList.toggle('is-ok', !isError);
     }
 
-    function toggleEmailTranscriptPanel() {
-        var panel = document.getElementById('lc-email-transcript-panel');
+    function toggleEmailTranscriptPanel(which) {
+        var ids = emailExportIds(which);
+        var panel = document.getElementById(ids.panel);
         if (!panel) return;
         var open = panel.hidden;
         panel.hidden = !open;
         if (open) {
-            var input = document.getElementById('lc-email-transcript-input');
+            var input = document.getElementById(ids.input);
             if (input && !input.value) {
                 input.value = localStorage.getItem('lc_visitor_email') || '';
             }
-            setEmailTranscriptStatus('');
+            setEmailTranscriptStatus('', false, which);
             if (input) input.focus();
         }
     }
@@ -1248,39 +1283,33 @@
             appendMessage({ sender_type: 'system', message: 'Start a chat first, then you can email the transcript.' });
             return;
         }
-        // Jump to a lightweight prompt using ended-style panel fields if visible; else prompt.
-        var email = localStorage.getItem('lc_visitor_email') || '';
-        if (!email) {
-            email = window.prompt('Email address for your chat transcript:', '') || '';
-        } else {
-            var ok = window.confirm('Send this chat transcript to ' + email + '?');
-            if (!ok) {
-                email = window.prompt('Email address for your chat transcript:', email) || '';
-            }
+        toggleEmailTranscriptPanel('live');
+        var compose = document.getElementById('lc-panel-compose');
+        if (compose && compose.scrollIntoView) {
+            compose.scrollIntoView({ block: 'nearest' });
         }
-        email = (email || '').trim();
-        if (!email) return;
-        sendChatTranscriptEmail(email);
     }
 
-    function sendChatTranscriptEmail(forcedEmail) {
+    function sendChatTranscriptEmail(forcedEmail, which) {
+        which = which === 'ended' ? 'ended' : 'live';
+        var ids = emailExportIds(which);
         if (!conversationId) {
-            setEmailTranscriptStatus('No active chat to export.', true);
+            setEmailTranscriptStatus('No active chat to export.', true, which);
             return;
         }
-        var input = document.getElementById('lc-email-transcript-input');
+        var input = document.getElementById(ids.input);
         var email = (typeof forcedEmail === 'string' && forcedEmail) ? forcedEmail.trim() : ((input && input.value) || '').trim();
         if (!email) {
-            setEmailTranscriptStatus('Please enter your email address.', true);
+            setEmailTranscriptStatus('Please enter your email address.', true, which);
             if (input) input.focus();
             return;
         }
-        var sendBtn = document.getElementById('lc-email-transcript-send');
+        var sendBtn = document.getElementById(ids.send);
         if (sendBtn) {
             sendBtn.disabled = true;
             sendBtn.textContent = 'Sending...';
         }
-        setEmailTranscriptStatus('Sending transcript...', false);
+        setEmailTranscriptStatus('Sending transcript...', false, which);
 
         fetch(siteUrl + '/api/visitor-email-transcript.php', {
             method: 'POST',
@@ -1299,22 +1328,22 @@
         .then(function (data) {
             if (sendBtn) {
                 sendBtn.disabled = false;
-                sendBtn.textContent = 'Send to email';
+                sendBtn.textContent = ids.sendLabel;
             }
             if (data && data.success) {
                 try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
                 if (input) input.value = data.email || email;
-                setEmailTranscriptStatus('Sent! Check your inbox for the full chat.', false);
+                setEmailTranscriptStatus('Sent! Check your inbox for the full chat.', false, which);
                 return;
             }
-            setEmailTranscriptStatus((data && data.error) || 'Could not send email.', true);
+            setEmailTranscriptStatus((data && data.error) || 'Could not send email.', true, which);
         })
         .catch(function () {
             if (sendBtn) {
                 sendBtn.disabled = false;
-                sendBtn.textContent = 'Send to email';
+                sendBtn.textContent = ids.sendLabel;
             }
-            setEmailTranscriptStatus('Connection error. Please try again.', true);
+            setEmailTranscriptStatus('Connection error. Please try again.', true, which);
         });
     }
 
