@@ -104,7 +104,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-tags"></i> Multi-Brand Workspace</div>
             <h1 class="lc-hero-title">Chat Brands</h1>
-            <p class="lc-hero-sub">Each brand gets its own widget color, welcome message, and isolated chat inbox — one dashboard, unlimited sites.</p>
+            <p class="lc-hero-sub">Each brand gets its own widget color, welcome message, and isolated chat inbox - one dashboard, unlimited sites.</p>
             <div class="lc-hero-actions">
                 <a href="#lc-brand-create" class="lc-hero-chip"><i class="ti ti-plus"></i> New brand</a>
                 <a href="<?= LC_BASE_URL ?>/demo.html" target="_blank" class="lc-hero-chip"><i class="ti ti-external-link"></i> Widget demo</a>
@@ -131,7 +131,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-brands-toolbar">
                 <div class="lc-brands-search-wrap">
                     <i class="ti ti-search"></i>
-                    <input type="search" id="lc-brands-search" placeholder="Search brands by name or key…" autocomplete="off">
+                    <input type="search" id="lc-brands-search" placeholder="Search brands by name or key..." autocomplete="off">
                 </div>
                 <span class="lc-brands-toolbar-count"><?= count($brands) ?> brand<?= count($brands) === 1 ? '' : 's' ?></span>
             </div>
@@ -169,7 +169,7 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-brand-preview-item">
                                 <span class="lc-brand-preview-label"><i class="ti ti-message-circle"></i> Welcome</span>
                                 <?php if ($welcome !== ''): ?>
-                                    <p><?= lc_sanitize($strLen($welcome) > 90 ? $strSub($welcome, 0, 90) . '…' : $welcome) ?></p>
+                                    <p><?= lc_sanitize($strLen($welcome) > 90 ? $strSub($welcome, 0, 90) . '...' : $welcome) ?></p>
                                 <?php else: ?>
                                     <p class="lc-muted-text">Not set</p>
                                 <?php endif; ?>
@@ -177,7 +177,7 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-brand-preview-item">
                                 <span class="lc-brand-preview-label"><i class="ti ti-moon"></i> Offline</span>
                                 <?php if ($offline !== ''): ?>
-                                    <p><?= lc_sanitize($strLen($offline) > 90 ? $strSub($offline, 0, 90) . '…' : $offline) ?></p>
+                                    <p><?= lc_sanitize($strLen($offline) > 90 ? $strSub($offline, 0, 90) . '...' : $offline) ?></p>
                                 <?php else: ?>
                                     <p class="lc-muted-text">Not set</p>
                                 <?php endif; ?>

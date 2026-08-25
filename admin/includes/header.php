@@ -22,7 +22,7 @@ if ($agent['role'] === 'admin') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= lc_sanitize($pageTitle ?? 'Dashboard') ?> — <?= lc_sanitize(LC_APP_NAME) ?></title>
+    <title><?= lc_sanitize($pageTitle ?? 'Dashboard') ?> - <?= lc_sanitize(LC_APP_NAME) ?></title>
     <?php require __DIR__ . '/head-assets.php'; ?>
     <style>:root { --lc-primary: <?= lc_sanitize($primary) ?>; --lc-primary-dark: <?= lc_sanitize($primary) ?>; }</style>
 </head>

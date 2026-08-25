@@ -306,8 +306,7 @@ function lc_message_hidden_from_visitor(string $message): bool
 
 /**
  * Lowest message id the visitor widget may show for this live thread.
- * After IP-merge, older ticket segments can sit in the same conversation_id —
- * cut the timeline at the current ticket's intro so the widget stays "fresh".
+ * After IP-merge, older ticket segments can sit in the same conversation_id - * cut the timeline at the current ticket's intro so the widget stays "fresh".
  */
 function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
 {
@@ -402,7 +401,7 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return true;
     }
 
-    // Active chat owned by another agent — live access only for the assignee.
+    // Active chat owned by another agent - live access only for the assignee.
     return false;
 }
 
@@ -412,7 +411,7 @@ function lc_agent_can_handle_conversation(array $agent, array $conv): bool
     $assignedId = (int) ($conv['agent_id'] ?? 0);
     $status = (string) ($conv['status'] ?? '');
 
-    // Closed chats stay closed — no compose / reopen via messaging.
+    // Closed chats stay closed - no compose / reopen via messaging.
     if ($status === 'closed') {
         return false;
     }
@@ -482,7 +481,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
             $accountFilter = " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
             $accountParams = [$accountId];
         } else {
-            // No workspace — show nothing (never leak other tenants)
+            // No workspace - show nothing (never leak other tenants)
             return ['1=0', []];
         }
         if ($tab === 'waiting') {
@@ -644,7 +643,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         $upd->execute([$targetAgentId, $conversationId]);
         if (!$upd->rowCount()) {
             $db->rollBack();
-            return ['ok' => false, 'error' => 'Transfer failed — chat may have been closed'];
+            return ['ok' => false, 'error' => 'Transfer failed - chat may have been closed'];
         }
 
         $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
@@ -811,9 +810,9 @@ function lc_conversations_related_by_ip(
             $seen[$id] = true;
             $preview = trim((string) ($row['last_message'] ?? ''));
             if (function_exists('mb_substr') && mb_strlen($preview) > 80) {
-                $preview = mb_substr($preview, 0, 80) . '…';
+                $preview = mb_substr($preview, 0, 80) . '...';
             } elseif (strlen($preview) > 80) {
-                $preview = substr($preview, 0, 80) . '…';
+                $preview = substr($preview, 0, 80) . '...';
             }
             $ref = '';
             if (function_exists('lc_conversation_reference')) {

@@ -1,6 +1,6 @@
 <?php
 /**
- * Typing heartbeat API ΓÇö visitor or agent announces they are typing.
+ * Typing heartbeat API - visitor or agent announces they are typing.
  * POST JSON: conversation_id, typing (bool), + visitor_uid (visitor) | session (agent)
  */
 require_once __DIR__ . '/../includes/functions.php';

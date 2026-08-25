@@ -249,7 +249,7 @@ function lc_merge_same_ip_conversations(): array
     $removedConversations = 0;
 
     // Archive cleanup only: merge CLOSED threads.
-    // Never move old messages into waiting/active chats — that poisons the visitor widget.
+    // Never move old messages into waiting/active chats - that poisons the visitor widget.
     $ipGroups = $db->query("
         SELECT v.ip_address AS ip
         FROM conversations c

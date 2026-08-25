@@ -223,7 +223,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-users"></i> Support Team</div>
             <h1 class="lc-hero-title">Agents</h1>
-            <p class="lc-hero-sub">Manage your support team — assign roles, brands, and avatars. Agents handle live chats; admins control the full workspace.</p>
+            <p class="lc-hero-sub">Manage your support team - assign roles, brands, and avatars. Agents handle live chats; admins control the full workspace.</p>
             <div class="lc-hero-actions">
                 <a href="#lc-agent-create" class="lc-hero-chip"><i class="ti ti-user-plus"></i> Add agent</a>
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Live inbox</a>
@@ -254,7 +254,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-agents-toolbar">
                 <div class="lc-agents-search-wrap">
                     <i class="ti ti-search"></i>
-                    <input type="search" id="lc-agents-search" placeholder="Search by name, email or brand…" autocomplete="off">
+                    <input type="search" id="lc-agents-search" placeholder="Search by name, email or brand..." autocomplete="off">
                 </div>
                 <span class="lc-agents-toolbar-count"><?= $totalAgents ?> member<?= $totalAgents === 1 ? '' : 's' ?></span>
             </div>
@@ -298,7 +298,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <div class="lc-agent-meta-item">
                             <span class="lc-agent-meta-label">Last seen</span>
-                            <span class="lc-agent-meta-val"><?= $a['last_seen'] ? lc_time_span($a['last_seen']) : '—' ?></span>
+                            <span class="lc-agent-meta-val"><?= $a['last_seen'] ? lc_time_span($a['last_seen']) : ' - ' ?></span>
                         </div>
                         <div class="lc-agent-meta-item">
                             <span class="lc-agent-meta-label">Account</span>
@@ -362,8 +362,8 @@ require __DIR__ . '/includes/header.php';
                             <?php else: ?>
                             <label>Role</label>
                             <select name="role" data-role-select>
-                                <option value="agent"<?= $a['role'] === 'agent' ? ' selected' : '' ?>>Agent — handles chats</option>
-                                <option value="admin"<?= $a['role'] === 'admin' ? ' selected' : '' ?>>Admin — full access</option>
+                                <option value="agent"<?= $a['role'] === 'agent' ? ' selected' : '' ?>>Agent - handles chats</option>
+                                <option value="admin"<?= $a['role'] === 'admin' ? ' selected' : '' ?>>Admin - full access</option>
                             </select>
                             <div data-brand-wrap<?= $a['role'] === 'admin' ? ' style="display:none"' : '' ?>>
                                 <label>Assign brand</label>
@@ -408,7 +408,7 @@ require __DIR__ . '/includes/header.php';
                                 <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-01.svg') ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview id="lc-avatar-preview-img">
                             </div>
                             <div class="lc-avatar-picker-body">
-                                <p class="lc-avatar-picker-hint">Preset avatar ya apni photo upload karein (JPG, PNG, WebP — max 2MB).</p>
+                                <p class="lc-avatar-picker-hint">Preset avatar ya apni photo upload karein (JPG, PNG, WebP - max 2MB).</p>
                                 <div class="lc-avatar-presets" id="lc-avatar-presets">
                                     <?php foreach ($presets as $id => $meta): ?>
                                     <label class="lc-avatar-preset<?= $id === '01' ? ' selected' : '' ?>" title="<?= lc_sanitize($meta['label']) ?>">
@@ -436,8 +436,8 @@ require __DIR__ . '/includes/header.php';
                         <input type="password" name="password" required placeholder="Min. 6 characters" minlength="6">
                         <label>Role</label>
                         <select name="role" id="lc-agent-role" data-role-select>
-                            <option value="agent">Agent — handles chats</option>
-                            <option value="admin">Admin — full access</option>
+                            <option value="agent">Agent - handles chats</option>
+                            <option value="admin">Admin - full access</option>
                         </select>
                         <div id="lc-agent-brand-wrap" data-brand-wrap>
                             <label>Assign brand</label>
@@ -460,7 +460,7 @@ require __DIR__ . '/includes/header.php';
                         <i class="ti ti-shield-check"></i>
                         <div>
                             <strong>Roles explained</strong>
-                            <p><strong>Admin</strong> — brands, agents, settings, all chats.<br><strong>Agent</strong> — live inbox only, scoped to assigned brand if set.<br><strong>Edit</strong> — name, email, role, brand, avatar; leave password blank to keep current.</p>
+                            <p><strong>Admin</strong> - brands, agents, settings, all chats.<br><strong>Agent</strong> - live inbox only, scoped to assigned brand if set.<br><strong>Edit</strong> - name, email, role, brand, avatar; leave password blank to keep current.</p>
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,5 @@
 /**
- * LiveChat Widget ΓÇö embed on any website
+ * LiveChat Widget - embed on any website
  * <script src="http://localhost/livechat/widget/embed.js" data-site="http://localhost/livechat"></script>
  */
 (function () {
@@ -319,7 +319,7 @@
             '<div id="lc-teaser" class="lcw-teaser" style="display:none" role="button" tabindex="0">' +
                 '<button type="button" class="lcw-teaser-close" id="lc-teaser-close" aria-label="Dismiss">&times;</button>' +
                 '<p class="lcw-teaser-title" id="lc-teaser-title">Questions? We\'re here to help.</p>' +
-                '<p class="lcw-teaser-text" id="lc-teaser-text">Chat with our team ΓÇö we typically reply within a few minutes.</p>' +
+                '<p class="lcw-teaser-text" id="lc-teaser-text">Chat with our team - we typically reply within a few minutes.</p>' +
             '</div>' +
             '<button type="button" id="lc-bubble" aria-label="Open chat">' +
                 '<span id="lc-bubble-icon">' + ICON_CHAT + '</span>' +
@@ -369,7 +369,7 @@
                     '<div class="lcw-form-card" id="lc-prechat-start-panel">' +
                         '<div class="lcw-form-card-head">' +
                             '<h3 class="lcw-form-title">Start a conversation</h3>' +
-                            '<p class="lcw-form-subtitle">Tell us a little about yourself ΓÇö our team will take it from here.</p>' +
+                            '<p class="lcw-form-subtitle">Tell us a little about yourself - our team will take it from here.</p>' +
                         '</div>' +
                         '<form id="lc-prechat-form" class="lcw-prechat-form">' +
                             '<div class="lcw-field">' +
@@ -437,7 +437,7 @@
                         '<p class="lcw-ended-title">Thanks for chatting!</p>' +
                         '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
                         '<p class="lcw-ended-note">This conversation has been closed.</p>' +
-                        '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">—</code></p>' +
+                        '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code"> - </code></p>' +
                     '</div>' +
                     '<div class="lcw-ended-actions">' +
                         '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
@@ -689,7 +689,7 @@
         showTicketResumePanel();
         var refCode = document.getElementById('lc-ended-ref-code');
         var refInput = document.getElementById('lc-ticket-ref');
-        if (refCode && refInput && refCode.textContent && refCode.textContent !== 'ΓÇö') {
+        if (refCode && refInput && refCode.textContent && refCode.textContent !== ' - ') {
             refInput.value = refCode.textContent.trim();
         }
     }
@@ -751,7 +751,7 @@
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
         hideTicketResumePanel();
-        // Do not re-fetch settings here when already routing ΓÇö avoids stealing form ΓåÆ active chat
+        // Do not re-fetch settings here when already routing - avoids stealing form ΓåÆ active chat
         if (!skipSettingsFetch) {
             loadWidgetSettings();
         }
@@ -914,7 +914,7 @@
      * Entry rules (enterprise):
      * - No auto-resume of old chats by IP / past device
      * - Session continue: sessionStorage conversation id only (same tab refresh)
-     * - Widget never shows combined IP history — that is admin/agent only
+     * - Widget never shows combined IP history - that is admin/agent only
      * - Ticket resume: separate form when setting ON (visitor + agent share history)
      * - Form ON ΓåÆ gate identity; Form OFF ΓåÆ direct chat
      */
@@ -923,7 +923,7 @@
         applyWidgetSettings(data);
 
         var identityOk = !!data.visitor_identity_complete;
-        // Session-only reconnect ΓÇö never use server has_active_chat for silent resume
+        // Session-only reconnect - never use server has_active_chat for silent resume
         var allowSessionResume = false;
         try {
             allowSessionResume = isDocumentReload() || isSiteNavigation();
@@ -992,7 +992,7 @@
     function showIdleWelcomePreview() {
         var text = idleWelcomeText();
         if (!text) return;
-        // Preview only — no conversation / ticket until visitor sends a message
+        // Preview only - no conversation / ticket until visitor sends a message
         appendMessage({
             sender_type: 'system',
             message: text,
@@ -1039,7 +1039,7 @@
             showPrechatForm(true);
             return;
         }
-        // No silent start — wait for first visitor message (or explicit resume)
+        // No silent start - wait for first visitor message (or explicit resume)
         if (!options.initialMessage && !options.resumeConversationId) {
             showIdleChatReady();
             return;
@@ -1160,7 +1160,7 @@
     /**
      * Open the chat panel. Safe to call repeatedly (no-op if already open).
      * @param {{ silenceFlow?: boolean }} options
-     *   silenceFlow ΓÇö UI only; entry routing / poll already active
+     *   silenceFlow - UI only; entry routing / poll already active
      */
     function openPanel(options) {
         options = options || {};
@@ -1247,7 +1247,7 @@
             pollTimer = null;
         }
         // Keep conversationId/chatToken in memory so visitor can email this ended chat.
-        // Clear storage only — reload should not silently resume a closed session.
+        // Clear storage only - reload should not silently resume a closed session.
         persistConversationId(null);
         persistChatToken('');
         lastMsgId = 0;
@@ -1588,7 +1588,7 @@
         var name = settings.site_name || 'Our team';
         document.getElementById('lc-teaser-title').textContent = 'Questions? ' + name + ' is here.';
         document.getElementById('lc-teaser-text').textContent = agentsOnline > 0
-            ? 'Our team is online ΓÇö typical reply within a few minutes.'
+            ? 'Our team is online - typical reply within a few minutes.'
             : 'Leave a message and we\'ll get back to you shortly.';
         el.style.display = 'block';
     }
@@ -1956,7 +1956,7 @@
         }
         // Conversation routing: buildWidget ΓåÆ loadWidgetSettings ΓåÆ routeVisitorEntry
         // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
-        // (Do not start a second chat flow here ΓÇö that created duplicate conversations.)
+        // (Do not start a second chat flow here - that created duplicate conversations.)
         lastMsgId = getStoredLastMsgId() || 0;
     }
 
@@ -2096,7 +2096,7 @@
                 thumb +
                 '<div class="lcw-attach-preview-meta">' +
                     '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' · PDF') + '</span>' +
+                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' - PDF') + '</span>' +
                     '<span class="lcw-attach-preview-hint">Ready to send</span>' +
                 '</div>' +
                 '<button type="button" id="lc-attach-clear" class="lcw-attach-preview-clear" aria-label="Remove attachment">' + ICON_CLOSE + '</button>' +

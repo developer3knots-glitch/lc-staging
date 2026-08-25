@@ -20,7 +20,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
-                <input type="search" id="lc-inbox-search" placeholder="Search customersΓÇª" autocomplete="off" aria-label="Search conversations">
+                <input type="search" id="lc-inbox-search" placeholder="Search customers..." autocomplete="off" aria-label="Search conversations">
             </div>
             <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
                 <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
@@ -28,7 +28,7 @@ require __DIR__ . '/includes/header.php';
                 <button type="button" class="lc-chat-tab" data-tab="active" role="tab">My chats</button>
             </div>
             <div class="lc-chat-items" id="lc-conversation-list">
-                <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> LoadingΓÇª</div>
+                <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading...</div>
             </div>
         </aside>
 
@@ -52,7 +52,7 @@ require __DIR__ . '/includes/header.php';
                                 <span id="lc-chat-visitor-kind" class="lc-visitor-kind-badge" hidden></span>
                                 <div class="lc-chat-ref" id="lc-chat-ref" hidden>
                                     <span class="lc-chat-ref-icon" title="Ticket reference" aria-hidden="true"><i class="ti ti-ticket"></i></span>
-                                    <code class="lc-chat-ref-code" id="lc-chat-ref-code">ΓÇö</code>
+                                    <code class="lc-chat-ref-code" id="lc-chat-ref-code"> - </code>
                                     <button type="button" class="lc-chat-ref-copy" id="lc-chat-ref-copy" title="Copy ticket reference" aria-label="Copy ticket reference"><i class="ti ti-copy"></i></button>
                                 </div>
                             </div>
@@ -68,7 +68,7 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-chat-more-menu" id="lc-chat-more-menu" role="menu" hidden>
                                 <div class="lc-chat-more-canned" role="none">
                                     <span class="lc-chat-more-canned-label"><i class="ti ti-bolt"></i> Canned reply</span>
-                                    <select id="lc-canned-select" class="lc-status-select lc-canned-select-pro" aria-label="Canned reply"><option value="">Select a replyΓÇª</option></select>
+                                    <select id="lc-canned-select" class="lc-status-select lc-canned-select-pro" aria-label="Canned reply"><option value="">Select a reply...</option></select>
                                 </div>
                                 <div class="lc-transfer-wrap" id="lc-transfer-wrap" style="display:none" role="none">
                                     <button type="button" class="lc-chat-more-item" id="lc-transfer-chat" role="menuitem" aria-expanded="false">
@@ -93,13 +93,13 @@ require __DIR__ . '/includes/header.php';
                                 <p class="lc-transfer-hint">Select an online agent. Ticket reference stays the same.</p>
                                 <div class="lc-transfer-ref" id="lc-transfer-ref" hidden>
                                     <span class="lc-transfer-ref-label"><i class="ti ti-ticket"></i></span>
-                                    <code id="lc-transfer-ref-code">ΓÇö</code>
+                                    <code id="lc-transfer-ref-code"> - </code>
                                 </div>
                                 <div class="lc-transfer-agents" id="lc-transfer-agents">
-                                    <div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agentsΓÇª</div>
+                                    <div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents...</div>
                                 </div>
                                 <label class="lc-transfer-note-label" for="lc-transfer-note">Note for the next agent (optional)</label>
-                                <textarea id="lc-transfer-note" rows="2" maxlength="500" placeholder="Brief contextΓÇª"></textarea>
+                                <textarea id="lc-transfer-note" rows="2" maxlength="500" placeholder="Brief context..."></textarea>
                                 <button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-transfer-submit" id="lc-transfer-submit" disabled>
                                     <i class="ti ti-send"></i> Transfer
                                 </button>
@@ -141,7 +141,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-typing-bubble" aria-hidden="true">
                             <span></span><span></span><span></span>
                         </div>
-                        <span class="lc-typing-label" id="lc-typing-label">Visitor is typingΓÇª</span>
+                        <span class="lc-typing-label" id="lc-typing-label">Visitor is typing...</span>
                     </div>
                 </div>
 
@@ -149,7 +149,7 @@ require __DIR__ . '/includes/header.php';
                     <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
-                        <textarea id="lc-reply-input" rows="1" placeholder="Type a messageΓÇª"></textarea>
+                        <textarea id="lc-reply-input" rows="1" placeholder="Type a message..."></textarea>
                         <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
                         <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
                     </div>
@@ -173,7 +173,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-details-av" id="lc-details-av">V</div>
                         <div>
                             <strong id="lc-details-name">Visitor</strong>
-                            <span class="lc-details-email" id="lc-details-email">ΓÇö</span>
+                            <span class="lc-details-email" id="lc-details-email"> - </span>
                         </div>
                     </div>
                 </div>
@@ -182,33 +182,33 @@ require __DIR__ . '/includes/header.php';
                     <dl class="lc-details-list">
                                                 <div class="lc-details-row">
                             <dt><i class="ti ti-user-check"></i> Visitor</dt>
-                            <dd id="lc-details-visitor-kind">ΓÇö</dd>
+                            <dd id="lc-details-visitor-kind"> - </dd>
                         </div>
 <div class="lc-details-row">
                             <dt><i class="ti ti-world"></i> IP</dt>
-                            <dd id="lc-details-ip">ΓÇö</dd>
+                            <dd id="lc-details-ip"> - </dd>
                         </div>
                         <div class="lc-details-row">
                             <dt><i class="ti ti-map-pin"></i> Location</dt>
-                            <dd id="lc-details-country">ΓÇö</dd>
+                            <dd id="lc-details-country"> - </dd>
                         </div>
                         <div class="lc-details-row">
                             <dt><i class="ti ti-tag"></i> Brand</dt>
-                            <dd id="lc-details-brand">ΓÇö</dd>
+                            <dd id="lc-details-brand"> - </dd>
                         </div>
                         <div class="lc-details-row">
                             <dt><i class="ti ti-user"></i> Agent</dt>
-                            <dd id="lc-details-agent">ΓÇö</dd>
+                            <dd id="lc-details-agent"> - </dd>
                         </div>
                         <div class="lc-details-row">
                             <dt><i class="ti ti-ticket"></i> Ticket</dt>
-                            <dd id="lc-details-ticket">ΓÇö</dd>
+                            <dd id="lc-details-ticket"> - </dd>
                         </div>
                     </dl>
                 </div>
                 <div class="lc-details-section">
                     <h4 class="lc-details-heading">Current page</h4>
-                    <a class="lc-details-page" id="lc-details-page" href="#" target="_blank" rel="noopener noreferrer">ΓÇö</a>
+                    <a class="lc-details-page" id="lc-details-page" href="#" target="_blank" rel="noopener noreferrer"> - </a>
                 </div>
                 <div class="lc-details-section lc-details-journey-section">
                     <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">

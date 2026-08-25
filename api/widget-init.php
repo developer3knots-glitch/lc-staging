@@ -128,7 +128,7 @@ try {
             if ($ts === false || (time() - $ts) > $resumeMaxIdleSeconds) {
                 $conv = null; // force brand-new widget chat
             } else {
-                // If this thread already has older history, do not show it on widget — start fresh.
+                // If this thread already has older history, do not show it on widget - start fresh.
                 try {
                     $oldestStmt = $db->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
                     $oldestStmt->execute([(int) $conv['id']]);
@@ -236,7 +236,7 @@ try {
                     $n = max(1, (int) ($returnInfo['prior_count'] ?? 1));
                     lc_add_system_message(
                         $convId,
-                        'Returning visitor — ' . $n . ' prior chat' . ($n === 1 ? '' : 's') . ' found for this ' . $via . '. History is available for agents in this thread.'
+                        'Returning visitor - ' . $n . ' prior chat' . ($n === 1 ? '' : 's') . ' found for this ' . $via . '. History is available for agents in this thread.'
                     );
                 }
             }

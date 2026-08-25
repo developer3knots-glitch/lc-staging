@@ -184,7 +184,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-adjustments"></i> Control Center</div>
             <h1 class="lc-hero-title">Settings</h1>
-            <p class="lc-hero-sub">System performance, geo-blocking, and IP restrictions — secure your chat widget and fine-tune how your team operates.</p>
+            <p class="lc-hero-sub">System performance, geo-blocking, and IP restrictions - secure your chat widget and fine-tune how your team operates.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('brands') ?>" class="lc-hero-chip"><i class="ti ti-tags"></i> Brand widgets</a>
                 <a href="#lc-settings-security" class="lc-hero-chip"><i class="ti ti-shield"></i> Security</a>
@@ -295,7 +295,7 @@ require __DIR__ . '/includes/header.php';
                             <span class="lc-settings-toggle-ui"></span>
                             <span class="lc-settings-toggle-text">
                                 <strong>Use SMTP (recommended)</strong>
-                                <small>Send via cPanel mailbox — host often <code>mail.yourdomain.com</code>, port <code>587</code>, encryption <code>TLS</code></small>
+                                <small>Send via cPanel mailbox - host often <code>mail.yourdomain.com</code>, port <code>587</code>, encryption <code>TLS</code></small>
                             </span>
                         </label>
                         <div class="lc-form-row">
@@ -322,13 +322,13 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <div class="lc-form-row">
                             <label for="lc-smtp-pass">SMTP password</label>
-                            <input type="password" id="lc-smtp-pass" name="smtp_pass" value="" placeholder="<?= $smtpPassSet ? '•••••••• (saved — leave blank to keep)' : 'Mailbox password' ?>" autocomplete="new-password">
+                            <input type="password" id="lc-smtp-pass" name="smtp_pass" value="" placeholder="<?= $smtpPassSet ? '-------- (saved - leave blank to keep)' : 'Mailbox password' ?>" autocomplete="new-password">
                         </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save email settings</button>
                     </form>
                     <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--lc-border)">
                     <div class="lc-smtp-test-block">
-                        <h4 style="margin:0 0 0.35rem;font-size:0.95rem">Test mode — SMTP connection</h4>
+                        <h4 style="margin:0 0 0.35rem;font-size:0.95rem">Test mode - SMTP connection</h4>
                         <p class="lc-settings-desc" style="margin-bottom:0.75rem">Checks connect → TLS → login only (does not send mail). Uses the fields above; password can be typed here without saving first.</p>
                         <form method="post" class="lc-form" id="lc-smtp-test-form" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem">
                             <input type="hidden" name="action" value="test_smtp">
@@ -379,7 +379,7 @@ require __DIR__ . '/includes/header.php';
                     <span class="lc-card-sub">Visitor widget features</span>
                 </div>
                 <div class="lc-card-body">
-                    <p class="lc-settings-desc">Visitor-facing ticket features only. Tickets are always saved for agents. Returning visitors do <strong>not</strong> see old chats automatically — only via ticket resume when enabled below.</p>
+                    <p class="lc-settings-desc">Visitor-facing ticket features only. Tickets are always saved for agents. Returning visitors do <strong>not</strong> see old chats automatically - only via ticket resume when enabled below.</p>
                     <form method="post" class="lc-form lc-settings-system-form">
                         <input type="hidden" name="action" value="save_tickets">
                         <div class="lc-settings-tiles">
@@ -427,7 +427,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-country-picker lc-country-picker-pro" id="lc-country-picker">
                             <div class="lc-country-tags" id="lc-country-tags">
                                 <?php if (empty($blockedCountries)): ?>
-                                    <span class="lc-country-tags-empty">No countries blocked yet — select below</span>
+                                    <span class="lc-country-tags-empty">No countries blocked yet - select below</span>
                                 <?php endif; ?>
                                 <?php foreach ($blockedCountries as $code): ?>
                                     <span class="lc-country-tag" data-code="<?= lc_sanitize($code) ?>">
@@ -438,7 +438,7 @@ require __DIR__ . '/includes/header.php';
                             </div>
                             <div class="lc-country-search-wrap">
                                 <i class="ti ti-search"></i>
-                                <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries…" autocomplete="off">
+                                <input type="search" class="lc-country-search" id="lc-country-search" placeholder="Search countries..." autocomplete="off">
                             </div>
                             <div class="lc-country-options" id="lc-country-options">
                                 <?php foreach ($allCountries as $code => $name): ?>
@@ -468,7 +468,7 @@ require __DIR__ . '/includes/header.php';
                     <span class="lc-card-sub"><?= count($blockedIps) ?> blocked</span>
                 </div>
                 <div class="lc-card-body">
-                    <p class="lc-settings-desc">Block a specific visitor IP — widget hidden for that network. You can also block from the live chat screen.</p>
+                    <p class="lc-settings-desc">Block a specific visitor IP - widget hidden for that network. You can also block from the live chat screen.</p>
                     <form method="post" class="lc-form lc-ip-block-form-pro">
                         <input type="hidden" name="action" value="block_ip">
                         <label>IP address</label>
@@ -484,7 +484,7 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-blocked-ip-empty">
                                 <i class="ti ti-shield-check"></i>
                                 <p>No blocked IPs</p>
-                                <span>Your block list is empty — all visitors can see the widget.</span>
+                                <span>Your block list is empty - all visitors can see the widget.</span>
                             </div>
                         <?php else: foreach ($blockedIps as $row): ?>
                             <div class="lc-blocked-ip-item">
@@ -492,8 +492,7 @@ require __DIR__ . '/includes/header.php';
                                     <code><?= lc_sanitize($row['ip_address']) ?></code>
                                     <span><?= lc_sanitize($row['reason'] ?: 'No reason') ?></span>
                                     <small>
-                                        <?= lc_sanitize($row['blocked_by_name'] ?: 'System') ?>
-                                        · <?= lc_time_span($row['created_at']) ?>
+                                        <?= lc_sanitize($row['blocked_by_name'] ?: 'System') ?> - <?= lc_time_span($row['created_at']) ?>
                                     </small>
                                 </div>
                                 <form method="post" onsubmit="return confirm('Unblock this IP?');">

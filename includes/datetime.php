@@ -128,7 +128,7 @@ function lc_time_span(?string $datetime, string $mode = 'relative'): string
 {
     $iso = lc_to_iso8601($datetime);
     if ($iso === null) {
-        return '—';
+        return ' - ';
     }
 
     $label = $mode === 'absolute'

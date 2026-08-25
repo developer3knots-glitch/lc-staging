@@ -25,7 +25,7 @@
             if (!tags.querySelector('.lc-country-tag') && !tags.querySelector('.lc-country-tags-empty')) {
                 var hint = document.createElement('span');
                 hint.className = 'lc-country-tags-empty';
-                hint.textContent = 'No countries blocked yet — select below';
+                hint.textContent = 'No countries blocked yet - select below';
                 tags.appendChild(hint);
             }
         }
@@ -54,7 +54,7 @@
             if (!tags.querySelector('.lc-country-tag') && !tags.querySelector('.lc-country-tags-empty')) {
                 var hint = document.createElement('span');
                 hint.className = 'lc-country-tags-empty';
-                hint.textContent = 'No countries blocked yet — select below';
+                hint.textContent = 'No countries blocked yet - select below';
                 tags.appendChild(hint);
             }
         });

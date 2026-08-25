@@ -6,7 +6,7 @@ $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
 $visitorUid = trim($_GET['visitor_uid'] ?? '');
 $chatToken = trim($_GET['chat_token'] ?? '');
-// viewing=1 when widget panel is open ΓÇö only then mark agent msgs as read (WhatsApp-style)
+// viewing=1 when widget panel is open - only then mark agent msgs as read (WhatsApp-style)
 $isViewing = isset($_GET['viewing']) && (string) $_GET['viewing'] === '1';
 
 if ($conversationId < 1 || $visitorUid === '') {

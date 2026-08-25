@@ -28,7 +28,7 @@
 
     function timeCell(iso) {
         if (!iso) {
-            return 'ΓÇö';
+            return ' - ';
         }
         var label = window.LCTime ? window.LCTime.formatRelative(iso) : '';
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';

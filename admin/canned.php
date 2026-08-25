@@ -98,7 +98,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-bolt"></i> Quick Response Library</div>
             <h1 class="lc-hero-title">Canned Replies</h1>
-            <p class="lc-hero-sub">Pre-written messages your team can drop into live chats in one click — faster replies, consistent tone, happier visitors.</p>
+            <p class="lc-hero-sub">Pre-written messages your team can drop into live chats in one click - faster replies, consistent tone, happier visitors.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Live Chats</a>
                 <a href="#lc-canned-compose" class="lc-hero-chip"><i class="ti ti-plus"></i> Add new reply</a>
@@ -130,7 +130,7 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-card-body lc-canned-toolbar-wrap">
                     <div class="lc-canned-search-wrap">
                         <i class="ti ti-search"></i>
-                        <input type="search" id="lc-canned-search" placeholder="Search by title or message…" autocomplete="off">
+                        <input type="search" id="lc-canned-search" placeholder="Search by title or message..." autocomplete="off">
                     </div>
                 </div>
                 <div class="lc-canned-list" id="lc-canned-list">
@@ -142,7 +142,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     <?php else: foreach ($replies as $r):
                         $msg = (string) $r['message'];
-                        $preview = $strLen($msg) > 160 ? $strSub($msg, 0, 160) . '…' : $msg;
+                        $preview = $strLen($msg) > 160 ? $strSub($msg, 0, 160) . '...' : $msg;
                     ?>
                         <article class="lc-canned-item" data-search="<?= lc_sanitize(strtolower($r['title'] . ' ' . $msg)) ?>">
                             <div class="lc-canned-item-icon"><i class="ti ti-message-dots"></i></div>
@@ -188,19 +188,19 @@ require __DIR__ . '/includes/header.php';
                         <label for="lc-canned-title">Title</label>
                         <input type="text" id="lc-canned-title" name="title" required maxlength="120" placeholder="e.g. Greeting, Pricing, Follow-up">
                         <label for="lc-canned-message">Message</label>
-                        <textarea id="lc-canned-message" name="message" rows="6" required maxlength="2000" placeholder="Type the full message agents will send…"></textarea>
+                        <textarea id="lc-canned-message" name="message" rows="6" required maxlength="2000" placeholder="Type the full message agents will send..."></textarea>
                         <div class="lc-canned-counter"><span id="lc-canned-char-count">0</span> / 2000</div>
                         <button type="submit" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-device-floppy"></i> Save Reply</button>
                     </form>
 
                     <div class="lc-canned-templates">
                         <div class="lc-canned-templates-head"><i class="ti ti-sparkles"></i> Starter templates</div>
-                        <p class="lc-canned-templates-hint">Click to fill the form — then edit and save.</p>
+                        <p class="lc-canned-templates-hint">Click to fill the form - then edit and save.</p>
                         <div class="lc-canned-template-list">
                             <?php foreach ($templates as $tpl): ?>
                                 <button type="button" class="lc-canned-template-btn" data-title="<?= lc_sanitize($tpl['title']) ?>" data-message="<?= lc_sanitize($tpl['message']) ?>">
                                     <strong><?= lc_sanitize($tpl['title']) ?></strong>
-                                    <span><?= lc_sanitize($strLen($tpl['message']) > 56 ? $strSub($tpl['message'], 0, 56) . '…' : $tpl['message']) ?></span>
+                                    <span><?= lc_sanitize($strLen($tpl['message']) > 56 ? $strSub($tpl['message'], 0, 56) . '...' : $tpl['message']) ?></span>
                                 </button>
                             <?php endforeach; ?>
                         </div>
@@ -214,7 +214,7 @@ require __DIR__ . '/includes/header.php';
                         <i class="ti ti-bulb"></i>
                         <div>
                             <strong>Pro tip</strong>
-                            <p>In live chats, pick a canned reply from the dropdown above the message box — it pastes instantly into your reply.</p>
+                            <p>In live chats, pick a canned reply from the dropdown above the message box - it pastes instantly into your reply.</p>
                         </div>
                     </div>
                 </div>

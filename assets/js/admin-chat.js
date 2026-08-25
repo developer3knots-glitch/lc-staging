@@ -191,7 +191,7 @@
     }
 
     function setVisitorMeta(htmlOrText, isHtml) {
-        // Context bar hidden on LiveChat desk ΓÇö details live in the right rail
+        // Context bar hidden on LiveChat desk - details live in the right rail
         if (!visitorMetaEl) return;
         visitorMetaEl.hidden = true;
         visitorMetaEl.innerHTML = '';
@@ -265,7 +265,7 @@
     function setText(id, text) {
         var el = document.getElementById(id);
         if (el) {
-            el.textContent = text || 'ΓÇö';
+            el.textContent = text || ' - ';
         }
     }
 
@@ -279,7 +279,7 @@
     function visitorKindLabel(c) {
         if (isReturningVisitor(c)) {
             var n = parseInt(c.prior_chat_count, 10) || 0;
-            return n > 1 ? ('Returning visitor · ' + n + ' prior chats') : 'Returning visitor';
+            return n > 1 ? ('Returning visitor - ' + n + ' prior chats') : 'Returning visitor';
         }
         return 'New chat';
     }
@@ -350,11 +350,11 @@
         setText('lc-details-email', currentVisitorEmail || 'No email');
         setText('lc-details-visitor-kind', visitorKindLabel(c));
         setVisitorKindBadge(c);
-        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || 'ΓÇö');
-        setText('lc-details-country', c.visitor_country || 'ΓÇö');
-        setText('lc-details-brand', c.brand_name || 'ΓÇö');
-        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? 'ΓÇö' : 'Unassigned'));
-        setText('lc-details-ticket', c.reference || currentReference || 'ΓÇö');
+        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || ' - ');
+        setText('lc-details-country', c.visitor_country || ' - ');
+        setText('lc-details-brand', c.brand_name || ' - ');
+        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? ' - ' : 'Unassigned'));
+        setText('lc-details-ticket', c.reference || currentReference || ' - ');
 
         var pageEl = document.getElementById('lc-details-page');
         var page = c.visitor_page || c.page_url || '';
@@ -370,7 +370,7 @@
                     pageEl.setAttribute('aria-disabled', 'true');
                 }
             } else {
-                pageEl.textContent = 'ΓÇö';
+                pageEl.textContent = ' - ';
                 pageEl.removeAttribute('href');
             }
         }
@@ -446,7 +446,7 @@
         if (c.brand_name) {
             html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
         }
-        html += esc(c.last_message || 'ΓÇö');
+        html += esc(c.last_message || ' - ');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
         if (isReturningVisitor(c)) {
@@ -531,7 +531,7 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
-    /** Official dual-check SVGs — read uses hardcoded #53bdeb fill (CSS cannot wash to white). */
+    /** Official dual-check SVGs - read uses hardcoded #53bdeb fill (CSS cannot wash to white). */
     function tickSvg(double, fillColor) {
         var fill = fillColor || 'currentColor';
         if (double) {
@@ -585,7 +585,7 @@
 
     function onMessagesScroll() {
         if (!messagesEl) return;
-        // User reading history ΓÇö do not yank to bottom on poll
+        // User reading history - do not yank to bottom on poll
         stickToBottom = isMessagesNearBottom(120);
     }
 
@@ -651,7 +651,7 @@
         var extraClass = kind || '';
 
         if (kind === 'archive-note') {
-            text = 'Chat history (agent only) ΓÇö visitor sees a new session';
+            text = 'Chat history (agent only) - visitor sees a new session';
         } else if (kind === 'start') {
             text = 'Previous chat';
             if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
@@ -677,7 +677,7 @@
 
     /**
      * Paint prior closed threads + markers into a string (not clickable cards).
-     * lastMsgId is intentionally left alone ΓÇö only current conversation drives polling.
+     * lastMsgId is intentionally left alone - only current conversation drives polling.
      */
     function buildPriorThreadsHtml(threads, currentConv) {
         if (!threads || !threads.length) return '';
@@ -769,7 +769,7 @@
             return title;
         }
         if (path.length > 32) {
-            return path.slice(0, 30) + 'ΓÇª';
+            return path.slice(0, 30) + '...';
         }
         return path || '/';
     }
@@ -978,7 +978,7 @@
 
     function loadTransferAgents() {
         if (!transferAgentsEl || !selectedId) return;
-        transferAgentsEl.innerHTML = '<div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agentsΓÇª</div>';
+        transferAgentsEl.innerHTML = '<div class="lc-transfer-loading"><i class="ti ti-loader-2"></i> Loading agents...</div>';
         fetch(base + '/api/agent-transfer-agents.php?conversation_id=' + selectedId, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -1118,15 +1118,15 @@
         setVisitorMeta('', false);
         if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
         showDetailsPanel(true);
-        setText('lc-details-name', 'LoadingΓÇª');
-        setText('lc-details-email', 'ΓÇö');
+        setText('lc-details-name', 'Loading...');
+        setText('lc-details-email', ' - ');
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
-        setText('lc-details-ip', 'ΓÇö');
-        setText('lc-details-country', 'ΓÇö');
-        setText('lc-details-brand', 'ΓÇö');
-        setText('lc-details-agent', 'ΓÇö');
-        setText('lc-details-ticket', 'ΓÇö');
+        setText('lc-details-ip', ' - ');
+        setText('lc-details-country', ' - ');
+        setText('lc-details-brand', ' - ');
+        setText('lc-details-agent', ' - ');
+        setText('lc-details-ticket', ' - ');
         updateBlockIpMenu();
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
@@ -1323,7 +1323,7 @@
         if (c && c.visitor_ip) {
             currentVisitorIp = c.visitor_ip;
         }
-        // Compact chips under name (optional) ΓÇö desk puts full data in right rail
+        // Compact chips under name (optional) - desk puts full data in right rail
         if (visitorDetailsEl) {
             var html = '';
             if (c && (c.visitor_ip || currentVisitorIp)) {
@@ -1397,7 +1397,7 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
-                            // Incoming only ΓÇö not agentΓÇÖs own replies echoing back
+                            // Incoming only - not agentΓÇÖs own replies echoing back
                             if (m.sender_type === 'visitor' || m.sender_type === 'system') {
                                 if (m.sender_type === 'visitor') {
                                     playSound = true;
@@ -1426,7 +1426,7 @@
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
                     replyInput.value = '';
-                    replyInput.placeholder = 'Chat closed — visitor ended this conversation';
+                    replyInput.placeholder = 'Chat closed - visitor ended this conversation';
                     if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
                     acceptBtn.style.display = 'none';
                     if (transferWrap) transferWrap.style.display = 'none';
@@ -1602,7 +1602,7 @@
                     ? (' (' + data.chat_count + ' chats)')
                     : '';
                 var hint = (data.hint || '').trim();
-                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra + (hint ? (' —' + hint) : ''), false);
+                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra + (hint ? (' - ' + hint) : ''), false);
                 return;
             }
             setEmailPanelStatus((data && data.error) || 'Failed to send email.', true);
@@ -1830,7 +1830,7 @@
                 thumb +
                 '<div class="lc-attach-preview-meta">' +
                     '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' · PDF') + '</span>' +
+                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' - PDF') + '</span>' +
                     '<span class="lc-attach-preview-hint">Ready to send</span>' +
                 '</div>' +
                 '<button type="button" id="lc-attach-clear" class="lc-attach-preview-clear" aria-label="Remove attachment"><i class="ti ti-x"></i></button>' +

@@ -7,7 +7,7 @@ if (!$agent) {
 
 $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
-// full=1 only on first open (client) ΓÇö loads continuous prior conversation history
+// full=1 only on first open (client) - loads continuous prior conversation history
 $fullLoad = (int) ($_GET['full'] ?? 0) === 1;
 
 if ($conversationId < 1) {

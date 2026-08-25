@@ -154,12 +154,12 @@ $brands = $agentBrandId === null ? lc_get_all_brands(true, $accountId > 0 ? $acc
 
 $formatDuration = static function (?string $started, ?string $closed): string {
     if (!$started || !$closed) {
-        return '—';
+        return ' - ';
     }
     try {
         $secs = (new DateTimeImmutable($closed))->getTimestamp() - (new DateTimeImmutable($started))->getTimestamp();
     } catch (Throwable $e) {
-        return '—';
+        return ' - ';
     }
     if ($secs < 60) {
         return $secs . 's';
@@ -188,7 +188,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-archive"></i> Conversation Archive</div>
             <h1 class="lc-hero-title">Chat History</h1>
-            <p class="lc-hero-sub">Browse, search and review every closed conversation — visitor details, agent handoffs, and full transcripts.</p>
+            <p class="lc-hero-sub">Browse, search and review every closed conversation - visitor details, agent handoffs, and full transcripts.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Live Inbox</a>
                 <a href="<?= lc_admin_url('history') ?>" class="lc-hero-chip"><i class="ti ti-refresh"></i> Reset filters</a>
@@ -263,7 +263,7 @@ require __DIR__ . '/includes/header.php';
                         <label for="lc-history-q">Search</label>
                         <div class="lc-history-search-wrap">
                             <i class="ti ti-search"></i>
-                            <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Ticket (LC-…), visitor, IP, brand, agent…" autocomplete="off">
+                            <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Ticket (LC-...), visitor, IP, brand, agent..." autocomplete="off">
                         </div>
                     </div>
                     <?php if ($agentBrandId === null && !empty($brands)): ?>
@@ -323,7 +323,7 @@ require __DIR__ . '/includes/header.php';
     <div class="lc-card lc-card-pro">
         <div class="lc-card-head">
             <h3><i class="ti ti-history"></i> Closed Conversations</h3>
-            <span class="lc-card-sub"><?= $totalMatching ?> total<?= $totalMatching > 100 ? ' · showing latest 100' : '' ?></span>
+            <span class="lc-card-sub"><?= $totalMatching ?> total<?= $totalMatching > 100 ? ' - showing latest 100' : '' ?></span>
         </div>
         <div class="lc-history-list" id="lc-history-list">
             <?php if (empty($rows)): ?>
@@ -379,7 +379,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="lc-history-item-side">
-                        <div class="lc-history-closed-at"><?= $r['closed_at'] ? lc_time_span($r['closed_at'], 'absolute') : '—' ?></div>
+                        <div class="lc-history-closed-at"><?= $r['closed_at'] ? lc_time_span($r['closed_at'], 'absolute') : ' - ' ?></div>
                         <span class="lc-history-view"><i class="ti ti-eye"></i> View transcript</span>
                     </div>
                     <i class="ti ti-chevron-right lc-history-item-arrow"></i>

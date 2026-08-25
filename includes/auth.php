@@ -139,7 +139,7 @@ function lc_admin_auto_clear_all_chats_once(): void
         return;
     }
     $done = true;
-    // One-shot purge after deploy ΓÇö removes leftover active/merged test chats
+    // One-shot purge after deploy - removes leftover active/merged test chats
     $flag = 'purge_all_chats_20260821b';
     try {
         if (lc_setting($flag, '') === '1') {

@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $tab === 'signup' ? 'Sign up' : 'Login' ?> — <?= htmlspecialchars(LC_APP_NAME) ?></title>
+    <title><?= $tab === 'signup' ? 'Sign up' : 'Login' ?> - <?= htmlspecialchars(LC_APP_NAME) ?></title>
     <?php require __DIR__ . '/includes/head-assets.php'; ?>
     <style>
         html { overflow-y: scroll; }
@@ -239,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1><?= $tab === 'signup' ? 'Create account' : 'Agent Login' ?></h1>
     <p class="lc-auth-sub"><?= $tab === 'signup'
         ? 'Create your <strong>Live Support Workspace</strong> account, then sign in to manage chats and your team.'
-        : 'Sign in to your <strong>Live Support Workspace</strong> — manage chats, assist visitors, and collaborate with your team in real time. <em>(Deploy v1)</em>' ?></p>
+        : 'Sign in to your <strong>Live Support Workspace</strong> - manage chats, assist visitors, and collaborate with your team in real time. <em>(Deploy v1)</em>' ?></p>
 
     <div class="lc-auth-tabs">
         <a href="<?= htmlspecialchars(lc_admin_url('login')) ?>" class="<?= $tab === 'login' ? 'is-active' : '' ?>">Sign in</a>

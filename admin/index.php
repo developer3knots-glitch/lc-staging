@@ -121,7 +121,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-sparkles"></i> Live Support Console</div>
             <h1 class="lc-hero-title"><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agent['name']) ?></h1>
-            <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets ΓÇö everything in one beautiful workspace.</p>
+            <p class="lc-hero-sub">Real-time inbox, agent activity, and brand widgets - everything in one beautiful workspace.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Open Inbox</a>
                 <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-hero-chip"><i class="ti ti-bolt"></i> Waiting queue</a>
@@ -160,12 +160,12 @@ require __DIR__ . '/includes/header.php';
     <?php if ($unread > 0): ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text"><?= $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> - <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php else: ?>
     <div class="lc-alert lc-alert-info lc-dash-alert" id="lc-dash-unread-alert" style="display:none">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text">0</strong> unread messages ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text">0</strong> unread messages - <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php endif; ?>
 
@@ -227,7 +227,7 @@ require __DIR__ . '/includes/header.php';
                     <?php foreach ($waitingChats as $w):
                         $name = $w['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $w['id']]);
-                        $msg = mb_strimwidth($w['last_msg'] ?? 'ΓÇö', 0, 72, 'ΓÇª');
+                        $msg = mb_strimwidth($w['last_msg'] ?? ' - ', 0, 72, '...');
                     ?>
                     <div class="lc-conv-item is-waiting">
                         <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
@@ -264,7 +264,7 @@ require __DIR__ . '/includes/header.php';
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
-                        $msg = mb_strimwidth($r['last_msg'] ?? 'ΓÇö', 0, 72, 'ΓÇª');
+                        $msg = mb_strimwidth($r['last_msg'] ?? ' - ', 0, 72, '...');
                     ?>
                     <?php $itemUnread = (int) ($r['unread'] ?? 0); ?>
                     <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>">
@@ -282,7 +282,7 @@ require __DIR__ . '/includes/header.php';
                                 <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
                                 <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
                                 <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
-                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : 'ΓÇö' ?></span>
+                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : ' - ' ?></span>
                             </div>
                         </div>
                         <i class="ti ti-chevron-right lc-conv-item-arrow"></i>
