@@ -50,6 +50,10 @@ try {
 
     $messages = [];
     foreach ($rows as $row) {
+        if (($row['sender_type'] ?? '') === 'system' && function_exists('lc_message_hidden_from_visitor')
+            && lc_message_hidden_from_visitor((string) ($row['message'] ?? ''))) {
+            continue;
+        }
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 

@@ -277,6 +277,29 @@ function lc_add_agent_join_message(int $conversationId, int $agentId): void
     lc_touch_conversation($conversationId);
 }
 
+/**
+ * Internal/admin system notes that must never appear in the visitor widget.
+ */
+function lc_message_hidden_from_visitor(string $message): bool
+{
+    $message = trim($message);
+    if ($message === '') {
+        return false;
+    }
+    $needles = [
+        'Merged ',
+        'earlier chat',
+        'from the same visitor into this thread',
+        'Visitor returned. Previous conversation is open again.',
+        'Chat history (agent only)',
+    ];
+    foreach ($needles as $n) {
+        if (stripos($message, $n) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
 function lc_add_system_message(int $conversationId, string $message): void
 {
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');

@@ -1731,6 +1731,13 @@
         if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
     }
 
+    function isAdminOnlySystemMessage(m) {
+        if (!m || m.sender_type !== 'system') return false;
+        var t = String(m.message || '');
+        return /Merged\s+\d+\s+earlier chat/i.test(t)
+            || /from the same visitor into this thread/i.test(t)
+            || /Visitor returned\. Previous conversation is open again/i.test(t);
+    }
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length) return;
         receipts.forEach(function (r) {
