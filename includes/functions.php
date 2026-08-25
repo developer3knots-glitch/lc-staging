@@ -411,14 +411,8 @@ function lc_agent_can_handle_conversation(array $agent, array $conv): bool
     $assignedId = (int) ($conv['agent_id'] ?? 0);
     $status = (string) ($conv['status'] ?? '');
 
-    // Assigned agent can reopen/message visitor-closed chats (follow-up).
+    // Closed chats stay closed — no compose / reopen via messaging.
     if ($status === 'closed') {
-        if ($assignedId === $agentId) {
-            return true;
-        }
-        if ($assignedId === 0 && lc_agent_can_access_conversation($agent, $conv)) {
-            return true;
-        }
         return false;
     }
 

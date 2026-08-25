@@ -973,15 +973,12 @@
     }
 
     function canComposeChat(c, serverFlag) {
+        if (!c) return false;
+        if (c.status === 'closed') return false;
         if (typeof serverFlag === 'boolean') {
             return serverFlag;
         }
-        if (!c) return false;
         if (c.status === 'waiting') return true;
-        if (c.status === 'closed') {
-            if (!c.agent_id) return true;
-            return parseInt(c.agent_id, 10) === myAgentId;
-        }
         if (!c.agent_id) return false;
         return parseInt(c.agent_id, 10) === myAgentId;
     }
@@ -1347,12 +1344,11 @@
                     } else {
                         paintIncremental();
                     }
-                    var allowFollowUp = canComposeChat(c, data.can_compose);
-                    replyInput.disabled = !allowFollowUp;
-                    document.getElementById('lc-send-reply').disabled = !allowFollowUp;
-                    if (allowFollowUp) {
-                        replyInput.placeholder = 'Message visitor (reopens chat)...';
-                    }
+                    replyInput.disabled = true;
+                    document.getElementById('lc-send-reply').disabled = true;
+                    replyInput.value = '';
+                    replyInput.placeholder = 'Chat closed — visitor ended this conversation';
+                    if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
                     acceptBtn.style.display = 'none';
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
@@ -1360,7 +1356,7 @@
                     visitorNameEl.textContent = c.visitor_name || 'Visitor';
                     updateHeaderAvatar(c.visitor_name || 'Visitor');
                     renderVisitorDetails(c, !!c.ip_blocked);
-                    renderDetailsRail(c, allowFollowUp ? 'Closed — you can still follow up' : 'Chat closed');
+                    renderDetailsRail(c, 'Chat closed');
                     if (c.reference) {
                         updateChatReference(c.reference);
                     }

@@ -23,12 +23,9 @@ try {
     }
 
     $agentId = (int) $agent['id'];
+    // Visitor/agent-closed chats stay closed — do not reopen on reply
     if (($conv['status'] ?? '') === 'closed') {
-        if (!lc_agent_can_handle_conversation($agent, $conv)) {
-            lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
-        }
-        lc_agent_reopen_conversation($conversationId, $agentId);
-        $conv = lc_get_conversation($conversationId) ?: $conv;
+        lc_json(['success' => false, 'error' => 'This chat is closed. The visitor ended the conversation.'], 400);
     }
     if (!in_array($conv['status'] ?? '', ['waiting', 'active'], true)) {
         lc_json(['success' => false, 'error' => 'Conversation closed'], 400);
