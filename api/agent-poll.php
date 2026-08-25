@@ -17,9 +17,15 @@ if ($conversationId < 1) {
 try {
     lc_ensure_attachments_schema();
     lc_ensure_message_receipts_schema();
+    if (function_exists('lc_ensure_returning_visitor_schema')) {
+        lc_ensure_returning_visitor_schema();
+    }
     $conv = lc_get_conversation($conversationId);
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
+    }
+    if (function_exists('lc_enrich_returning_visitor_flags')) {
+        $conv = lc_enrich_returning_visitor_flags($conv);
     }
 
     if (!lc_agent_can_view_conversation($agent, $conv)) {

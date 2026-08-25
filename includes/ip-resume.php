@@ -194,6 +194,28 @@ function lc_merge_conversation_ids_into_one(array $ids): array
 
     $db->beginTransaction();
     try {
+        // Keep returning-visitor flags when collapsing same-IP threads.
+        try {
+            if (function_exists('lc_ensure_returning_visitor_schema')) {
+                lc_ensure_returning_visitor_schema();
+            }
+            $allPh = implode(',', array_fill(0, count($ids), '?'));
+            $flagStmt = $db->prepare("SELECT MAX(is_returning) AS ir, MAX(prior_chat_count) AS pc FROM conversations WHERE id IN ({$allPh})");
+            $flagStmt->execute($ids);
+            $flags = $flagStmt->fetch() ?: [];
+            $ir = (int) ($flags['ir'] ?? 0);
+            $pc = (int) ($flags['pc'] ?? 0);
+            if ($pc < 1 && count($dupes) > 0) {
+                $pc = count($dupes);
+                $ir = 1;
+            }
+            if ($ir > 0 || $pc > 0) {
+                $db->prepare('UPDATE conversations SET is_returning = 1, prior_chat_count = GREATEST(COALESCE(prior_chat_count, 0), ?) WHERE id = ?')
+                    ->execute([max(1, $pc), $keepId]);
+            }
+        } catch (Throwable $flagErr) {
+        }
+
         $upd = $db->prepare("UPDATE messages SET conversation_id = ? WHERE conversation_id IN ({$placeholders})");
         $upd->execute(array_merge([$keepId], $dupes));
         $moved = $upd->rowCount();
@@ -298,4 +320,115 @@ function lc_merge_same_ip_conversations(): array
         'messages_moved' => $movedMessages,
         'conversations_removed' => $removedConversations,
     ];
+}
+
+
+/**
+ * Persist returning-visitor flags (survives same-IP merge).
+ */
+function lc_ensure_returning_visitor_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    try {
+        $pdo->query('SELECT is_returning, prior_chat_count FROM conversations LIMIT 1');
+    } catch (Throwable $e) {
+        try {
+            $pdo->exec('ALTER TABLE conversations ADD COLUMN is_returning TINYINT(1) NOT NULL DEFAULT 0');
+        } catch (Throwable $e2) {
+        }
+        try {
+            $pdo->exec('ALTER TABLE conversations ADD COLUMN prior_chat_count INT NOT NULL DEFAULT 0');
+        } catch (Throwable $e2) {
+        }
+    }
+}
+
+/**
+ * Prior chats for same brand + usable IP and/or email (excluding current).
+ *
+ * @return array{is_returning:bool,prior_count:int,match_by:string}
+ */
+function lc_detect_returning_visitor(string $ip, string $email, int $brandId, int $excludeConversationId = 0): array
+{
+    lc_ensure_returning_visitor_schema();
+    $ipOk = lc_ip_usable_for_identity($ip);
+    $email = lc_normalize_visitor_email($email);
+    if ($brandId < 1 || (!$ipOk && $email === '')) {
+        return ['is_returning' => false, 'prior_count' => 0, 'match_by' => ''];
+    }
+
+    $db = lc_db();
+    $prior = 0;
+    $matchBy = '';
+
+    if ($ipOk) {
+        $stmt = $db->prepare('
+            SELECT COUNT(*)
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.brand_id = ? AND c.id <> ? AND v.ip_address = ?
+        ');
+        $stmt->execute([$brandId, max(0, $excludeConversationId), $ip]);
+        $prior = (int) $stmt->fetchColumn();
+        if ($prior > 0) {
+            $matchBy = 'ip';
+        }
+    }
+
+    if ($prior < 1 && $email !== '') {
+        $stmt = $db->prepare('
+            SELECT COUNT(*)
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.brand_id = ? AND c.id <> ? AND LOWER(TRIM(v.email)) = ?
+        ');
+        $stmt->execute([$brandId, max(0, $excludeConversationId), $email]);
+        $prior = (int) $stmt->fetchColumn();
+        if ($prior > 0) {
+            $matchBy = 'email';
+        }
+    }
+
+    return [
+        'is_returning' => $prior > 0,
+        'prior_count' => $prior,
+        'match_by' => $matchBy,
+    ];
+}
+
+function lc_mark_conversation_returning(int $conversationId, int $priorCount, string $matchBy = ''): void
+{
+    if ($conversationId < 1) {
+        return;
+    }
+    lc_ensure_returning_visitor_schema();
+    try {
+        lc_db()->prepare('UPDATE conversations SET is_returning = 1, prior_chat_count = ? WHERE id = ?')
+            ->execute([max(1, $priorCount), $conversationId]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Normalize API flags on a conversation row.
+ *
+ * @param array<string,mixed> $row
+ * @return array<string,mixed>
+ */
+function lc_enrich_returning_visitor_flags(array $row): array
+{
+    $is = !empty($row['is_returning']);
+    $prior = (int) ($row['prior_chat_count'] ?? 0);
+    if ($is && $prior < 1) {
+        $prior = 1;
+    }
+    $row['is_returning'] = $is;
+    $row['prior_chat_count'] = $prior;
+    $row['visitor_kind'] = $is ? 'returning' : 'new';
+    return $row;
 }

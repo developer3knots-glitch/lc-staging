@@ -49,6 +49,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-chat-header-info">
                             <div class="lc-chat-header-title-row">
                                 <strong id="lc-chat-visitor-name">Visitor</strong>
+                                <span id="lc-chat-visitor-kind" class="lc-visitor-kind-badge" hidden></span>
                                 <div class="lc-chat-ref" id="lc-chat-ref" hidden>
                                     <span class="lc-chat-ref-icon" title="Ticket reference" aria-hidden="true"><i class="ti ti-ticket"></i></span>
                                     <code class="lc-chat-ref-code" id="lc-chat-ref-code">ΓÇö</code>
@@ -179,7 +180,11 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-details-section">
                     <h4 class="lc-details-heading">Details</h4>
                     <dl class="lc-details-list">
-                        <div class="lc-details-row">
+                                                <div class="lc-details-row">
+                            <dt><i class="ti ti-user-check"></i> Visitor</dt>
+                            <dd id="lc-details-visitor-kind">ΓÇö</dd>
+                        </div>
+<div class="lc-details-row">
                             <dt><i class="ti ti-world"></i> IP</dt>
                             <dd id="lc-details-ip">ΓÇö</dd>
                         </div>

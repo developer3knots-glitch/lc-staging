@@ -294,6 +294,7 @@ function lc_message_hidden_from_visitor(string $message): bool
         'Visitor returned. Previous conversation is open again.',
         'Chat history (agent only)',
         'Agent reopened',
+        'Returning visitor',
     ];
     foreach ($needles as $n) {
         if (stripos($message, $n) !== false) {

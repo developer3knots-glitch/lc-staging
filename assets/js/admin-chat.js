@@ -269,6 +269,64 @@
         }
     }
 
+
+    function isReturningVisitor(c) {
+        if (!c) return false;
+        if (c.visitor_kind === 'returning') return true;
+        return !!(c.is_returning === true || c.is_returning === 1 || c.is_returning === '1');
+    }
+
+    function visitorKindLabel(c) {
+        if (isReturningVisitor(c)) {
+            var n = parseInt(c.prior_chat_count, 10) || 0;
+            return n > 1 ? ('Returning visitor · ' + n + ' prior chats') : 'Returning visitor';
+        }
+        return 'New chat';
+    }
+
+    function setVisitorKindBadge(c) {
+        var el = document.getElementById('lc-chat-visitor-kind');
+        if (!el) return;
+        if (!c) {
+            el.hidden = true;
+            el.textContent = '';
+            el.className = 'lc-visitor-kind-badge';
+            return;
+        }
+        var ret = isReturningVisitor(c);
+        el.hidden = false;
+        el.textContent = ret ? 'Return' : 'New';
+        el.className = 'lc-visitor-kind-badge ' + (ret ? 'is-returning' : 'is-new');
+        el.title = visitorKindLabel(c);
+    }
+
+    var lastReturningWaiting = 0;
+
+    function showReturningVisitorToast(name) {
+        var el = document.getElementById('lc-return-toast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'lc-return-toast';
+            el.className = 'lc-return-toast';
+            el.setAttribute('role', 'status');
+            document.body.appendChild(el);
+        }
+        el.innerHTML = '<i class="ti ti-user-check" aria-hidden="true"></i><div><strong>Returning visitor</strong><span>' +
+            esc(name || 'Someone') + ' started a chat again</span></div>';
+        el.classList.add('is-visible');
+        clearTimeout(showReturningVisitorToast._t);
+        showReturningVisitorToast._t = setTimeout(function () {
+            el.classList.remove('is-visible');
+        }, 6500);
+        if (window.Notification && Notification.permission === 'granted') {
+            try {
+                new Notification('Returning visitor', {
+                    body: (name || 'Visitor') + ' started a chat again',
+                    tag: 'lc-return-visitor'
+                });
+            } catch (e) { /* ignore */ }
+        }
+    }
     function showDetailsPanel(show) {
         var empty = document.getElementById('lc-chat-details-empty');
         var body = document.getElementById('lc-chat-details-body');
@@ -290,6 +348,8 @@
         setText('lc-details-name', name);
         currentVisitorEmail = (c.visitor_email || '').trim();
         setText('lc-details-email', currentVisitorEmail || 'No email');
+        setText('lc-details-visitor-kind', visitorKindLabel(c));
+        setVisitorKindBadge(c);
         setText('lc-details-ip', c.visitor_ip || currentVisitorIp || 'ΓÇö');
         setText('lc-details-country', c.visitor_country || 'ΓÇö');
         setText('lc-details-brand', c.brand_name || 'ΓÇö');
@@ -389,6 +449,11 @@
         html += esc(c.last_message || 'ΓÇö');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
+        if (isReturningVisitor(c)) {
+            html += '<span class="lc-badge lc-badge-returning" title="' + esc(visitorKindLabel(c)) + '">Return</span>';
+        } else if (status === 'waiting' || status === 'active') {
+            html += '<span class="lc-badge lc-badge-newchat">New</span>';
+        }
         if (c.unread > 0) {
             html += '<span class="lc-badge lc-badge-unread">' + c.unread + ' new</span>';
         } else {
@@ -833,13 +898,24 @@
                 }
 
                 var unreadTotal = 0;
+                var returningWaiting = 0;
+                var returningName = '';
                 (data.conversations || []).forEach(function (c) {
                     unreadTotal += parseInt(c.unread, 10) || 0;
+                    if (isReturningVisitor(c) && c.status === 'waiting') {
+                        returningWaiting += 1;
+                        if (!returningName) {
+                            returningName = c.visitor_name || 'Visitor';
+                        }
+                    }
                 });
                 var waiting = parseInt(data.waiting_count, 10) || 0;
-                // New queue activity or unread visitor msgs (not first paint)
+                // New queue / returning visitor / unread (not first paint)
                 if (inboxSoundReady) {
-                    if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
+                    if (returningWaiting > lastReturningWaiting) {
+                        playIncomingSound();
+                        showReturningVisitorToast(returningName);
+                    } else if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
                         playIncomingSound();
                     }
                 } else {
@@ -847,6 +923,7 @@
                 }
                 lastInboxWaiting = waiting;
                 lastInboxUnread = unreadTotal;
+                lastReturningWaiting = returningWaiting;
 
                 if (!data.conversations.length) {
                     lastConversations = [];
@@ -1043,6 +1120,8 @@
         showDetailsPanel(true);
         setText('lc-details-name', 'LoadingΓÇª');
         setText('lc-details-email', 'ΓÇö');
+        setText('lc-details-visitor-kind', '-');
+        setVisitorKindBadge(null);
         setText('lc-details-ip', 'ΓÇö');
         setText('lc-details-country', 'ΓÇö');
         setText('lc-details-brand', 'ΓÇö');
@@ -1852,6 +1931,13 @@
                 }
             }
         });
+    }
+
+    if (window.Notification && Notification.permission === 'default') {
+        document.addEventListener('click', function lcAskNotifyOnce() {
+            document.removeEventListener('click', lcAskNotifyOnce, true);
+            try { Notification.requestPermission(); } catch (e) { /* ignore */ }
+        }, true);
     }
 
     loadConversations();

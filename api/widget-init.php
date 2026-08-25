@@ -220,6 +220,29 @@ try {
         }
         lc_touch_conversation($convId);
         lc_assign_agent($convId);
+
+        // Flag + agent-only note when this IP/email has prior chats (days-later return).
+        try {
+            if (function_exists('lc_ensure_returning_visitor_schema')) {
+                lc_ensure_returning_visitor_schema();
+            }
+            if (function_exists('lc_detect_returning_visitor')) {
+                $returnInfo = lc_detect_returning_visitor($ip, (string) $visitorEmail, $brandId, $convId);
+                if (!empty($returnInfo['is_returning'])) {
+                    if (function_exists('lc_mark_conversation_returning')) {
+                        lc_mark_conversation_returning($convId, (int) $returnInfo['prior_count'], (string) ($returnInfo['match_by'] ?? ''));
+                    }
+                    $via = (($returnInfo['match_by'] ?? '') === 'email') ? 'email' : 'IP';
+                    $n = max(1, (int) ($returnInfo['prior_count'] ?? 1));
+                    lc_add_system_message(
+                        $convId,
+                        'Returning visitor — ' . $n . ' prior chat' . ($n === 1 ? '' : 's') . ' found for this ' . $via . '. History is available for agents in this thread.'
+                    );
+                }
+            }
+        } catch (Throwable $returnErr) {
+        }
+
         // Close only other waiting queues; keep active follow-up threads intact for agent reach-back
         try {
             $db->prepare("
