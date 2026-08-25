@@ -1819,6 +1819,10 @@
                 }
 
                 data.messages.forEach(function (m) {
+                    if (isAdminOnlySystemMessage(m)) {
+                        if (m.id > lastMsgId) lastMsgId = m.id;
+                        return;
+                    }
                     if (isHistoryLoad || m.id > lastMsgId) {
                         var isNewIncoming = !isHistoryLoad && m.id > lastMsgId && m.sender_type !== 'visitor';
                         appendMessage(m);
