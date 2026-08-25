@@ -999,6 +999,35 @@
 }
 .lcw-attach-btn:hover { background: #e2e8f0; color: #334155; }
 .lcw-attach-btn.is-busy { opacity: 0.55; pointer-events: none; }
+
+/* Draft attachment in compose (send on button) */
+.lcw-attach-preview { margin: 0 0 0.4rem; }
+.lcw-attach-preview[hidden] { display: none !important; }
+.lcw-attach-preview-card {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.45rem 0.5rem; border-radius: 12px;
+    border: 1px solid var(--lcw-border); background: #f8fafc;
+}
+.lcw-attach-preview-thumb {
+    width: 48px; height: 48px; border-radius: 9px; object-fit: cover;
+    flex-shrink: 0; background: #e2e8f0;
+}
+.lcw-attach-preview-pdf {
+    width: 48px; height: 48px; border-radius: 9px; background: #fee2e2; color: #dc2626;
+    font-size: 0.68rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.lcw-attach-preview-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.05rem; }
+.lcw-attach-preview-meta strong {
+    font-size: 0.78rem; color: var(--lcw-ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lcw-attach-preview-meta span { font-size: 0.66rem; color: #94a3b8; }
+.lcw-attach-preview-hint { color: var(--lcw-primary-dark) !important; font-weight: 600; }
+.lcw-attach-preview-clear {
+    width: 30px; height: 30px; border: none; border-radius: 8px; background: transparent;
+    color: #94a3b8; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.lcw-attach-preview-clear:hover { background: #e2e8f0; color: #334155; }
 .lcw-msg.has-attachment { max-width: min(88%, 260px); padding: 0.45rem; }
 .lcw-chat-text { margin-bottom: 0.4rem; white-space: pre-wrap; word-break: break-word; }
 .lcw-attach-image {

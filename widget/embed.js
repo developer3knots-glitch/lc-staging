@@ -50,6 +50,7 @@
     var teaserTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
     var visitorUploadBusy = false;
+    var pendingAttachment = null;
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
     var prechatFormEnabled = false; // default: direct chat (matches server)
@@ -285,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=17';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=18';
         document.head.appendChild(link);
     }
 
@@ -442,6 +443,7 @@
                 '<div id="lc-panel-compose" class="lcw-compose">' +
                     '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                    '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
                     '<div class="lcw-compose-inner">' +
                         '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
                         '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
@@ -484,7 +486,7 @@
                     var pasted = items[i].getAsFile();
                     if (pasted) {
                         e.preventDefault();
-                        uploadVisitorFile(pasted);
+                        queueVisitorFile(pasted);
                     }
                     break;
                 }
@@ -509,7 +511,7 @@
             fileInput.addEventListener('change', function () {
                 var file = fileInput.files && fileInput.files[0];
                 fileInput.value = '';
-                uploadVisitorFile(file);
+                queueVisitorFile(file);
             });
             if (window.LCChatFiles) {
                 window.LCChatFiles.applyFileInput(fileInput);
@@ -1159,6 +1161,7 @@
 
     function showEndedState() {
         chatClosed = true;
+        clearPendingAttachment();
         stopOwnTyping();
         setPeerTypingVisible(false);
         leaveCloseSent = true;
@@ -1860,44 +1863,114 @@
         return esc(m.message);
     }
 
-    function uploadVisitorFile(file) {
+    function clearPendingAttachment() {
+        if (pendingAttachment && pendingAttachment.previewUrl) {
+            try { URL.revokeObjectURL(pendingAttachment.previewUrl); } catch (e) {}
+        }
+        pendingAttachment = null;
+        var box = document.getElementById('lc-attach-preview');
+        if (box) {
+            box.hidden = true;
+            box.innerHTML = '';
+        }
+    }
+
+    function renderPendingAttachment() {
+        var box = document.getElementById('lc-attach-preview');
+        if (!box) return;
+        if (!pendingAttachment || !pendingAttachment.file) {
+            box.hidden = true;
+            box.innerHTML = '';
+            return;
+        }
+        var file = pendingAttachment.file;
+        var name = esc(file.name || 'Attachment');
+        var size = window.LCChatFiles ? window.LCChatFiles.formatSize(file.size || 0) : '';
+        var thumb = '';
+        if (pendingAttachment.isImage && pendingAttachment.previewUrl) {
+            thumb = '<img class="lcw-attach-preview-thumb" src="' + esc(pendingAttachment.previewUrl) + '" alt="">';
+        } else {
+            thumb = '<span class="lcw-attach-preview-pdf">PDF</span>';
+        }
+        box.innerHTML =
+            '<div class="lcw-attach-preview-card">' +
+                thumb +
+                '<div class="lcw-attach-preview-meta">' +
+                    '<strong>' + name + '</strong>' +
+                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' · PDF') + '</span>' +
+                    '<span class="lcw-attach-preview-hint">Ready to send</span>' +
+                '</div>' +
+                '<button type="button" id="lc-attach-clear" class="lcw-attach-preview-clear" aria-label="Remove attachment">' + ICON_CLOSE + '</button>' +
+            '</div>';
+        box.hidden = false;
+        var clearBtn = document.getElementById('lc-attach-clear');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function () {
+                clearPendingAttachment();
+            });
+        }
+    }
+
+    function queueVisitorFile(file) {
         if (!file || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
+            return;
+        }
+        var attachBtn = document.getElementById('lc-attach-file');
+        if (attachBtn) attachBtn.classList.add('is-busy');
+        window.LCChatFiles.prepareFile(file).then(function (prepared) {
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            if (!prepared.ok) {
+                appendMessage({ sender_type: 'system', message: prepared.error || 'Invalid file' });
+                return;
+            }
+            clearPendingAttachment();
+            var ready = prepared.file;
+            var isImage = !!(ready.type && ready.type.indexOf('image/') === 0);
+            pendingAttachment = {
+                file: ready,
+                isImage: isImage,
+                previewUrl: isImage ? URL.createObjectURL(ready) : ''
+            };
+            renderPendingAttachment();
+            var input = document.getElementById('lc-input');
+            if (input) input.focus();
+        }).catch(function () {
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            appendMessage({ sender_type: 'system', message: 'Unable to prepare file. Please try again.' });
+        });
+    }
+
+    function sendPendingAttachment() {
+        if (!pendingAttachment || !pendingAttachment.file || !conversationId || visitorUploadBusy || chatClosed) {
             return;
         }
         stopOwnTyping();
         visitorUploadBusy = true;
         var attachBtn = document.getElementById('lc-attach-file');
+        var sendBtn = document.getElementById('lc-send');
         if (attachBtn) attachBtn.classList.add('is-busy');
+        if (sendBtn) sendBtn.classList.add('is-sending');
 
-        var caption = '';
         var input = document.getElementById('lc-input');
-        if (input) {
-            caption = input.value.trim();
-        }
+        var caption = input ? input.value.trim() : '';
+        var file = pendingAttachment.file;
 
-        window.LCChatFiles.prepareFile(file).then(function (prepared) {
-            if (!prepared.ok) {
-                appendMessage({ sender_type: 'system', message: prepared.error || 'Invalid file' });
-                visitorUploadBusy = false;
-                if (attachBtn) attachBtn.classList.remove('is-busy');
-                return null;
-            }
-            return window.LCChatFiles.upload({
-                role: 'visitor',
-                baseUrl: siteUrl,
-                conversationId: conversationId,
-                file: prepared.file,
-                caption: caption,
-                visitorUid: visitorUid,
-                chatToken: chatToken,
-                websiteUrl: (document.getElementById('lc-honeypot') || {}).value || '',
-                widgetLoadedAt: widgetLoadedAt
-            });
+        window.LCChatFiles.upload({
+            role: 'visitor',
+            baseUrl: siteUrl,
+            conversationId: conversationId,
+            file: file,
+            caption: caption,
+            visitorUid: visitorUid,
+            chatToken: chatToken,
+            websiteUrl: (document.getElementById('lc-honeypot') || {}).value || '',
+            widgetLoadedAt: widgetLoadedAt
         }).then(function (data) {
             visitorUploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
-            if (!data) return;
-            if (data.success) {
+            if (sendBtn) sendBtn.classList.remove('is-sending');
+            if (data && data.success) {
+                clearPendingAttachment();
                 if (input) {
                     input.value = '';
                     autoResizeTextarea(input);
@@ -1905,16 +1978,30 @@
                 pollMessages(true);
                 return;
             }
-            appendMessage({ sender_type: 'system', message: data.error || 'Upload failed' });
+            appendMessage({ sender_type: 'system', message: (data && data.error) || 'Upload failed' });
         }).catch(function () {
             visitorUploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
+            if (sendBtn) sendBtn.classList.remove('is-sending');
             appendMessage({ sender_type: 'system', message: 'Upload failed. Please try again.' });
         });
     }
 
     function sendMessage() {
         if (chatClosed) return;
+        if (pendingAttachment && pendingAttachment.file) {
+            if (!conversationId) {
+                if (prechatFormEnabled) {
+                    showPrechatForm();
+                    showPrechatError('Please complete the form to start chatting.');
+                    return;
+                }
+                appendMessage({ sender_type: 'system', message: 'Please start the chat before sending a file.' });
+                return;
+            }
+            sendPendingAttachment();
+            return;
+        }
         var input = document.getElementById('lc-input');
         var msg = input.value.trim();
         if (!msg) return;

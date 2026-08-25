@@ -119,6 +119,7 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro">
+                    <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
                         <textarea id="lc-reply-input" rows="1" placeholder="Type a messageΓÇª"></textarea>
