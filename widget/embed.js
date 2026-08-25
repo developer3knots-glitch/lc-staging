@@ -1187,9 +1187,10 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
+        // Keep conversationId/chatToken in memory so visitor can email this ended chat.
+        // Clear storage only — reload should not silently resume a closed session.
         persistConversationId(null);
         persistChatToken('');
-        conversationId = null;
         lastMsgId = 0;
         setComposeEnabled(false);
         document.getElementById('lc-panel-prechat').style.display = 'none';
@@ -1267,7 +1268,7 @@
         which = 'ended';
         var ids = emailExportIds(which);
         if (!conversationId) {
-            setEmailTranscriptStatus('No active chat to export.', true, which);
+            setEmailTranscriptStatus('This chat is no longer available to export. Start a new conversation first.', true, which);
             return;
         }
         var input = document.getElementById(ids.input);
@@ -1365,6 +1366,10 @@
 
     function startNewChat() {
         hideEndedState();
+        conversationId = null;
+        chatToken = '';
+        persistConversationId(null);
+        persistChatToken('');
         currentAgent = { name: '', avatar: null };
         currentReference = '';
         updateHeaderAgent(null);
