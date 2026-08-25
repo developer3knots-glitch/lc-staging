@@ -338,7 +338,7 @@
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
                         '<div>' +
                             '<strong id="lc-panel-title">LiveChat</strong>' +
-                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>ConnectingΓÇª</small>' +
+                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting...</small>' +
                             '<span id="lc-panel-ref" class="lcw-ref-badge" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
                         '</div>' +
                     '</div>' +
@@ -353,7 +353,7 @@
                 '</div>' +
                 '<div id="lc-waiting-bar" class="lcw-waiting-bar">' +
                     '<span class="lcw-typing-dots"><span></span><span></span><span></span></span>' +
-                    '<span id="lc-waiting-text">Connecting you with a team memberΓÇª</span>' +
+                    '<span id="lc-waiting-text">Connecting you with a team member...</span>' +
                 '</div>' +
                 '<div id="lc-panel-prechat" class="lcw-prechat" style="display:none">' +
                     '<div id="lc-prechat-status" class="lcw-status-card">' +
@@ -381,7 +381,7 @@
                             '</div>' +
                             '<div class="lcw-field">' +
                                 '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
-                                '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or requestΓÇª"></textarea>' +
+                                '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or request..."></textarea>' +
                             '</div>' +
                             '<input type="text" name="website_url" id="lc-prechat-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                             '<div id="lc-prechat-error" class="lcw-prechat-error" style="display:none"></div>' +
@@ -425,7 +425,7 @@
                 '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
                     '<div class="lcw-typing-row">' +
                         '<div class="lcw-typing-bubble" aria-hidden="true"><span></span><span></span><span></span></div>' +
-                        '<span class="lcw-typing-label" id="lc-typing-label">Agent is typingΓÇª</span>' +
+                        '<span class="lcw-typing-label" id="lc-typing-label">Agent is typing...</span>' +
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
@@ -444,7 +444,7 @@
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div class="lcw-compose-inner">' +
                         '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
-                        '<textarea id="lc-input" rows="1" placeholder="Write a messageΓÇª"></textarea>' +
+                        '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
@@ -967,7 +967,7 @@
             return;
         }
         showChatView();
-        updateStatus('ConnectingΓÇª', agentsOnline > 0);
+        updateStatus('Connecting...', agentsOnline > 0);
         setWaitingState(false);
         var payload = {
             visitor_uid: visitorUid,
@@ -1028,7 +1028,7 @@
         var btn = document.getElementById('lc-prechat-submit');
         btn.disabled = true;
         btn.classList.add('is-loading');
-        btn.querySelector('.lcw-btn-label').textContent = 'ConnectingΓÇª';
+        btn.querySelector('.lcw-btn-label').textContent = 'Connecting...';
 
         localStorage.setItem('lc_visitor_name', name);
         localStorage.setItem('lc_visitor_email', email);
@@ -1279,7 +1279,7 @@
             updateStatus('Chatting with ' + data.agent.name, true);
         } else if (data.status === 'waiting') {
             setWaitingState(true);
-            updateStatus('Waiting for an agentΓÇª', agentsOnline > 0);
+            updateStatus('Waiting for an agent...', agentsOnline > 0);
         } else {
             setWaitingState(false);
             updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
@@ -1299,7 +1299,7 @@
         var resumeConvId = options.resumeConversationId || null;
         if (resumeConvId) {
             showChatView();
-            updateStatus('ReconnectingΓÇª', false);
+            updateStatus('Reconnecting...', false);
         }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
@@ -1417,7 +1417,7 @@
             el.hidden = false;
             if (label) {
                 var who = (name || (currentAgent && currentAgent.name) || 'Agent').trim() || 'Agent';
-                label.textContent = who + ' is typingΓÇª';
+                label.textContent = who + ' is typing...';
             }
         } else {
             el.hidden = true;
@@ -1705,7 +1705,7 @@
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'pending') {
-            return '<span class="lcw-msg-ticks is-pending" title="SendingΓÇª" aria-label="Sending">' +
+            return '<span class="lcw-msg-ticks is-pending" title="Sending..." aria-label="Sending">' +
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
@@ -1800,7 +1800,7 @@
                     updateStatus('Chatting with ' + data.agent_name, true);
                 } else if (data.status === 'waiting') {
                     setWaitingState(true);
-                    updateStatus('Waiting for an agentΓÇª', agentsOnline > 0);
+                    updateStatus('Waiting for an agent...', agentsOnline > 0);
                 } else if (agentsOnline > 0) {
                     updateStatus('Team online', true);
                 }
