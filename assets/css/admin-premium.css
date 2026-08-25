@@ -4525,6 +4525,60 @@ body.lc-page-chats .lc-content {
     color: #94a3b8; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .lc-attach-preview-clear:hover { background: #e2e8f0; color: #334155; }
+
+.lc-email-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 40;
+    width: min(340px, 92vw);
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(15, 23, 42, 0.14);
+    padding: 0.85rem 0.9rem 1rem;
+}
+.lc-email-panel[hidden] { display: none !important; }
+.lc-email-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+.lc-email-panel-head strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.88rem;
+}
+.lc-email-transcript-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--lc-border);
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    font-size: 0.84rem;
+    margin: 0.25rem 0 0.55rem;
+    background: #f8fafc;
+}
+.lc-email-transcript-input:focus {
+    outline: none;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+    background: #fff;
+}
+.lc-email-panel-status {
+    margin: 0 0 0.55rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #0369a1;
+}
+.lc-email-panel-status.is-error { color: #b91c1c; }
+.lc-email-panel-status.is-ok { color: #15803d; }
+.lc-email-panel-status[hidden] { display: none !important; }
+.lc-details-email-btn { justify-content: center; }
 .lc-msg.has-attachment { max-width: min(92%, 320px); }
 .lc-msg.has-attachment .lc-chat-text { margin-bottom: 0.45rem; white-space: pre-wrap; word-break: break-word; }
 .lc-chat-attach-image {

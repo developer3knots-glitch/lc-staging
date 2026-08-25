@@ -53,6 +53,7 @@
     var lastConversations = [];
     var inboxSearch = '';
     var currentReference = '';
+    var currentVisitorEmail = '';
     var chatRefEl = document.getElementById('lc-chat-ref');
     var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
@@ -287,7 +288,8 @@
         showDetailsPanel(true);
         var name = c.visitor_name || 'Visitor';
         setText('lc-details-name', name);
-        setText('lc-details-email', c.visitor_email || 'No email');
+        currentVisitorEmail = (c.visitor_email || '').trim();
+        setText('lc-details-email', currentVisitorEmail || 'No email');
         setText('lc-details-ip', c.visitor_ip || currentVisitorIp || 'ΓÇö');
         setText('lc-details-country', c.visitor_country || 'ΓÇö');
         setText('lc-details-brand', c.brand_name || 'ΓÇö');
@@ -847,6 +849,7 @@
     }
 
     function closeTransferPanel() {
+        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         if (!transferPanel) return;
         transferPanel.hidden = true;
         if (transferBtn) transferBtn.setAttribute('aria-expanded', 'false');
@@ -1005,6 +1008,7 @@
 
     function openConversation(id) {
         clearPendingAttachment();
+        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
@@ -1431,6 +1435,95 @@
             body: JSON.stringify({ conversation_id: selectedId })
         }).then(function () { pollMessages(); loadConversations(); });
     });
+
+    var emailPanel = document.getElementById('lc-email-panel');
+    var emailPanelClose = document.getElementById('lc-email-panel-close');
+    var emailTranscriptBtn = document.getElementById('lc-email-transcript-btn');
+    var emailTranscriptSend = document.getElementById('lc-email-transcript-send');
+    var emailTranscriptTo = document.getElementById('lc-email-transcript-to');
+    var emailPanelStatus = document.getElementById('lc-email-panel-status');
+    var detailsEmailChatBtn = document.getElementById('lc-details-email-chat');
+
+    function closeEmailPanel() {
+        if (emailPanel) emailPanel.hidden = true;
+        if (emailPanelStatus) {
+            emailPanelStatus.hidden = true;
+            emailPanelStatus.textContent = '';
+            emailPanelStatus.classList.remove('is-error', 'is-ok');
+        }
+    }
+
+    function setEmailPanelStatus(msg, isError) {
+        if (!emailPanelStatus) return;
+        if (!msg) {
+            emailPanelStatus.hidden = true;
+            emailPanelStatus.textContent = '';
+            return;
+        }
+        emailPanelStatus.hidden = false;
+        emailPanelStatus.textContent = msg;
+        emailPanelStatus.classList.toggle('is-error', !!isError);
+        emailPanelStatus.classList.toggle('is-ok', !isError);
+    }
+
+    function openEmailPanel() {
+        if (!selectedId) return;
+        closeTransferPanel();
+        closeMoreMenu();
+        if (emailTranscriptTo) {
+            emailTranscriptTo.value = currentVisitorEmail || '';
+        }
+        setEmailPanelStatus('');
+        if (emailPanel) {
+            emailPanel.hidden = false;
+            if (emailTranscriptTo) emailTranscriptTo.focus();
+        }
+    }
+
+    function sendChatTranscriptEmail() {
+        if (!selectedId) return;
+        var email = (emailTranscriptTo && emailTranscriptTo.value || '').trim();
+        if (!email) {
+            setEmailPanelStatus('Enter the customer email address.', true);
+            if (emailTranscriptTo) emailTranscriptTo.focus();
+            return;
+        }
+        if (emailTranscriptSend) {
+            emailTranscriptSend.disabled = true;
+        }
+        setEmailPanelStatus('Sending transcript...', false);
+        fetch(base + '/api/agent-email-transcript.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId, email: email })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (emailTranscriptSend) emailTranscriptSend.disabled = false;
+            if (data && data.success) {
+                currentVisitorEmail = data.email || email;
+                setText('lc-details-email', currentVisitorEmail);
+                setEmailPanelStatus('Sent to ' + currentVisitorEmail, false);
+                return;
+            }
+            setEmailPanelStatus((data && data.error) || 'Failed to send email.', true);
+        }).catch(function () {
+            if (emailTranscriptSend) emailTranscriptSend.disabled = false;
+            setEmailPanelStatus('Connection error. Please try again.', true);
+        });
+    }
+
+    if (emailTranscriptBtn) emailTranscriptBtn.addEventListener('click', openEmailPanel);
+    if (detailsEmailChatBtn) detailsEmailChatBtn.addEventListener('click', openEmailPanel);
+    if (emailPanelClose) emailPanelClose.addEventListener('click', closeEmailPanel);
+    if (emailTranscriptSend) emailTranscriptSend.addEventListener('click', sendChatTranscriptEmail);
+    if (emailTranscriptTo) {
+        emailTranscriptTo.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendChatTranscriptEmail();
+            }
+        });
+    }
 
     document.getElementById('lc-close-chat').addEventListener('click', function () {
         if (!selectedId || !confirm('Close this chat?')) return;

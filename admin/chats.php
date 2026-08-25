@@ -74,6 +74,9 @@ require __DIR__ . '/includes/header.php';
                                         <i class="ti ti-arrows-exchange"></i> Transfer
                                     </button>
                                 </div>
+                                <button type="button" class="lc-chat-more-item" id="lc-email-transcript-btn" role="menuitem">
+                                    <i class="ti ti-mail"></i> Email chat to customer
+                                </button>
                                 <button type="button" class="lc-chat-more-item lc-chat-more-block" id="lc-block-ip-btn" role="menuitem" hidden>
                                     <i class="ti ti-ban"></i> <span id="lc-block-ip-label">Block IP</span>
                                 </button>
@@ -98,6 +101,19 @@ require __DIR__ . '/includes/header.php';
                                 <textarea id="lc-transfer-note" rows="2" maxlength="500" placeholder="Brief contextΓÇª"></textarea>
                                 <button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-transfer-submit" id="lc-transfer-submit" disabled>
                                     <i class="ti ti-send"></i> Transfer
+                                </button>
+                            </div>
+                            <div class="lc-email-panel" id="lc-email-panel" hidden>
+                                <div class="lc-email-panel-head">
+                                    <strong><i class="ti ti-mail"></i> Email chat transcript</strong>
+                                    <button type="button" class="lc-transfer-close" id="lc-email-panel-close" title="Close"><i class="ti ti-x"></i></button>
+                                </div>
+                                <p class="lc-transfer-hint">Send the full chat to the customer&rsquo;s email.</p>
+                                <label class="lc-transfer-note-label" for="lc-email-transcript-to">Customer email</label>
+                                <input type="email" id="lc-email-transcript-to" class="lc-email-transcript-input" placeholder="customer@email.com" autocomplete="email">
+                                <p class="lc-email-panel-status" id="lc-email-panel-status" hidden></p>
+                                <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-email-transcript-send">
+                                    <i class="ti ti-send"></i> Send transcript
                                 </button>
                             </div>
                         </div>
@@ -138,6 +154,9 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-chat-details-body" id="lc-chat-details-body" hidden>
                 <div class="lc-details-section">
+                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-details-email-btn" id="lc-details-email-chat" style="width:100%;margin-bottom:0.85rem">
+                        <i class="ti ti-mail"></i> Email chat to customer
+                    </button>
                     <h4 class="lc-details-heading">Customer</h4>
                     <div class="lc-details-customer">
                         <div class="lc-details-av" id="lc-details-av">V</div>
