@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=26';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=27';
         document.head.appendChild(link);
     }
 
@@ -980,6 +980,29 @@
         });
     }
 
+    function idleWelcomeText() {
+        var welcome = String((settings && settings.welcome_message) || '').trim();
+        var offline = String((settings && settings.offline_message) || '').trim();
+        if (agentsOnline > 0) {
+            return welcome || 'Hi! How can we help you today?';
+        }
+        return offline || welcome || 'We\'re away right now. Leave a message and we\'ll get back to you.';
+    }
+
+    function showIdleWelcomePreview() {
+        var text = idleWelcomeText();
+        if (!text) return;
+        var brand = (settings && settings.site_name) || 'Support';
+        // Preview only — no conversation / ticket until visitor sends a message
+        appendMessage({
+            sender_type: 'agent',
+            agent_name: brand,
+            message: text,
+            created_at: new Date().toISOString(),
+            _idlePreview: true
+        });
+    }
+
     function showIdleChatReady() {
         chatClosed = false;
         leaveCloseSent = false;
@@ -1008,6 +1031,7 @@
         if (input) {
             input.placeholder = 'Write a message to start chat...';
         }
+        showIdleWelcomePreview();
     }
 
     function startDirectChat(options) {
