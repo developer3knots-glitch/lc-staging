@@ -193,8 +193,14 @@ try {
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
             }
-        } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $email = '';
+        } else {
+            // Direct mode: chat starts only when visitor sends the first message
+            if ($initialMessage === '') {
+                lc_json(['success' => false, 'error' => 'Send a message to start the chat'], 400);
+            }
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $email = '';
+            }
         }
 
         $ins = $db->prepare("INSERT INTO conversations (visitor_id, brand_id, status, page_url, last_message_at) VALUES (?, ?, 'waiting', ?, NOW())");

@@ -286,7 +286,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=25';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=26';
         document.head.appendChild(link);
     }
 
@@ -519,7 +519,8 @@
                         showPrechatForm();
                         showPrechatError('Please start a conversation before sending files.');
                     } else {
-                        startDirectChat();
+                        showIdleChatReady();
+                        appendMessage({ sender_type: 'system', message: 'Write a message first to start the chat, then you can attach files.' });
                     }
                     return;
                 }
@@ -966,7 +967,7 @@
             scheduleAutoOpenOnLoad();
             return;
         }
-        startDirectChat();
+        showIdleChatReady();
         scheduleAutoOpenOnLoad();
     }
 
@@ -979,10 +980,45 @@
         });
     }
 
+    function showIdleChatReady() {
+        chatClosed = false;
+        leaveCloseSent = false;
+        conversationId = null;
+        chatToken = '';
+        lastMsgId = 0;
+        lastDateLabel = '';
+        currentReference = '';
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        persistConversationId(null);
+        persistChatToken('');
+        try { chatStore().removeItem(LAST_MSG_KEY); } catch (e) {}
+        showChatView();
+        var box = document.getElementById('lc-panel-messages');
+        if (box) box.innerHTML = '';
+        updateHeaderAgent(null);
+        var refWrap = document.getElementById('lc-panel-ref');
+        if (refWrap) refWrap.hidden = true;
+        setWaitingState(false);
+        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
+        setComposeEnabled(true);
+        var input = document.getElementById('lc-input');
+        if (input) {
+            input.placeholder = 'Write a message to start chat...';
+        }
+    }
+
     function startDirectChat(options) {
         options = options || {};
         if (prechatFormEnabled) {
             showPrechatForm(true);
+            return;
+        }
+        // No silent start — wait for first visitor message (or explicit resume)
+        if (!options.initialMessage && !options.resumeConversationId) {
+            showIdleChatReady();
             return;
         }
         showChatView();
@@ -1412,6 +1448,8 @@
         }
         hideEndedState();
         showChatView();
+        var inputEl = document.getElementById('lc-input');
+        if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
         updateHeaderAgent(data.agent || null);
         var hasAgent = data.agent && data.agent.name;
