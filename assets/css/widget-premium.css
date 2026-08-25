@@ -1028,6 +1028,61 @@
     color: #94a3b8; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .lcw-attach-preview-clear:hover { background: #e2e8f0; color: #334155; }
+
+/* Email transcript export */
+.lcw-email-export {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    margin: 0.15rem 0 0.35rem;
+}
+.lcw-email-export-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    text-align: left;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: 1px solid var(--lcw-border);
+    background: #f8fafc;
+}
+.lcw-email-export-panel[hidden] { display: none !important; }
+.lcw-email-export-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #64748b;
+}
+.lcw-email-export-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1.5px solid var(--lcw-border);
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    font-size: 0.84rem;
+    background: #fff;
+    color: var(--lcw-ink);
+}
+.lcw-email-export-input:focus {
+    outline: none;
+    border-color: var(--lcw-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
+}
+.lcw-email-export-send {
+    width: 100%;
+    margin-top: 0.1rem;
+}
+.lcw-email-export-status {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #0369a1;
+}
+.lcw-email-export-status.is-error { color: #b91c1c; }
+.lcw-email-export-status.is-ok { color: #15803d; }
+.lcw-email-export-status[hidden] { display: none !important; }
 .lcw-msg.has-attachment { max-width: min(88%, 260px); padding: 0.45rem; }
 .lcw-chat-text { margin-bottom: 0.4rem; white-space: pre-wrap; word-break: break-word; }
 .lcw-attach-image {

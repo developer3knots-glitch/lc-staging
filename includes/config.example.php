@@ -29,5 +29,9 @@ define('LC_SUPERADMIN_NAME', 'Super Admin');
 define('LC_SUPERADMIN_EMAIL', 'superadmin@3knotsdigital.com');
 define('LC_SUPERADMIN_PASSWORD', 'SuperAdmin@123');
 
+// Optional: chat transcript emails (defaults to noreply@your-domain)
+// define('LC_MAIL_FROM', 'noreply@yourdomain.com');
+// define('LC_MAIL_FROM_NAME', 'LiveChat Support');
+
 // Application logic uses UTC. MySQL session is set to +00:00 in db.php.
 // APIs return ISO-8601; browsers display in the visitor/agent local timezone.
