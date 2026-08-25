@@ -64,9 +64,16 @@ try {
         }
     }
 
-    $sent = lc_mail_send($email, (string) $built['subject'], (string) $built['text'], (string) $built['html']);
+    $accountId = function_exists('lc_agent_account_id') ? (int) lc_agent_account_id($agent) : 0;
+    $sent = lc_mail_send($email, (string) $built['subject'], (string) $built['text'], (string) $built['html'], $accountId > 0 ? $accountId : null);
     if (empty($sent['ok'])) {
         lc_json(['success' => false, 'error' => $sent['error'] ?? 'Failed to send email'], 500);
+    }
+
+    $via = (string) ($sent['via'] ?? 'mail');
+    $hint = '';
+    if ($via !== 'smtp') {
+        $hint = ' Check Spam/Junk. For reliable Gmail delivery, set SMTP in Admin → Settings → Email.';
     }
 
     lc_json([
@@ -76,6 +83,8 @@ try {
         'reference' => (string) ($built['reference'] ?? ''),
         'scope' => (string) ($built['scope'] ?? $scope),
         'chat_count' => (int) ($built['chat_count'] ?? 1),
+        'via' => $via,
+        'hint' => $hint,
     ]);
 } catch (Throwable $e) {
     $msg = trim($e->getMessage());

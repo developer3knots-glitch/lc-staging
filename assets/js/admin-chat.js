@@ -1499,7 +1499,8 @@
                 var extra = (data.scope === 'overall' && data.chat_count > 1)
                     ? (' (' + data.chat_count + ' chats)')
                     : '';
-                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra, false);
+                var hint = (data.hint || '').trim();
+                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra + (hint ? (' —' + hint) : ''), false);
                 return;
             }
             setEmailPanelStatus((data && data.error) || 'Failed to send email.', true);

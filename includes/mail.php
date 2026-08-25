@@ -1,38 +1,14 @@
 <?php
 
 /**
- * Lightweight mail helper for shared hosting (PHP mail()).
- * Optional overrides in config.php:
+ * Outbound mail for chat transcripts.
+ *
+ * Prefer SMTP (cPanel email) — PHP mail() often returns success without Gmail delivery.
+ *
+ * Config constants (optional) OR Admin → Settings → Email:
  *   LC_MAIL_FROM, LC_MAIL_FROM_NAME
+ *   LC_SMTP_HOST, LC_SMTP_PORT, LC_SMTP_USER, LC_SMTP_PASS, LC_SMTP_ENCRYPTION (tls|ssl|none)
  */
-
-function lc_mail_from_address(): string
-{
-    if (defined('LC_MAIL_FROM') && is_string(LC_MAIL_FROM) && LC_MAIL_FROM !== '') {
-        return LC_MAIL_FROM;
-    }
-    $host = preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
-    $host = strtolower(trim($host));
-    if ($host === '' || $host === 'localhost' || filter_var($host, FILTER_VALIDATE_IP)) {
-        $host = '3knotsdigital.com';
-    }
-    // Prefer apex domain for From (livechat.example.com -> example.com)
-    if (substr_count($host, '.') >= 2 && strpos($host, 'livechat.') === 0) {
-        $host = substr($host, strlen('livechat.'));
-    }
-    return 'noreply@' . $host;
-}
-
-function lc_mail_from_name(): string
-{
-    if (defined('LC_MAIL_FROM_NAME') && is_string(LC_MAIL_FROM_NAME) && LC_MAIL_FROM_NAME !== '') {
-        return LC_MAIL_FROM_NAME;
-    }
-    if (defined('LC_APP_NAME')) {
-        return (string) LC_APP_NAME;
-    }
-    return 'LiveChat';
-}
 
 function lc_mail_esc(string $text): string
 {
@@ -40,26 +16,317 @@ function lc_mail_esc(string $text): string
 }
 
 /**
- * @return array{ok:bool,error?:string}
+ * @return array<string,string>
  */
-function lc_mail_send(string $to, string $subject, string $textBody, string $htmlBody = ''): array
+function lc_mail_settings(?int $accountId = null): array
+{
+    $defaults = [
+        'mail_from' => '',
+        'mail_from_name' => '',
+        'smtp_enabled' => '0',
+        'smtp_host' => '',
+        'smtp_port' => '587',
+        'smtp_user' => '',
+        'smtp_pass' => '',
+        'smtp_encryption' => 'tls',
+    ];
+
+    if ($accountId === null && function_exists('lc_current_account_id')) {
+        $accountId = (int) lc_current_account_id();
+    }
+    if ($accountId && $accountId > 0 && function_exists('lc_account_setting')) {
+        foreach (array_keys($defaults) as $key) {
+            $defaults[$key] = (string) lc_account_setting($accountId, $key, $defaults[$key]);
+        }
+    }
+
+    // Config.php overrides (highest priority when defined)
+    if (defined('LC_MAIL_FROM') && is_string(LC_MAIL_FROM) && LC_MAIL_FROM !== '') {
+        $defaults['mail_from'] = LC_MAIL_FROM;
+    }
+    if (defined('LC_MAIL_FROM_NAME') && is_string(LC_MAIL_FROM_NAME) && LC_MAIL_FROM_NAME !== '') {
+        $defaults['mail_from_name'] = LC_MAIL_FROM_NAME;
+    }
+    if (defined('LC_SMTP_HOST') && is_string(LC_SMTP_HOST) && LC_SMTP_HOST !== '') {
+        $defaults['smtp_enabled'] = '1';
+        $defaults['smtp_host'] = LC_SMTP_HOST;
+    }
+    if (defined('LC_SMTP_PORT')) {
+        $defaults['smtp_port'] = (string) (int) LC_SMTP_PORT;
+    }
+    if (defined('LC_SMTP_USER') && is_string(LC_SMTP_USER)) {
+        $defaults['smtp_user'] = LC_SMTP_USER;
+    }
+    if (defined('LC_SMTP_PASS') && is_string(LC_SMTP_PASS) && LC_SMTP_PASS !== '') {
+        $defaults['smtp_pass'] = LC_SMTP_PASS;
+    }
+    if (defined('LC_SMTP_ENCRYPTION') && is_string(LC_SMTP_ENCRYPTION)) {
+        $defaults['smtp_encryption'] = strtolower(LC_SMTP_ENCRYPTION);
+    }
+
+    return $defaults;
+}
+
+function lc_mail_from_address(?int $accountId = null): string
+{
+    $s = lc_mail_settings($accountId);
+    $from = trim($s['mail_from']);
+    if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL)) {
+        return strtolower($from);
+    }
+    $host = preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $host = strtolower(trim($host));
+    if ($host === '' || $host === 'localhost' || filter_var($host, FILTER_VALIDATE_IP)) {
+        $host = '3knotsdigital.com';
+    }
+    if (substr_count($host, '.') >= 2 && strpos($host, 'livechat.') === 0) {
+        $host = substr($host, strlen('livechat.'));
+    }
+    return 'noreply@' . $host;
+}
+
+function lc_mail_from_name(?int $accountId = null): string
+{
+    $s = lc_mail_settings($accountId);
+    $name = trim($s['mail_from_name']);
+    if ($name !== '') {
+        return $name;
+    }
+    if (defined('LC_APP_NAME')) {
+        return (string) LC_APP_NAME;
+    }
+    return 'LiveChat Support';
+}
+
+/**
+ * @return array{ok:bool,error?:string,via?:string}
+ */
+function lc_mail_send(string $to, string $subject, string $textBody, string $htmlBody = '', ?int $accountId = null): array
 {
     $to = trim($to);
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
         return ['ok' => false, 'error' => 'Invalid email address'];
     }
 
-    $fromEmail = lc_mail_from_address();
-    $fromName = lc_mail_from_name();
+    $fromEmail = lc_mail_from_address($accountId);
+    $fromName = lc_mail_from_name($accountId);
     $subject = trim(preg_replace('/[\r\n]+/', ' ', $subject));
     if ($subject === '') {
         $subject = 'Chat transcript';
     }
 
+    $settings = lc_mail_settings($accountId);
+    $useSmtp = ($settings['smtp_enabled'] === '1' || $settings['smtp_enabled'] === 'true')
+        && trim($settings['smtp_host']) !== '';
+
+    if ($useSmtp) {
+        $smtp = lc_mail_send_smtp($to, $subject, $textBody, $htmlBody, $fromEmail, $fromName, $settings);
+        if (!empty($smtp['ok'])) {
+            return ['ok' => true, 'via' => 'smtp'];
+        }
+        // Fall through to mail() only if SMTP hard-failed and host empty was not the case
+        if (!empty($smtp['error'])) {
+            return $smtp;
+        }
+    }
+
+    return lc_mail_send_php($to, $subject, $textBody, $htmlBody, $fromEmail, $fromName);
+}
+
+/**
+ * @param array<string,string> $settings
+ * @return array{ok:bool,error?:string,via?:string}
+ */
+function lc_mail_send_smtp(
+    string $to,
+    string $subject,
+    string $textBody,
+    string $htmlBody,
+    string $fromEmail,
+    string $fromName,
+    array $settings
+): array {
+    $host = trim($settings['smtp_host']);
+    $port = (int) ($settings['smtp_port'] ?: 587);
+    $user = trim($settings['smtp_user']);
+    $pass = (string) ($settings['smtp_pass'] ?? '');
+    $enc = strtolower(trim($settings['smtp_encryption'] ?: 'tls'));
+    if (!in_array($enc, ['tls', 'ssl', 'none'], true)) {
+        $enc = 'tls';
+    }
+    if ($port < 1) {
+        $port = $enc === 'ssl' ? 465 : 587;
+    }
+
+    $remote = ($enc === 'ssl' ? 'ssl://' : '') . $host;
+    $errno = 0;
+    $errstr = '';
+    $fp = @stream_socket_client($remote . ':' . $port, $errno, $errstr, 20, STREAM_CLIENT_CONNECT);
+    if (!$fp) {
+        return ['ok' => false, 'error' => 'SMTP connect failed: ' . ($errstr ?: 'timeout')];
+    }
+    stream_set_timeout($fp, 20);
+
+    $read = static function () use ($fp): string {
+        $data = '';
+        while (!feof($fp)) {
+            $line = fgets($fp, 515);
+            if ($line === false) {
+                break;
+            }
+            $data .= $line;
+            if (isset($line[3]) && $line[3] === ' ') {
+                break;
+            }
+        }
+        return $data;
+    };
+    $write = static function (string $cmd) use ($fp): void {
+        fwrite($fp, $cmd . "\r\n");
+    };
+    $expect = static function (string $resp, array $codes) {
+        $code = (int) substr($resp, 0, 3);
+        return in_array($code, $codes, true);
+    };
+
+    try {
+        $greet = $read();
+        if (!$expect($greet, [220])) {
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP greeting failed'];
+        }
+
+        $ehloHost = preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost')) ?: 'localhost';
+        $write('EHLO ' . $ehloHost);
+        $ehlo = $read();
+        if (!$expect($ehlo, [250])) {
+            $write('HELO ' . $ehloHost);
+            $ehlo = $read();
+            if (!$expect($ehlo, [250])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP EHLO/HELO failed'];
+            }
+        }
+
+        if ($enc === 'tls') {
+            $write('STARTTLS');
+            $tls = $read();
+            if (!$expect($tls, [220])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP STARTTLS failed'];
+            }
+            if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP TLS handshake failed'];
+            }
+            $write('EHLO ' . $ehloHost);
+            $ehlo = $read();
+            if (!$expect($ehlo, [250])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP EHLO after TLS failed'];
+            }
+        }
+
+        if ($user !== '') {
+            $write('AUTH LOGIN');
+            $auth = $read();
+            if (!$expect($auth, [334])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP AUTH not accepted'];
+            }
+            $write(base64_encode($user));
+            $auth = $read();
+            if (!$expect($auth, [334])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP username rejected'];
+            }
+            $write(base64_encode($pass));
+            $auth = $read();
+            if (!$expect($auth, [235])) {
+                fclose($fp);
+                return ['ok' => false, 'error' => 'SMTP login failed — check email password'];
+            }
+        }
+
+        $write('MAIL FROM:<' . $fromEmail . '>');
+        if (!$expect($read(), [250])) {
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP MAIL FROM rejected'];
+        }
+        $write('RCPT TO:<' . $to . '>');
+        if (!$expect($read(), [250, 251])) {
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP recipient rejected'];
+        }
+        $write('DATA');
+        if (!$expect($read(), [354])) {
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP DATA not accepted'];
+        }
+
+        $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+        $boundary = 'lc_' . bin2hex(random_bytes(8));
+        $headers = [];
+        $headers[] = 'Date: ' . date('r');
+        $headers[] = 'From: "' . addcslashes($fromName, '"\\') . '" <' . $fromEmail . '>';
+        $headers[] = 'To: <' . $to . '>';
+        $headers[] = 'Reply-To: ' . $fromEmail;
+        $headers[] = 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . ($ehloHost) . '>';
+        $headers[] = 'MIME-Version: 1.0';
+        $headers[] = 'Subject: ' . $encodedSubject;
+        $headers[] = 'X-Mailer: 3Knots-LiveChat';
+
+        if ($htmlBody !== '') {
+            $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
+            $body = implode("\r\n", $headers) . "\r\n\r\n";
+            $body .= '--' . $boundary . "\r\n";
+            $body .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $body .= str_replace(["\r\n", "\r"], "\n", $textBody) . "\r\n";
+            $body .= '--' . $boundary . "\r\n";
+            $body .= "Content-Type: text/html; charset=UTF-8\r\n";
+            $body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $body .= $htmlBody . "\r\n";
+            $body .= '--' . $boundary . "--\r\n";
+        } else {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+            $body = implode("\r\n", $headers) . "\r\n\r\n" . str_replace(["\r\n", "\r"], "\n", $textBody) . "\r\n";
+        }
+
+        // Dot-stuffing
+        $body = preg_replace('/^\./m', '..', $body);
+        fwrite($fp, $body . "\r\n.\r\n");
+        if (!$expect($read(), [250])) {
+            fclose($fp);
+            return ['ok' => false, 'error' => 'SMTP message rejected'];
+        }
+        $write('QUIT');
+        fclose($fp);
+        return ['ok' => true, 'via' => 'smtp'];
+    } catch (Throwable $e) {
+        if (is_resource($fp)) {
+            fclose($fp);
+        }
+        return ['ok' => false, 'error' => 'SMTP error: ' . substr($e->getMessage(), 0, 120)];
+    }
+}
+
+/**
+ * @return array{ok:bool,error?:string,via?:string}
+ */
+function lc_mail_send_php(
+    string $to,
+    string $subject,
+    string $textBody,
+    string $htmlBody,
+    string $fromEmail,
+    string $fromName
+): array {
     $boundary = 'lc_' . bin2hex(random_bytes(12));
     $headers = [];
-    $headers[] = 'From: ' . sprintf('"%s" <%s>', addcslashes($fromName, '"\\'), $fromEmail);
+    $headers[] = 'From: "' . addcslashes($fromName, '"\\') . '" <' . $fromEmail . '>';
     $headers[] = 'Reply-To: ' . $fromEmail;
+    $headers[] = 'Return-Path: ' . $fromEmail;
     $headers[] = 'MIME-Version: 1.0';
     $headers[] = 'X-Mailer: 3Knots-LiveChat';
 
@@ -80,11 +347,15 @@ function lc_mail_send(string $to, string $subject, string $textBody, string $htm
     }
 
     $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
-    $ok = @mail($to, $encodedSubject, $body, implode("\r\n", $headers));
+    $params = '-f' . $fromEmail;
+    $ok = @mail($to, $encodedSubject, $body, implode("\r\n", $headers), $params);
     if (!$ok) {
-        return ['ok' => false, 'error' => 'Unable to send email right now. Check hosting mail() / SMTP settings.'];
+        return [
+            'ok' => false,
+            'error' => 'Email could not be sent. Configure SMTP in Settings (cPanel email) — PHP mail() is unreliable for Gmail.',
+        ];
     }
-    return ['ok' => true];
+    return ['ok' => true, 'via' => 'mail'];
 }
 
 /**

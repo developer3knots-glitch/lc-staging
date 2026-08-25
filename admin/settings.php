@@ -38,6 +38,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 lc_set_setting('prechat_form_enabled', $prechatOn);
             }
             $flashMessage = 'System settings saved successfully.';
+        } elseif ($action === 'save_email') {
+            lc_set_account_setting($accountId, 'mail_from', trim((string) ($_POST['mail_from'] ?? '')));
+            lc_set_account_setting($accountId, 'mail_from_name', trim((string) ($_POST['mail_from_name'] ?? '')));
+            lc_set_account_setting($accountId, 'smtp_enabled', isset($_POST['smtp_enabled']) ? '1' : '0');
+            lc_set_account_setting($accountId, 'smtp_host', trim((string) ($_POST['smtp_host'] ?? '')));
+            $port = (int) ($_POST['smtp_port'] ?? 587);
+            lc_set_account_setting($accountId, 'smtp_port', (string) max(1, min(65535, $port)));
+            lc_set_account_setting($accountId, 'smtp_user', trim((string) ($_POST['smtp_user'] ?? '')));
+            $newPass = (string) ($_POST['smtp_pass'] ?? '');
+            if (trim($newPass) !== '') {
+                lc_set_account_setting($accountId, 'smtp_pass', $newPass);
+            }
+            $enc = strtolower(trim((string) ($_POST['smtp_encryption'] ?? 'tls')));
+            if (!in_array($enc, ['tls', 'ssl', 'none'], true)) {
+                $enc = 'tls';
+            }
+            lc_set_account_setting($accountId, 'smtp_encryption', $enc);
+            $flashMessage = 'Email / SMTP settings saved.';
+        } elseif ($action === 'test_email') {
+            $testTo = strtolower(trim((string) ($_POST['test_email_to'] ?? '')));
+            if ($testTo === '' || !filter_var($testTo, FILTER_VALIDATE_EMAIL)) {
+                $flashError = 'Enter a valid test email address.';
+            } else {
+                $sent = lc_mail_send(
+                    $testTo,
+                    'LiveChat test email',
+                    "This is a test email from your LiveChat admin.\nIf you received this, SMTP/mail is working.\n",
+                    '<p>This is a <strong>test email</strong> from your LiveChat admin.</p><p>If you received this, mail delivery is working.</p>',
+                    $accountId
+                );
+                if (!empty($sent['ok'])) {
+                    $via = $sent['via'] ?? 'mail';
+                    $flashMessage = 'Test email sent via ' . $via . ' to ' . $testTo . '. Check inbox and Spam.';
+                } else {
+                    $flashError = $sent['error'] ?? 'Test email failed.';
+                }
+            }
         } elseif ($action === 'save_tickets') {
             $displayOn = isset($_POST['ticket_display_enabled']) ? '1' : '0';
             $resumeOn = isset($_POST['ticket_resume_enabled']) ? '1' : '0';
@@ -98,6 +135,15 @@ $autoAssign = lc_account_setting($accountId, 'auto_assign', '1') === '1';
 $prechatFormEnabled = lc_prechat_form_enabled($accountId);
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
+$mailSettings = function_exists('lc_mail_settings') ? lc_mail_settings($accountId) : [];
+$mailFrom = $mailSettings['mail_from'] ?? '';
+$mailFromName = $mailSettings['mail_from_name'] ?? '';
+$smtpEnabled = ($mailSettings['smtp_enabled'] ?? '0') === '1';
+$smtpHost = $mailSettings['smtp_host'] ?? '';
+$smtpPort = $mailSettings['smtp_port'] ?? '587';
+$smtpUser = $mailSettings['smtp_user'] ?? '';
+$smtpEnc = $mailSettings['smtp_encryption'] ?? 'tls';
+$smtpPassSet = trim((string) ($mailSettings['smtp_pass'] ?? '')) !== '';
 
 $pageTitle = 'Settings';
 $activeNav = 'settings';
@@ -203,6 +249,70 @@ require __DIR__ . '/includes/header.php';
                 </div>
             </section>
 
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-email">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-mail"></i> Email / SMTP</h3>
+                    <span class="lc-card-sub">Chat transcript delivery</span>
+                </div>
+                <div class="lc-card-body">
+                    <p class="lc-settings-desc">Gmail often blocks plain PHP <code>mail()</code>. Use your <strong>cPanel email</strong> over SMTP (recommended) so transcript emails actually arrive.</p>
+                    <form method="post" class="lc-form lc-settings-system-form">
+                        <input type="hidden" name="action" value="save_email">
+                        <div class="lc-form-row">
+                            <label for="lc-mail-from">From email</label>
+                            <input type="email" id="lc-mail-from" name="mail_from" value="<?= lc_sanitize($mailFrom) ?>" placeholder="noreply@yourdomain.com">
+                        </div>
+                        <div class="lc-form-row">
+                            <label for="lc-mail-from-name">From name</label>
+                            <input type="text" id="lc-mail-from-name" name="mail_from_name" value="<?= lc_sanitize($mailFromName) ?>" placeholder="LiveChat Support">
+                        </div>
+                        <label class="lc-settings-toggle" style="margin:1rem 0">
+                            <input type="checkbox" name="smtp_enabled" <?= $smtpEnabled ? 'checked' : '' ?>>
+                            <span class="lc-settings-toggle-ui"></span>
+                            <span class="lc-settings-toggle-text">
+                                <strong>Use SMTP (recommended)</strong>
+                                <small>Send via cPanel mailbox — host often <code>mail.yourdomain.com</code>, port <code>587</code>, encryption <code>TLS</code></small>
+                            </span>
+                        </label>
+                        <div class="lc-form-row">
+                            <label for="lc-smtp-host">SMTP host</label>
+                            <input type="text" id="lc-smtp-host" name="smtp_host" value="<?= lc_sanitize($smtpHost) ?>" placeholder="mail.yourdomain.com">
+                        </div>
+                        <div class="lc-form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                            <div>
+                                <label for="lc-smtp-port">Port</label>
+                                <input type="number" id="lc-smtp-port" name="smtp_port" value="<?= lc_sanitize($smtpPort) ?>" min="1" max="65535">
+                            </div>
+                            <div>
+                                <label for="lc-smtp-enc">Encryption</label>
+                                <select id="lc-smtp-enc" name="smtp_encryption">
+                                    <option value="tls" <?= $smtpEnc === 'tls' ? 'selected' : '' ?>>TLS (587)</option>
+                                    <option value="ssl" <?= $smtpEnc === 'ssl' ? 'selected' : '' ?>>SSL (465)</option>
+                                    <option value="none" <?= $smtpEnc === 'none' ? 'selected' : '' ?>>None</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="lc-form-row">
+                            <label for="lc-smtp-user">SMTP username</label>
+                            <input type="text" id="lc-smtp-user" name="smtp_user" value="<?= lc_sanitize($smtpUser) ?>" placeholder="noreply@yourdomain.com" autocomplete="off">
+                        </div>
+                        <div class="lc-form-row">
+                            <label for="lc-smtp-pass">SMTP password</label>
+                            <input type="password" id="lc-smtp-pass" name="smtp_pass" value="" placeholder="<?= $smtpPassSet ? '•••••••• (saved — leave blank to keep)' : 'Mailbox password' ?>" autocomplete="new-password">
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save email settings</button>
+                    </form>
+                    <hr style="margin:1.25rem 0;border:none;border-top:1px solid var(--lc-border)">
+                    <form method="post" class="lc-form" style="display:flex;gap:0.6rem;align-items:flex-end;flex-wrap:wrap">
+                        <input type="hidden" name="action" value="test_email">
+                        <div class="lc-form-row" style="flex:1;min-width:220px;margin:0">
+                            <label for="lc-test-email">Send test email to</label>
+                            <input type="email" id="lc-test-email" name="test_email_to" required placeholder="you@gmail.com" value="<?= lc_sanitize($agent['email'] ?? '') ?>">
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-secondary"><i class="ti ti-send"></i> Send test</button>
+                    </form>
+                </div>
+            </section>
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-tickets">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-ticket"></i> Support Tickets</h3>

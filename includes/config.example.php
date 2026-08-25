@@ -29,9 +29,14 @@ define('LC_SUPERADMIN_NAME', 'Super Admin');
 define('LC_SUPERADMIN_EMAIL', 'superadmin@3knotsdigital.com');
 define('LC_SUPERADMIN_PASSWORD', 'SuperAdmin@123');
 
-// Optional: chat transcript emails (defaults to noreply@your-domain)
+// Optional: chat transcript emails / SMTP (or set in Admin → Settings → Email)
 // define('LC_MAIL_FROM', 'noreply@yourdomain.com');
 // define('LC_MAIL_FROM_NAME', 'LiveChat Support');
+// define('LC_SMTP_HOST', 'mail.yourdomain.com');
+// define('LC_SMTP_PORT', 587);
+// define('LC_SMTP_USER', 'noreply@yourdomain.com');
+// define('LC_SMTP_PASS', 'your-mailbox-password');
+// define('LC_SMTP_ENCRYPTION', 'tls'); // tls | ssl | none
 
 // Application logic uses UTC. MySQL session is set to +00:00 in db.php.
 // APIs return ISO-8601; browsers display in the visitor/agent local timezone.
