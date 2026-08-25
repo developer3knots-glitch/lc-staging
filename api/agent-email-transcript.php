@@ -70,5 +70,11 @@ try {
         'reference' => (string) ($built['reference'] ?? ''),
     ]);
 } catch (Throwable $e) {
-    lc_json(['success' => false, 'error' => 'Server error'], 500);
+    $msg = trim($e->getMessage());
+    if ($msg === '') {
+        $msg = 'Server error';
+    } else {
+        $msg = 'Server error: ' . substr($msg, 0, 180);
+    }
+    lc_json(['success' => false, 'error' => $msg], 500);
 }

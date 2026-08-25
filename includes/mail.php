@@ -16,6 +16,10 @@ function lc_mail_from_address(): string
     if ($host === '' || $host === 'localhost' || filter_var($host, FILTER_VALIDATE_IP)) {
         $host = '3knotsdigital.com';
     }
+    // Prefer apex domain for From (livechat.example.com -> example.com)
+    if (substr_count($host, '.') >= 2 && strpos($host, 'livechat.') === 0) {
+        $host = substr($host, strlen('livechat.'));
+    }
     return 'noreply@' . $host;
 }
 
@@ -28,6 +32,11 @@ function lc_mail_from_name(): string
         return (string) LC_APP_NAME;
     }
     return 'LiveChat';
+}
+
+function lc_mail_esc(string $text): string
+{
+    return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 /**
@@ -73,7 +82,7 @@ function lc_mail_send(string $to, string $subject, string $textBody, string $htm
     $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     $ok = @mail($to, $encodedSubject, $body, implode("\r\n", $headers));
     if (!$ok) {
-        return ['ok' => false, 'error' => 'Unable to send email right now. Please try again later.'];
+        return ['ok' => false, 'error' => 'Unable to send email right now. Check hosting mail() / SMTP settings.'];
     }
     return ['ok' => true];
 }
@@ -81,7 +90,7 @@ function lc_mail_send(string $to, string $subject, string $textBody, string $htm
 /**
  * Build a plain + HTML transcript for a conversation.
  *
- * @return array{ok:bool,error?:string,subject?:string,text?:string,html?:string,message_count?:int,reference?:string}
+ * @return array{ok:bool,error?:string,subject?:string,text?:string,html?:string,message_count?:int,reference?:string,visitor_email?:string,visitor_name?:string}
  */
 function lc_build_chat_transcript(int $conversationId, bool $visitorView = false): array
 {
@@ -117,32 +126,47 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     }
 
     if (function_exists('lc_ensure_attachments_schema')) {
-        lc_ensure_attachments_schema();
+        try {
+            lc_ensure_attachments_schema();
+        } catch (Throwable $e) {
+            // continue without attachment columns if migrate fails
+        }
     }
 
-    $msgStmt = $db->prepare('
-        SELECT ' . lc_attachment_message_select_sql() . ',
+    // Keep SELECT simple so missing receipt columns cannot break export
+    $sql = '
+        SELECT m.id, m.sender_type, m.message, m.created_at, m.sender_id,
+               m.attachment_path, m.attachment_original_name, m.attachment_kind,
                ag.name AS agent_name
         FROM messages m
-        LEFT JOIN agents ag ON ag.id = m.sender_id AND m.sender_type IN ("agent", "system")
+        LEFT JOIN agents ag ON ag.id = m.sender_id AND m.sender_type = \'agent\'
         WHERE m.conversation_id = ? AND m.id > ?
         ORDER BY m.id ASC
         LIMIT 800
-    ');
-    $msgStmt->execute([$conversationId, $afterId]);
-    $rows = $msgStmt->fetchAll();
+    ';
+    try {
+        $msgStmt = $db->prepare($sql);
+        $msgStmt->execute([$conversationId, $afterId]);
+        $rows = $msgStmt->fetchAll();
+    } catch (Throwable $e) {
+        // Fallback without attachment columns (older DBs)
+        $msgStmt = $db->prepare('
+            SELECT m.id, m.sender_type, m.message, m.created_at, m.sender_id,
+                   ag.name AS agent_name
+            FROM messages m
+            LEFT JOIN agents ag ON ag.id = m.sender_id AND m.sender_type = \'agent\'
+            WHERE m.conversation_id = ? AND m.id > ?
+            ORDER BY m.id ASC
+            LIMIT 800
+        ');
+        $msgStmt->execute([$conversationId, $afterId]);
+        $rows = $msgStmt->fetchAll();
+    }
 
     $lines = [];
     $htmlParts = [];
     foreach ($rows as $row) {
         $text = trim((string) ($row['message'] ?? ''));
-        if ($visitorView
-            && ($row['sender_type'] ?? '') === 'system'
-            && function_exists('lc_message_hidden_from_visitor')
-            && lc_message_hidden_from_visitor($text)) {
-            continue;
-        }
-        // Always hide merge/admin-only notes from emailed customer copies
         if (($row['sender_type'] ?? '') === 'system'
             && function_exists('lc_message_hidden_from_visitor')
             && lc_message_hidden_from_visitor($text)) {
@@ -171,12 +195,13 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         $attachNote = '';
         $attachHtml = '';
         if (!empty($row['attachment_path']) && function_exists('lc_chat_attachment_url')) {
-            $url = lc_chat_attachment_url((string) $row['attachment_path']);
+            $msgId = (int) ($row['id'] ?? 0);
+            $url = $msgId > 0 ? lc_chat_attachment_url($msgId) : '';
             $name = trim((string) ($row['attachment_original_name'] ?? 'Attachment'));
-            $attachNote = ' [Attachment: ' . $name . ($url ? ' — ' . $url : '') . ']';
-            if ($url) {
-                $attachHtml = '<div style="margin-top:6px"><a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">'
-                    . htmlspecialchars($name !== '' ? $name : 'Attachment', ENT_QUOTES, 'UTF-8') . '</a></div>';
+            $attachNote = ' [Attachment: ' . $name . ($url !== '' ? ' - ' . $url : '') . ']';
+            if ($url !== '') {
+                $attachHtml = '<div style="margin-top:6px"><a href="' . lc_mail_esc($url) . '">'
+                    . lc_mail_esc($name !== '' ? $name : 'Attachment') . '</a></div>';
             }
         }
         if ($text === '' && $attachNote === '') {
@@ -186,10 +211,10 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         $lines[] = '[' . $when . '] ' . $who . ': ' . ($text !== '' ? $text : '') . $attachNote;
         $htmlParts[] = '<tr>'
             . '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;width:130px;color:#64748b;font-size:12px">'
-            . htmlspecialchars($when, ENT_QUOTES, 'UTF-8') . '<br><strong style="color:#0f172a">'
-            . htmlspecialchars($who, ENT_QUOTES, 'UTF-8') . '</strong></td>'
+            . lc_mail_esc($when) . '<br><strong style="color:#0f172a">'
+            . lc_mail_esc($who) . '</strong></td>'
             . '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;white-space:pre-wrap">'
-            . ($text !== '' ? htmlspecialchars($text, ENT_QUOTES, 'UTF-8') : '')
+            . ($text !== '' ? lc_mail_esc($text) : '')
             . $attachHtml . '</td></tr>';
     }
 
@@ -207,21 +232,21 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
 
     $subject = $siteName . ' chat transcript' . ($reference !== '' ? ' (' . $reference . ')' : '');
 
-    $text = $siteName . " — Chat transcript\n";
+    $textOut = $siteName . " - Chat transcript\n";
     if ($reference !== '') {
-        $text .= 'Ticket: ' . $reference . "\n";
+        $textOut .= 'Ticket: ' . $reference . "\n";
     }
-    $text .= 'Conversation started: ' . (string) ($conv['started_at'] ?? '') . " UTC\n";
-    $text .= str_repeat('-', 48) . "\n\n";
-    $text .= implode("\n\n", $lines);
-    $text .= "\n\n" . str_repeat('-', 48) . "\n";
+    $textOut .= 'Conversation started: ' . (string) ($conv['started_at'] ?? '') . " UTC\n";
+    $textOut .= str_repeat('-', 48) . "\n\n";
+    $textOut .= implode("\n\n", $lines);
+    $textOut .= "\n\n" . str_repeat('-', 48) . "\n";
 
     $html = '<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif">'
         . '<div style="max-width:680px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">'
         . '<div style="padding:18px 20px;background:#0f172a;color:#fff">'
-        . '<div style="font-size:18px;font-weight:700">' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . '</div>'
+        . '<div style="font-size:18px;font-weight:700">' . lc_mail_esc($siteName) . '</div>'
         . '<div style="font-size:13px;opacity:.85;margin-top:4px">Chat transcript'
-        . ($reference !== '' ? ' · ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') : '')
+        . ($reference !== '' ? ' · ' . lc_mail_esc($reference) : '')
         . '</div></div>'
         . '<table style="width:100%;border-collapse:collapse">' . implode('', $htmlParts) . '</table>'
         . '<div style="padding:14px 20px;color:#94a3b8;font-size:12px">Sent by your support team.</div>'
@@ -230,7 +255,7 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     return [
         'ok' => true,
         'subject' => $subject,
-        'text' => $text,
+        'text' => $textOut,
         'html' => $html,
         'message_count' => count($lines),
         'reference' => $reference,
