@@ -4579,6 +4579,47 @@ body.lc-page-chats .lc-content {
 .lc-email-panel-status.is-ok { color: #15803d; }
 .lc-email-panel-status[hidden] { display: none !important; }
 .lc-details-email-btn { justify-content: center; }
+
+.lc-email-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0.35rem 0 0.7rem;
+}
+.lc-email-scope-option {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    padding: 0.55rem 0.6rem;
+    border: 1px solid var(--lc-border);
+    border-radius: 10px;
+    background: #f8fafc;
+    cursor: pointer;
+}
+.lc-email-scope-option:has(input:checked) {
+    border-color: #38bdf8;
+    background: #f0f9ff;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+.lc-email-scope-option input {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+}
+.lc-email-scope-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+.lc-email-scope-option strong {
+    font-size: 0.8rem;
+    color: #0f172a;
+}
+.lc-email-scope-option small {
+    font-size: 0.7rem;
+    color: var(--lc-muted);
+    line-height: 1.35;
+}
 .lc-msg.has-attachment { max-width: min(92%, 320px); }
 .lc-msg.has-attachment .lc-chat-text { margin-bottom: 0.45rem; white-space: pre-wrap; word-break: break-word; }
 .lc-chat-attach-image {

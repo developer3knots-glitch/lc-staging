@@ -1474,6 +1474,8 @@
         if (emailTranscriptTo) {
             emailTranscriptTo.value = currentVisitorEmail || '';
         }
+        var scopeCurrent = document.getElementById('lc-email-scope-current');
+        if (scopeCurrent) scopeCurrent.checked = true;
         setEmailPanelStatus('');
         if (emailPanel) {
             emailPanel.hidden = false;
@@ -1492,18 +1494,23 @@
         if (emailTranscriptSend) {
             emailTranscriptSend.disabled = true;
         }
-        setEmailPanelStatus('Sending transcript...', false);
+        var scopeEl = document.querySelector('input[name="lc-email-scope"]:checked');
+        var scope = (scopeEl && scopeEl.value === 'overall') ? 'overall' : 'current';
+        setEmailPanelStatus(scope === 'overall' ? 'Sending overall history...' : 'Sending this chat...', false);
         fetch(base + '/api/agent-email-transcript.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId, email: email })
+            body: JSON.stringify({ conversation_id: selectedId, email: email, scope: scope })
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (emailTranscriptSend) emailTranscriptSend.disabled = false;
             if (data && data.success) {
                 currentVisitorEmail = data.email || email;
                 setText('lc-details-email', currentVisitorEmail);
-                setEmailPanelStatus('Sent to ' + currentVisitorEmail, false);
+                var extra = (data.scope === 'overall' && data.chat_count > 1)
+                    ? (' (' + data.chat_count + ' chats)')
+                    : '';
+                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra, false);
                 return;
             }
             setEmailPanelStatus((data && data.error) || 'Failed to send email.', true);

@@ -12,6 +12,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $conversationId = (int) ($input['conversation_id'] ?? 0);
 $email = strtolower(trim((string) ($input['email'] ?? '')));
+$scope = strtolower(trim((string) ($input['scope'] ?? 'current')));
+if ($scope !== 'overall') {
+    $scope = 'current';
+}
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
@@ -34,7 +38,9 @@ try {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
 
-    $built = lc_build_chat_transcript($conversationId, false);
+    $built = function_exists('lc_build_chat_transcript_scope')
+        ? lc_build_chat_transcript_scope($conversationId, $scope, $agent)
+        : lc_build_chat_transcript($conversationId, false);
     if (empty($built['ok'])) {
         lc_json(['success' => false, 'error' => $built['error'] ?? 'Unable to build transcript'], 400);
     }
@@ -68,6 +74,8 @@ try {
         'email' => $email,
         'message_count' => (int) ($built['message_count'] ?? 0),
         'reference' => (string) ($built['reference'] ?? ''),
+        'scope' => (string) ($built['scope'] ?? $scope),
+        'chat_count' => (int) ($built['chat_count'] ?? 1),
     ]);
 } catch (Throwable $e) {
     $msg = trim($e->getMessage());

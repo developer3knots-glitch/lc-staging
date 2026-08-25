@@ -263,3 +263,151 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         'visitor_name' => trim((string) ($conv['visitor_name'] ?? '')),
     ];
 }
+
+/**
+ * Build transcript for current chat only, or overall related history (same visitor/IP).
+ *
+ * @param 'current'|'overall' $scope
+ * @return array{ok:bool,error?:string,subject?:string,text?:string,html?:string,message_count?:int,reference?:string,visitor_email?:string,scope?:string,chat_count?:int}
+ */
+function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'current', ?array $agent = null): array
+{
+    $scope = strtolower(trim($scope));
+    if ($scope !== 'overall') {
+        $built = lc_build_chat_transcript($conversationId, false);
+        if (!empty($built['ok'])) {
+            $built['scope'] = 'current';
+            $built['chat_count'] = 1;
+        }
+        return $built;
+    }
+
+    $conv = function_exists('lc_get_conversation') ? lc_get_conversation($conversationId) : null;
+    if (!$conv) {
+        return ['ok' => false, 'error' => 'Conversation not found'];
+    }
+
+    $ip = trim((string) ($conv['visitor_ip'] ?? ''));
+    $visitorId = (int) ($conv['visitor_id'] ?? 0);
+    $ids = [];
+    $seen = [];
+
+    if (function_exists('lc_conversations_related_by_ip')) {
+        // exclude id 0 => all related (same visitor/IP), including current
+        $related = lc_conversations_related_by_ip($ip, 0, $agent, 25, $visitorId);
+        usort($related, static function ($a, $b) {
+            $ta = strtotime((string) ($a['started_at'] ?? $a['last_message_at'] ?? '')) ?: 0;
+            $tb = strtotime((string) ($b['started_at'] ?? $b['last_message_at'] ?? '')) ?: 0;
+            if ($ta === $tb) {
+                return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+            }
+            return $ta <=> $tb;
+        });
+        foreach ($related as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id < 1 || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $ids[] = $id;
+        }
+    }
+
+    if (!isset($seen[$conversationId])) {
+        $ids[] = $conversationId;
+    }
+
+    if (!$ids) {
+        $ids = [$conversationId];
+    }
+
+    $sections = [];
+    $totalMessages = 0;
+    $visitorEmail = trim((string) ($conv['visitor_email'] ?? ''));
+    $siteName = trim((string) ($conv['brand_name'] ?? ''));
+    if ($siteName === '' && defined('LC_APP_NAME')) {
+        $siteName = (string) LC_APP_NAME;
+    }
+    if ($siteName === '') {
+        $siteName = 'LiveChat';
+    }
+    $mainRef = function_exists('lc_conversation_reference')
+        ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
+        : '';
+
+    foreach ($ids as $id) {
+        $part = lc_build_chat_transcript((int) $id, false);
+        if (empty($part['ok'])) {
+            continue;
+        }
+        if ($visitorEmail === '' && !empty($part['visitor_email'])) {
+            $visitorEmail = (string) $part['visitor_email'];
+        }
+        $sections[] = $part;
+        $totalMessages += (int) ($part['message_count'] ?? 0);
+    }
+
+    if (!$sections) {
+        return ['ok' => false, 'error' => 'No messages to export yet.'];
+    }
+
+    // Single chat overall == current
+    if (count($sections) === 1) {
+        $only = $sections[0];
+        $only['scope'] = 'overall';
+        $only['chat_count'] = 1;
+        return $only;
+    }
+
+    $subject = $siteName . ' full chat history'
+        . ($mainRef !== '' ? ' (' . $mainRef . ')' : '');
+
+    $text = $siteName . " - Full chat history\n";
+    $text .= 'Includes ' . count($sections) . " related conversations\n";
+    if ($mainRef !== '') {
+        $text .= 'Latest ticket: ' . $mainRef . "\n";
+    }
+    $text .= str_repeat('=', 48) . "\n\n";
+
+    $htmlSections = '';
+    foreach ($sections as $i => $part) {
+        $n = $i + 1;
+        $ref = trim((string) ($part['reference'] ?? ''));
+        $label = 'Chat ' . $n . ($ref !== '' ? ' · ' . $ref : '');
+        $text .= '--- ' . $label . " ---\n\n";
+        $text .= (string) ($part['text'] ?? '') . "\n\n";
+        $htmlSections .= '<div style="padding:14px 20px 6px;background:#f1f5f9;border-top:1px solid #e2e8f0;font-size:12px;font-weight:700;color:#334155">'
+            . lc_mail_esc($label) . '</div>';
+        // Extract inner table rows from part html if present; else reuse text block
+        $partHtml = (string) ($part['html'] ?? '');
+        if (preg_match('/<table[^>]*>(.*)<\/table>/is', $partHtml, $m)) {
+            $htmlSections .= '<table style="width:100%;border-collapse:collapse">' . $m[1] . '</table>';
+        } else {
+            $htmlSections .= '<div style="padding:12px 20px;white-space:pre-wrap;font-size:13px;color:#0f172a">'
+                . lc_mail_esc((string) ($part['text'] ?? '')) . '</div>';
+        }
+    }
+
+    $html = '<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif">'
+        . '<div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">'
+        . '<div style="padding:18px 20px;background:#0f172a;color:#fff">'
+        . '<div style="font-size:18px;font-weight:700">' . lc_mail_esc($siteName) . '</div>'
+        . '<div style="font-size:13px;opacity:.85;margin-top:4px">Full chat history'
+        . ($mainRef !== '' ? ' · ' . lc_mail_esc($mainRef) : '')
+        . '</div></div>'
+        . $htmlSections
+        . '<div style="padding:14px 20px;color:#94a3b8;font-size:12px">Sent by your support team.</div>'
+        . '</div></body></html>';
+
+    return [
+        'ok' => true,
+        'subject' => $subject,
+        'text' => $text,
+        'html' => $html,
+        'message_count' => $totalMessages,
+        'reference' => $mainRef,
+        'visitor_email' => $visitorEmail,
+        'scope' => 'overall',
+        'chat_count' => count($sections),
+    ];
+}

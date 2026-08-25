@@ -108,7 +108,17 @@ require __DIR__ . '/includes/header.php';
                                     <strong><i class="ti ti-mail"></i> Email chat transcript</strong>
                                     <button type="button" class="lc-transfer-close" id="lc-email-panel-close" title="Close"><i class="ti ti-x"></i></button>
                                 </div>
-                                <p class="lc-transfer-hint">Send the full chat to the customer&rsquo;s email.</p>
+                                <p class="lc-transfer-hint">Choose what to email, then send to the customer.</p>
+                                <div class="lc-email-scope" role="radiogroup" aria-label="Transcript scope">
+                                    <label class="lc-email-scope-option">
+                                        <input type="radio" name="lc-email-scope" id="lc-email-scope-current" value="current" checked>
+                                        <span><strong>This chat only</strong><small>Just the current conversation</small></span>
+                                    </label>
+                                    <label class="lc-email-scope-option">
+                                        <input type="radio" name="lc-email-scope" id="lc-email-scope-overall" value="overall">
+                                        <span><strong>Overall history</strong><small>All related chats for this visitor</small></span>
+                                    </label>
+                                </div>
                                 <label class="lc-transfer-note-label" for="lc-email-transcript-to">Customer email</label>
                                 <input type="email" id="lc-email-transcript-to" class="lc-email-transcript-input" placeholder="customer@email.com" autocomplete="email">
                                 <p class="lc-email-panel-status" id="lc-email-panel-status" hidden></p>
