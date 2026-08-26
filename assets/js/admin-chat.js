@@ -19,6 +19,8 @@
     var lastJourneyId = 0;
 
     var listEl = document.getElementById('lc-conversation-list');
+    var inboxClickLock = false;
+    var inboxClickLockTimer = null;
     var messagesEl = document.getElementById('lc-messages');
     var emptyEl = document.getElementById('lc-chat-empty');
     var activeEl = document.getElementById('lc-chat-active');
@@ -587,7 +589,8 @@
         var name = c.visitor_name || 'Visitor';
         var status = c.status;
         var waitingCls = status === 'waiting' ? ' is-waiting' : '';
-        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '">';
+        var sig = conversationItemSignature(c);
+        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '" data-sig="' + esc(sig) + '">';
         html += '<div class="lc-chat-item-av" style="background:' + avatarColor(name) + '">' + esc(visitorInitials(name)) + '</div>';
         html += '<div class="lc-chat-item-body">';
         html += '<div class="lc-chat-item-top">';
@@ -695,37 +698,71 @@
         paintConversationList(filterConversations(lastConversations));
     }
 
-    function paintConversationList(conversations) {
-        var loadingEl = document.getElementById('lc-list-loading');
-        if (loadingEl) {
-            loadingEl.remove();
-        }
-        if (!conversations.length) {
-            if (inboxSearch) {
-                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-search-off"></i><p>No matches</p><span>Try another search term</span></div>';
-            } else {
-                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-inbox-off"></i><p>No conversations</p><span>New chats will appear here</span></div>';
-            }
-            return;
-        }
+        function conversationItemSignature(c) {
+        return [
+            c.id,
+            c.status || '',
+            c.unread || 0,
+            (c.last_message || '').slice(0, 160),
+            c.visitor_name || '',
+            c.agent_name || '',
+            c.agent_id || 0,
+            c.reference || '',
+            c.brand_name || '',
+            isReturningVisitor(c) ? '1' : '0'
+        ].join('\u001f');
+    }
 
+    function inboxOrderKey(conversations) {
         var unassigned = [];
         var mine = [];
         var other = [];
         conversations.forEach(function (c) {
-            if (c.status === 'waiting') unassigned.push(c);
-            else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) mine.push(c);
-            else other.push(c);
+            if (c.status === 'waiting') {
+                unassigned.push(c.id);
+            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
+                mine.push(c.id);
+            } else {
+                other.push(c.id);
+            }
+        });
+        if (currentTab === 'waiting') {
+            return 'w:' + unassigned.join(',');
+        }
+        if (currentTab === 'active') {
+            return 'a:' + mine.concat(other).join(',');
+        }
+        return 'all:' + unassigned.join(',') + '|' + mine.join(',') + '|' + other.join(',');
+    }
+
+    function buildInboxHtml(conversations) {
+        var unassigned = [];
+        var mine = [];
+        var other = [];
+        conversations.forEach(function (c) {
+            if (c.status === 'waiting') {
+                unassigned.push(c);
+            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
+                mine.push(c);
+            } else {
+                other.push(c);
+            }
         });
 
         function section(label, items, meta) {
-            if (!items.length) return '';
+            if (!items.length) {
+                return '';
+            }
             var html = '<div class="lc-inbox-group">';
             html += '<div class="lc-inbox-group-head"><span class="lc-inbox-group-label"><i class="ti ti-chevron-down"></i> '
                 + esc(label) + ' (' + items.length + ')</span>';
-            if (meta) html += '<span class="lc-inbox-group-meta">' + esc(meta) + '</span>';
+            if (meta) {
+                html += '<span class="lc-inbox-group-meta">' + esc(meta) + '</span>';
+            }
             html += '</div>';
-            items.forEach(function (c) { html += renderConversationItem(c); });
+            items.forEach(function (c) {
+                html += renderConversationItem(c);
+            });
             html += '</div>';
             return html;
         }
@@ -741,9 +778,93 @@
             html += section('Other', other, '');
         }
         if (!html) {
-            conversations.forEach(function (c) { html += renderConversationItem(c); });
+            conversations.forEach(function (c) {
+                html += renderConversationItem(c);
+            });
         }
-        listEl.innerHTML = html;
+        return html;
+    }
+
+    function syncConversationItemEl(el, c) {
+        var active = c.id == selectedId;
+        el.classList.toggle('active', active);
+        el.classList.toggle('is-waiting', c.status === 'waiting');
+        el.dataset.status = c.status;
+
+        var name = c.visitor_name || 'Visitor';
+        var strong = el.querySelector('.lc-chat-item-top strong');
+        if (strong) {
+            strong.textContent = name;
+        }
+        var av = el.querySelector('.lc-chat-item-av');
+        if (av) {
+            av.textContent = visitorInitials(name);
+            av.style.background = avatarColor(name);
+        }
+
+        var preview = el.querySelector('.lc-chat-item-preview');
+        if (preview) {
+            preview.textContent = c.last_message || ' - ';
+        }
+
+        var rel = relativeTime(c.last_message_at || c.started_at);
+        var timeEl = el.querySelector('.lc-chat-item-time');
+        if (rel) {
+            if (timeEl) {
+                timeEl.textContent = rel;
+            } else {
+                var top = el.querySelector('.lc-chat-item-top');
+                if (top) {
+                    top.insertAdjacentHTML('beforeend', '<span class="lc-chat-item-time">' + esc(rel) + '</span>');
+                }
+            }
+        } else if (timeEl) {
+            timeEl.remove();
+        }
+    }
+
+    function paintConversationList(conversations) {
+        if (inboxClickLock) {
+            return;
+        }
+        var loadingEl = document.getElementById('lc-list-loading');
+        if (loadingEl) {
+            loadingEl.remove();
+        }
+        if (!conversations.length) {
+            listEl.dataset.inboxOrder = '';
+            if (inboxSearch) {
+                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-search-off"></i><p>No matches</p><span>Try another search term</span></div>';
+            } else {
+                listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-inbox-off"></i><p>No conversations</p><span>New chats will appear here</span></div>';
+            }
+            return;
+        }
+
+        var orderKey = currentTab + ':' + inboxOrderKey(conversations);
+        if (listEl.dataset.inboxOrder === orderKey && listEl.querySelector('.lc-chat-item[data-id]')) {
+            conversations.forEach(function (c) {
+                var el = listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
+                if (!el) {
+                    return;
+                }
+                var sig = conversationItemSignature(c);
+                if (el.dataset.sig === sig) {
+                    syncConversationItemEl(el, c);
+                    return;
+                }
+                var wrap = document.createElement('div');
+                wrap.innerHTML = renderConversationItem(c);
+                var next = wrap.firstElementChild;
+                if (next) {
+                    el.replaceWith(next);
+                }
+            });
+            return;
+        }
+
+        listEl.innerHTML = buildInboxHtml(conversations);
+        listEl.dataset.inboxOrder = orderKey;
     }
 
     function esc(s) {
@@ -1802,9 +1923,29 @@
         });
     });
 
+    listEl.addEventListener('mousedown', function (e) {
+        if (!e.target.closest('.lc-chat-item')) {
+            return;
+        }
+        inboxClickLock = true;
+        if (inboxClickLockTimer) {
+            clearTimeout(inboxClickLockTimer);
+        }
+        inboxClickLockTimer = setTimeout(function () {
+            inboxClickLock = false;
+        }, 450);
+    });
+
     listEl.addEventListener('click', function (e) {
         var item = e.target.closest('.lc-chat-item');
-        if (item) openConversation(parseInt(item.dataset.id, 10));
+        if (item) {
+            inboxClickLock = false;
+            if (inboxClickLockTimer) {
+                clearTimeout(inboxClickLockTimer);
+                inboxClickLockTimer = null;
+            }
+            openConversation(parseInt(item.dataset.id, 10));
+        }
     });
 
     document.getElementById('lc-send-reply').addEventListener('click', sendReply);

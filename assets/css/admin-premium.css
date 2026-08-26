@@ -601,7 +601,7 @@ body.lc-admin-body {
 }
 .lc-chat-tab.active { color: var(--lc-primary); border-bottom: 2px solid var(--lc-primary); background: var(--lc-primary-soft); }
 .lc-chat-items { flex: 1; overflow-y: auto; }
-.lc-chat-item { padding: 0.85rem 1rem; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: 0.12s; }
+.lc-chat-item { padding: 0.85rem 1rem; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background-color 0.12s ease, border-color 0.12s ease; }
 .lc-chat-item:hover, .lc-chat-item.active { background: var(--lc-primary-soft); }
 .lc-chat-item-name { font-weight: 700; font-size: 0.86rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .lc-chat-item-preview { font-size: 0.76rem; color: var(--lc-muted); margin-top: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3599,6 +3599,9 @@ body.lc-page-chats .lc-content {
     border-color: transparent;
     border-bottom-color: var(--lc-primary);
     font-weight: 700;
+}
+.lc-chat-items.is-interacting {
+    pointer-events: auto;
 }
 .lc-chats-pro .lc-chat-items {
     padding: 0;
