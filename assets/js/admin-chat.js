@@ -83,6 +83,9 @@
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             window.LCNotifySound.play();
         }
+        if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+            window.LCTabNotify.pulse();
+        }
     }
 
     function setPeerTypingVisible(show, name, preview) {
