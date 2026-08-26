@@ -1560,15 +1560,8 @@
         if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
         updateHeaderAgent(data.agent || null);
-        var hasAgent = data.agent && data.agent.name;
-        if (hasAgent) {
-            setWaitingState(false);
-            updateStatus('Chatting with ' + data.agent.name, true);
-        } else if (data.status === 'waiting') {
-            setWaitingState(true);
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
-        } else {
-            setWaitingState(false);
+        applyAgentConnectionState(data);
+        if (!data.agent && !data.agent_name && data.status !== 'waiting' && !(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0)) {
             updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
         }
         if (!options.keepMessages) {
@@ -1688,6 +1681,42 @@
     function setBubbleOnline(online) {
         var bubble = document.getElementById('lc-bubble');
         if (bubble) bubble.classList.toggle('lcw-bubble-online', !!online);
+    }
+
+
+    function isAgentJoinMessage(m) {
+        if (!m) return false;
+        if (m.event === 'agent_join') return true;
+        if (m.sender_type !== 'system') return false;
+        return /joined the chat\.?$/i.test(String(m.message || '').trim());
+    }
+
+    function applyAgentConnectionState(data) {
+        if (!data) return;
+        var assigned = !!(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0);
+        var agentObj = data.agent && data.agent.name ? data.agent : null;
+        var agentName = agentObj ? agentObj.name : (data.agent_name || '');
+
+        if (assigned || agentName || data.status === 'active') {
+            setWaitingState(false);
+            if (agentObj) {
+                updateHeaderAgent(agentObj);
+                updateStatus('Chatting with ' + agentObj.name, true);
+            } else if (agentName) {
+                updateHeaderAgent({ name: agentName, avatar: currentAgent.avatar });
+                updateStatus('Chatting with ' + agentName, true);
+            } else if (data.status === 'active') {
+                updateStatus('Chatting with an agent', true);
+            }
+            return;
+        }
+
+        if (data.status === 'waiting') {
+            setWaitingState(true);
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
+        } else if (agentsOnline > 0) {
+            updateStatus('Team online', true);
+        }
     }
 
     function setWaitingState(waiting) {
@@ -1934,7 +1963,7 @@
         var box = document.getElementById('lc-panel-messages');
         var timeHtml = msgTimeHtml(m.created_at);
 
-        if (m.sender_type === 'system' && m.event === 'agent_join') {
+        if (isAgentJoinMessage(m)) {
             setWaitingState(false);
             var div = document.createElement('div');
             div.className = 'lcw-join-event';
@@ -2096,20 +2125,7 @@
                     setBubbleOnline(agentsOnline > 0);
                 }
 
-                if (data.agent && data.agent.name) {
-                    setWaitingState(false);
-                    updateHeaderAgent(data.agent);
-                    updateStatus('Chatting with ' + data.agent.name, true);
-                } else if (data.agent_name) {
-                    setWaitingState(false);
-                    updateHeaderAgent({ name: data.agent_name, avatar: currentAgent.avatar });
-                    updateStatus('Chatting with ' + data.agent_name, true);
-                } else if (data.status === 'waiting') {
-                    setWaitingState(true);
-                    updateStatus('Connecting to live agent...', agentsOnline > 0);
-                } else if (agentsOnline > 0) {
-                    updateStatus('Team online', true);
-                }
+                applyAgentConnectionState(data);
 
                 if (data.receipts && data.receipts.length) {
                     applyReceipts(data.receipts);

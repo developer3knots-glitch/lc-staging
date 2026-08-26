@@ -31,8 +31,6 @@ try {
     if (function_exists('lc_apply_inactivity_to_conversation') && (($conv['status'] ?? '') === 'waiting' || ($conv['status'] ?? '') === 'active')) {
         try {
             lc_apply_inactivity_to_conversation($conversationId);
-
-            }
             $stmt->execute([$conversationId, $visitorUid]);
             $fresh = $stmt->fetch();
             if ($fresh) {
@@ -42,9 +40,10 @@ try {
         }
     }
 
-    if ($conv['status'] === 'closed') {
+    if (($conv['status'] ?? '') === 'closed') {
         if (lc_reopen_if_visitor_returning($conversationId, (int) $conv['visitor_id'])) {
-            $conv['status'] = 'active';
+            $stmt->execute([$conversationId, $visitorUid]);
+            $conv = $stmt->fetch() ?: $conv;
         }
     }
 
@@ -95,14 +94,20 @@ try {
 
     $typing = lc_typing_state_for_viewer($conversationId, 'visitor');
 
+    $agentId = (int) ($conv['agent_id'] ?? 0);
+    $agentName = trim((string) ($conv['agent_name'] ?? ''));
+    $agentPublic = $agentName !== '' ? lc_agent_public($agentName, $conv['agent_avatar'] ?? null) : null;
+
     lc_json([
         'success' => true,
         'messages' => $messages,
         'receipts' => $receipts,
         'status' => $conv['status'],
+        'agent_id' => $agentId,
+        'is_assigned' => $agentId > 0 && ($conv['status'] ?? '') !== 'closed',
         'reference' => $reference,
-        'agent_name' => $conv['agent_name'],
-        'agent' => lc_agent_public($conv['agent_name'] ?? null, $conv['agent_avatar'] ?? null),
+        'agent_name' => $agentName !== '' ? $agentName : null,
+        'agent' => $agentPublic,
         'agents_online' => lc_get_online_agents_count(),
         'last_visitor_read' => $lastVisitorRead,
         'last_visitor_delivery_status' => $lastStatus,
