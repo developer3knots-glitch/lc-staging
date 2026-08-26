@@ -31,6 +31,7 @@
     var pollTimer = null;
     var pollMs = 1500;
     var visitorSoundsEnabled = true;
+    var transcriptSentConvId = null;
     var isOpen = false;
     var chatClosed = false;
     var chatToken = '';
@@ -1540,6 +1541,7 @@
             updateWidgetReference(currentReference);
         }
         syncTicketFeatureUi();
+        syncTranscriptSentUi('ended');
     }
 
     function loadVisitorSoundPref() {
@@ -1589,6 +1591,7 @@
             input.value = localStorage.getItem('lc_visitor_email') || '';
         }
         setEmailTranscriptStatus('', false, 'menu');
+        syncTranscriptSentUi('menu');
         sheet.hidden = false;
         setTimeout(function () {
             if (input) input.focus();
@@ -1724,9 +1727,59 @@
         }
     }
 
+    function isTranscriptSentThisSession() {
+        return !!(transcriptSentConvId && conversationId && transcriptSentConvId === conversationId);
+    }
+
+    function setTranscriptControlsDisabled(disabled) {
+        var endedSend = document.getElementById('lc-email-transcript-send');
+        var menuSend = document.getElementById('lc-menu-transcript-send');
+        var menuItem = document.getElementById('lc-menu-send-transcript');
+        [endedSend, menuSend].forEach(function (btn) {
+            if (!btn) return;
+            btn.disabled = !!disabled;
+            btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+            if (disabled) {
+                btn.textContent = 'Sent to email';
+            } else if (btn.id === 'lc-email-transcript-send') {
+                btn.textContent = 'Send to email';
+            } else if (btn.id === 'lc-menu-transcript-send') {
+                btn.textContent = 'Send transcript';
+            }
+        });
+        if (menuItem) {
+            menuItem.disabled = !!disabled;
+            menuItem.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        }
+    }
+
+    function markTranscriptSent() {
+        transcriptSentConvId = conversationId;
+        setTranscriptControlsDisabled(true);
+    }
+
+    function resetTranscriptSentState() {
+        transcriptSentConvId = null;
+        setTranscriptControlsDisabled(false);
+    }
+
+    function syncTranscriptSentUi(which) {
+        if (!isTranscriptSentThisSession()) {
+            return;
+        }
+        setTranscriptControlsDisabled(true);
+        if (which) {
+            setEmailTranscriptStatus('Transcript already sent for this chat.', false, which);
+        }
+    }
+
     function sendChatTranscriptEmail(forcedEmail, which) {
         which = which || 'ended';
         var ids = emailExportIds(which);
+        if (isTranscriptSentThisSession()) {
+            syncTranscriptSentUi(which);
+            return;
+        }
         if (!conversationId) {
             setEmailTranscriptStatus('This chat is no longer available to export. Start a new conversation first.', true, which);
             return;
@@ -1741,6 +1794,7 @@
         var sendBtn = document.getElementById(ids.send);
         if (sendBtn) {
             sendBtn.disabled = true;
+            sendBtn.setAttribute('aria-disabled', 'true');
             sendBtn.textContent = 'Sending...';
         }
         setEmailTranscriptStatus('Sending this chat...', false, which);
@@ -1760,22 +1814,25 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (sendBtn) {
-                sendBtn.disabled = false;
-                sendBtn.textContent = ids.sendLabel;
-            }
             if (data && data.success) {
                 try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
                 if (input) input.value = data.email || email;
                 var hint = (data.hint || '').trim();
                 setEmailTranscriptStatus('Sent! Check your inbox for this chat.' + (hint ? (' ' + hint) : ''), false, which);
+                markTranscriptSent();
                 return;
+            }
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.setAttribute('aria-disabled', 'false');
+                sendBtn.textContent = ids.sendLabel;
             }
             setEmailTranscriptStatus((data && data.error) || 'Could not send email.', true, which);
         })
         .catch(function () {
             if (sendBtn) {
                 sendBtn.disabled = false;
+                sendBtn.setAttribute('aria-disabled', 'false');
                 sendBtn.textContent = ids.sendLabel;
             }
             setEmailTranscriptStatus('Connection error. Please try again.', true, which);
@@ -1838,6 +1895,7 @@
         if (refWrap) refWrap.hidden = true;
         if (endedRef) endedRef.hidden = true;
         hideTicketResumePanel();
+        resetTranscriptSentState();
         conversationId = null;
         lastMsgId = 0;
         lastDateLabel = '';
@@ -1897,6 +1955,9 @@
 
     function handleChatStarted(data, options) {
         options = options || {};
+        if (transcriptSentConvId && transcriptSentConvId !== data.conversation_id) {
+            resetTranscriptSentState();
+        }
         conversationId = data.conversation_id;
         chatToken = data.chat_token || getStoredChatToken() || '';
         widgetLoadedAt = Date.now();
