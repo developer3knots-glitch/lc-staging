@@ -42,8 +42,7 @@ if ($agent['role'] === 'admin') {
                 <a href="<?= lc_admin_url($item['page']) ?>"
                    class="lc-nav-link lc-tip <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>"
                    data-tip="<?= lc_sanitize($item['label']) ?>"
-                   aria-label="<?= lc_sanitize($item['label']) ?>"
-                   title="<?= lc_sanitize($item['label']) ?>">
+                   aria-label="<?= lc_sanitize($item['label']) ?>">
                     <span class="lc-nav-icon"><i class="ti <?= lc_sanitize($item['icon']) ?>"></i></span>
                     <span class="lc-nav-text"><?= lc_sanitize($item['label']) ?></span>
                 </a>
