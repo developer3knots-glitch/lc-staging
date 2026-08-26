@@ -6857,3 +6857,59 @@ body.lc-page-chats .lc-details-hero-av {
     font-weight: 600;
     color: #0369a1;
 }
+
+/* Editable visitor contact (Zendesk-style) */
+.lc-details-contact {
+    margin: 0 0 0.85rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--lc-border);
+    border-radius: 12px;
+    background: #fff;
+}
+.lc-details-contact-title {
+    margin: 0 0 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--lc-muted);
+}
+.lc-details-contact-label {
+    display: block;
+    margin: 0.35rem 0 0.2rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--lc-muted);
+}
+.lc-details-contact-label:first-of-type { margin-top: 0; }
+.lc-details-contact-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--lc-border);
+    border-radius: 8px;
+    padding: 0.42rem 0.55rem;
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--lc-ink);
+    background: #f8fafc;
+}
+.lc-details-contact-input:focus {
+    outline: none;
+    border-color: var(--lc-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--lc-primary) 14%, transparent);
+    background: #fff;
+}
+.lc-details-contact-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin-top: 0.55rem;
+    flex-wrap: wrap;
+}
+.lc-details-contact-status {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--lc-muted);
+}
+.lc-details-contact-status.is-ok { color: #059669; }
+.lc-details-contact-status.is-error { color: #dc2626; }

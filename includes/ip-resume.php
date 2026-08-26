@@ -45,6 +45,36 @@ function lc_normalize_visitor_email(string $email): string
     return $email;
 }
 
+function lc_normalize_visitor_phone(string $phone): string
+{
+    $phone = trim($phone);
+    if ($phone === '') {
+        return '';
+    }
+    $phone = preg_replace('/[^\d+]/', '', $phone) ?? '';
+    $phone = preg_replace('/(?!^)\+/', '', $phone) ?? $phone;
+    if ($phone === '' || strlen($phone) < 7 || strlen($phone) > 20) {
+        return '';
+    }
+    return $phone;
+}
+
+function lc_ensure_visitor_phone_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->query('SELECT phone FROM visitors LIMIT 1');
+    } catch (Throwable $e) {
+        try {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN phone VARCHAR(40) NULL AFTER email');
+        } catch (Throwable $e2) {
+        }
+    }
+}
 /**
  * @param array<string,mixed>|null $row
  * @return array{id:int,status:string,agent_id:?int,visitor_id:int}|null

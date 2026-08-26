@@ -68,6 +68,7 @@
     var inboxSearch = '';
     var currentReference = '';
     var currentVisitorEmail = '';
+    var currentVisitorPhone = '';
     var chatRefEl = document.getElementById('lc-chat-ref');
     var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
@@ -487,7 +488,8 @@
         var displayName = name || 'Unnamed customer';
         setText('lc-details-name', displayName);
         currentVisitorEmail = (c.visitor_email || '').trim();
-        setText('lc-details-email', currentVisitorEmail || 'No email');
+        currentVisitorPhone = (c.visitor_phone || '').trim();
+        populateContactFields();
         setVisitorKindBadge(c);
 
         var geo = c.visitor_geo || {};
@@ -575,6 +577,9 @@
         return list.filter(function (c) {
             var hay = [
                 c.visitor_name || '',
+                c.visitor_email || '',
+                c.visitor_phone || '',
+                c.visitor_ip || '',
                 c.last_message || '',
                 c.brand_name || '',
                 c.agent_name || '',
@@ -684,7 +689,8 @@
             if (c.agent_name) next.agent_name = c.agent_name;
             if (c.agent_id !== undefined && c.agent_id !== null) next.agent_id = c.agent_id;
             if (c.visitor_ip) next.visitor_ip = c.visitor_ip;
-            if (c.visitor_email) next.visitor_email = c.visitor_email;
+            if (c.visitor_email !== undefined) next.visitor_email = c.visitor_email;
+            if (c.visitor_phone !== undefined) next.visitor_phone = c.visitor_phone;
             if (c.visitor_id) next.visitor_id = c.visitor_id;
             if (c.last_message) next.last_message = c.last_message;
             if (c.last_message_at) next.last_message_at = c.last_message_at;
@@ -709,6 +715,8 @@
             c.agent_id || 0,
             c.reference || '',
             c.brand_name || '',
+            c.visitor_email || '',
+            c.visitor_phone || '',
             isReturningVisitor(c) ? '1' : '0'
         ].join('\u001f');
     }
@@ -1537,7 +1545,9 @@
         if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
         showDetailsPanel(true);
         setText('lc-details-name', 'Loading...');
-        setText('lc-details-email', ' - ');
+        currentVisitorEmail = '';
+        currentVisitorPhone = '';
+        populateContactFields();
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
         setText('lc-details-ip', ' - ');
@@ -2058,6 +2068,75 @@
     var emailTranscriptSend = document.getElementById('lc-email-transcript-send');
     var emailTranscriptTo = document.getElementById('lc-email-transcript-to');
     var emailPanelStatus = document.getElementById('lc-email-panel-status');
+    var detailsEmailInput = document.getElementById('lc-details-email-input');
+    var detailsPhoneInput = document.getElementById('lc-details-phone-input');
+    var detailsContactSaveBtn = document.getElementById('lc-details-contact-save');
+    var detailsContactStatus = document.getElementById('lc-details-contact-status');
+
+    function populateContactFields() {
+        if (detailsEmailInput) detailsEmailInput.value = currentVisitorEmail || '';
+        if (detailsPhoneInput) detailsPhoneInput.value = currentVisitorPhone || '';
+    }
+
+    function setContactStatus(msg, isError) {
+        if (!detailsContactStatus) return;
+        detailsContactStatus.textContent = msg || '';
+        detailsContactStatus.classList.toggle('is-error', !!isError);
+        detailsContactStatus.classList.toggle('is-ok', !!msg && !isError);
+    }
+
+    function applySavedContactToList(email, phone) {
+        if (!selectedId) return;
+        lastConversations = (lastConversations || []).map(function (row) {
+            if (parseInt(row.id, 10) !== selectedId) return row;
+            return Object.assign({}, row, {
+                visitor_email: email,
+                visitor_phone: phone
+            });
+        });
+        paintConversationList(filterConversations(lastConversations));
+    }
+
+    function saveVisitorContact() {
+        if (!selectedId) return;
+        var email = detailsEmailInput ? detailsEmailInput.value.trim() : '';
+        var phone = detailsPhoneInput ? detailsPhoneInput.value.trim() : '';
+        if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = true;
+        setContactStatus('Saving...', false);
+        fetch(base + '/api/agent-update-visitor.php', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                conversation_id: selectedId,
+                email: email,
+                phone: phone
+            })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = false;
+            if (!data || !data.success) {
+                setContactStatus((data && data.error) || 'Unable to save', true);
+                return;
+            }
+            currentVisitorEmail = (data.email || '').trim();
+            currentVisitorPhone = (data.phone || '').trim();
+            populateContactFields();
+            applySavedContactToList(currentVisitorEmail, currentVisitorPhone);
+            if (emailTranscriptTo && currentVisitorEmail) {
+                emailTranscriptTo.value = currentVisitorEmail;
+            }
+            setContactStatus('Saved', false);
+            setTimeout(function () {
+                if (detailsContactStatus && detailsContactStatus.textContent === 'Saved') {
+                    setContactStatus('', false);
+                }
+            }, 2200);
+        }).catch(function () {
+            if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = false;
+            setContactStatus('Connection error', true);
+        });
+    }
+
     var detailsEmailChatBtn = document.getElementById('lc-details-email-chat');
 
     function closeEmailPanel() {
@@ -2123,7 +2202,7 @@
             if (emailTranscriptSend) emailTranscriptSend.disabled = false;
             if (data && data.success) {
                 currentVisitorEmail = data.email || email;
-                setText('lc-details-email', currentVisitorEmail);
+                populateContactFields();
                 var extra = (data.scope === 'overall' && data.chat_count > 1)
                     ? (' (' + data.chat_count + ' chats)')
                     : '';
@@ -2140,6 +2219,16 @@
 
     if (emailTranscriptBtn) emailTranscriptBtn.addEventListener('click', openEmailPanel);
     if (detailsEmailChatBtn) detailsEmailChatBtn.addEventListener('click', openEmailPanel);
+    if (detailsContactSaveBtn) detailsContactSaveBtn.addEventListener('click', saveVisitorContact);
+    [detailsEmailInput, detailsPhoneInput].forEach(function (el) {
+        if (!el) return;
+        el.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveVisitorContact();
+            }
+        });
+    });
     if (emailPanelClose) emailPanelClose.addEventListener('click', closeEmailPanel);
     if (emailTranscriptSend) {
         emailTranscriptSend.addEventListener('click', function (e) {

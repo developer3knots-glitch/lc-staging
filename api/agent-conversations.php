@@ -25,6 +25,9 @@ $agentId = (int) $agent['id'];
 try {
     lc_ensure_brands_schema();
     lc_ensure_ticket_schema();
+    if (function_exists('lc_ensure_visitor_phone_schema')) {
+        lc_ensure_visitor_phone_schema();
+    }
     if (function_exists('lc_ensure_returning_visitor_schema')) {
         lc_ensure_returning_visitor_schema();
     }
@@ -41,7 +44,7 @@ try {
     $sql = "
         SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
                c.is_returning, c.prior_chat_count,
-               v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
+               v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,

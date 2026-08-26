@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+$ipResume = __DIR__ . '/../includes/ip-resume.php';
+if (is_file($ipResume)) {
+    require_once $ipResume;
+}
 $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
@@ -17,6 +21,9 @@ if ($conversationId < 1) {
 try {
     lc_ensure_attachments_schema();
     lc_ensure_message_receipts_schema();
+    if (function_exists('lc_ensure_visitor_phone_schema')) {
+        lc_ensure_visitor_phone_schema();
+    }
     if (function_exists('lc_ensure_returning_visitor_schema')) {
         lc_ensure_returning_visitor_schema();
     }

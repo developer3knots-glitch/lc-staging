@@ -20,7 +20,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
-                <input type="search" id="lc-inbox-search" placeholder="Search customers..." autocomplete="off" aria-label="Search conversations">
+                <input type="search" id="lc-inbox-search" placeholder="Search name, email, phone, ticket..." autocomplete="off" aria-label="Search conversations">
             </div>
             <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
                 <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
@@ -197,6 +197,18 @@ require __DIR__ . '/includes/header.php';
                     </button>
                 </div>
 
+                <div class="lc-details-contact" id="lc-details-contact">
+                    <h4 class="lc-details-contact-title">Contact</h4>
+                    <label class="lc-details-contact-label" for="lc-details-email-input">Email</label>
+                    <input type="email" id="lc-details-email-input" class="lc-details-contact-input" placeholder="Add email address" autocomplete="off" inputmode="email">
+                    <label class="lc-details-contact-label" for="lc-details-phone-input">Phone</label>
+                    <input type="tel" id="lc-details-phone-input" class="lc-details-contact-input" placeholder="Add phone number" autocomplete="off" inputmode="tel">
+                    <div class="lc-details-contact-actions">
+                        <button type="button" class="lc-btn lc-btn-sm lc-btn-primary" id="lc-details-contact-save">Save contact</button>
+                        <span class="lc-details-contact-status" id="lc-details-contact-status" aria-live="polite"></span>
+                    </div>
+                </div>
+
                 <div class="lc-details-map-wrap" id="lc-details-map-wrap" hidden>
                     <iframe id="lc-details-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
@@ -227,10 +239,6 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-details-kv">
                                 <dt>Groups</dt>
                                 <dd id="lc-details-groups">-</dd>
-                            </div>
-                            <div class="lc-details-kv">
-                                <dt>Email</dt>
-                                <dd id="lc-details-email">-</dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Ticket</dt>

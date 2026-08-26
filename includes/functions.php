@@ -1040,7 +1040,7 @@ function lc_touch_conversation(int $conversationId): void
 function lc_get_conversation(int $id): ?array
 {
     $stmt = lc_db()->prepare('
-        SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
+        SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
                v.last_seen AS visitor_last_seen,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
