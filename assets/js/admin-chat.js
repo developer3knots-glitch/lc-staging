@@ -411,7 +411,8 @@
         }
         lastDetailsMapKey = key;
         if (lat && lon) {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=11&output=embed';
+            var zoom = (geo.source === 'browser') ? 15 : 11;
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=' + zoom + '&output=embed';
         } else {
             iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=6&output=embed';
         }

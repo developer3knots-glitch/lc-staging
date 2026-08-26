@@ -1251,6 +1251,9 @@
             return;
         }
         isOpen = true;
+        if (conversationId) {
+            requestBrowserGeo();
+        }
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         if (panel) panel.style.display = 'flex';
@@ -1530,6 +1533,51 @@
         beginNewConversationFlow();
     }
 
+
+    var GEO_SENT_KEY = 'lc_browser_geo_' + brandKey;
+
+    function requestBrowserGeo() {
+        if (!navigator.geolocation || !visitorUid) {
+            return;
+        }
+        try {
+            if (sessionStorage.getItem(GEO_SENT_KEY) === '1') {
+                return;
+            }
+        } catch (ignore) {}
+
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                var lat = pos.coords && pos.coords.latitude;
+                var lon = pos.coords && pos.coords.longitude;
+                if (typeof lat !== 'number' || typeof lon !== 'number') {
+                    return;
+                }
+                fetch(siteUrl + '/api/visitor-geo.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        visitor_uid: visitorUid,
+                        brand_key: brandKey,
+                        lat: lat,
+                        lon: lon
+                    })
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.success) {
+                        try {
+                            sessionStorage.setItem(GEO_SENT_KEY, '1');
+                        } catch (ignore2) {}
+                    }
+                })
+                .catch(function () {});
+            },
+            function () {},
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 }
+        );
+    }
+
     function handleChatStarted(data, options) {
         options = options || {};
         conversationId = data.conversation_id;
@@ -1572,6 +1620,7 @@
         pollMessages(true);
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(pollMessages, pollMs);
+        requestBrowserGeo();
     }
 
     function initChat(options) {

@@ -1045,6 +1045,7 @@ function lc_get_conversation(int $id): ?array
                v.last_seen AS visitor_last_seen,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
                v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon,
+               v.geo_source AS visitor_geo_source,
                v.user_agent AS visitor_user_agent,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
@@ -1114,6 +1115,7 @@ function lc_ensure_visitor_geo_schema(): void
         'geo_region VARCHAR(100) NULL',
         'geo_lat DECIMAL(10,7) NULL',
         'geo_lon DECIMAL(10,7) NULL',
+        'geo_source VARCHAR(16) NULL',
     ];
     foreach ($cols as $def) {
         try {
@@ -1123,8 +1125,81 @@ function lc_ensure_visitor_geo_schema(): void
     }
 }
 
+
 /**
- * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float}
+ * Reverse geocode GPS coordinates to city/region label (OpenStreetMap Nominatim).
+ * @return array{city:string,region:string,country:string,label:string}
+ */
+function lc_reverse_geocode(float $lat, float $lon): array
+{
+    $empty = ['city' => '', 'region' => '', 'country' => '', 'label' => ''];
+    if (!function_exists('lc_http_get_json')) {
+        return $empty;
+    }
+
+    $url = 'https://nominatim.openstreetmap.org/reverse?lat=' . rawurlencode((string) $lat)
+        . '&lon=' . rawurlencode((string) $lon)
+        . '&format=json&addressdetails=1&zoom=16';
+    $data = lc_http_get_json($url, 4.0);
+    if (!$data || empty($data['address']) || !is_array($data['address'])) {
+        return $empty;
+    }
+
+    $a = $data['address'];
+    $area = trim((string) ($a['suburb'] ?? $a['neighbourhood'] ?? $a['city_district'] ?? $a['quarter'] ?? ''));
+    $city = trim((string) ($a['city'] ?? $a['town'] ?? $a['village'] ?? $a['municipality'] ?? ''));
+    $region = trim((string) ($a['state'] ?? $a['region'] ?? ''));
+    $country = trim((string) ($a['country'] ?? ''));
+    $parts = array_values(array_unique(array_filter([$area, $city, $region, $country])));
+    $label = $parts ? implode(', ', $parts) : trim((string) ($data['display_name'] ?? ''));
+
+    return [
+        'city' => $city !== '' ? $city : $area,
+        'region' => $region,
+        'country' => $country,
+        'label' => $label,
+    ];
+}
+
+/**
+ * Store precise browser GPS location (overrides IP geolocation).
+ * @return array{label:string,city:string,region:string,country:string,lat:float,lon:float,source:string}
+ */
+function lc_save_visitor_browser_geo(int $visitorId, float $lat, float $lon): array
+{
+    lc_ensure_visitor_geo_schema();
+    $rev = lc_reverse_geocode($lat, $lon);
+    $city = $rev['city'];
+    $region = $rev['region'];
+    $country = $rev['country'];
+    $label = $rev['label'] !== '' ? $rev['label'] : (round($lat, 5) . ', ' . round($lon, 5));
+
+    $upd = lc_db()->prepare('
+        UPDATE visitors
+        SET geo_lat = ?, geo_lon = ?, geo_city = ?, geo_region = ?, geo_source = ?
+        WHERE id = ?
+    ');
+    $upd->execute([
+        $lat,
+        $lon,
+        $city !== '' ? $city : null,
+        $region !== '' ? $region : null,
+        'browser',
+        $visitorId,
+    ]);
+
+    return [
+        'label' => $label,
+        'city' => $city,
+        'region' => $region,
+        'country' => $country,
+        'lat' => $lat,
+        'lon' => $lon,
+        'source' => 'browser',
+    ];
+}
+/**
+ * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float,source:string}
  */
 function lc_visitor_geo_payload(array $row): array
 {
@@ -1136,6 +1211,10 @@ function lc_visitor_geo_payload(array $row): array
     $lon = isset($row['visitor_geo_lon']) ? $row['visitor_geo_lon'] : ($row['geo_lon'] ?? null);
     $lat = ($lat !== null && $lat !== '') ? (float) $lat : null;
     $lon = ($lon !== null && $lon !== '') ? (float) $lon : null;
+    $source = trim((string) ($row['visitor_geo_source'] ?? $row['geo_source'] ?? 'ip'));
+    if ($source === '') {
+        $source = 'ip';
+    }
     $parts = array_values(array_filter([$city, $region, $country]));
     $label = $parts ? implode(', ', $parts) : ($country !== '' ? $country : 'Unknown');
 
@@ -1146,6 +1225,7 @@ function lc_visitor_geo_payload(array $row): array
         'country' => $country,
         'lat' => $lat,
         'lon' => $lon,
+        'source' => $source,
     ];
 }
 
@@ -1161,10 +1241,12 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     }
 
     if ($row === null) {
-        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $row = $stmt->fetch() ?: [];
     }
+
+    $geoSource = trim((string) ($row['geo_source'] ?? ''));
 
     $payload = lc_visitor_geo_payload([
         'visitor_country' => $row['country'] ?? '',
@@ -1172,7 +1254,12 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         'visitor_geo_region' => $row['geo_region'] ?? '',
         'visitor_geo_lat' => $row['geo_lat'] ?? null,
         'visitor_geo_lon' => $row['geo_lon'] ?? null,
+        'geo_source' => $geoSource,
     ]);
+
+    if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
+        return $payload;
+    }
 
     $hasCoords = $payload['lat'] !== null && $payload['lon'] !== null;
     $hasCity = $payload['city'] !== '';
@@ -1201,15 +1288,16 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
 
     $upd = lc_db()->prepare('
         UPDATE visitors
-        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?,
+        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = COALESCE(geo_source, ?),
             country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
-        WHERE id = ?
+        WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')
     ');
     $upd->execute([
         $geo['city'] !== '' ? $geo['city'] : null,
         $geo['region'] !== '' ? $geo['region'] : null,
         $geo['lat'],
         $geo['lon'],
+        'ip',
         $countryStore,
         $visitorId,
     ]);
@@ -1221,6 +1309,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         'country' => $geo['country'],
         'lat' => $geo['lat'],
         'lon' => $geo['lon'],
+        'source' => 'ip',
     ];
 }
 function lc_unread_count_for_agent(int $agentId): int

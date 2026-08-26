@@ -98,6 +98,7 @@ try {
                         'geo_region' => $conv['visitor_geo_region'] ?? null,
                         'geo_lat' => $conv['visitor_geo_lat'] ?? null,
                         'geo_lon' => $conv['visitor_geo_lon'] ?? null,
+                        'geo_source' => $conv['visitor_geo_source'] ?? null,
                     ]
                 );
             }
