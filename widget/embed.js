@@ -287,7 +287,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=28';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=29';
         document.head.appendChild(link);
     }
 
@@ -472,13 +472,30 @@
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
-            '</div>';
+                '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
+                    '<div class="lcw-sheet lcw-sheet-dark">' +
+                        '<button type="button" class="lcw-sheet-x" id="lc-close-confirm-dismiss" aria-label="Keep chatting">&times;</button>' +
+                        '<div class="lcw-sheet-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>' +
+                        '<p class="lcw-sheet-title" id="lc-close-confirm-title">Do you really want to close the chat?</p>' +
+                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-close" id="lc-close-confirm-yes">Close the chat</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div id="lc-minimize-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-minimize-confirm-title">' +
+                    '<div class="lcw-sheet lcw-sheet-dark lcw-sheet-wide">' +
+                        '<button type="button" class="lcw-sheet-x" id="lc-minimize-confirm-x" aria-label="Close dialog">&times;</button>' +
+                        '<p class="lcw-sheet-title lcw-sheet-title-lg" id="lc-minimize-confirm-title">Keep chatting in this window?</p>' +
+                        '<p class="lcw-sheet-text" id="lc-minimize-confirm-text">Your conversation stays open while you switch tabs or browse the site.</p>' +
+                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-light" id="lc-minimize-confirm-keep">Keep chatting here</button>' +
+                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-dark" id="lc-minimize-confirm-close">Close window</button>' +
+                    '</div>' +
+                '</div>' +            '</div>';
         document.body.appendChild(root);
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
-        document.getElementById('lc-toolbar-minimize').addEventListener('click', minimizePanel);
-        document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
-        document.getElementById('lc-close-chat').addEventListener('click', endChat);
+        document.getElementById('lc-toolbar-minimize').addEventListener('click', showMinimizeConfirm);
+        document.getElementById('lc-minimize-chat').addEventListener('click', showMinimizeConfirm);
+        document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
+        bindConfirmSheets();
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
@@ -555,7 +572,16 @@
         });
 
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && isOpen) minimizePanel();
+            if (e.key === 'Escape' && isOpen) {
+                if (isConfirmOpen()) {
+                    hideCloseConfirm();
+                    hideMinimizeConfirm();
+                } else if (conversationId && !chatClosed) {
+                    showMinimizeConfirm();
+                } else {
+                    minimizePanel();
+                }
+            }
         });
 
         scheduleTeaser();
@@ -1228,6 +1254,103 @@
         });
     }
 
+
+    function widgetSiteLabel() {
+        return (settings && settings.site_name) ? settings.site_name : 'this site';
+    }
+
+    function isConfirmOpen() {
+        var closeEl = document.getElementById('lc-close-confirm');
+        var minEl = document.getElementById('lc-minimize-confirm');
+        return (closeEl && !closeEl.hidden) || (minEl && !minEl.hidden);
+    }
+
+    function hideCloseConfirm() {
+        var el = document.getElementById('lc-close-confirm');
+        if (el) {
+            el.hidden = true;
+        }
+    }
+
+    function hideMinimizeConfirm() {
+        var el = document.getElementById('lc-minimize-confirm');
+        if (el) {
+            el.hidden = true;
+        }
+    }
+
+    function showCloseConfirm() {
+        if (chatClosed || !conversationId) {
+            minimizePanel();
+            return;
+        }
+        hideMinimizeConfirm();
+        var el = document.getElementById('lc-close-confirm');
+        if (el) {
+            el.hidden = false;
+        }
+    }
+
+    function showMinimizeConfirm() {
+        if (!isOpen) {
+            return;
+        }
+        if (!conversationId || chatClosed) {
+            minimizePanel();
+            return;
+        }
+        hideCloseConfirm();
+        var textEl = document.getElementById('lc-minimize-confirm-text');
+        if (textEl) {
+            textEl.textContent = 'Your conversation on ' + widgetSiteLabel() + ' stays open while you switch tabs or apps.';
+        }
+        var el = document.getElementById('lc-minimize-confirm');
+        if (el) {
+            el.hidden = false;
+        }
+    }
+
+    function bindConfirmSheets() {
+        var closeYes = document.getElementById('lc-close-confirm-yes');
+        var closeDismiss = document.getElementById('lc-close-confirm-dismiss');
+        var minKeep = document.getElementById('lc-minimize-confirm-keep');
+        var minClose = document.getElementById('lc-minimize-confirm-close');
+        var minX = document.getElementById('lc-minimize-confirm-x');
+
+        if (closeYes) {
+            closeYes.addEventListener('click', function () {
+                hideCloseConfirm();
+                endChat();
+            });
+        }
+        if (closeDismiss) {
+            closeDismiss.addEventListener('click', hideCloseConfirm);
+        }
+        if (minKeep) {
+            minKeep.addEventListener('click', hideMinimizeConfirm);
+        }
+        if (minClose) {
+            minClose.addEventListener('click', function () {
+                hideMinimizeConfirm();
+                minimizePanel();
+            });
+        }
+        if (minX) {
+            minX.addEventListener('click', hideMinimizeConfirm);
+        }
+
+        ['lc-close-confirm', 'lc-minimize-confirm'].forEach(function (id) {
+            var overlay = document.getElementById(id);
+            if (!overlay) {
+                return;
+            }
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) {
+                    overlay.hidden = true;
+                }
+            });
+        });
+    }
     function minimizePanel() {
         if (!isOpen) return;
         isOpen = false;
