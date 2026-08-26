@@ -287,7 +287,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=29';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=30';
         document.head.appendChild(link);
     }
 
@@ -310,6 +310,10 @@
         script.onerror = callback;
         document.head.appendChild(script);
     }
+    var ICON_MENU = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+    var ICON_PLUS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+    var ICON_EMOJI = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+    var ICON_SEND_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
     var ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
     function buildWidget() {
@@ -848,6 +852,7 @@
     }
 
     function showPrechatForm(skipSettingsFetch) {
+        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
         document.getElementById('lc-panel-messages').style.display = 'none';
@@ -865,6 +870,7 @@
     }
 
     function showChatView() {
+        document.getElementById('lc-panel').classList.add('lcw-chat-active');
         document.getElementById('lc-panel').classList.remove('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'none';
         document.getElementById('lc-panel-messages').style.display = 'flex';
@@ -970,7 +976,13 @@
         document.getElementById('lc-toolbar-brand').textContent = name;
         var powered = document.getElementById('lc-powered-name');
         if (powered) powered.textContent = name;
-        document.documentElement.style.setProperty('--lcw-primary', settings.widget_color || '#6FD943');
+        var poweredChat = document.getElementById('lc-powered-chat-name');
+        if (poweredChat) poweredChat.textContent = name;
+        var agentName = document.getElementById('lc-panel-agent-name');
+        if (agentName && !(currentAgent && currentAgent.name)) agentName.textContent = name;
+        var brandColor = settings.widget_color || '#6FD943';
+        document.documentElement.style.setProperty('--lcw-primary', brandColor);
+        document.documentElement.style.setProperty('--lcw-agent-accent', brandColor);
         if (settings.poll_interval_ms) {
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
             if (pollTimer) {
@@ -1443,6 +1455,9 @@
     }
 
     function showEndedState() {
+        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
+        if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
+        if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
         clearPendingAttachment();
         stopOwnTyping();
@@ -2080,17 +2095,32 @@
         return '<span class="' + className + ' lcw-avatar-initials" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
     }
 
-    function updateHeaderAgent(agent) {
+        function updateHeaderAgent(agent) {
         var wrap = document.getElementById('lc-head-agent-avatar');
-        if (!wrap) return;
+        var nameEl = document.getElementById('lc-panel-agent-name');
+        var fallback = document.getElementById('lc-head-agent-fallback');
+        var pill = document.getElementById('lc-head-agent-pill');
+        var titleEl = document.getElementById('lc-panel-title');
+        if (!wrap || !nameEl) return;
         if (!agent || !agent.name) {
             wrap.style.display = 'none';
             wrap.innerHTML = '';
+            if (fallback) fallback.style.display = 'flex';
+            if (pill) pill.classList.remove('is-live');
+            var team = (settings && settings.site_name) ? settings.site_name : 'LiveChat';
+            nameEl.textContent = team;
+            if (titleEl) titleEl.textContent = team;
             return;
         }
         currentAgent = agent;
+        if (fallback) fallback.style.display = 'none';
+        if (pill) pill.classList.add('is-live');
         wrap.style.display = 'flex';
-        wrap.innerHTML = renderAvatar(agent.avatar, agent.name, 'lcw-head-avatar');
+        var av = agent.avatar ? Object.assign({}, agent.avatar) : {};
+        if (!av.color) av.color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
+        wrap.innerHTML = renderAvatar(av, agent.name, 'lcw-head-avatar');
+        nameEl.textContent = agent.name;
+        if (titleEl) titleEl.textContent = agent.name;
     }
 
     function updateStatus(text, online) {
@@ -2172,8 +2202,9 @@
             wrap.innerHTML =
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
-                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span>' + ticks + '</div>' +
-                '</div>';
+                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
+                '</div>' +
+                '<div class="lcw-msg-status-out">' + ticks + '</div>';
             box.appendChild(wrap);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
@@ -2212,7 +2243,7 @@
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
-            return '<span class="lcw-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
+            return '<span class="lcw-msg-read-label" title="Read" aria-label="Read">Read</span>';
         }
         if (status === 'delivered') {
             return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
