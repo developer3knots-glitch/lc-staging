@@ -173,7 +173,7 @@ function lc_migrate_legacy_account(): void
     } catch (Throwable $e) {
     }
 
-    $keys = ['auto_assign', 'poll_interval_ms', 'prechat_form_enabled', 'ticket_display_enabled', 'ticket_resume_enabled', 'blocked_countries'];
+    $keys = ['auto_assign', 'poll_interval_ms', 'prechat_form_enabled', 'ticket_display_enabled', 'ticket_resume_enabled', 'blocked_countries', 'inactivity_close_enabled', 'inactivity_close_minutes', 'inactivity_warn_minutes'];
     foreach ($keys as $key) {
         try {
             $val = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1');
@@ -268,6 +268,9 @@ function lc_create_workspace_for_existing_agent(array $agent): int
         $defaults = [
             'auto_assign' => '1',
             'poll_interval_ms' => '1500',
+            'inactivity_close_enabled' => '1',
+            'inactivity_close_minutes' => '15',
+            'inactivity_warn_minutes' => '12',
             'prechat_form_enabled' => '0',
             'ticket_display_enabled' => '0',
             'ticket_resume_enabled' => '0',
@@ -501,6 +504,9 @@ function lc_register_workspace(string $companyName, string $adminName, string $e
         $defaults = [
             'auto_assign' => '1',
             'poll_interval_ms' => '1500',
+            'inactivity_close_enabled' => '1',
+            'inactivity_close_minutes' => '15',
+            'inactivity_warn_minutes' => '12',
             'prechat_form_enabled' => '0',
             'ticket_display_enabled' => '0',
             'ticket_resume_enabled' => '0',

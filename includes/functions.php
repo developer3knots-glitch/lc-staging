@@ -14,6 +14,7 @@ require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/ip-resume.php';
+require_once __DIR__ . '/inactivity.php';
 
 function lc_cors_headers(): void
 {

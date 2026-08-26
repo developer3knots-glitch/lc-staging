@@ -28,6 +28,18 @@ try {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
     }
 
+    if (function_exists('lc_apply_inactivity_to_conversation') && (($conv['status'] ?? '') === 'waiting' || ($conv['status'] ?? '') === 'active')) {
+        try {
+            lc_apply_inactivity_to_conversation($conversationId);
+            $stmt->execute([$conversationId, $visitorUid]);
+            $fresh = $stmt->fetch();
+            if ($fresh) {
+                $conv = $fresh;
+            }
+        } catch (Throwable $e) {
+        }
+    }
+
     if ($conv['status'] === 'closed') {
         if (lc_reopen_if_visitor_returning($conversationId, (int) $conv['visitor_id'])) {
             $conv['status'] = 'active';

@@ -31,6 +31,16 @@ try {
     if (!lc_agent_can_view_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
+    if (function_exists('lc_apply_inactivity_to_conversation')) {
+        try {
+            lc_apply_inactivity_to_conversation($conversationId, $conv);
+            $conv = lc_get_conversation($conversationId) ?: $conv;
+            if (function_exists('lc_enrich_returning_visitor_flags')) {
+                $conv = lc_enrich_returning_visitor_flags($conv);
+            }
+        } catch (Throwable $e) {
+        }
+    }
 
     $stmt = lc_db()->prepare('
         SELECT ' . lc_attachment_message_select_sql() . ',

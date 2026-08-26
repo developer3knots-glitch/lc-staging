@@ -11,6 +11,12 @@ if (!$agent) {
 }
 lc_ensure_accounts_schema();
 $agent = lc_ensure_agent_workspace($agent);
+if (function_exists('lc_sweep_inactive_conversations')) {
+    try {
+        lc_sweep_inactive_conversations(lc_agent_account_id($agent));
+    } catch (Throwable $e) {
+    }
+}
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];

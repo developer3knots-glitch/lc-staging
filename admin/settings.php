@@ -42,6 +42,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (function_exists('lc_set_setting')) {
                 lc_set_setting('prechat_form_enabled', $prechatOn);
             }
+            $inactOn = isset($_POST['inactivity_close_enabled']) ? '1' : '0';
+            $closeMin = max(5, min(240, (int) ($_POST['inactivity_close_minutes'] ?? 15)));
+            $warnMin = max(3, min(239, (int) ($_POST['inactivity_warn_minutes'] ?? 12)));
+            if ($warnMin >= $closeMin) {
+                $warnMin = max(3, $closeMin - 3);
+            }
+            lc_set_account_setting($accountId, 'inactivity_close_enabled', $inactOn);
+            lc_set_account_setting($accountId, 'inactivity_close_minutes', (string) $closeMin);
+            lc_set_account_setting($accountId, 'inactivity_warn_minutes', (string) $warnMin);
             $flashMessage = 'System settings saved successfully.';
         } elseif ($action === 'save_email') {
             lc_set_account_setting($accountId, 'mail_from', trim((string) ($_POST['mail_from'] ?? '')));
@@ -155,6 +164,13 @@ asort($allCountries);
 
 $pollMs = (int) lc_account_setting($accountId, 'poll_interval_ms', '1500');
 $autoAssign = lc_account_setting($accountId, 'auto_assign', '1') === '1';
+$inactivityCloseEnabled = lc_account_setting($accountId, 'inactivity_close_enabled', '1') === '1';
+$inactivityCloseMinutes = (int) lc_account_setting($accountId, 'inactivity_close_minutes', '15');
+$inactivityWarnMinutes = (int) lc_account_setting($accountId, 'inactivity_warn_minutes', '12');
+if ($inactivityCloseMinutes < 5) { $inactivityCloseMinutes = 15; }
+if ($inactivityWarnMinutes < 3 || $inactivityWarnMinutes >= $inactivityCloseMinutes) {
+    $inactivityWarnMinutes = max(3, $inactivityCloseMinutes - 3);
+}
 $prechatFormEnabled = lc_prechat_form_enabled($accountId);
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
@@ -266,7 +282,29 @@ require __DIR__ . '/includes/header.php';
                                     </label>
                                 </div>
                             </div>
-                        </div>
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon violet"><i class="ti ti-hourglass"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="inactivity_close_enabled" <?= $inactivityCloseEnabled ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Auto-close inactive chats</strong>
+                                            <small>Warn, then close waiting/active chats with no messages</small>
+                                        </span>
+                                    </label>
+                                    <div class="lc-settings-inline-fields" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
+                                        <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.85rem">
+                                            Warn after (minutes)
+                                            <input type="number" name="inactivity_warn_minutes" min="3" max="239" value="<?= (int) $inactivityWarnMinutes ?>">
+                                        </label>
+                                        <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.85rem">
+                                            Close after (minutes)
+                                            <input type="number" name="inactivity_close_minutes" min="5" max="240" value="<?= (int) $inactivityCloseMinutes ?>">
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>                        </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
                     </form>
                 </div>
