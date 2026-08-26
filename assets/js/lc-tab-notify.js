@@ -1,6 +1,5 @@
 /**
- * LiveChat-style tab title + favicon alert with blink when unread/waiting.
- * Polls dashboard-stats on all admin pages; chat desk can pulse immediately.
+ * LiveChat-style tab title + favicon alert with continuous blink on unread/waiting.
  */
 (function (global) {
     'use strict';
@@ -9,15 +8,17 @@
     var titleSuffix = '';
     var notifyLabel = 'Chats';
     var count = 0;
+    var displayCount = 0;
     var lastPollCount = 0;
     var pollReady = false;
     var blinkTimer = null;
     var blinkOn = true;
-    var blinkMs = 900;
+    var blinkMs = 650;
     var faviconLink = null;
     var iconNormal = '';
     var iconAlert = '';
     var pollTimer = null;
+    var alertUntil = 0;
 
     function parseTitle() {
         originalTitle = document.title || notifyLabel;
@@ -69,14 +70,11 @@
         }
 
         ctx.clearRect(0, 0, 32, 32);
-
-        // LiveChat-style orange circle
         ctx.fillStyle = '#FF5100';
         ctx.beginPath();
         ctx.arc(16, 16, 15, 0, Math.PI * 2);
         ctx.fill();
 
-        // White chat bubble
         ctx.fillStyle = '#ffffff';
         drawBubble(ctx, 8, 8, 16, 11, 2.5);
         ctx.fill();
@@ -108,8 +106,22 @@
         }
     }
 
-    function numberedTitle() {
-        return '(' + count + ') ' + notifyLabel + titleSuffix;
+    function effectiveCount() {
+        if (count > 0) {
+            return count;
+        }
+        if (Date.now() < alertUntil) {
+            return displayCount > 0 ? displayCount : 1;
+        }
+        return 0;
+    }
+
+    function shouldBlink() {
+        return effectiveCount() > 0;
+    }
+
+    function numberedTitle(n) {
+        return '(' + n + ') ' + notifyLabel + titleSuffix;
     }
 
     function plainTitle() {
@@ -117,7 +129,10 @@
     }
 
     function render() {
-        if (count <= 0) {
+        var n = effectiveCount();
+        refreshIcons();
+
+        if (n <= 0) {
             document.title = originalTitle;
             if (faviconLink && iconNormal) {
                 faviconLink.href = iconNormal;
@@ -125,15 +140,21 @@
             return;
         }
 
-        var hidden = document.hidden;
-        if (hidden && blinkTimer) {
-            document.title = blinkOn ? numberedTitle() : plainTitle();
-            if (faviconLink) {
-                faviconLink.href = blinkOn ? iconAlert : iconNormal;
+        if (blinkTimer) {
+            if (blinkOn) {
+                document.title = numberedTitle(n);
+                if (faviconLink && iconAlert) {
+                    faviconLink.href = iconAlert;
+                }
+            } else {
+                document.title = plainTitle();
+                if (faviconLink && iconNormal) {
+                    faviconLink.href = iconNormal;
+                }
             }
         } else {
-            document.title = numberedTitle();
-            if (faviconLink) {
+            document.title = numberedTitle(n);
+            if (faviconLink && iconAlert) {
                 faviconLink.href = iconAlert;
             }
         }
@@ -148,14 +169,22 @@
         render();
     }
 
-    function startBlink() {
-        if (blinkTimer || count <= 0) {
+    function startBlink(force) {
+        if (!shouldBlink()) {
+            stopBlink();
             return;
+        }
+        if (blinkTimer && !force) {
+            return;
+        }
+        if (blinkTimer) {
+            clearInterval(blinkTimer);
+            blinkTimer = null;
         }
         blinkOn = true;
         render();
         blinkTimer = setInterval(function () {
-            if (count <= 0 || !document.hidden) {
+            if (!shouldBlink()) {
                 stopBlink();
                 return;
             }
@@ -165,11 +194,9 @@
     }
 
     function refreshIcons() {
+        var n = Math.max(1, effectiveCount());
         iconNormal = buildIcon(false, 0);
-        iconAlert = buildIcon(true, Math.max(1, count));
-        if (faviconLink && iconNormal && count <= 0) {
-            faviconLink.href = iconNormal;
-        }
+        iconAlert = buildIcon(true, n);
     }
 
     function setCount(n, opts) {
@@ -177,31 +204,34 @@
         n = Math.max(0, parseInt(n, 10) || 0);
         var prev = count;
         count = n;
+        if (n > 0) {
+            displayCount = n;
+        }
         refreshIcons();
 
-        if (count <= 0) {
+        if (!shouldBlink()) {
             stopBlink();
             render();
             return;
         }
 
-        var shouldPulse = !!opts.pulse || (pollReady && count > prev);
-        if (document.hidden && (shouldPulse || !blinkTimer)) {
-            startBlink();
-        } else {
-            stopBlink();
-            render();
+        var shouldPulse = !!opts.pulse || (pollReady && n > prev);
+        if (shouldPulse) {
+            alertUntil = Date.now() + 45000;
         }
+
+        startBlink(shouldPulse);
+        render();
     }
 
     function pulse() {
+        alertUntil = Date.now() + 45000;
         if (count <= 0) {
-            return;
+            displayCount = Math.max(1, displayCount);
         }
-        if (document.hidden) {
-            startBlink();
-        }
+        startBlink(true);
         render();
+        pollStats();
     }
 
     function pollStats() {
@@ -232,15 +262,13 @@
         parseTitle();
         ensureFavicon();
         refreshIcons();
-        if (iconNormal) {
+        if (iconNormal && faviconLink) {
             faviconLink.href = iconNormal;
         }
 
         document.addEventListener('visibilitychange', function () {
-            if (document.hidden && count > 0) {
-                startBlink();
-            } else {
-                stopBlink();
+            if (shouldBlink()) {
+                startBlink(true);
             }
         });
 
