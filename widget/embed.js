@@ -287,7 +287,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=30';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=31';
         document.head.appendChild(link);
     }
 
@@ -339,15 +339,16 @@
                         '</button>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-panel-head" class="lcw-chat-head">' +
-                    '<div class="lcw-head-main">' +
+                '<div id="lc-panel-head" class="lcw-chat-head lcw-head-pro">' +
+                    '<button type="button" id="lc-head-menu" class="lcw-head-icon-btn" title="More options" aria-label="More options">' + ICON_MENU + '</button>' +
+                    '<div class="lcw-head-agent-pill" id="lc-head-agent-pill">' +
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
-                        '<div>' +
-                            '<strong id="lc-panel-title">LiveChat</strong>' +
-                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting...</small>' +
-                            '<span id="lc-panel-ref" class="lcw-ref-badge" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
-                        '</div>' +
+                        '<div class="lcw-head-agent-fallback" id="lc-head-agent-fallback"><span class="lcw-online-dot"></span></div>' +
+                        '<strong id="lc-panel-agent-name">Connecting...</strong>' +
                     '</div>' +
+                    '<span id="lc-panel-ref" class="lcw-ref-badge lcw-ref-hidden" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
+                    '<small id="lc-panel-status" class="lcw-sr-only"><span class="lcw-online-dot"></span>Connecting...</small>' +
+                    '<strong id="lc-panel-title" class="lcw-sr-only">LiveChat</strong>' +
                     '<div class="lcw-head-actions">' +
                         '<button type="button" id="lc-minimize-chat" class="lcw-head-btn" title="Minimize chat" aria-label="Minimize chat">' +
                             ICON_MINIMIZE +
@@ -465,16 +466,17 @@
                         '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-panel-compose" class="lcw-compose">' +
-                    '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
+                '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
                     '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
-                    '<div class="lcw-compose-inner">' +
-                        '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
+                    '<div class="lcw-compose-inner lcw-compose-pill">' +
+                        '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
                         '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
-                        '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
+                        '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" aria-hidden="true" tabindex="-1">' + ICON_EMOJI + '</button>' +
+                        '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND_UP + '</button>' +
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
+                    '<div class="lcw-powered lcw-powered-chat">Powered by <strong id="lc-powered-chat-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
                     '<div class="lcw-sheet lcw-sheet-dark">' +
