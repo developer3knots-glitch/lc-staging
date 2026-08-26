@@ -219,10 +219,8 @@ try {
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
         }
         lc_touch_conversation($convId);
-        // Delay auto-assign so visitor sees Connecting to live agent first.
-        if (function_exists('lc_try_assign_agent_after_delay')) {
-            lc_try_assign_agent_after_delay($convId);
-        }
+        // Chats stay unassigned until an agent clicks Assign to me.
+
 
         // Flag + agent-only note when this IP/email has prior chats (days-later return).
         try {

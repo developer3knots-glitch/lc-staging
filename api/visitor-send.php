@@ -42,7 +42,7 @@ try {
     lc_touch_conversation($conversationId);
 
     if ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() === 'waiting') {
-        lc_assign_agent($conversationId);
+        // manual assign only
     }
 
     lc_json(['success' => true, 'message_id' => $messageId]);

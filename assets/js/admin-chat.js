@@ -563,10 +563,41 @@
             }
             return;
         }
-        var html = '';
+
+        var unassigned = [];
+        var mine = [];
+        var other = [];
         conversations.forEach(function (c) {
-            html += renderConversationItem(c);
+            if (c.status === 'waiting') unassigned.push(c);
+            else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) mine.push(c);
+            else other.push(c);
         });
+
+        function section(label, items, meta) {
+            if (!items.length) return '';
+            var html = '<div class="lc-inbox-group">';
+            html += '<div class="lc-inbox-group-head"><span class="lc-inbox-group-label"><i class="ti ti-chevron-down"></i> '
+                + esc(label) + ' (' + items.length + ')</span>';
+            if (meta) html += '<span class="lc-inbox-group-meta">' + esc(meta) + '</span>';
+            html += '</div>';
+            items.forEach(function (c) { html += renderConversationItem(c); });
+            html += '</div>';
+            return html;
+        }
+
+        var html = '';
+        if (currentTab === 'waiting') {
+            html = section('Unassigned', unassigned, 'Newest');
+        } else if (currentTab === 'active') {
+            html = section('My chats', mine.concat(other), 'Newest');
+        } else {
+            html += section('Unassigned', unassigned, 'Newest');
+            html += section('My chats', mine, '');
+            html += section('Other', other, '');
+        }
+        if (!html) {
+            conversations.forEach(function (c) { html += renderConversationItem(c); });
+        }
         listEl.innerHTML = html;
     }
 
@@ -1135,6 +1166,7 @@
             if (on) composeBox.classList.add('is-hidden-for-unassigned');
             else composeBox.classList.remove('is-hidden-for-unassigned');
         }
+        document.body.classList.toggle('lc-chat-is-unassigned', !!on);
     }
 
     function renderChatTags(tags) {
@@ -1167,7 +1199,7 @@
         canCompose = canComposeChat(c, canCompose);
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
-        var isUnassigned = c.status === 'waiting';
+        var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !parseInt(c.agent_id || 0, 10));
         replyInput.disabled = !canCompose;
         document.getElementById('lc-send-reply').disabled = !canCompose;
         if (acceptBtn) acceptBtn.style.display = 'none';

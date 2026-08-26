@@ -55,7 +55,7 @@ try {
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
     if ($conv['status'] === 'waiting') {
-        lc_assign_agent($conversationId);
+        // manual assign only
     }
 
     $row = lc_fetch_message_by_id((int) $saved['message_id']);

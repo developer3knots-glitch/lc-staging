@@ -6119,3 +6119,156 @@ body.lc-page-chats {
 body.lc-page-chats .lc-chat-compose-pro {
     border-top: 1px solid #e8edf3;
 }
+
+/* ===== LiveChat pixel unassigned + inbox groups ===== */
+body.lc-page-chats .lc-chat-inbox-pro {
+    background: #fff;
+    border-right: 1px solid #e6ebf2;
+}
+body.lc-page-chats .lc-chat-inbox-head {
+    padding: 0.85rem 1rem 0.55rem;
+    border-bottom: none;
+}
+body.lc-page-chats .lc-chat-inbox-title strong {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #152033;
+}
+body.lc-page-chats .lc-chat-inbox-live { display: none; }
+
+.lc-inbox-group {
+    padding: 0.35rem 0 0.55rem;
+}
+.lc-inbox-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.55rem 0.9rem 0.4rem;
+    color: #3b4a63;
+    font-size: 0.82rem;
+    font-weight: 750;
+}
+.lc-inbox-group-head .lc-inbox-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.lc-inbox-group-head .lc-inbox-group-label i {
+    font-size: 0.95rem;
+    opacity: 0.7;
+}
+.lc-inbox-group-meta {
+    color: #8b97ab;
+    font-size: 0.75rem;
+    font-weight: 650;
+}
+
+body.lc-page-chats .lc-chat-item-pro {
+    margin: 0 0.45rem 0.2rem;
+    padding: 0.75rem 0.75rem;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+}
+body.lc-page-chats .lc-chat-item-pro:hover {
+    background: #f3f5f8;
+}
+body.lc-page-chats .lc-chat-item-pro.active {
+    background: #eceff3;
+    box-shadow: none;
+}
+body.lc-page-chats .lc-chat-item-pro.is-waiting.active {
+    background: #eceff3;
+}
+
+/* Unassigned action dock — LiveChat exact feel */
+.lc-unassigned-bar {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    padding: 1.75rem 1.5rem 1.15rem;
+    border-top: 1px solid #e8edf3;
+    background: #fff;
+    text-align: center;
+}
+.lc-unassigned-bar.is-on {
+    display: flex;
+}
+.lc-unassigned-title {
+    margin: 0 0 1rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1a2333;
+    letter-spacing: -0.01em;
+}
+.lc-unassigned-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.15rem;
+}
+.lc-unassigned-actions .lc-btn {
+    min-height: 40px;
+    min-width: 148px;
+    padding: 0.55rem 1.15rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.92rem;
+    box-shadow: none;
+}
+.lc-btn-archive {
+    background: #fff !important;
+    border: 1.5px solid #2f6fed !important;
+    color: #2f6fed !important;
+}
+.lc-btn-archive:hover {
+    background: #f3f7ff !important;
+    color: #1d4ed8 !important;
+}
+.lc-btn-assign {
+    background: #2f6fed !important;
+    border: 1.5px solid #2f6fed !important;
+    color: #fff !important;
+}
+.lc-btn-assign:hover {
+    background: #1d5fe0 !important;
+}
+.lc-chat-tags-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding-top: 0.15rem;
+    border-top: 0;
+}
+.lc-add-tag-btn {
+    color: #5b6b82;
+    font-size: 0.9rem;
+    font-weight: 650;
+    padding: 0.25rem 0.1rem;
+}
+.lc-add-tag-btn i {
+    font-size: 1rem;
+}
+.lc-chat-compose.is-hidden-for-unassigned {
+    display: none !important;
+}
+body.lc-page-chats.lc-chat-is-unassigned .lc-chat-more-wrap {
+    /* keep menu for archive alternatives but primary CTA is bottom bar */
+}
+body.lc-page-chats .lc-chat-panel-pro {
+    background: #fff;
+}
+body.lc-page-chats .lc-chat-messages-pro {
+    background: #fff;
+}

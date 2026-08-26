@@ -31,13 +31,7 @@ try {
     if (function_exists('lc_apply_inactivity_to_conversation') && (($conv['status'] ?? '') === 'waiting' || ($conv['status'] ?? '') === 'active')) {
         try {
             lc_apply_inactivity_to_conversation($conversationId);
-            if (function_exists('lc_try_assign_agent_after_delay')) {
-                lc_try_assign_agent_after_delay($conversationId); // after delay assign refresh
-                $stmt->execute([$conversationId, $visitorUid]);
-                $freshAssign = $stmt->fetch();
-                if ($freshAssign) {
-                    $conv = $freshAssign;
-                }
+
             }
             $stmt->execute([$conversationId, $visitorUid]);
             $fresh = $stmt->fetch();

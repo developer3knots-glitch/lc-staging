@@ -14,7 +14,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-chat-inbox-head">
                 <div class="lc-chat-inbox-title">
                     <strong>Chats</strong>
-                    <span class="lc-chat-inbox-live"><span class="lc-status-dot online"></span> Live inbox</span>
+                    
                 </div>
                 <span id="lc-waiting-badge" class="lc-chat-inbox-waiting" style="display:none">0</span>
             </div>
@@ -148,8 +148,8 @@ require __DIR__ . '/includes/header.php';
                                 <div class="lc-unassigned-bar" id="lc-unassigned-bar" hidden>
                     <p class="lc-unassigned-title">This chat is unassigned.</p>
                     <div class="lc-unassigned-actions">
-                        <button type="button" class="lc-btn lc-btn-secondary" id="lc-archive-chat">Close &amp; archive</button>
-                        <button type="button" class="lc-btn lc-btn-primary" id="lc-assign-to-me">Assign to me</button>
+                        <button type="button" class="lc-btn lc-btn-archive" id="lc-archive-chat">Close &amp; archive</button>
+                        <button type="button" class="lc-btn lc-btn-assign" id="lc-assign-to-me">Assign to me</button>
                     </div>
                     <div class="lc-chat-tags-row">
                         <div class="lc-chat-tags" id="lc-chat-tags"></div>

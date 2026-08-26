@@ -240,53 +240,9 @@ function lc_get_online_agents_count(?int $brandId = null, ?int $accountId = null
 
 function lc_assign_agent(int $conversationId): ?int
 {
-    lc_ensure_brands_schema();
-    if (function_exists('lc_ensure_accounts_schema')) {
-        lc_ensure_accounts_schema();
-    }
-    $conv = lc_db()->prepare('SELECT c.brand_id, b.account_id FROM conversations c LEFT JOIN brands b ON b.id = c.brand_id WHERE c.id = ?');
-    $conv->execute([$conversationId]);
-    $row = $conv->fetch();
-    $brandId = $row ? ($row['brand_id'] !== null ? (int) $row['brand_id'] : null) : null;
-    $accountId = $row && $row['account_id'] !== null ? (int) $row['account_id'] : 0;
-
-    $autoAssign = $accountId > 0
-        ? lc_account_setting($accountId, 'auto_assign', '0')
-        : lc_setting('auto_assign', '0');
-    if ($autoAssign !== '1') {
-        return null;
-    }
-
-    if ($brandId) {
-        $sql = "SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
-        $params = [(int) $brandId];
-        if ($accountId > 0) {
-            $sql .= ' AND account_id = ?';
-            $params[] = $accountId;
-        }
-        $sql .= ' ORDER BY id ASC LIMIT 1';
-        $stmt = lc_db()->prepare($sql);
-        $stmt->execute($params);
-    } elseif ($accountId > 0) {
-        $stmt = lc_db()->prepare("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND account_id = ? ORDER BY id ASC LIMIT 1");
-        $stmt->execute([$accountId]);
-    } else {
-        $stmt = lc_db()->query("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 ORDER BY id ASC LIMIT 1");
-    }
-    $agent = $stmt->fetch();
-    if (!$agent) {
-        return null;
-    }
-    $agentId = (int) $agent['id'];
-    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting'");
-    $upd->execute([$agentId, $conversationId]);
-    if ($upd->rowCount()) {
-        lc_add_agent_join_message($conversationId, $agentId);
-        return $agentId;
-    }
+    // Every chat stays Unassigned until an agent clicks "Assign to me".
     return null;
 }
-
 
 /** Seconds to wait before auto-assigning an agent (visitor sees "Connecting..."). */
 function lc_agent_connect_delay_seconds(?int $accountId = null): int
@@ -778,7 +734,7 @@ function lc_reopen_if_visitor_returning(int $conversationId, int $visitorId): bo
         return false;
     }
 
-    lc_db()->prepare("UPDATE conversations SET status = 'active', closed_at = NULL WHERE id = ?")
+    lc_db()->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?")
         ->execute([$conversationId]);
 
     return true;
@@ -789,7 +745,7 @@ function lc_reopen_recent_visitor_close(int $conversationId, int $visitorId): ?a
     if (!lc_reopen_if_visitor_returning($conversationId, $visitorId)) {
         return null;
     }
-    return ['id' => $conversationId, 'status' => 'active'];
+    return ['id' => $conversationId, 'status' => 'waiting'];
 }
 
 
@@ -836,8 +792,8 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
         }
     }
 
-    $newStatus = !empty($conv['agent_id']) ? 'active' : 'waiting';
-    $db->prepare("UPDATE conversations SET status = ?, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
+    $newStatus = 'waiting';
+    $db->prepare("UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
         ->execute([$newStatus, $conversationId]);
     lc_add_system_message($conversationId, 'Visitor resumed this conversation.');
     // Ensure idle clock restarts even if something else touched timestamps.

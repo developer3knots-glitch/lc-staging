@@ -260,11 +260,11 @@ require __DIR__ . '/includes/header.php';
                                 <div class="lc-settings-tile-icon green"><i class="ti ti-users"></i></div>
                                 <div class="lc-settings-tile-body">
                                     <label class="lc-settings-toggle">
-                                        <input type="checkbox" name="auto_assign" <?= $autoAssign ? 'checked' : '' ?>>
+                                        <input type="checkbox" name="auto_assign" disabled <?= $autoAssign ? 'checked' : '' ?> title="Manual assign only">
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
                                             <strong>Auto-assign chats</strong>
-                                            <small>Off by default — agents claim chats with Assign to me. Turn on to auto-route waiting chats.</small>
+                                            <small>Disabled — every chat stays Unassigned until an agent clicks Assign to me.</small>
                                         </span>
                                     </label>
                                 </div>
