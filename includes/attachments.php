@@ -10,7 +10,7 @@ function lc_attachment_limits(): array
         'max_document_bytes' => 5 * 1024 * 1024,
         'max_image_width' => 1920,
         'image_extensions' => ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-        'document_extensions' => ['pdf'],
+        'document_extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'],
         'image_mimes' => [
             'image/jpeg' => 'jpg',
             'image/pjpeg' => 'jpg',
@@ -21,6 +21,13 @@ function lc_attachment_limits(): array
         ],
         'document_mimes' => [
             'application/pdf' => 'pdf',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel' => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            'text/plain' => 'txt',
+            'application/zip' => 'zip',
+            'application/x-zip-compressed' => 'zip',
         ],
     ];
 }
@@ -83,7 +90,7 @@ function lc_attachment_storage_root(): string
 function lc_attachment_file_accept(): string
 {
     // image/* ensures Windows file picker shows photos; extensions cover all browsers.
-    return 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf';
+    return 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,application/zip';
 }
 
 function lc_attachment_public_config(): array
@@ -97,6 +104,7 @@ function lc_attachment_public_config(): array
         'image_extensions' => $limits['image_extensions'],
         'document_extensions' => $limits['document_extensions'],
         'file_accept' => lc_attachment_file_accept(),
+        'max_files_per_batch' => 5,
     ];
 }
 
@@ -154,7 +162,7 @@ function lc_attachment_validate_upload(array $file): array
         $ext = $limits['document_mimes'][$mime];
         $maxBytes = $limits['max_document_bytes'];
     } else {
-        return ['ok' => false, 'error' => 'File type not allowed. Use JPG, PNG, WebP, GIF, or PDF.'];
+        return ['ok' => false, 'error' => 'File type not allowed. Use images, PDF, Word, Excel, TXT, or ZIP.'];
     }
 
     if ($size > $maxBytes) {

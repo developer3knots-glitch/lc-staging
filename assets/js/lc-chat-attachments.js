@@ -1,15 +1,28 @@
 (function (global) {
     'use strict';
 
-    var FILE_ACCEPT = 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf';
+    var MAX_FILES_PER_BATCH = 5;
+
+    var FILE_ACCEPT = 'image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,application/zip';
+
+    var DOC_LABELS = {
+        pdf: 'PDF',
+        doc: 'DOC',
+        docx: 'DOCX',
+        xls: 'XLS',
+        xlsx: 'XLSX',
+        txt: 'TXT',
+        zip: 'ZIP'
+    };
 
     var defaults = {
         max_image_bytes: 3145728,
         max_document_bytes: 5242880,
         max_image_width: 1920,
         image_extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-        document_extensions: ['pdf'],
-        file_accept: FILE_ACCEPT
+        document_extensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'],
+        file_accept: FILE_ACCEPT,
+        max_files_per_batch: MAX_FILES_PER_BATCH
     };
 
     function setLimits(limits) {
@@ -28,6 +41,7 @@
     function applyFileInput(input) {
         if (!input) return;
         input.setAttribute('accept', getFileAccept());
+        input.setAttribute('multiple', 'multiple');
     }
 
     function esc(text) {
@@ -54,10 +68,36 @@
         return defaults.image_extensions.indexOf(ext(file.name)) !== -1;
     }
 
-    function isPdfFile(file) {
+    function isDocumentFile(file) {
         if (!file) return false;
-        if (file.type === 'application/pdf') return true;
-        return ext(file.name) === 'pdf';
+        return defaults.document_extensions.indexOf(ext(file.name)) !== -1
+            || (file.type && (
+                file.type === 'application/pdf'
+                || file.type.indexOf('officedocument') !== -1
+                || file.type === 'application/msword'
+                || file.type === 'application/vnd.ms-excel'
+                || file.type === 'text/plain'
+                || file.type === 'application/zip'
+                || file.type === 'application/x-zip-compressed'
+            ));
+    }
+
+    function getFileLabel(fileOrName) {
+        var name = typeof fileOrName === 'string' ? fileOrName : (fileOrName && fileOrName.name) || '';
+        var e = ext(name);
+        if (DOC_LABELS[e]) return DOC_LABELS[e];
+        if (isImageFile(typeof fileOrName === 'string' ? { name: name } : fileOrName)) return 'IMG';
+        return (e || 'FILE').toUpperCase();
+    }
+
+    function attachmentDocLabel(attachment) {
+        if (!attachment) return 'FILE';
+        if (attachment.kind === 'image') return 'IMG';
+        var name = attachment.name || '';
+        var e = ext(name);
+        if (DOC_LABELS[e]) return DOC_LABELS[e];
+        if ((attachment.mime || '').indexOf('pdf') !== -1) return 'PDF';
+        return (e || 'FILE').toUpperCase();
     }
 
     function validateFile(file) {
@@ -66,9 +106,9 @@
         }
 
         var image = isImageFile(file);
-        var pdf = isPdfFile(file);
-        if (!image && !pdf) {
-            return { ok: false, error: 'Only images (JPG, PNG, GIF, WebP) or PDF are allowed' };
+        var document = isDocumentFile(file);
+        if (!image && !document) {
+            return { ok: false, error: 'File type not allowed. Use images, PDF, Word, Excel, TXT, or ZIP.' };
         }
 
         var maxBytes = image ? defaults.max_image_bytes : defaults.max_document_bytes;
@@ -141,6 +181,21 @@
         return Promise.resolve({ ok: true, file: file });
     }
 
+    function renderDocumentAttachHtml(classPrefix, url, attachment) {
+        var label = attachmentDocLabel(attachment);
+        var iconClass = classPrefix + '-attach-file-icon';
+        var isAdmin = classPrefix === 'lc-chat';
+        var iconInner = isAdmin
+            ? '<i class="ti ti-file-description"></i>'
+            : esc(label);
+        return '<a class="' + classPrefix + '-attach-file" href="' + esc(url) + '" target="_blank" rel="noopener">'
+            + '<span class="' + iconClass + '">' + iconInner + '</span>'
+            + '<span class="' + classPrefix + '-attach-file-body">'
+            + '<strong>' + esc(attachment.name || 'Document') + '</strong>'
+            + '<span>' + esc(formatSize(attachment.size)) + ' | ' + esc(label) + '</span>'
+            + '</span></a>';
+    }
+
     function renderAttachmentHtml(attachment, messageText) {
         if (!attachment || !attachment.url) {
             return esc(messageText || '');
@@ -154,12 +209,7 @@
             html += '<img src="' + esc(attachment.url) + '" alt="' + esc(attachment.name || 'Image') + '" loading="lazy">';
             html += '</a>';
         } else {
-            html += '<a class="lc-chat-attach-file" href="' + esc(attachment.url) + '" target="_blank" rel="noopener">';
-            html += '<span class="lc-chat-attach-file-icon"><i class="ti ti-file-type-pdf"></i></span>';
-            html += '<span class="lc-chat-attach-file-body">';
-            html += '<strong>' + esc(attachment.name || 'Document') + '</strong>';
-            html += '<span>' + esc(formatSize(attachment.size)) + ' · PDF</span>';
-            html += '</span></a>';
+            html += renderDocumentAttachHtml('lc-chat', attachment.url, attachment);
         }
         return html;
     }
@@ -177,10 +227,7 @@
             html += '<img src="' + esc(attachment.url) + '" alt="' + esc(attachment.name || 'Image') + '" loading="lazy">';
             html += '</a>';
         } else {
-            html += '<a class="lcw-attach-file" href="' + esc(attachment.url) + '" target="_blank" rel="noopener">';
-            html += '<span class="lcw-attach-file-icon">PDF</span>';
-            html += '<span class="lcw-attach-file-body"><strong>' + esc(attachment.name || 'Document') + '</strong>';
-            html += '<span>' + esc(formatSize(attachment.size)) + '</span></span></a>';
+            html += renderDocumentAttachHtml('lcw', attachment.url, attachment);
         }
         return html;
     }
@@ -218,7 +265,12 @@
         }).then(function (r) { return r.json(); });
     }
 
+    function getMaxFilesPerBatch() {
+        return parseInt(defaults.max_files_per_batch, 10) || MAX_FILES_PER_BATCH;
+    }
+
     global.LCChatFiles = {
+        MAX_FILES_PER_BATCH: MAX_FILES_PER_BATCH,
         setLimits: setLimits,
         getFileAccept: getFileAccept,
         applyFileInput: applyFileInput,
@@ -226,6 +278,8 @@
         compressImage: compressImage,
         prepareFile: prepareFile,
         formatSize: formatSize,
+        getFileLabel: getFileLabel,
+        getMaxFilesPerBatch: getMaxFilesPerBatch,
         renderAttachmentHtml: renderAttachmentHtml,
         renderWidgetAttachmentHtml: renderWidgetAttachmentHtml,
         upload: upload

@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     'use strict';
 
     var app = document.getElementById('lc-chat-app');
@@ -1150,7 +1150,7 @@
         var html = '<div class="lc-journey-step' + (isCurrent ? ' is-current' : '') + '" data-id="' + step.id + '" title="' + esc(fullPath) + '">';
         html += '<span class="lc-journey-step-path">' + esc(journeyStepLabel(step)) + '</span>';
         if (step.visit_count > 1) {
-            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">├ù' + step.visit_count + '</span>';
+            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">Γö£├╣' + step.visit_count + '</span>';
         }
         html += '<span class="lc-journey-step-time">' + timeHtml(step.last_visited_at) + '</span>';
         html += '</div>';
@@ -1174,7 +1174,7 @@
         var html = '';
         steps.forEach(function (step, idx) {
             if (idx > 0) {
-                html += '<span class="lc-journey-sep" aria-hidden="true">ΓÇ║</span>';
+                html += '<span class="lc-journey-sep" aria-hidden="true">╬ô├çΓòæ</span>';
             }
             html += renderJourneyStep(step, idx === steps.length - 1);
         });
@@ -1211,7 +1211,7 @@
         var label = journeyStepLabel(current);
         var timeEl = journeyListEl.querySelector('.lc-journey-step.is-current .lc-journey-step-time');
         var timeText = timeEl ? timeEl.textContent.trim() : '';
-        var repeat = current.visit_count > 1 ? '  |  ├ù' + current.visit_count : '';
+        var repeat = current.visit_count > 1 ? '  |  Γö£├╣' + current.visit_count : '';
         summaryEl.textContent = label + repeat + (timeText ? '  |  ' + timeText : '');
     }
 
@@ -1815,7 +1815,7 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
-                            // Incoming only - not agentΓÇÖs own replies echoing back
+                            // Incoming only - not agent╬ô├ç├ûs own replies echoing back
                             if (m.sender_type === 'visitor' || m.sender_type === 'system') {
                                 if (m.sender_type === 'visitor') {
                                     playSound = true;
@@ -1891,7 +1891,7 @@
     }
 
     function sendReply() {
-        if (pendingAttachment && pendingAttachment.file) {
+        if (pendingAttachments.length) {
             sendPendingAttachment();
             return;
         }
@@ -2314,7 +2314,8 @@
     var fileInput = document.getElementById('lc-file-input');
     var attachPreviewEl = document.getElementById('lc-attach-preview');
     var uploadBusy = false;
-    var pendingAttachment = null;
+    var pendingAttachments = [];
+    var pendingAttachSeq = 0;
 
     if (window.LCChatFiles && window.LC_ATTACHMENT_LIMITS) {
         window.LCChatFiles.setLimits(window.LC_ATTACHMENT_LIMITS);
@@ -2327,101 +2328,172 @@
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    function clearPendingAttachment() {
-        if (pendingAttachment && pendingAttachment.previewUrl) {
-            try { URL.revokeObjectURL(pendingAttachment.previewUrl); } catch (e) {}
+
+    function getMaxPendingAttachments() {
+        return window.LCChatFiles && window.LCChatFiles.getMaxFilesPerBatch
+            ? window.LCChatFiles.getMaxFilesPerBatch()
+            : 5;
+    }
+
+    function revokePendingPreview(item) {
+        if (item && item.previewUrl) {
+            try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
         }
-        pendingAttachment = null;
+    }
+
+    function clearPendingAttachment() {
+        pendingAttachments.forEach(revokePendingPreview);
+        pendingAttachments = [];
         if (attachPreviewEl) {
             attachPreviewEl.hidden = true;
             attachPreviewEl.innerHTML = '';
         }
     }
 
+    function removePendingAttachment(id) {
+        pendingAttachments = pendingAttachments.filter(function (item) {
+            if (item.id === id) {
+                revokePendingPreview(item);
+                return false;
+            }
+            return true;
+        });
+        renderPendingAttachment();
+    }
+
     function renderPendingAttachment() {
         if (!attachPreviewEl) return;
-        if (!pendingAttachment || !pendingAttachment.file) {
+        if (!pendingAttachments.length) {
             attachPreviewEl.hidden = true;
             attachPreviewEl.innerHTML = '';
             return;
         }
-        var file = pendingAttachment.file;
-        var name = esc(file.name || 'Attachment');
-        var size = window.LCChatFiles ? window.LCChatFiles.formatSize(file.size || 0) : '';
-        var thumb = pendingAttachment.isImage && pendingAttachment.previewUrl
-            ? '<img class="lc-attach-preview-thumb" src="' + esc(pendingAttachment.previewUrl) + '" alt="">'
-            : '<span class="lc-attach-preview-pdf">PDF</span>';
-        attachPreviewEl.innerHTML =
-            '<div class="lc-attach-preview-card">' +
+        var countHtml = '<div class="lc-attach-preview-count">' + pendingAttachments.length + ' file' + (pendingAttachments.length === 1 ? '' : 's') + ' ready</div>';
+        var cards = pendingAttachments.map(function (item) {
+            var file = item.file;
+            var name = esc(file.name || 'Attachment');
+            var size = window.LCChatFiles ? window.LCChatFiles.formatSize(file.size || 0) : '';
+            var label = item.label || (window.LCChatFiles ? window.LCChatFiles.getFileLabel(file) : 'FILE');
+            var thumb = item.isImage && item.previewUrl
+                ? '<img class="lc-attach-preview-thumb" src="' + esc(item.previewUrl) + '" alt="">'
+                : '<span class="lc-attach-preview-pdf">' + esc(label) + '</span>';
+            return '<div class="lc-attach-preview-card">' +
                 thumb +
                 '<div class="lc-attach-preview-meta">' +
                     '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + (pendingAttachment.isImage ? '' : ' - PDF') + '</span>' +
-                    '<span class="lc-attach-preview-hint">Ready to send</span>' +
+                    '<span>' + esc(size) + ' · ' + esc(label) + '</span>' +
                 '</div>' +
-                '<button type="button" id="lc-attach-clear" class="lc-attach-preview-clear" aria-label="Remove attachment"><i class="ti ti-x"></i></button>' +
+                '<button type="button" class="lc-attach-preview-clear" data-remove-attach="' + item.id + '" aria-label="Remove ' + name + '"><i class="ti ti-x"></i></button>' +
             '</div>';
+        }).join('');
+        attachPreviewEl.innerHTML = '<div class="lc-attach-preview-list">' + countHtml + cards + '<span class="lc-attach-preview-hint">Press send to upload all</span></div>';
         attachPreviewEl.hidden = false;
-        var clearBtn = document.getElementById('lc-attach-clear');
-        if (clearBtn) clearBtn.addEventListener('click', clearPendingAttachment);
+        attachPreviewEl.querySelectorAll('[data-remove-attach]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var rid = parseInt(btn.getAttribute('data-remove-attach'), 10);
+                if (!isNaN(rid)) removePendingAttachment(rid);
+            });
+        });
     }
 
     function queueAgentFile(file) {
-        if (!file || !selectedId || uploadBusy || !window.LCChatFiles) return;
+        if (!file) return;
+        queueAgentFiles([file]);
+    }
+
+    function queueAgentFiles(files) {
+        if (!files || !files.length || !selectedId || uploadBusy || !window.LCChatFiles) return;
         if (replyInput.disabled) {
             showUploadError('You cannot send files in this chat right now.');
             return;
         }
+        var max = getMaxPendingAttachments();
+        var slots = max - pendingAttachments.length;
+        if (slots <= 0) {
+            showUploadError('Maximum ' + max + ' files per send. Remove one or send current files first.');
+            return;
+        }
+        var batch = Array.prototype.slice.call(files, 0, slots);
+        if (files.length > slots) {
+            showUploadError('Only ' + slots + ' more file(s) added (max ' + max + ' per send).');
+        }
         if (attachBtn) attachBtn.classList.add('is-busy');
-        window.LCChatFiles.prepareFile(file).then(function (prepared) {
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-            if (!prepared.ok) {
-                showUploadError(prepared.error || 'Invalid file');
-                return;
-            }
-            clearPendingAttachment();
-            var ready = prepared.file;
-            var isImage = !!(ready.type && ready.type.indexOf('image/') === 0);
-            pendingAttachment = {
-                file: ready,
-                isImage: isImage,
-                previewUrl: isImage ? URL.createObjectURL(ready) : ''
-            };
+        var chain = Promise.resolve();
+        batch.forEach(function (file) {
+            chain = chain.then(function () {
+                return window.LCChatFiles.prepareFile(file).then(function (prepared) {
+                    if (!prepared.ok) {
+                        showUploadError(prepared.error || 'Invalid file');
+                        return;
+                    }
+                    var ready = prepared.file;
+                    var isImage = !!(ready.type && ready.type.indexOf('image/') === 0);
+                    pendingAttachments.push({
+                        id: ++pendingAttachSeq,
+                        file: ready,
+                        isImage: isImage,
+                        previewUrl: isImage ? URL.createObjectURL(ready) : '',
+                        label: window.LCChatFiles.getFileLabel(ready)
+                    });
+                });
+            });
+        });
+        chain.then(function () {
             renderPendingAttachment();
             if (replyInput) replyInput.focus();
         }).catch(function () {
-            if (attachBtn) attachBtn.classList.remove('is-busy');
             showUploadError('Unable to prepare file. Please try again.');
+        }).finally(function () {
+            if (attachBtn) attachBtn.classList.remove('is-busy');
         });
     }
 
     function sendPendingAttachment() {
-        if (!pendingAttachment || !pendingAttachment.file || !selectedId || uploadBusy || !window.LCChatFiles) return;
+        if (!pendingAttachments.length || !selectedId || uploadBusy || !window.LCChatFiles) return;
         if (replyInput.disabled) {
             showUploadError('You cannot send files in this chat right now.');
             return;
         }
         stopOwnTyping();
+        sendNextPendingAttachment(replyInput.value.trim(), true);
+    }
+
+    function sendNextPendingAttachment(caption, isFirst) {
+        if (!pendingAttachments.length || !selectedId) {
+            uploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            renderPendingAttachment();
+            return;
+        }
         uploadBusy = true;
         if (attachBtn) attachBtn.classList.add('is-busy');
-        var caption = replyInput.value.trim();
-        var file = pendingAttachment.file;
+        var item = pendingAttachments[0];
+        var useCaption = isFirst ? caption : '';
+
         window.LCChatFiles.upload({
             role: 'agent',
             baseUrl: base,
             conversationId: selectedId,
-            file: file,
-            caption: caption
+            file: item.file,
+            caption: useCaption
         }).then(function (data) {
-            uploadBusy = false;
-            if (attachBtn) attachBtn.classList.remove('is-busy');
             if (data && data.success) {
-                clearPendingAttachment();
-                replyInput.value = '';
+                revokePendingPreview(item);
+                pendingAttachments.shift();
+                if (isFirst) replyInput.value = '';
                 stickToBottom = true;
                 pollMessages();
+                if (pendingAttachments.length) {
+                    sendNextPendingAttachment('', false);
+                    return;
+                }
+                uploadBusy = false;
+                if (attachBtn) attachBtn.classList.remove('is-busy');
+                renderPendingAttachment();
                 return;
             }
+            uploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
             showUploadError((data && data.error) || 'Upload failed');
         }).catch(function () {
             uploadBusy = false;
@@ -2429,6 +2501,7 @@
             showUploadError('Upload failed. Please try again.');
         });
     }
+
 
     if (attachBtn && fileInput) {
         attachBtn.addEventListener('click', function () {

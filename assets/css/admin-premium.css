@@ -6773,3 +6773,42 @@ body.lc-page-chats .lc-details-hero-av {
     width: 76px;
     height: 76px;
 }
+
+
+/* Multi-file attachment queue */
+.lcw-attach-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.lcw-attach-preview-count {
+    font-size: 0.68rem;
+    font-weight: 650;
+    color: #64748b;
+    margin: 0 0 0.15rem;
+}
+.lcw-attach-preview-list > .lcw-attach-preview-hint {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--lcw-primary-dark);
+}
+.lc-attach-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.lc-attach-preview-count {
+    font-size: 0.68rem;
+    font-weight: 650;
+    color: var(--lc-muted);
+    margin: 0 0 0.15rem;
+}
+.lc-attach-preview-list > .lc-attach-preview-hint {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #0369a1;
+}

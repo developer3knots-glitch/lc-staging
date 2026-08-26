@@ -164,7 +164,7 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
                     <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                     <div class="lc-chat-compose-inner">
-                        <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
+                        <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
                         <textarea id="lc-reply-input" rows="1" placeholder="Type a message..."></textarea>
                         <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
                         <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
