@@ -73,7 +73,23 @@ try {
     $payload = [
         'success' => true,
         'conversation' => array_merge(
-            lc_format_api_conversation($conv) ?? [],
+            (function () use ($conv) {
+            $formattedConv = lc_format_api_conversation($conv) ?? [];
+            $visitorId = (int) ($conv['visitor_id'] ?? 0);
+            $brandId = (int) ($conv['brand_id'] ?? 0);
+            if ($brandId < 1 && function_exists('lc_get_brand_by_key')) {
+                lc_ensure_brands_schema();
+                $defaultBrand = lc_get_brand_by_key('default');
+                $brandId = $defaultBrand ? (int) $defaultBrand['id'] : 0;
+            }
+            if ($visitorId > 0 && function_exists('lc_visitor_detail_stats')) {
+                $formattedConv['visitor_stats'] = lc_visitor_detail_stats($visitorId, $brandId);
+            }
+            if (!empty($conv['visitor_last_seen'])) {
+                $formattedConv['visitor_last_seen'] = lc_to_iso8601($conv['visitor_last_seen']);
+            }
+            return $formattedConv;
+        })(),
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
         ),
         'messages' => $messages,

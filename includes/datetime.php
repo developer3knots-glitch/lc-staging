@@ -78,6 +78,7 @@ function lc_format_api_conversation(?array $conversation): ?array
         'accepted_at',
         'closed_at',
         'last_message_at',
+        'visitor_last_seen',
         'opened_at',
     ]);
 

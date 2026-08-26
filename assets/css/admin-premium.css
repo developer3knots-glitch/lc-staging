@@ -6536,3 +6536,237 @@ body.lc-page-chats .lc-chat-empty-state h3 {
 body.lc-page-chats .lc-chat-empty-state p {
     font-size: 0.86rem;
 }
+
+/* LiveChat-style customer details rail v123 */
+.lc-details-rail {
+    background: #fff;
+    border-left: 1px solid #e5e7eb;
+}
+.lc-details-rail-body {
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+.lc-details-rail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.55rem 0.85rem 0.35rem;
+    border-bottom: 1px solid #eef2f7;
+}
+.lc-details-rail-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.lc-details-rail-tab {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+}
+.lc-details-rail-tab.is-active {
+    color: #111827;
+    box-shadow: inset 0 -2px 0 #2563eb;
+}
+.lc-details-rail-tab:disabled {
+    opacity: 0.45;
+}
+
+.lc-details-hero {
+    text-align: center;
+    padding: 1.15rem 1rem 0.95rem;
+    border-bottom: 1px solid #eef2f7;
+}
+.lc-details-hero-av {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 0.75rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #fff;
+    background: #64748b;
+}
+.lc-details-hero-name {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.01em;
+}
+.lc-details-hero-location,
+.lc-details-hero-sub {
+    margin: 0;
+    font-size: 0.78rem;
+    color: #6b7280;
+    line-height: 1.45;
+}
+.lc-details-hero-sub {
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+}
+.lc-details-hero .lc-details-email-btn {
+    margin-top: 0.85rem;
+    width: 100%;
+    max-width: 100%;
+}
+
+.lc-details-map-wrap {
+    margin: 0;
+    border-bottom: 1px solid #eef2f7;
+    background: #f8fafc;
+}
+.lc-details-map-wrap iframe {
+    display: block;
+    width: 100%;
+    height: 148px;
+    border: 0;
+}
+
+.lc-details-acc {
+    border-bottom: 1px solid #eef2f7;
+}
+.lc-details-acc-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem;
+    border: 0;
+    background: #fff;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #111827;
+    cursor: pointer;
+    text-align: left;
+}
+.lc-details-acc-head:hover {
+    background: #fafbfc;
+}
+.lc-details-acc-chevron {
+    color: #94a3b8;
+    font-size: 1rem;
+    transition: transform 0.15s ease;
+}
+.lc-details-acc:not(.is-open) .lc-details-acc-chevron {
+    transform: rotate(180deg);
+}
+.lc-details-acc-body {
+    display: block;
+    padding: 0 1rem 0.95rem;
+}
+.lc-details-acc:not(.is-open) .lc-details-acc-body {
+    display: none;
+}
+
+.lc-details-kv-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.72rem;
+}
+.lc-details-kv {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.18rem;
+}
+.lc-details-kv dt {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: #9ca3af;
+}
+.lc-details-kv dd {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.lc-details-group-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.lc-details-group-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lc-details-pages-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+.lc-details-page-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+}
+.lc-details-page-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 0.35rem;
+    border-radius: 999px;
+    background: #cbd5e1;
+    flex-shrink: 0;
+}
+.lc-details-page-item.is-current .lc-details-page-dot {
+    background: #2563eb;
+}
+.lc-details-page-body {
+    min-width: 0;
+    flex: 1;
+}
+.lc-details-page-title {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.35;
+    word-break: break-word;
+}
+.lc-details-page-time {
+    display: block;
+    margin-top: 0.12rem;
+    font-size: 0.72rem;
+    color: #9ca3af;
+    font-weight: 500;
+}
+.lc-details-pages-empty {
+    margin: 0;
+    font-size: 0.78rem;
+    color: #9ca3af;
+}
+.lc-details-pages-empty[hidden] {
+    display: none !important;
+}
+
+body.lc-page-chats .lc-details-hero-av {
+    width: 76px;
+    height: 76px;
+}

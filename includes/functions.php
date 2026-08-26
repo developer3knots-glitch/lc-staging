@@ -1042,6 +1042,7 @@ function lc_get_conversation(int $id): ?array
     $stmt = lc_db()->prepare('
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
+               v.last_seen AS visitor_last_seen,
                v.user_agent AS visitor_user_agent,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
@@ -1055,6 +1056,48 @@ function lc_get_conversation(int $id): ?array
     return $row ?: null;
 }
 
+
+/**
+ * Visitor stats for agent details rail.
+ * @return array{visit_count:int,chat_count:int,entry_referrer:string}
+ */
+function lc_visitor_detail_stats(int $visitorId, int $brandId): array
+{
+    $visitCount = 0;
+    $referrer = '';
+    $chatCount = 0;
+
+    if ($visitorId < 1) {
+        return ['visit_count' => 0, 'chat_count' => 0, 'entry_referrer' => ''];
+    }
+
+    $db = lc_db();
+    if (function_exists('lc_ensure_page_views_schema')) {
+        lc_ensure_page_views_schema();
+        $stmt = $db->prepare('SELECT COUNT(*) FROM visitor_page_views WHERE visitor_id = ? AND brand_id = ?');
+        $stmt->execute([$visitorId, $brandId]);
+        $visitCount = (int) $stmt->fetchColumn();
+
+        $refStmt = $db->prepare('
+            SELECT referrer FROM visitor_page_views
+            WHERE visitor_id = ? AND brand_id = ?
+              AND referrer IS NOT NULL AND referrer != ""
+            ORDER BY id ASC LIMIT 1
+        ');
+        $refStmt->execute([$visitorId, $brandId]);
+        $referrer = (string) ($refStmt->fetchColumn() ?: '');
+    }
+
+    $chatStmt = $db->prepare('SELECT COUNT(*) FROM conversations WHERE visitor_id = ?');
+    $chatStmt->execute([$visitorId]);
+    $chatCount = (int) $chatStmt->fetchColumn();
+
+    return [
+        'visit_count' => $visitCount,
+        'chat_count' => max(1, $chatCount),
+        'entry_referrer' => $referrer,
+    ];
+}
 function lc_unread_count_for_agent(int $agentId): int
 {
     $stmt = lc_db()->prepare("

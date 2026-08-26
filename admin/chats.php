@@ -174,73 +174,97 @@ require __DIR__ . '/includes/header.php';
             </div>
         </div>
 
-        <aside class="lc-chat-details" id="lc-chat-details" aria-label="Customer details">
+        <aside class="lc-chat-details lc-details-rail" id="lc-chat-details" aria-label="Customer details">
             <div class="lc-chat-details-empty" id="lc-chat-details-empty">
                 <i class="ti ti-user-circle"></i>
                 <p>Customer details appear when you open a chat.</p>
             </div>
-            <div class="lc-chat-details-body" id="lc-chat-details-body" hidden>
-                <div class="lc-details-section">
-                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-details-email-btn" id="lc-details-email-chat" style="width:100%;margin-bottom:0.85rem">
+            <div class="lc-chat-details-body lc-details-rail-body" id="lc-chat-details-body" hidden>
+                <div class="lc-details-rail-top">
+                    <div class="lc-details-rail-tabs">
+                        <button type="button" class="lc-details-rail-tab is-active" aria-label="Customer profile"><i class="ti ti-user"></i></button>
+                        <button type="button" class="lc-details-rail-tab" aria-label="Add tab" disabled><i class="ti ti-plus"></i></button>
+                    </div>
+                </div>
+
+                <div class="lc-details-hero">
+                    <div class="lc-details-hero-av" id="lc-details-av">V</div>
+                    <h3 class="lc-details-hero-name" id="lc-details-name">Visitor</h3>
+                    <p class="lc-details-hero-location" id="lc-details-location">-</p>
+                    <p class="lc-details-hero-sub" id="lc-details-local-time"></p>
+                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-details-email-btn" id="lc-details-email-chat">
                         <i class="ti ti-mail"></i> Email chat to customer
                     </button>
-                    <h4 class="lc-details-heading">Customer</h4>
-                    <div class="lc-details-customer">
-                        <div class="lc-details-av" id="lc-details-av">V</div>
-                        <div>
-                            <strong id="lc-details-name">Visitor</strong>
-                            <span class="lc-details-email" id="lc-details-email"> - </span>
-                        </div>
+                </div>
+
+                <div class="lc-details-map-wrap" id="lc-details-map-wrap" hidden>
+                    <iframe id="lc-details-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                </div>
+
+                <div class="lc-details-acc is-open" id="lc-details-additional-acc">
+                    <button type="button" class="lc-details-acc-head" id="lc-details-additional-toggle" aria-expanded="true" aria-controls="lc-details-additional-body">
+                        <span>Additional info</span>
+                        <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="lc-details-acc-body" id="lc-details-additional-body">
+                        <dl class="lc-details-kv-list">
+                            <div class="lc-details-kv">
+                                <dt>Returning visitor</dt>
+                                <dd id="lc-details-returning">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Last seen</dt>
+                                <dd id="lc-details-last-seen">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Came from</dt>
+                                <dd id="lc-details-came-from">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Chat duration</dt>
+                                <dd id="lc-details-chat-duration">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Groups</dt>
+                                <dd id="lc-details-groups">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Email</dt>
+                                <dd id="lc-details-email">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Ticket</dt>
+                                <dd id="lc-details-ticket">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>Agent</dt>
+                                <dd id="lc-details-agent">-</dd>
+                            </div>
+                            <div class="lc-details-kv">
+                                <dt>IP address</dt>
+                                <dd id="lc-details-ip">-</dd>
+                            </div>
+                        </dl>
                     </div>
                 </div>
-                <div class="lc-details-section">
-                    <h4 class="lc-details-heading">Details</h4>
-                    <dl class="lc-details-list">
-                                                <div class="lc-details-row">
-                            <dt><i class="ti ti-user-check"></i> Visitor</dt>
-                            <dd id="lc-details-visitor-kind"> - </dd>
-                        </div>
-<div class="lc-details-row">
-                            <dt><i class="ti ti-world"></i> IP</dt>
-                            <dd id="lc-details-ip"> - </dd>
-                        </div>
-                        <div class="lc-details-row">
-                            <dt><i class="ti ti-map-pin"></i> Location</dt>
-                            <dd id="lc-details-country"> - </dd>
-                        </div>
-                        <div class="lc-details-row">
-                            <dt><i class="ti ti-tag"></i> Brand</dt>
-                            <dd id="lc-details-brand"> - </dd>
-                        </div>
-                        <div class="lc-details-row">
-                            <dt><i class="ti ti-user"></i> Agent</dt>
-                            <dd id="lc-details-agent"> - </dd>
-                        </div>
-                        <div class="lc-details-row">
-                            <dt><i class="ti ti-ticket"></i> Ticket</dt>
-                            <dd id="lc-details-ticket"> - </dd>
-                        </div>
-                    </dl>
-                </div>
-                <div class="lc-details-section">
-                    <h4 class="lc-details-heading">Current page</h4>
-                    <a class="lc-details-page" id="lc-details-page" href="#" target="_blank" rel="noopener noreferrer"> - </a>
-                </div>
-                <div class="lc-details-section lc-details-journey-section">
-                    <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" style="display:none">
-                        <button type="button" class="lc-journey-bar" id="lc-journey-toggle" aria-expanded="false" aria-controls="lc-journey-track-wrap">
-                            <span class="lc-journey-bar-icon" aria-hidden="true"><i class="ti ti-route"></i></span>
-                            <span class="lc-journey-bar-text">
-                                <strong>Visited pages</strong>
-                                <span class="lc-journey-bar-summary" id="lc-journey-summary">Path on your site</span>
-                            </span>
-                            <span class="lc-journey-bar-count" id="lc-journey-count">0</span>
-                            <i class="ti ti-chevron-down lc-journey-bar-chevron" aria-hidden="true"></i>
-                        </button>
-                        <div class="lc-journey-track-wrap" id="lc-journey-track-wrap" hidden>
-                            <div class="lc-journey-track" id="lc-page-journey-list"></div>
-                        </div>
+
+                <div class="lc-details-acc is-open" id="lc-details-pages-acc">
+                    <button type="button" class="lc-details-acc-head" id="lc-details-pages-toggle" aria-expanded="true" aria-controls="lc-details-pages-body">
+                        <span>Visited pages</span>
+                        <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="lc-details-acc-body" id="lc-details-pages-body">
+                        <ul class="lc-details-pages-list" id="lc-details-pages-list"></ul>
+                        <p class="lc-details-pages-empty" id="lc-details-pages-empty">No pages recorded yet</p>
                     </div>
+                </div>
+
+                <div class="lc-page-journey lc-page-journey-pro" id="lc-page-journey" hidden aria-hidden="true">
+                    <div class="lc-journey-track" id="lc-page-journey-list"></div>
+                    <span id="lc-journey-count" hidden></span>
+                    <span id="lc-journey-summary" hidden></span>
+                    <button type="button" id="lc-journey-toggle" hidden></button>
+                    <div id="lc-journey-track-wrap" hidden></div>
                 </div>
             </div>
         </aside>

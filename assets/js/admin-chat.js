@@ -340,6 +340,111 @@
             } catch (e) { /* ignore */ }
         }
     }
+
+    function hostFromUrl(url) {
+        if (!url) return '';
+        try {
+            var u = new URL(url, window.location.origin);
+            return (u.hostname || '').replace(/^www\./i, '');
+        } catch (e) {
+            return String(url).replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
+        }
+    }
+
+    function formatDurationSeconds(total) {
+        total = Math.max(0, parseInt(total, 10) || 0);
+        if (total < 60) return total + 's';
+        if (total < 3600) {
+            return Math.floor(total / 60) + 'm ' + (total % 60) + 's';
+        }
+        return Math.floor(total / 3600) + 'h ' + Math.floor((total % 3600) / 60) + 'm';
+    }
+
+    function formatChatDuration(c) {
+        if (!c || !c.started_at) return '-';
+        var start = window.LCTime && window.LCTime.parseTimestamp
+            ? window.LCTime.parseTimestamp(c.started_at)
+            : new Date(c.started_at);
+        var endRaw = c.closed_at || c.last_message_at || new Date().toISOString();
+        var end = window.LCTime && window.LCTime.parseTimestamp
+            ? window.LCTime.parseTimestamp(endRaw)
+            : new Date(endRaw);
+        if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return '-';
+        var secs = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+        return formatDurationSeconds(secs);
+    }
+
+    function setHtmlTime(id, ts) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (!ts) {
+            el.textContent = '-';
+            return;
+        }
+        el.innerHTML = timeHtml(ts);
+        if (window.LCTime) window.LCTime.scan(el);
+    }
+
+    function updateDetailsMap(location) {
+        var wrap = document.getElementById('lc-details-map-wrap');
+        var iframe = document.getElementById('lc-details-map');
+        if (!wrap || !iframe) return;
+        location = (location || '').trim();
+        if (!location || location === '-') {
+            wrap.hidden = true;
+            iframe.removeAttribute('src');
+            return;
+        }
+        wrap.hidden = false;
+        iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(location) + '&z=6&output=embed';
+    }
+
+    function paintDetailsPagesList() {
+        var list = document.getElementById('lc-details-pages-list');
+        var empty = document.getElementById('lc-details-pages-empty');
+        if (!list) return;
+
+        var steps = consolidateJourney(journeyViewsRaw);
+        if (!steps.length) {
+            list.innerHTML = '';
+            if (empty) empty.hidden = false;
+            return;
+        }
+        if (empty) empty.hidden = true;
+
+        var html = '';
+        for (var i = steps.length - 1; i >= 0; i--) {
+            var step = steps[i];
+            var view = step.last_view || {};
+            var label = journeyStepLabel(step);
+            var dur = view.duration_label || '';
+            if (!dur && view.duration_seconds) {
+                dur = formatDurationSeconds(view.duration_seconds);
+            }
+            html += '<li class="lc-details-page-item' + (i === steps.length - 1 ? ' is-current' : '') + '">';
+            html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
+            html += '<div class="lc-details-page-body">';
+            html += '<span class="lc-details-page-title" title="' + esc(view.page_url || label) + '">' + esc(label) + '</span>';
+            if (dur) {
+                html += '<span class="lc-details-page-time">' + esc(dur) + '</span>';
+            }
+            html += '</div></li>';
+        }
+        list.innerHTML = html;
+    }
+
+    function bindDetailsAccordions() {
+        document.querySelectorAll('.lc-details-acc-head').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var acc = btn.closest('.lc-details-acc');
+                if (!acc) return;
+                var open = acc.classList.toggle('is-open');
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+        });
+    }
     function showDetailsPanel(show) {
         var empty = document.getElementById('lc-chat-details-empty');
         var body = document.getElementById('lc-chat-details-body');
@@ -351,43 +456,60 @@
         }
     }
 
-    function renderDetailsRail(c, extraNote) {
+        function renderDetailsRail(c, extraNote) {
         if (!c) {
             showDetailsPanel(false);
             return;
         }
         showDetailsPanel(true);
-        var name = c.visitor_name || 'Visitor';
-        setText('lc-details-name', name);
+        var name = (c.visitor_name || '').trim();
+        var displayName = name || 'Unnamed customer';
+        setText('lc-details-name', displayName);
         currentVisitorEmail = (c.visitor_email || '').trim();
         setText('lc-details-email', currentVisitorEmail || 'No email');
-        setText('lc-details-visitor-kind', visitorKindLabel(c));
         setVisitorKindBadge(c);
-        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || ' - ');
-        setText('lc-details-country', c.visitor_country || ' - ');
-        setText('lc-details-brand', c.brand_name || ' - ');
-        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? ' - ' : 'Unassigned'));
-        setText('lc-details-ticket', c.reference || currentReference || ' - ');
 
-        var pageEl = document.getElementById('lc-details-page');
-        var page = c.visitor_page || c.page_url || '';
-        if (pageEl) {
-            if (page) {
-                pageEl.textContent = page;
-                pageEl.title = page;
-                if (/^https?:\/\//i.test(page)) {
-                    pageEl.href = page;
-                    pageEl.removeAttribute('aria-disabled');
-                } else {
-                    pageEl.removeAttribute('href');
-                    pageEl.setAttribute('aria-disabled', 'true');
-                }
-            } else {
-                pageEl.textContent = ' - ';
-                pageEl.removeAttribute('href');
-            }
+        var location = (c.visitor_country || '').trim() || '-';
+        setText('lc-details-location', location);
+        setText('lc-details-local-time', c.visitor_ip ? ('IP ' + c.visitor_ip) : '');
+
+        var stats = c.visitor_stats || {};
+        var visitCount = parseInt(stats.visit_count, 10);
+        if (!visitCount && journeyViewsRaw.length) {
+            visitCount = journeyViewsRaw.length;
         }
-        updateHeaderAvatar(name);
+        var chatCount = parseInt(stats.chat_count, 10) || (parseInt(c.prior_chat_count, 10) || 0) + 1;
+        var returningLine = isReturningVisitor(c)
+            ? (Math.max(visitCount, 1) + ' visits, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'))
+            : ('New visitor, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'));
+        setText('lc-details-returning', returningLine);
+
+        setHtmlTime('lc-details-last-seen', c.visitor_last_seen || c.last_message_at || '');
+
+        var page = c.visitor_page || c.page_url || '';
+        var ref = stats.entry_referrer || '';
+        if (!ref && journeyViewsRaw.length && journeyViewsRaw[0].referrer) {
+            ref = journeyViewsRaw[0].referrer;
+        }
+        var cameFrom = ref ? hostFromUrl(ref) : (page ? hostFromUrl(page) : '-');
+        setText('lc-details-came-from', cameFrom || '-');
+
+        setText('lc-details-chat-duration', formatChatDuration(c));
+
+        var groupsEl = document.getElementById('lc-details-groups');
+        if (groupsEl) {
+            var brand = c.brand_name || 'General';
+            var initial = brand.charAt(0).toUpperCase();
+            groupsEl.innerHTML = '<span class="lc-details-group-pill"><span class="lc-details-group-icon">' + esc(initial) + '</span><span>' + esc(brand) + '</span></span>';
+        }
+
+        setText('lc-details-ip', c.visitor_ip || currentVisitorIp || '-');
+        setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
+        setText('lc-details-ticket', c.reference || currentReference || '-');
+
+        updateDetailsMap(location !== '-' ? location : '');
+        updateHeaderAvatar(displayName);
+        paintDetailsPagesList();
     }
 
     function updateChatReference(ref) {
@@ -931,6 +1053,7 @@
         if (window.LCTime) {
             window.LCTime.scan(journeyListEl);
         }
+        paintDetailsPagesList();
     }
 
     function updateJourneySummary() {
@@ -2180,6 +2303,7 @@
         }, true);
     }
 
+    bindDetailsAccordions();
     loadConversations();
     listTimer = setInterval(loadConversations, pollMs);
     pollTimer = setInterval(pollMessages, pollMs);
