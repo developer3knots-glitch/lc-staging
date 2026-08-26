@@ -2,6 +2,7 @@
 
 /**
  * Auto-warn / auto-close chats after visitor+agent inactivity.
+ * Idle time is based on last visitor/agent message only (system notes do not reset the timer).
  */
 
 function lc_inactivity_settings(?int $accountId = null): array
@@ -42,13 +43,49 @@ function lc_conversation_account_id_from_row(array $conv): int
     return 0;
 }
 
-function lc_inactivity_idle_seconds(array $conv): int
+/** Insert a system note without bumping last_message_at (keeps inactivity clock honest). */
+function lc_add_inactivity_system_message(int $conversationId, string $message): void
 {
-    $anchor = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
+    if ($conversationId < 1 || $message === '') {
+        return;
+    }
+    lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)')
+        ->execute([$conversationId, 'system', $message]);
+}
+
+/**
+ * Last real chat activity (visitor or agent). Falls back to started_at.
+ */
+function lc_inactivity_human_anchor(int $conversationId, array $conv = []): ?string
+{
+    if ($conversationId < 1) {
+        return null;
+    }
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT MAX(created_at)
+            FROM messages
+            WHERE conversation_id = ?
+              AND sender_type IN ('visitor', 'agent')
+        ");
+        $stmt->execute([$conversationId]);
+        $human = $stmt->fetchColumn();
+        if ($human) {
+            return (string) $human;
+        }
+    } catch (Throwable $e) {
+    }
+
+    $fallback = $conv['started_at'] ?? $conv['last_message_at'] ?? null;
+    return $fallback ? (string) $fallback : null;
+}
+
+function lc_inactivity_idle_seconds_from_anchor(?string $anchor): int
+{
     if (!$anchor) {
         return 0;
     }
-    $ts = strtotime((string) $anchor);
+    $ts = strtotime($anchor);
     if ($ts === false) {
         return 0;
     }
@@ -107,7 +144,8 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
             return null;
         }
 
-        $idle = lc_inactivity_idle_seconds($conv);
+        $anchor = lc_inactivity_human_anchor($conversationId, $conv);
+        $idle = lc_inactivity_idle_seconds_from_anchor($anchor);
         $closeSec = (int) $settings['close_minutes'] * 60;
         $warnSec = (int) $settings['warn_minutes'] * 60;
         $db = lc_db();
@@ -115,7 +153,6 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
         if ($idle >= $closeSec) {
             $db->prepare("UPDATE conversations SET status = 'closed', closed_at = COALESCE(closed_at, NOW()) WHERE id = ? AND status IN ('waiting','active')")
                 ->execute([$conversationId]);
-            // Avoid duplicate close notes in the same idle window
             $dup = $db->prepare("
                 SELECT id FROM messages
                 WHERE conversation_id = ? AND sender_type = 'system'
@@ -125,7 +162,7 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
             ");
             $dup->execute([$conversationId]);
             if (!$dup->fetchColumn()) {
-                lc_add_system_message($conversationId, 'Chat closed automatically due to inactivity.');
+                lc_add_inactivity_system_message($conversationId, 'Chat closed automatically due to inactivity.');
             }
             if (function_exists('lc_clear_typing')) {
                 try {
@@ -137,9 +174,8 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
         }
 
         if ($idle >= $warnSec) {
-            $since = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
-            if (!lc_inactivity_already_warned($conversationId, $since ? (string) $since : null)) {
-                lc_add_system_message(
+            if (!lc_inactivity_already_warned($conversationId, $anchor)) {
+                lc_add_inactivity_system_message(
                     $conversationId,
                     'Are you still there? This chat will close soon due to inactivity.'
                 );
@@ -154,8 +190,6 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
 }
 
 /**
- * Sweep idle chats for an account (or all brands when accountId is 0/null).
- *
  * @return array{warned:int,closed:int}
  */
 function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40): array
@@ -164,11 +198,10 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
     $limit = max(1, min(100, $limit));
     $accountId = $accountId && $accountId > 0 ? $accountId : null;
 
-    // Throttle full sweeps (~once per 25s per account key)
     static $last = [];
     $key = $accountId ? ('a' . $accountId) : 'all';
     $now = time();
-    if (isset($last[$key]) && ($now - $last[$key]) < 25) {
+    if (isset($last[$key]) && ($now - $last[$key]) < 20) {
         return $out;
     }
     $last[$key] = $now;
@@ -178,10 +211,10 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
         return $out;
     }
 
-    // Candidate window starts at warn threshold
     $warnMin = (int) $settings['warn_minutes'];
 
     try {
+        // Candidate by last visitor/agent message (ignore system bumps)
         $sql = "
             SELECT c.id, c.status, c.brand_id, c.last_message_at, c.started_at
             FROM conversations c
@@ -193,8 +226,16 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
         }
         $sql .= "
             WHERE c.status IN ('waiting', 'active')
-              AND COALESCE(c.last_message_at, c.started_at) <= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-            ORDER BY COALESCE(c.last_message_at, c.started_at) ASC
+              AND COALESCE(
+                    (SELECT MAX(m.created_at) FROM messages m
+                     WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
+                    c.started_at
+                  ) <= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+            ORDER BY COALESCE(
+                    (SELECT MAX(m.created_at) FROM messages m
+                     WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
+                    c.started_at
+                  ) ASC
             LIMIT {$limit}
         ";
         $params[] = $warnMin;
@@ -202,7 +243,6 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
         $stmt = lc_db()->prepare($sql);
         $stmt->execute($params);
         foreach ($stmt->fetchAll() as $row) {
-            // Per-row account settings when sweeping all
             if (!$accountId) {
                 $rowAccount = lc_conversation_account_id_from_row($row);
                 $rowSettings = lc_inactivity_settings($rowAccount > 0 ? $rowAccount : null);
