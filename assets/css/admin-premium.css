@@ -4971,8 +4971,8 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 
 /* 3-column LiveChat desk */
 .lc-chat-layout-pro.lc-chat-desk {
-    --lc-inbox-w: 300px;
-    --lc-details-w: 268px;
+    --lc-inbox-w: 352px;
+    --lc-details-w: 336px;
     grid-template-columns: var(--lc-inbox-w) minmax(0, 1fr) var(--lc-details-w);
     background: #f1f5f9;
 }
@@ -5193,8 +5193,8 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 
 @media (max-width: 1180px) {
     .lc-chat-layout-pro.lc-chat-desk {
-        --lc-details-w: 240px;
-        --lc-inbox-w: 270px;
+        --lc-details-w: 300px;
+        --lc-inbox-w: 320px;
     }
 }
 @media (max-width: 980px) {
@@ -6460,3 +6460,79 @@ body.lc-page-chats .lc-chat-compose-hint kbd {
 body.lc-page-chats .lc-chat-layout-pro.lc-chat-desk { background: #eef1f5; }
 body.lc-page-chats .lc-chat-layout-pro.lc-chat-desk .lc-chat-inbox-pro { background: #f8f9fb; }
 body.lc-page-chats .lc-chat-details { border-left: 1px solid #e5e7eb; }
+
+/* Desk side rails wider + slight zoom v121 (LiveChat proportions) */
+@media (min-width: 1281px) {
+    .lc-chat-layout-pro.lc-chat-desk {
+        --lc-inbox-w: 352px;
+        --lc-details-w: 336px;
+    }
+}
+@media (min-width: 981px) and (max-width: 1280px) {
+    .lc-chat-layout-pro.lc-chat-desk {
+        --lc-inbox-w: 328px;
+        --lc-details-w: 312px;
+    }
+}
+
+body.lc-page-chats .lc-chat-layout-pro.lc-chat-desk {
+    font-size: 0.9375rem;
+}
+
+body.lc-page-chats .lc-chat-inbox-pro .lc-chat-inbox-title strong {
+    font-size: 1.06rem;
+}
+
+body.lc-page-chats .lc-chat-inbox-pro .lc-chat-inbox-search-wrap input {
+    font-size: 0.86rem;
+    padding-top: 0.52rem;
+    padding-bottom: 0.52rem;
+}
+
+body.lc-page-chats .lc-chat-desk .lc-chat-item-pro {
+    padding: 0.78rem 0.95rem;
+}
+
+body.lc-page-chats .lc-chat-item-pro .lc-chat-item-av {
+    width: 40px;
+    height: 40px;
+    font-size: 0.78rem;
+}
+
+body.lc-page-chats .lc-chat-item-pro .lc-chat-item-name {
+    font-size: 0.9rem;
+}
+
+body.lc-page-chats .lc-chat-item-pro .lc-chat-item-preview {
+    font-size: 0.8rem;
+}
+
+body.lc-page-chats .lc-chat-details {
+    font-size: 0.9rem;
+}
+
+body.lc-page-chats .lc-details-section {
+    padding: 0.78rem 1.05rem 0.95rem;
+}
+
+body.lc-page-chats .lc-details-customer strong {
+    font-size: 0.94rem;
+}
+
+body.lc-page-chats .lc-details-av {
+    width: 44px;
+    height: 44px;
+    font-size: 0.82rem;
+}
+
+body.lc-page-chats .lc-details-kv {
+    font-size: 0.82rem;
+}
+
+body.lc-page-chats .lc-chat-empty-state h3 {
+    font-size: 1.05rem;
+}
+
+body.lc-page-chats .lc-chat-empty-state p {
+    font-size: 0.86rem;
+}
