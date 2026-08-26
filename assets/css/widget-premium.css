@@ -1969,3 +1969,16 @@ button.lcw-head-menu-item:focus-visible {
 #lc-panel.lcw-theme-light.lcw-chat-active button.lcw-head-menu-item:focus-visible {
     background: #f1f5f9;
 }
+
+
+/* Transcript send disabled state */
+.lcw-email-export-send:disabled,
+.lcw-email-export-send[aria-disabled="true"],
+#lc-menu-transcript-send:disabled,
+#lc-menu-transcript-send[aria-disabled="true"],
+.lcw-head-menu-item:disabled,
+.lcw-head-menu-item[aria-disabled="true"] {
+    cursor: not-allowed !important;
+    opacity: 0.62;
+    pointer-events: none;
+}

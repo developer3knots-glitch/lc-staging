@@ -32,6 +32,7 @@
     var pollMs = 1500;
     var visitorSoundsEnabled = true;
     var transcriptSentConvId = null;
+    var transcriptEmailForClose = '';
     var isOpen = false;
     var chatClosed = false;
     var chatToken = '';
@@ -289,7 +290,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=34';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=35';
         document.head.appendChild(link);
     }
 
@@ -532,6 +533,7 @@
         document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
         bindConfirmSheets();
         bindHeadMenu();
+        bindTranscriptEmailInputs();
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
@@ -1542,6 +1544,7 @@
         }
         syncTicketFeatureUi();
         syncTranscriptSentUi('ended');
+        maybeAutoSendTranscriptOnClose();
     }
 
     function loadVisitorSoundPref() {
@@ -1727,6 +1730,48 @@
         }
     }
 
+    function isValidTranscriptEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+    }
+
+    function syncTranscriptEmailFromInputs() {
+        var ids = ['lc-menu-transcript-input', 'lc-email-transcript-input'];
+        for (var i = 0; i < ids.length; i++) {
+            var el = document.getElementById(ids[i]);
+            if (!el) continue;
+            var v = (el.value || '').trim();
+            if (isValidTranscriptEmail(v)) {
+                transcriptEmailForClose = v.toLowerCase();
+                try { localStorage.setItem('lc_visitor_email', transcriptEmailForClose); } catch (e) {}
+                return;
+            }
+        }
+    }
+
+    function bindTranscriptEmailInputs() {
+        ['lc-menu-transcript-input', 'lc-email-transcript-input'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', syncTranscriptEmailFromInputs);
+            el.addEventListener('change', syncTranscriptEmailFromInputs);
+        });
+    }
+
+    function maybeAutoSendTranscriptOnClose() {
+        if (!conversationId || isTranscriptSentThisSession()) {
+            return;
+        }
+        syncTranscriptEmailFromInputs();
+        if (!transcriptEmailForClose) {
+            return;
+        }
+        var endedInput = document.getElementById('lc-email-transcript-input');
+        if (endedInput && !endedInput.value) {
+            endedInput.value = transcriptEmailForClose;
+        }
+        sendChatTranscriptEmail(transcriptEmailForClose, 'ended', { auto: true });
+    }
+
     function isTranscriptSentThisSession() {
         return !!(transcriptSentConvId && conversationId && transcriptSentConvId === conversationId);
     }
@@ -1760,6 +1805,7 @@
 
     function resetTranscriptSentState() {
         transcriptSentConvId = null;
+        transcriptEmailForClose = '';
         setTranscriptControlsDisabled(false);
     }
 
@@ -1773,7 +1819,8 @@
         }
     }
 
-    function sendChatTranscriptEmail(forcedEmail, which) {
+    function sendChatTranscriptEmail(forcedEmail, which, opts) {
+        opts = opts || {};
         which = which || 'ended';
         var ids = emailExportIds(which);
         if (isTranscriptSentThisSession()) {
@@ -1797,7 +1844,7 @@
             sendBtn.setAttribute('aria-disabled', 'true');
             sendBtn.textContent = 'Sending...';
         }
-        setEmailTranscriptStatus('Sending this chat...', false, which);
+        setEmailTranscriptStatus(opts.auto ? 'Sending transcript to your email...' : 'Sending this chat...', false, which);
 
         fetch(siteUrl + '/api/visitor-email-transcript.php', {
             method: 'POST',
@@ -1816,9 +1863,13 @@
         .then(function (data) {
             if (data && data.success) {
                 try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
+                transcriptEmailForClose = (data.email || email || '').toLowerCase();
                 if (input) input.value = data.email || email;
                 var hint = (data.hint || '').trim();
-                setEmailTranscriptStatus('Sent! Check your inbox for this chat.' + (hint ? (' ' + hint) : ''), false, which);
+                var okMsg = opts.auto
+                    ? ('Transcript sent to ' + (data.email || email) + '.' + (hint ? (' ' + hint) : ''))
+                    : ('Sent! Check your inbox for this chat.' + (hint ? (' ' + hint) : ''));
+                setEmailTranscriptStatus(okMsg, false, which);
                 markTranscriptSent();
                 return;
             }
