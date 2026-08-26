@@ -52,9 +52,15 @@ function lc_resolve_geo(string $ip): array
 /**
  * @return array<string, mixed>|null
  */
-function lc_http_get_json(string $url, float $timeout = 3.0): ?array
+function lc_http_get_json(string $url, float $timeout = 3.0, array $headers = []): ?array
 {
     $ua = '3Knots-LiveChat/1.0';
+    $headerLines = ['User-Agent: ' . $ua];
+    foreach ($headers as $key => $value) {
+        $headerLines[] = $key . ': ' . $value;
+    }
+    $headerStr = implode("\r\n", $headerLines);
+
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -63,7 +69,7 @@ function lc_http_get_json(string $url, float $timeout = 3.0): ?array
             CURLOPT_CONNECTTIMEOUT => 2,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_USERAGENT => $ua,
+            CURLOPT_HTTPHEADER => $headerLines,
         ]);
         $raw = curl_exec($ch);
         curl_close($ch);
@@ -76,7 +82,7 @@ function lc_http_get_json(string $url, float $timeout = 3.0): ?array
     }
 
     $ctx = stream_context_create([
-        'http' => ['timeout' => $timeout, 'header' => "User-Agent: {$ua}\r\n"],
+        'http' => ['timeout' => $timeout, 'header' => $headerStr . "\r\n"],
         'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
     ]);
     $raw = @file_get_contents($url, false, $ctx);

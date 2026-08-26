@@ -1126,8 +1126,16 @@ function lc_ensure_visitor_geo_schema(): void
 }
 
 
+function lc_geo_text_is_english(string $text): bool
+{
+    if ($text === '') {
+        return true;
+    }
+    return !preg_match('/[^\x20-\x7E]/', $text);
+}
+
 /**
- * Reverse geocode GPS coordinates to city/region label (OpenStreetMap Nominatim).
+ * Reverse geocode GPS coordinates to English city/region label.
  * @return array{city:string,region:string,country:string,label:string}
  */
 function lc_reverse_geocode(float $lat, float $lon): array
@@ -1137,10 +1145,29 @@ function lc_reverse_geocode(float $lat, float $lon): array
         return $empty;
     }
 
-    $url = 'https://nominatim.openstreetmap.org/reverse?lat=' . rawurlencode((string) $lat)
+    $bdcUrl = 'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' . rawurlencode((string) $lat)
+        . '&longitude=' . rawurlencode((string) $lon)
+        . '&localityLanguage=en';
+    $data = lc_http_get_json($bdcUrl, 4.0);
+    if ($data && !empty($data['countryName'])) {
+        $city = trim((string) ($data['city'] ?? $data['locality'] ?? ''));
+        $region = trim((string) ($data['principalSubdivision'] ?? ''));
+        $country = trim((string) ($data['countryName'] ?? ''));
+        $parts = array_values(array_unique(array_filter([$city, $region, $country])));
+        $label = $parts ? implode(', ', $parts) : $country;
+
+        return [
+            'city' => $city,
+            'region' => $region,
+            'country' => $country,
+            'label' => $label,
+        ];
+    }
+
+    $nomUrl = 'https://nominatim.openstreetmap.org/reverse?lat=' . rawurlencode((string) $lat)
         . '&lon=' . rawurlencode((string) $lon)
-        . '&format=json&addressdetails=1&zoom=16';
-    $data = lc_http_get_json($url, 4.0);
+        . '&format=json&addressdetails=1&zoom=16&accept-language=en';
+    $data = lc_http_get_json($nomUrl, 4.0, ['Accept-Language' => 'en']);
     if (!$data || empty($data['address']) || !is_array($data['address'])) {
         return $empty;
     }
@@ -1153,8 +1180,24 @@ function lc_reverse_geocode(float $lat, float $lon): array
     $parts = array_values(array_unique(array_filter([$area, $city, $region, $country])));
     $label = $parts ? implode(', ', $parts) : trim((string) ($data['display_name'] ?? ''));
 
+    if (!lc_geo_text_is_english($label)) {
+        $englishParts = [];
+        foreach ($parts as $part) {
+            if (lc_geo_text_is_english($part)) {
+                $englishParts[] = $part;
+            }
+        }
+        $label = $englishParts ? implode(', ', $englishParts) : $country;
+        if (!lc_geo_text_is_english($city)) {
+            $city = lc_geo_text_is_english($area) ? $area : '';
+        }
+        if (!lc_geo_text_is_english($region)) {
+            $region = '';
+        }
+    }
+
     return [
-        'city' => $city !== '' ? $city : $area,
+        'city' => $city !== '' ? $city : (lc_geo_text_is_english($area) ? $area : ''),
         'region' => $region,
         'country' => $country,
         'label' => $label,
@@ -1258,6 +1301,9 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     ]);
 
     if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
+        if (function_exists('lc_geo_text_is_english') && !lc_geo_text_is_english($payload['label'])) {
+            return lc_save_visitor_browser_geo($visitorId, $payload['lat'], $payload['lon']);
+        }
         return $payload;
     }
 
