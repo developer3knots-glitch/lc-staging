@@ -30,6 +30,7 @@
     var lastMsgId = 0;
     var pollTimer = null;
     var pollMs = 1500;
+    var visitorSoundsEnabled = true;
     var isOpen = false;
     var chatClosed = false;
     var chatToken = '';
@@ -287,7 +288,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=33';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=34';
         document.head.appendChild(link);
     }
 
@@ -310,6 +311,8 @@
         script.onerror = callback;
         document.head.appendChild(script);
     }
+    var ICON_MAIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
+    var ICON_SOUND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
     var ICON_MENU = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
     var ICON_PLUS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
     var ICON_EMOJI = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
@@ -340,8 +343,23 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-head" class="lcw-chat-head lcw-head-pro">' +
-                    '<button type="button" id="lc-head-menu" class="lcw-head-icon-btn" title="More options" aria-label="More options">' + ICON_MENU + '</button>' +
-                    '<div class="lcw-head-agent-pill" id="lc-head-agent-pill">' +
+                    '<div class="lcw-head-menu-wrap" id="lc-head-menu-wrap">' +
+                        '<button type="button" id="lc-head-menu" class="lcw-head-icon-btn" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">' + ICON_MENU + '</button>' +
+                        '<div id="lc-head-menu-pop" class="lcw-head-menu-pop" hidden role="menu">' +
+                            '<button type="button" id="lc-menu-send-transcript" class="lcw-head-menu-item" role="menuitem">' +
+                                '<span class="lcw-head-menu-icon">' + ICON_MAIL + '</span>' +
+                                '<span class="lcw-head-menu-label">Send transcript</span>' +
+                            '</button>' +
+                            '<div class="lcw-head-menu-item lcw-head-menu-sounds" role="none">' +
+                                '<span class="lcw-head-menu-icon">' + ICON_SOUND + '</span>' +
+                                '<span class="lcw-head-menu-label">Sounds</span>' +
+                                '<label class="lcw-sound-toggle" aria-label="Notification sounds">' +
+                                    '<input type="checkbox" id="lc-sound-toggle" checked>' +
+                                    '<span class="lcw-sound-toggle-track"><span class="lcw-sound-toggle-thumb"></span></span>' +
+                                '</label>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +                    '<div class="lcw-head-agent-pill" id="lc-head-agent-pill">' +
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
                         '<div class="lcw-head-agent-fallback" id="lc-head-agent-fallback"><span class="lcw-online-dot"></span></div>' +
                         '<strong id="lc-panel-agent-name">Connecting...</strong>' +
@@ -477,7 +495,18 @@
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
+                '<div id="lc-transcript-sheet" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-sheet-title">' +
+                    '<div class="lcw-sheet lcw-sheet-dark lcw-sheet-wide lcw-transcript-sheet">' +
+                        '<button type="button" class="lcw-sheet-x" id="lc-transcript-sheet-close" aria-label="Close">&times;</button>' +
+                        '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
+                        '<p class="lcw-sheet-title lcw-sheet-title-lg" id="lc-transcript-sheet-title">Send transcript</p>' +
+                        '<p class="lcw-sheet-text">We will email a copy of this chat to you.</p>' +
+                        '<label class="lcw-email-export-label" for="lc-menu-transcript-input">Email address</label>' +
+                        '<input type="email" id="lc-menu-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
+                        '<button type="button" id="lc-menu-transcript-send" class="lcw-sheet-btn lcw-sheet-btn-light">Send transcript</button>' +
+                        '<p id="lc-menu-transcript-status" class="lcw-email-export-status" hidden></p>' +
+                    '</div>' +
+                '</div>' +                '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
                     '<div class="lcw-sheet lcw-sheet-dark">' +
                         '<button type="button" class="lcw-sheet-x" id="lc-close-confirm-dismiss" aria-label="Keep chatting">&times;</button>' +
                         '<div class="lcw-sheet-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>' +
@@ -501,6 +530,7 @@
         document.getElementById('lc-minimize-chat').addEventListener('click', showMinimizeConfirm);
         document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
         bindConfirmSheets();
+        bindHeadMenu();
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
@@ -1287,6 +1317,7 @@
     }
 
     function hideCloseConfirm() {
+        hideHeadMenu();
         var el = document.getElementById('lc-close-confirm');
         if (el) {
             el.hidden = true;
@@ -1381,6 +1412,8 @@
         panel.style.display = 'none';
         if (bubble) bubble.classList.remove('lcw-open');
         if (root) root.classList.remove('lcw-panel-open');
+        hideHeadMenu();
+        hideTranscriptSheet();
         persistPanelOpen(false);
     }
 
@@ -1509,7 +1542,140 @@
         syncTicketFeatureUi();
     }
 
+    function loadVisitorSoundPref() {
+        try {
+            visitorSoundsEnabled = localStorage.getItem('lc_visitor_sounds') !== '0';
+        } catch (e) {
+            visitorSoundsEnabled = true;
+        }
+    }
+
+    function saveVisitorSoundPref(on) {
+        visitorSoundsEnabled = !!on;
+        try {
+            localStorage.setItem('lc_visitor_sounds', on ? '1' : '0');
+        } catch (e) {}
+    }
+
+    function syncSoundToggleUi() {
+        var cb = document.getElementById('lc-sound-toggle');
+        if (cb) cb.checked = visitorSoundsEnabled;
+    }
+
+    function toggleHeadMenu(forceOpen) {
+        var pop = document.getElementById('lc-head-menu-pop');
+        var btn = document.getElementById('lc-head-menu');
+        if (!pop) return;
+        var open = typeof forceOpen === 'boolean' ? forceOpen : pop.hidden;
+        pop.hidden = !open;
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) syncSoundToggleUi();
+    }
+
+    function hideHeadMenu() {
+        toggleHeadMenu(false);
+    }
+
+    function showTranscriptSheet() {
+        hideHeadMenu();
+        var sheet = document.getElementById('lc-transcript-sheet');
+        if (!sheet) return;
+        if (!conversationId) {
+            appendMessage({ sender_type: 'system', message: 'Start a conversation before sending a transcript.' });
+            return;
+        }
+        var input = document.getElementById('lc-menu-transcript-input');
+        if (input && !input.value) {
+            input.value = localStorage.getItem('lc_visitor_email') || '';
+        }
+        setEmailTranscriptStatus('', false, 'menu');
+        sheet.hidden = false;
+        setTimeout(function () {
+            if (input) input.focus();
+        }, 40);
+    }
+
+    function hideTranscriptSheet() {
+        var sheet = document.getElementById('lc-transcript-sheet');
+        if (sheet) sheet.hidden = true;
+    }
+
+    function bindHeadMenu() {
+        loadVisitorSoundPref();
+        syncSoundToggleUi();
+
+        var headMenuBtn = document.getElementById('lc-head-menu');
+        if (headMenuBtn) {
+            headMenuBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var pop = document.getElementById('lc-head-menu-pop');
+                toggleHeadMenu(pop && pop.hidden);
+            });
+        }
+
+        var menuPop = document.getElementById('lc-head-menu-pop');
+        if (menuPop) {
+            menuPop.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+        }
+
+        document.addEventListener('click', function (e) {
+            var wrap = document.getElementById('lc-head-menu-wrap');
+            if (wrap && !wrap.contains(e.target)) {
+                hideHeadMenu();
+            }
+        });
+
+        var menuTranscript = document.getElementById('lc-menu-send-transcript');
+        if (menuTranscript) {
+            menuTranscript.addEventListener('click', function () {
+                showTranscriptSheet();
+            });
+        }
+
+        var soundToggle = document.getElementById('lc-sound-toggle');
+        if (soundToggle) {
+            soundToggle.addEventListener('change', function () {
+                saveVisitorSoundPref(soundToggle.checked);
+                if (soundToggle.checked) {
+                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                        window.LCNotifySound.play({ force: true });
+                    } else {
+                        playNotifySound(true);
+                    }
+                }
+            });
+        }
+
+        var transcriptSend = document.getElementById('lc-menu-transcript-send');
+        if (transcriptSend) {
+            transcriptSend.addEventListener('click', function () {
+                sendChatTranscriptEmail(null, 'menu');
+            });
+        }
+        var transcriptClose = document.getElementById('lc-transcript-sheet-close');
+        if (transcriptClose) {
+            transcriptClose.addEventListener('click', hideTranscriptSheet);
+        }
+        var transcriptSheet = document.getElementById('lc-transcript-sheet');
+        if (transcriptSheet) {
+            transcriptSheet.addEventListener('click', function (e) {
+                if (e.target === transcriptSheet) hideTranscriptSheet();
+            });
+        }
+    }
+
     function emailExportIds(which) {
+        if (which === 'menu') {
+            return {
+                panel: 'lc-transcript-sheet',
+                input: 'lc-menu-transcript-input',
+                send: 'lc-menu-transcript-send',
+                status: 'lc-menu-transcript-status',
+                sendLabel: 'Send transcript'
+            };
+        }
         return {
             panel: 'lc-email-transcript-panel',
             input: 'lc-email-transcript-input',
@@ -1559,7 +1725,7 @@
     }
 
     function sendChatTranscriptEmail(forcedEmail, which) {
-        which = 'ended';
+        which = which || 'ended';
         var ids = emailExportIds(which);
         if (!conversationId) {
             setEmailTranscriptStatus('This chat is no longer available to export. Start a new conversation first.', true, which);
@@ -2040,9 +2206,10 @@
         }, 2500);
     }
 
-    function playNotifySound() {
+    function playNotifySound(force) {
+        if (!force && !visitorSoundsEnabled) return;
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-            window.LCNotifySound.play();
+            window.LCNotifySound.play(force ? { force: true } : undefined);
             return;
         }
         // Fallback soft chime if shared script not loaded yet
