@@ -6,7 +6,7 @@ if (!isset($agent)) $agent = lc_require_auth();
 $primary = lc_setting('widget_color', '#6FD943');
 
 $navItems = [
-    ['id' => 'dashboard', 'page' => '', 'icon' => 'ti-layout-dashboard', 'label' => 'Dashboard'],
+    ['id' => 'dashboard', 'page' => '', 'icon' => 'ti-home', 'label' => 'Home'],
     ['id' => 'chats', 'page' => 'chats', 'icon' => 'ti-messages', 'label' => 'Live Chats'],
     ['id' => 'history', 'page' => 'history', 'icon' => 'ti-history', 'label' => 'History'],
     ['id' => 'canned', 'page' => 'canned', 'icon' => 'ti-bolt', 'label' => 'Canned Replies'],
@@ -29,25 +29,30 @@ if ($agent['role'] === 'admin') {
 <body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?><?= (($activeNav ?? '') === 'dashboard') ? ' lc-page-dashboard' : '' ?>">
 <div class="lc-app" id="lc-app">
     <div class="lc-sidebar-backdrop" id="lc-sidebar-backdrop"></div>
-    <aside class="lc-sidebar" id="lc-sidebar">
-        <div class="lc-sidebar-brand">
-            <div class="lc-brand-icon"><i class="ti ti-headset"></i></div>
-            <div>
+        <aside class="lc-sidebar lc-sidebar-rail" id="lc-sidebar">
+        <a href="<?= lc_admin_url('') ?>" class="lc-sidebar-brand lc-tip" data-tip="<?= lc_sanitize(LC_APP_NAME) ?>" aria-label="<?= lc_sanitize(LC_APP_NAME) ?>">
+            <div class="lc-brand-icon"><i class="ti ti-message-circle-2"></i></div>
+            <div class="lc-sidebar-brand-text">
                 <strong>LiveChat</strong>
                 <span>3Knots Digital</span>
             </div>
-        </div>
-        <nav class="lc-nav">
+        </a>
+        <nav class="lc-nav" aria-label="Main">
             <?php foreach ($navItems as $item): ?>
-                <a href="<?= lc_admin_url($item['page']) ?>" class="lc-nav-link <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>" title="<?= lc_sanitize($item['label']) ?>">
+                <a href="<?= lc_admin_url($item['page']) ?>"
+                   class="lc-nav-link lc-tip <?= ($activeNav ?? '') === $item['id'] ? 'active' : '' ?>"
+                   data-tip="<?= lc_sanitize($item['label']) ?>"
+                   aria-label="<?= lc_sanitize($item['label']) ?>"
+                   title="<?= lc_sanitize($item['label']) ?>">
                     <span class="lc-nav-icon"><i class="ti <?= lc_sanitize($item['icon']) ?>"></i></span>
                     <span class="lc-nav-text"><?= lc_sanitize($item['label']) ?></span>
                 </a>
             <?php endforeach; ?>
         </nav>
         <div class="lc-sidebar-footer">
-            <div class="lc-agent-mini">
+            <div class="lc-agent-mini lc-tip" data-tip="<?= lc_sanitize(($agent['name'] ?? 'Agent') . ' · ' . ucfirst((string) ($agent['status'] ?? 'offline'))) ?>" aria-label="<?= lc_sanitize($agent['name'] ?? 'Agent') ?>">
                 <?= lc_avatar_html($agent['avatar'] ?? null, $agent['name'], 'lc-avatar lc-avatar-sidebar') ?>
+                <span class="lc-sidebar-presence <?= lc_sanitize($agent['status'] ?? 'offline') ?>" aria-hidden="true"></span>
                 <div class="lc-agent-meta">
                     <div class="lc-agent-name"><?= lc_sanitize($agent['name']) ?></div>
                     <div class="lc-agent-status-line">
@@ -56,8 +61,9 @@ if ($agent['role'] === 'admin') {
                     </div>
                 </div>
             </div>
-            <a href="<?= lc_admin_url('logout') ?>" class="lc-btn lc-btn-ghost lc-btn-sm lc-btn-block">
-                <i class="ti ti-logout"></i> Sign out
+            <a href="<?= lc_admin_url('logout') ?>" class="lc-sidebar-logout lc-tip" data-tip="Sign out" aria-label="Sign out">
+                <i class="ti ti-logout"></i>
+                <span class="lc-nav-text">Sign out</span>
             </a>
         </div>
     </aside>
