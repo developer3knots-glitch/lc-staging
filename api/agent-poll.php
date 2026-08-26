@@ -88,6 +88,19 @@ try {
             if (!empty($conv['visitor_last_seen'])) {
                 $formattedConv['visitor_last_seen'] = lc_to_iso8601($conv['visitor_last_seen']);
             }
+            if ($visitorId > 0 && function_exists('lc_refresh_visitor_geo')) {
+                $formattedConv['visitor_geo'] = lc_refresh_visitor_geo(
+                    $visitorId,
+                    (string) ($conv['visitor_ip'] ?? ''),
+                    [
+                        'country' => $conv['visitor_country'] ?? '',
+                        'geo_city' => $conv['visitor_geo_city'] ?? null,
+                        'geo_region' => $conv['visitor_geo_region'] ?? null,
+                        'geo_lat' => $conv['visitor_geo_lat'] ?? null,
+                        'geo_lon' => $conv['visitor_geo_lon'] ?? null,
+                    ]
+                );
+            }
             return $formattedConv;
         })(),
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]

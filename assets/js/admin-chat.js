@@ -14,6 +14,8 @@
     var pollTimer = null;
     var listTimer = null;
     var cannedLoaded = false;
+    var lastDetailsMapKey = '';
+    var lastDetailsMapConvId = 0;
     var lastJourneyId = 0;
 
     var listEl = document.getElementById('lc-conversation-list');
@@ -385,18 +387,34 @@
         if (window.LCTime) window.LCTime.scan(el);
     }
 
-    function updateDetailsMap(location) {
+    function updateDetailsMap(geo) {
         var wrap = document.getElementById('lc-details-map-wrap');
         var iframe = document.getElementById('lc-details-map');
         if (!wrap || !iframe) return;
-        location = (location || '').trim();
-        if (!location || location === '-') {
+
+        geo = geo || {};
+        var lat = geo.lat;
+        var lon = geo.lon;
+        var label = (geo.label || geo.country || '').trim();
+        var key = (lat && lon) ? (String(lat) + ',' + String(lon)) : label;
+        if (!key) {
+            if (lastDetailsMapKey !== '') {
+                lastDetailsMapKey = '';
+                iframe.removeAttribute('src');
+            }
             wrap.hidden = true;
-            iframe.removeAttribute('src');
             return;
         }
         wrap.hidden = false;
-        iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(location) + '&z=6&output=embed';
+        if (key === lastDetailsMapKey) {
+            return;
+        }
+        lastDetailsMapKey = key;
+        if (lat && lon) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=11&output=embed';
+        } else {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=6&output=embed';
+        }
     }
 
     function paintDetailsPagesList() {
@@ -469,7 +487,8 @@
         setText('lc-details-email', currentVisitorEmail || 'No email');
         setVisitorKindBadge(c);
 
-        var location = (c.visitor_country || '').trim() || '-';
+        var geo = c.visitor_geo || {};
+        var location = (geo.label || (c.visitor_country || '').trim() || '-');
         setText('lc-details-location', location);
         setText('lc-details-local-time', c.visitor_ip ? ('IP ' + c.visitor_ip) : '');
 
@@ -507,7 +526,7 @@
         setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
         setText('lc-details-ticket', c.reference || currentReference || '-');
 
-        updateDetailsMap(location !== '-' ? location : '');
+        updateDetailsMap(geo);
         updateHeaderAvatar(displayName);
         paintDetailsPagesList();
     }
@@ -1369,6 +1388,8 @@
     }
 
     function openConversation(id) {
+        lastDetailsMapKey = '';
+        lastDetailsMapConvId = parseInt(id, 10) || 0;
         clearPendingAttachment();
         if (id !== selectedId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         stopOwnTyping();

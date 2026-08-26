@@ -1043,6 +1043,8 @@ function lc_get_conversation(int $id): ?array
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
                v.last_seen AS visitor_last_seen,
+               v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
+               v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon,
                v.user_agent AS visitor_user_agent,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
@@ -1096,6 +1098,118 @@ function lc_visitor_detail_stats(int $visitorId, int $brandId): array
         'visit_count' => $visitCount,
         'chat_count' => max(1, $chatCount),
         'entry_referrer' => $referrer,
+    ];
+}
+
+function lc_ensure_visitor_geo_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    $cols = [
+        'geo_city VARCHAR(100) NULL',
+        'geo_region VARCHAR(100) NULL',
+        'geo_lat DECIMAL(10,7) NULL',
+        'geo_lon DECIMAL(10,7) NULL',
+    ];
+    foreach ($cols as $def) {
+        try {
+            $pdo->exec('ALTER TABLE visitors ADD COLUMN ' . $def);
+        } catch (Throwable $e) {
+        }
+    }
+}
+
+/**
+ * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float}
+ */
+function lc_visitor_geo_payload(array $row): array
+{
+    $city = trim((string) ($row['visitor_geo_city'] ?? $row['geo_city'] ?? ''));
+    $region = trim((string) ($row['visitor_geo_region'] ?? $row['geo_region'] ?? ''));
+    $country = trim((string) ($row['visitor_country'] ?? $row['country'] ?? ''));
+    $country = preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', $country) ?: $country;
+    $lat = isset($row['visitor_geo_lat']) ? $row['visitor_geo_lat'] : ($row['geo_lat'] ?? null);
+    $lon = isset($row['visitor_geo_lon']) ? $row['visitor_geo_lon'] : ($row['geo_lon'] ?? null);
+    $lat = ($lat !== null && $lat !== '') ? (float) $lat : null;
+    $lon = ($lon !== null && $lon !== '') ? (float) $lon : null;
+    $parts = array_values(array_filter([$city, $region, $country]));
+    $label = $parts ? implode(', ', $parts) : ($country !== '' ? $country : 'Unknown');
+
+    return [
+        'label' => $label,
+        'city' => $city,
+        'region' => $region,
+        'country' => $country,
+        'lat' => $lat,
+        'lon' => $lon,
+    ];
+}
+
+/**
+ * Resolve visitor geo once, store on visitor row, return API payload.
+ * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float}
+ */
+function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null): array
+{
+    lc_ensure_visitor_geo_schema();
+    if ($visitorId < 1) {
+        return lc_visitor_geo_payload($row ?? []);
+    }
+
+    if ($row === null) {
+        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $row = $stmt->fetch() ?: [];
+    }
+
+    $payload = lc_visitor_geo_payload([
+        'visitor_country' => $row['country'] ?? '',
+        'visitor_geo_city' => $row['geo_city'] ?? '',
+        'visitor_geo_region' => $row['geo_region'] ?? '',
+        'visitor_geo_lat' => $row['geo_lat'] ?? null,
+        'visitor_geo_lon' => $row['geo_lon'] ?? null,
+    ]);
+
+    if ($payload['lat'] !== null && $payload['lon'] !== null) {
+        return $payload;
+    }
+
+    if ($ip === '' || !function_exists('lc_resolve_geo_full')) {
+        return $payload;
+    }
+
+    $geo = lc_resolve_geo_full($ip);
+    $countryStore = $geo['country'];
+    if (!empty($geo['country_code'])) {
+        $countryStore .= ' (' . $geo['country_code'] . ')';
+    }
+
+    $upd = lc_db()->prepare('
+        UPDATE visitors
+        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?,
+            country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
+        WHERE id = ?
+    ');
+    $upd->execute([
+        $geo['city'] !== '' ? $geo['city'] : null,
+        $geo['region'] !== '' ? $geo['region'] : null,
+        $geo['lat'],
+        $geo['lon'],
+        $countryStore,
+        $visitorId,
+    ]);
+
+    return [
+        'label' => $geo['label'],
+        'city' => $geo['city'],
+        'region' => $geo['region'],
+        'country' => $geo['country'],
+        'lat' => $geo['lat'],
+        'lon' => $geo['lon'],
     ];
 }
 function lc_unread_count_for_agent(int $agentId): int

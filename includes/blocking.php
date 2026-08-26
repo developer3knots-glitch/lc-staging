@@ -48,6 +48,69 @@ function lc_resolve_geo(string $ip): array
 /**
  * @return array<int, string>
  */
+
+/**
+ * Full IP geolocation for maps (city/region + coordinates). Cached per request.
+ * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}
+ */
+function lc_resolve_geo_full(string $ip): array
+{
+    static $cache = [];
+    if (isset($cache[$ip])) {
+        return $cache[$ip];
+    }
+
+    $fallback = [
+        'country' => 'Unknown',
+        'country_code' => '',
+        'city' => '',
+        'region' => '',
+        'lat' => null,
+        'lon' => null,
+        'label' => 'Unknown',
+    ];
+
+    if ($ip === '' || lc_is_local_ip($ip)) {
+        $fallback['country'] = 'Local';
+        $fallback['label'] = 'Local network';
+        $cache[$ip] = $fallback;
+        return $fallback;
+    }
+
+    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=status,country,countryCode,city,regionName,lat,lon';
+    $ctx = stream_context_create(['http' => ['timeout' => 2.5]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw) {
+        $data = json_decode($raw, true);
+        if (!empty($data['status']) && $data['status'] === 'success') {
+            $countryName = (string) ($data['country'] ?? 'Unknown');
+            $code = strtoupper((string) ($data['countryCode'] ?? ''));
+            $city = trim((string) ($data['city'] ?? ''));
+            $region = trim((string) ($data['regionName'] ?? ''));
+            $lat = isset($data['lat']) ? (float) $data['lat'] : null;
+            $lon = isset($data['lon']) ? (float) $data['lon'] : null;
+            $parts = array_values(array_filter([$city, $region, $countryName]));
+            $label = $parts ? implode(', ', $parts) : $countryName;
+            $cache[$ip] = [
+                'country' => $countryName,
+                'country_code' => $code,
+                'city' => $city,
+                'region' => $region,
+                'lat' => $lat,
+                'lon' => $lon,
+                'label' => $label,
+            ];
+            return $cache[$ip];
+        }
+    }
+
+    $cache[$ip] = $fallback;
+    return $fallback;
+}
+
+/**
+ * @return array<int, string>
+ */
 function lc_get_blocked_country_codes(?int $accountId = null): array
 {
     if ($accountId === null) {
