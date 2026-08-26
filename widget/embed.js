@@ -287,7 +287,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=32';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=33';
         document.head.appendChild(link);
     }
 
@@ -330,7 +330,7 @@
                 '<span id="lc-bubble-icon">' + ICON_CHAT + '</span>' +
                 '<span id="lc-bubble-badge" style="display:none">1</span>' +
             '</button>' +
-            '<div id="lc-panel" class="lcw-panel" style="display:none">' +
+            '<div id="lc-panel" class="lcw-panel lcw-theme-dark" style="display:none">' +
                 '<div id="lc-panel-toolbar" class="lcw-toolbar">' +
                     '<span class="lcw-toolbar-brand" id="lc-toolbar-brand">LiveChat</span>' +
                     '<div class="lcw-toolbar-actions">' +
@@ -476,7 +476,6 @@
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND_UP + '</button>' +
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
-                    '<div class="lcw-powered lcw-powered-chat">Powered by <strong id="lc-powered-chat-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
                     '<div class="lcw-sheet lcw-sheet-dark">' +
@@ -958,6 +957,15 @@
         syncTicketMessagesVisibility();
     }
 
+    function applyWidgetTheme() {
+        var panel = document.getElementById('lc-panel');
+        if (!panel) return;
+        var theme = (settings && settings.widget_theme) ? String(settings.widget_theme).toLowerCase() : 'dark';
+        if (theme !== 'light') theme = 'dark';
+        panel.classList.remove('lcw-theme-dark', 'lcw-theme-light');
+        panel.classList.add(theme === 'light' ? 'lcw-theme-light' : 'lcw-theme-dark');
+    }
+
     function applyWidgetSettings(data) {
         if (!data || !data.settings) return;
         settings = data.settings;
@@ -978,13 +986,12 @@
         document.getElementById('lc-toolbar-brand').textContent = name;
         var powered = document.getElementById('lc-powered-name');
         if (powered) powered.textContent = name;
-        var poweredChat = document.getElementById('lc-powered-chat-name');
-        if (poweredChat) poweredChat.textContent = name;
         var agentName = document.getElementById('lc-panel-agent-name');
         if (agentName && !(currentAgent && currentAgent.name)) agentName.textContent = name;
         var brandColor = settings.widget_color || '#6FD943';
         document.documentElement.style.setProperty('--lcw-primary', brandColor);
         document.documentElement.style.setProperty('--lcw-agent-accent', brandColor);
+        applyWidgetTheme();
         if (settings.poll_interval_ms) {
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
             if (pollTimer) {
@@ -1370,8 +1377,10 @@
         isOpen = false;
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
+        var root = document.getElementById('lc-widget-root');
         panel.style.display = 'none';
         if (bubble) bubble.classList.remove('lcw-open');
+        if (root) root.classList.remove('lcw-panel-open');
         persistPanelOpen(false);
     }
 
@@ -1393,8 +1402,10 @@
         }
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
+        var root = document.getElementById('lc-widget-root');
         if (panel) panel.style.display = 'flex';
         if (bubble) bubble.classList.add('lcw-open');
+        if (root) root.classList.add('lcw-panel-open');
         persistPanelOpen(true);
         hideTeaser(false);
         if (!options.silenceFlow) {

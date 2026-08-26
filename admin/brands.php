@@ -17,6 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $key = trim($_POST['brand_key'] ?? '');
         $color = trim($_POST['widget_color'] ?? '#6FD943');
+        $theme = strtolower(trim($_POST['widget_theme'] ?? 'dark'));
+        if (!in_array($theme, ['light', 'dark'], true)) {
+            $theme = 'dark';
+        }
         $welcome = trim($_POST['welcome_message'] ?? '');
         $offline = trim($_POST['offline_message'] ?? '');
 
@@ -25,8 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
-            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $welcome, $offline]);
+            lc_ensure_brand_widget_columns();
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline]);
             $message = 'Brand created successfully. Copy the embed code and add it to your website.';
         }
     } elseif ($action === 'edit' && !empty($_POST['id'])) {
@@ -42,11 +47,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $name = trim($_POST['name'] ?? '');
             $key = lc_slug_key(trim($_POST['brand_key'] ?? ''));
             $key = lc_unique_brand_key($key, $id);
-            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, welcome_message = ?, offline_message = ?, is_active = ? WHERE id = ?';
+            lc_ensure_brand_widget_columns();
+            $theme = strtolower(trim($_POST['widget_theme'] ?? 'dark'));
+            if (!in_array($theme, ['light', 'dark'], true)) {
+                $theme = 'dark';
+            }
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ? WHERE id = ?';
             $params = [
                 $name,
                 $key,
                 trim($_POST['widget_color'] ?? '#6FD943'),
+                $theme,
                 trim($_POST['welcome_message'] ?? ''),
                 trim($_POST['offline_message'] ?? ''),
                 isset($_POST['is_active']) ? 1 : 0,
@@ -232,6 +243,13 @@ require __DIR__ . '/includes/header.php';
                                             <span><?= lc_sanitize($color) ?></span>
                                         </div>
                                     </div>
+                                    <div>
+                                        <label>Widget theme</label>
+                                        <select name="widget_theme">
+                                            <option value="dark" <?= (strtolower((string)($b['widget_theme'] ?? 'dark')) === 'dark') ? 'selected' : '' ?>>Dark (LiveChat style)</option>
+                                            <option value="light" <?= (strtolower((string)($b['widget_theme'] ?? '')) === 'light') ? 'selected' : '' ?>>Light</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <label>Welcome message</label>
                                 <textarea name="welcome_message" rows="2"><?= lc_sanitize($b['welcome_message']) ?></textarea>
@@ -269,6 +287,11 @@ require __DIR__ . '/includes/header.php';
                             <input type="color" name="widget_color" value="#6FD943" id="lc-new-brand-color">
                             <span id="lc-new-brand-color-val">#6FD943</span>
                         </div>
+                        <label>Widget theme</label>
+                        <select name="widget_theme">
+                            <option value="dark" selected>Dark (LiveChat style)</option>
+                            <option value="light">Light</option>
+                        </select>
                         <label>Welcome message</label>
                         <textarea name="welcome_message" rows="3" placeholder="Hi! How can we help you today?"></textarea>
                         <label>Offline message</label>

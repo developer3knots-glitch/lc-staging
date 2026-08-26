@@ -12,9 +12,26 @@ function lc_brands_table_exists(): bool
     }
 }
 
+function lc_ensure_brand_widget_columns(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    if (!lc_brands_table_exists()) {
+        return;
+    }
+    try {
+        lc_db()->exec("ALTER TABLE brands ADD COLUMN widget_theme VARCHAR(10) NOT NULL DEFAULT 'dark'");
+    } catch (Throwable $e) {
+    }
+}
+
 function lc_ensure_brands_schema(): void
 {
     if (lc_brands_table_exists()) {
+        lc_ensure_brand_widget_columns();
         return;
     }
 
@@ -159,6 +176,7 @@ function lc_brand_embed_code(array $brand): string
 
 function lc_brand_settings(array $brand): array
 {
+    lc_ensure_brand_widget_columns();
     $accountId = isset($brand['account_id']) ? (int) $brand['account_id'] : 0;
     $poll = $accountId > 0
         ? (int) lc_account_setting($accountId, 'poll_interval_ms', '1500')
@@ -166,6 +184,9 @@ function lc_brand_settings(array $brand): array
     return [
         'site_name' => $brand['name'],
         'widget_color' => $brand['widget_color'] ?? '#6FD943',
+        'widget_theme' => in_array(strtolower((string) ($brand['widget_theme'] ?? 'dark')), ['light', 'dark'], true)
+            ? strtolower((string) $brand['widget_theme'])
+            : 'dark',
         'offline_message' => $brand['offline_message'] ?? '',
         'welcome_message' => $brand['welcome_message'] ?? '',
         'brand_key' => $brand['brand_key'],
