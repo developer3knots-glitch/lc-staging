@@ -229,7 +229,7 @@
         if (extraSuffix) {
             parts.push('<span class="lc-chat-context-extra">' + esc(extraSuffix) + '</span>');
         }
-        return parts.join('<span class="lc-chat-context-sep" aria-hidden="true">┬╖</span>');
+        return parts.join('<span class="lc-meta-sep" aria-hidden="true"></span>');
     }
 
     function visitorInitials(name) {
@@ -703,7 +703,7 @@
         html += '<span class="lc-msg-time">';
         html += timeHtml(m.created_at);
         if (label && sender !== 'system' && sender !== 'agent') {
-            html += ' ┬╖ ' + esc(label);
+            html += '<span class="lc-meta-sep" aria-hidden="true"></span>' + esc(label);
         }
         html += '</span>';
         if (sender === 'agent' && !opts.history) {
@@ -728,38 +728,55 @@
         }
     }
 
-    /** LiveChat-style non-clickable session marker between archived / current chats */
+    function metaSep() {
+        return '<span class="lc-meta-sep" aria-hidden="true"></span>';
+    }
+
+    function sessionPart(html) {
+        return '<span class="lc-session-part">' + html + '</span>';
+    }
+
+    function joinSessionParts(parts) {
+        var out = '';
+        parts.forEach(function (p, i) {
+            if (i) out += metaSep();
+            out += p;
+        });
+        return out;
+    }
+
+    /** LiveChat-style session marker - centered plain text */
     function renderSessionDivider(kind, threadOrConv) {
         threadOrConv = threadOrConv || {};
         var ref = threadOrConv.reference || (threadOrConv.id ? ('#' + threadOrConv.id) : '');
         var status = (threadOrConv.status || '').toLowerCase();
         var when = formatSessionWhen(threadOrConv.ended_at || threadOrConv.last_message_at || threadOrConv.started_at);
-        var text = '';
+        var parts = [];
         var extraClass = kind || '';
 
         if (kind === 'archive-note') {
-            text = 'Chat history (agent only) - visitor sees a new session';
+            parts.push(sessionPart('Chat history (agent only)'));
         } else if (kind === 'start') {
-            text = 'Previous chat';
-            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
-            if (when) text += ' ┬╖ ' + esc(when);
+            parts.push(sessionPart('Previous chat'));
+            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
+            if (when) parts.push(sessionPart(esc(when)));
         } else if (kind === 'ended') {
             extraClass = 'is-ended';
             var endLabel = status === 'closed' ? 'Chat ended' : (status === 'waiting' ? 'Disconnected' : 'Session ended');
-            text = endLabel;
-            if (status) text += ' ┬╖ <span class="lc-session-divider-status">' + esc(status) + '</span>';
-            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
-            if (when) text += ' ┬╖ ' + esc(when);
+            parts.push(sessionPart(esc(endLabel)));
+            if (status) parts.push(sessionPart('<span class="lc-session-divider-status">' + esc(status.toUpperCase()) + '</span>'));
+            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
+            if (when) parts.push(sessionPart(esc(when)));
         } else if (kind === 'current') {
             extraClass = 'is-current';
-            text = 'Current chat';
-            if (ref) text += ' ┬╖ <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            parts.push(sessionPart('Current chat'));
+            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
         } else {
-            text = esc(String(kind || 'Session'));
+            parts.push(sessionPart(esc(String(kind || 'Session'))));
         }
 
         return '<div class="lc-session-divider ' + extraClass + '" role="separator">' +
-            '<div class="lc-session-divider-inner">' + text + '</div></div>';
+            '<div class="lc-session-divider-inner">' + joinSessionParts(parts) + '</div></div>';
     }
 
     /**
@@ -903,7 +920,7 @@
             if (uniqueCount === totalVisits) {
                 journeyCountEl.textContent = uniqueCount + (uniqueCount === 1 ? ' page' : ' pages');
             } else {
-                journeyCountEl.textContent = uniqueCount + ' pages ┬╖ ' + totalVisits + ' visits';
+                journeyCountEl.textContent = uniqueCount + ' pages  |  ' + totalVisits + ' visits';
             }
         }
         updateJourneySummary();
@@ -927,8 +944,8 @@
         var label = journeyStepLabel(current);
         var timeEl = journeyListEl.querySelector('.lc-journey-step.is-current .lc-journey-step-time');
         var timeText = timeEl ? timeEl.textContent.trim() : '';
-        var repeat = current.visit_count > 1 ? ' ┬╖ ├ù' + current.visit_count : '';
-        summaryEl.textContent = label + repeat + (timeText ? ' ┬╖ ' + timeText : '');
+        var repeat = current.visit_count > 1 ? '  |  ├ù' + current.visit_count : '';
+        summaryEl.textContent = label + repeat + (timeText ? '  |  ' + timeText : '');
     }
 
     function scrollJourneyToEnd() {
@@ -1056,7 +1073,7 @@
         html += '<span class="lc-transfer-agent-avatar" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
         html += '<span class="lc-transfer-agent-body">';
         html += '<strong>' + esc(agent.name) + '</strong>';
-        html += '<span>' + esc(statusLabel) + ' ┬╖ ' + esc(brandLabel) + '</span>';
+        html += '<span>' + esc(statusLabel) + '  |  ' + esc(brandLabel) + '</span>';
         html += '</span>';
         html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
         html += '</button>';

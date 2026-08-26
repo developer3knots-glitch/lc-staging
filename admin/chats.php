@@ -169,7 +169,7 @@ require __DIR__ . '/includes/header.php';
                         <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
                         <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
                     </div>
-                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send ┬╖ <kbd>Shift+Enter</kbd> new line</p>
+                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send <span class="lc-meta-sep" aria-hidden="true"></span> <kbd>Shift+Enter</kbd> new line</p>
                 </div>
             </div>
         </div>
