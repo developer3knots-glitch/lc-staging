@@ -2435,6 +2435,7 @@
                         previewUrl: isImage ? URL.createObjectURL(ready) : '',
                         label: window.LCChatFiles.getFileLabel(ready)
                     });
+                    renderPendingAttachment();
                 });
             });
         });
@@ -2509,9 +2510,11 @@
             fileInput.click();
         });
         fileInput.addEventListener('change', function () {
-            var file = fileInput.files && fileInput.files[0];
+            var batch = fileInput.files && fileInput.files.length
+                ? Array.prototype.slice.call(fileInput.files)
+                : [];
             fileInput.value = '';
-            queueAgentFile(file);
+            if (batch.length) queueAgentFiles(batch);
         });
     }
 

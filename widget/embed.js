@@ -598,9 +598,11 @@
                 fileInput.click();
             });
             fileInput.addEventListener('change', function () {
-                var files = fileInput.files;
+                var batch = fileInput.files && fileInput.files.length
+                    ? Array.prototype.slice.call(fileInput.files)
+                    : [];
                 fileInput.value = '';
-                if (files && files.length) queueVisitorFiles(files);
+                if (batch.length) queueVisitorFiles(batch);
             });
             if (window.LCChatFiles) {
                 window.LCChatFiles.applyFileInput(fileInput);
@@ -2820,6 +2822,7 @@
                         previewUrl: isImage ? URL.createObjectURL(ready) : '',
                         label: window.LCChatFiles.getFileLabel(ready)
                     });
+                    renderPendingAttachment();
                 });
             });
         });
