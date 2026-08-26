@@ -131,3 +131,55 @@
         }
     }
 })();
+
+/* Sidebar icon rail: fixed tooltips (not clipped by overflow) */
+(function () {
+    function ready(fn) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+        else fn();
+    }
+    ready(function () {
+        var sidebar = document.getElementById('lc-sidebar');
+        if (!sidebar || !sidebar.classList.contains('lc-sidebar-rail')) return;
+
+        var tip = document.getElementById('lc-sidebar-float-tip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'lc-sidebar-float-tip';
+            tip.setAttribute('role', 'tooltip');
+            document.body.appendChild(tip);
+        }
+
+        function isMobile() {
+            return window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+        }
+
+        function hide() {
+            tip.classList.remove('is-on');
+            tip.textContent = '';
+        }
+
+        function showFor(el) {
+            if (isMobile()) return;
+            var label = el.getAttribute('data-tip');
+            if (!label) return;
+            tip.textContent = label;
+            tip.classList.add('is-on');
+            var rect = el.getBoundingClientRect();
+            var top = rect.top + rect.height / 2;
+            var left = rect.right + 12;
+            tip.style.top = top + 'px';
+            tip.style.left = left + 'px';
+        }
+
+        sidebar.querySelectorAll('.lc-tip[data-tip]').forEach(function (el) {
+            el.addEventListener('mouseenter', function () { showFor(el); });
+            el.addEventListener('mouseleave', hide);
+            el.addEventListener('focus', function () { showFor(el); });
+            el.addEventListener('blur', hide);
+        });
+
+        window.addEventListener('scroll', hide, true);
+        window.addEventListener('resize', hide);
+    });
+})();

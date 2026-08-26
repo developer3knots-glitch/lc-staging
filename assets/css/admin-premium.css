@@ -5694,10 +5694,19 @@ a.lc-home-rt-card:hover {
     --lc-sidebar-w: 64px;
 }
 
+.lc-sidebar.lc-sidebar-rail,
 .lc-sidebar {
     width: var(--lc-sidebar-w);
     min-width: var(--lc-sidebar-w);
     background: #1a1d24;
+    /* Must be visible so hover tips can paint outside the rail */
+    overflow: visible !important;
+    z-index: 60;
+}
+
+.lc-sidebar-rail .lc-nav,
+.lc-sidebar .lc-nav {
+    overflow: visible !important;
 }
 
 .lc-sidebar-brand {
@@ -5754,7 +5763,7 @@ a.lc-home-rt-card:hover {
     color: #fff;
 }
 
-/* Hover tooltips */
+/* Hover tooltips — fixed layer via JS class; CSS fallback absolute */
 .lc-tip {
     position: relative;
 }
@@ -5765,43 +5774,80 @@ a.lc-home-rt-card:hover {
     top: 50%;
     transform: translateY(-50%) translateX(-4px);
     white-space: nowrap;
-    background: #111827;
+    background: #0b1220;
     color: #fff;
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     font-weight: 650;
     letter-spacing: 0.01em;
-    padding: 0.4rem 0.65rem;
+    padding: 0.42rem 0.7rem;
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
-    z-index: 80;
+    z-index: 9999;
 }
 .lc-tip[data-tip]::before {
     content: "";
     position: absolute;
-    left: calc(100% + 6px);
+    left: calc(100% + 5px);
     top: 50%;
     transform: translateY(-50%);
     border: 6px solid transparent;
-    border-right-color: #111827;
+    border-right-color: #0b1220;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.12s ease, visibility 0.12s;
-    z-index: 81;
+    z-index: 10000;
 }
-.lc-tip:hover[data-tip]::after,
-.lc-tip:focus-visible[data-tip]::after {
+.lc-tip[data-tip]:hover::after,
+.lc-tip[data-tip]:focus-visible::after,
+.lc-tip.is-tip-open[data-tip]::after {
     opacity: 1;
     visibility: visible;
     transform: translateY(-50%) translateX(0);
 }
-.lc-tip:hover[data-tip]::before,
-.lc-tip:focus-visible[data-tip]::before {
+.lc-tip[data-tip]:hover::before,
+.lc-tip[data-tip]:focus-visible::before,
+.lc-tip.is-tip-open[data-tip]::before {
     opacity: 1;
     visibility: visible;
+}
+
+/* Floating tip bubble (never clipped by sidebar overflow) */
+#lc-sidebar-float-tip {
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    transform: translateY(-50%);
+    background: #0b1220;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    padding: 0.42rem 0.7rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.1s ease;
+}
+#lc-sidebar-float-tip.is-on {
+    opacity: 1;
+    visibility: visible;
+}
+#lc-sidebar-float-tip::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 6px solid transparent;
+    border-right-color: #0b1220;
 }
 
 .lc-sidebar-footer {
@@ -5810,6 +5856,7 @@ a.lc-home-rt-card:hover {
     flex-direction: column;
     align-items: center;
     gap: 0.45rem;
+    overflow: visible;
 }
 .lc-agent-mini {
     position: relative;
@@ -5865,13 +5912,23 @@ a.lc-home-rt-card:hover {
 .lc-sidebar-logout .lc-nav-text { display: none; }
 .lc-sidebar-logout i { font-size: 1.15rem; }
 
+/* Desktop: hide CSS ::after tips when float tip is active (avoid double) */
+@media (min-width: 901px) {
+    .lc-sidebar-rail .lc-tip[data-tip]::after,
+    .lc-sidebar-rail .lc-tip[data-tip]::before {
+        display: none !important;
+    }
+}
+
 /* Mobile drawer: restore labels, hide floating tips */
 @media (max-width: 900px) {
     :root { --lc-sidebar-w: 260px; }
     .lc-sidebar {
         width: var(--lc-sidebar-w);
         min-width: var(--lc-sidebar-w);
+        overflow: hidden !important;
     }
+    .lc-sidebar .lc-nav { overflow-x: hidden !important; overflow-y: auto !important; }
     .lc-sidebar-brand {
         justify-content: flex-start;
         padding: 1.1rem 1rem;
@@ -5892,6 +5949,7 @@ a.lc-home-rt-card:hover {
     }
     .lc-agent-mini {
         width: 100%;
+        height: auto;
         justify-content: flex-start;
         gap: 0.65rem;
         margin-bottom: 0.35rem;
@@ -5912,6 +5970,7 @@ a.lc-home-rt-card:hover {
     .lc-sidebar-logout .lc-nav-text { display: inline; font-size: 0.84rem; font-weight: 600; }
     .lc-tip[data-tip]::after,
     .lc-tip[data-tip]::before { display: none !important; }
+    #lc-sidebar-float-tip { display: none !important; }
 }
 
 /* Keep chats desk rail consistent (already icon width) */
