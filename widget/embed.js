@@ -290,7 +290,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=35';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=36';
         document.head.appendChild(link);
     }
 
@@ -497,7 +497,14 @@
                         '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-transcript-sheet" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-sheet-title">' +
+                '<div id="lc-transcript-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-confirm-text">' +
+                    '<div class="lcw-sheet lcw-sheet-dark lcw-transcript-confirm">' +
+                        '<button type="button" class="lcw-sheet-x" id="lc-transcript-confirm-close" aria-label="Close">&times;</button>' +
+                        '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
+                        '<p class="lcw-sheet-title lcw-transcript-confirm-text" id="lc-transcript-confirm-text"></p>' +
+                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-light" id="lc-transcript-confirm-gotit">Got it</button>' +
+                    '</div>' +
+                '</div>' +                '<div id="lc-transcript-sheet" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-sheet-title">' +
                     '<div class="lcw-sheet lcw-sheet-dark lcw-sheet-wide lcw-transcript-sheet">' +
                         '<button type="button" class="lcw-sheet-x" id="lc-transcript-sheet-close" aria-label="Close">&times;</button>' +
                         '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
@@ -1417,6 +1424,7 @@
         if (root) root.classList.remove('lcw-panel-open');
         hideHeadMenu();
         hideTranscriptSheet();
+        hideTranscriptConfirm();
         persistPanelOpen(false);
     }
 
@@ -1606,6 +1614,22 @@
         if (sheet) sheet.hidden = true;
     }
 
+    function showTranscriptConfirm(email) {
+        hideHeadMenu();
+        hideTranscriptSheet();
+        var sheet = document.getElementById('lc-transcript-confirm');
+        var textEl = document.getElementById('lc-transcript-confirm-text');
+        if (!sheet || !textEl) return;
+        var addr = String(email || '').trim();
+        textEl.innerHTML = 'Chat transcript will be sent to <strong>' + esc(addr) + '</strong>. If your email isn\'t verified, you\'ll get a confirmation link first.';
+        sheet.hidden = false;
+    }
+
+    function hideTranscriptConfirm() {
+        var sheet = document.getElementById('lc-transcript-confirm');
+        if (sheet) sheet.hidden = true;
+    }
+
     function bindHeadMenu() {
         loadVisitorSoundPref();
         syncSoundToggleUi();
@@ -1668,6 +1692,20 @@
         if (transcriptSheet) {
             transcriptSheet.addEventListener('click', function (e) {
                 if (e.target === transcriptSheet) hideTranscriptSheet();
+            });
+        }
+        var transcriptConfirmGotIt = document.getElementById('lc-transcript-confirm-gotit');
+        if (transcriptConfirmGotIt) {
+            transcriptConfirmGotIt.addEventListener('click', hideTranscriptConfirm);
+        }
+        var transcriptConfirmClose = document.getElementById('lc-transcript-confirm-close');
+        if (transcriptConfirmClose) {
+            transcriptConfirmClose.addEventListener('click', hideTranscriptConfirm);
+        }
+        var transcriptConfirm = document.getElementById('lc-transcript-confirm');
+        if (transcriptConfirm) {
+            transcriptConfirm.addEventListener('click', function (e) {
+                if (e.target === transcriptConfirm) hideTranscriptConfirm();
             });
         }
     }
@@ -1865,12 +1903,9 @@
                 try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
                 transcriptEmailForClose = (data.email || email || '').toLowerCase();
                 if (input) input.value = data.email || email;
-                var hint = (data.hint || '').trim();
-                var okMsg = opts.auto
-                    ? ('Transcript sent to ' + (data.email || email) + '.' + (hint ? (' ' + hint) : ''))
-                    : ('Sent! Check your inbox for this chat.' + (hint ? (' ' + hint) : ''));
-                setEmailTranscriptStatus(okMsg, false, which);
                 markTranscriptSent();
+                setEmailTranscriptStatus('', false, which);
+                showTranscriptConfirm(data.email || email);
                 return;
             }
             if (sendBtn) {
