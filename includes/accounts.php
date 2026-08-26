@@ -188,16 +188,26 @@ function lc_migrate_legacy_account(): void
     }
 
 
-    // One-time: switch workspaces to manual "Assign to me" (can re-enable in Settings).
+    // Force manual assign once more (v2): inbox poll was still auto-joining when setting stayed on.
     try {
-        $mig = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'manual_assign_migrated' LIMIT 1");
+        $mig = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'manual_assign_migrated_v2' LIMIT 1");
         $mig->execute();
         $flag = (string) ($mig->fetchColumn() ?: '0');
         if ($flag !== '1') {
             try { $pdo->exec("UPDATE account_settings SET setting_value = '0' WHERE setting_key = 'auto_assign'"); } catch (Throwable $e) {}
             try { $pdo->exec("UPDATE settings SET setting_value = '0' WHERE setting_key = 'auto_assign'"); } catch (Throwable $e) {}
-            $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('manual_assign_migrated', '1')
-                ON DUPLICATE KEY UPDATE setting_value = '1'")->execute();
+            try {
+                $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('auto_assign', '0')
+                    ON DUPLICATE KEY UPDATE setting_value = '0'")->execute();
+            } catch (Throwable $e) {}
+            try {
+                $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('manual_assign_migrated_v2', '1')
+                    ON DUPLICATE KEY UPDATE setting_value = '1'")->execute();
+            } catch (Throwable $e) {
+                try {
+                    $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('manual_assign_migrated_v2', '1')")->execute();
+                } catch (Throwable $e2) {}
+            }
         }
     } catch (Throwable $e) {
     }

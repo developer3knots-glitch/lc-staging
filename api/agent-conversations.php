@@ -17,17 +17,7 @@ if (function_exists('lc_sweep_inactive_conversations')) {
     } catch (Throwable $e) {
     }
 }
-// Promote waiting chats past connect delay so agents see them promptly.
-if (function_exists('lc_try_assign_agent_after_delay')) {
-    try {
-        $pending = lc_db()->prepare("SELECT id FROM conversations WHERE status = 'waiting' AND agent_id IS NULL ORDER BY id DESC LIMIT 20");
-        $pending->execute();
-        foreach ($pending->fetchAll() as $prow) {
-            lc_try_assign_agent_after_delay((int) $prow['id']);
-        }
-    } catch (Throwable $e) {
-    }
-}
+// Manual assign: do not auto-claim waiting chats when agents poll the inbox.
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];
@@ -90,25 +80,10 @@ try {
     }
     unset($row);
 
-    $seen = [];
-    $collapsed = [];
-    foreach ($conversations as $row) {
-        $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $email = strtolower(trim((string) ($row['visitor_email'] ?? '')));
-        if ($ip !== '' && $ip !== '0.0.0.0' && $ip !== '127.0.0.1' && $ip !== '::1') {
-            $key = 'ip:' . $ip;
-        } elseif ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $key = 'em:' . $email;
-        } else {
-            $key = 'id:' . (int) $row['id'];
-        }
-        if (isset($seen[$key])) {
-            continue;
-        }
-        $seen[$key] = true;
-        $collapsed[] = $row;
+    if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
+        $conversations = lc_dedupe_inbox_conversations_by_ip($conversations);
     }
-    $conversations = array_slice($collapsed, 0, 50);
+    $conversations = array_slice($conversations, 0, 50);
 
     $convIds = array_map(static function ($r) {
         return (int) $r['id'];

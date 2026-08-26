@@ -125,12 +125,11 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
     $status = (string) ($conv['status'] ?? '');
     $wasClosed = $status === 'closed';
     if ($wasClosed) {
-        $status = !empty($conv['agent_id']) ? 'active' : 'waiting';
-        $db->prepare('UPDATE conversations SET status = ?, closed_at = NULL WHERE id = ?')->execute([$status, $convId]);
+        // Manual assign: returning visitor re-enters the unassigned queue (never auto-join prior agent).
+        $status = 'waiting';
+        $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
+            ->execute([$status, $convId]);
         lc_add_system_message($convId, 'Visitor returned. Previous conversation is open again.');
-        if ($status === 'waiting') {
-            lc_assign_agent($convId);
-        }
     }
 
     if ($wasClosed || $visitorChanged) {
@@ -147,26 +146,60 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
  * @param list<array<string,mixed>> $conversations
  * @return list<array<string,mixed>>
  */
+function lc_inbox_identity_key(array $row): string
+{
+    $ip = trim((string) ($row['visitor_ip'] ?? ''));
+    $email = function_exists('lc_normalize_visitor_email')
+        ? lc_normalize_visitor_email((string) ($row['visitor_email'] ?? ''))
+        : strtolower(trim((string) ($row['visitor_email'] ?? '')));
+    $visitorId = (int) ($row['visitor_id'] ?? 0);
+
+    if (function_exists('lc_ip_usable_for_identity') ? lc_ip_usable_for_identity($ip) : ($ip !== '' && $ip !== '127.0.0.1' && $ip !== '::1')) {
+        return 'ip:' . $ip;
+    }
+    if ($email !== '') {
+        return 'em:' . $email;
+    }
+    if ($visitorId > 0) {
+        return 'vid:' . $visitorId;
+    }
+    return 'id:' . (int) ($row['id'] ?? 0);
+}
+
+function lc_inbox_row_rank(array $row): array
+{
+    $status = (string) ($row['status'] ?? '');
+    // Prefer live queue over archived/closed so returning visitors don't blink two rows.
+    $statusRank = $status === 'waiting' ? 0 : ($status === 'active' ? 1 : 2);
+    $ts = strtotime((string) ($row['last_message_at'] ?? $row['started_at'] ?? '')) ?: 0;
+    $id = (int) ($row['id'] ?? 0);
+    return [$statusRank, -$ts, -$id];
+}
+
+/**
+ * Live inbox: one row per visitor identity. Prefer waiting/active over closed.
+ *
+ * @param list<array<string,mixed>> $conversations
+ * @return list<array<string,mixed>>
+ */
 function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
 {
-    $seen = [];
-    $out = [];
+    $best = [];
     foreach ($conversations as $row) {
-        $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $email = lc_normalize_visitor_email((string) ($row['visitor_email'] ?? ''));
-        if (lc_ip_usable_for_identity($ip)) {
-            $key = 'ip:' . $ip;
-        } elseif ($email !== '') {
-            $key = 'em:' . $email;
-        } else {
-            $key = 'id:' . (int) ($row['id'] ?? 0);
-        }
-        if (isset($seen[$key])) {
+        $key = lc_inbox_identity_key($row);
+        if (!isset($best[$key])) {
+            $best[$key] = $row;
             continue;
         }
-        $seen[$key] = true;
-        $out[] = $row;
+        if (lc_inbox_row_rank($row) < lc_inbox_row_rank($best[$key])) {
+            $best[$key] = $row;
+        }
     }
+
+    $out = array_values($best);
+    usort($out, static function ($a, $b) {
+        return lc_inbox_row_rank($a) <=> lc_inbox_row_rank($b);
+    });
 
     return $out;
 }

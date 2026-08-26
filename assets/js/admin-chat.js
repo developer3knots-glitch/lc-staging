@@ -480,6 +480,48 @@
         return html;
     }
 
+    function inboxIdentityKey(row) {
+        var ip = String((row && row.visitor_ip) || '').trim();
+        var email = String((row && row.visitor_email) || '').trim().toLowerCase();
+        var vid = parseInt((row && row.visitor_id) || 0, 10) || 0;
+        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') return 'ip:' + ip;
+        if (email) return 'em:' + email;
+        if (vid > 0) return 'vid:' + vid;
+        return 'id:' + (parseInt((row && row.id) || 0, 10) || 0);
+    }
+
+    function inboxRowRank(row) {
+        var status = String((row && row.status) || '');
+        var statusRank = status === 'waiting' ? 0 : (status === 'active' ? 1 : 2);
+        var ts = Date.parse(String((row && (row.last_message_at || row.started_at)) || '')) || 0;
+        var id = parseInt((row && row.id) || 0, 10) || 0;
+        return [statusRank, -ts, -id];
+    }
+
+    function rankBetter(a, b) {
+        var ra = inboxRowRank(a);
+        var rb = inboxRowRank(b);
+        for (var i = 0; i < ra.length; i++) {
+            if (ra[i] < rb[i]) return true;
+            if (ra[i] > rb[i]) return false;
+        }
+        return false;
+    }
+
+    function collapseInboxConversations(list) {
+        var best = {};
+        (list || []).forEach(function (row) {
+            if (!row) return;
+            var key = inboxIdentityKey(row);
+            if (!best[key] || rankBetter(row, best[key])) {
+                best[key] = row;
+            }
+        });
+        return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) {
+            return rankBetter(a, b) ? -1 : (rankBetter(b, a) ? 1 : 0);
+        });
+    }
+
     function syncConversationListStatus(c) {
         if (!c || !c.id) return;
         var id = parseInt(c.id, 10);
@@ -493,14 +535,18 @@
             var next = Object.assign({}, row, { status: status });
             if (c.agent_name) next.agent_name = c.agent_name;
             if (c.agent_id !== undefined && c.agent_id !== null) next.agent_id = c.agent_id;
+            if (c.visitor_ip) next.visitor_ip = c.visitor_ip;
+            if (c.visitor_email) next.visitor_email = c.visitor_email;
+            if (c.visitor_id) next.visitor_id = c.visitor_id;
             if (c.last_message) next.last_message = c.last_message;
             if (c.last_message_at) next.last_message_at = c.last_message_at;
             return next;
         });
         if (!found) {
-            // Keep the open chat visible in the list with live status (IP collapse may hide it).
+            // Keep open chat visible, but collapse same visitor so closed+live don't blink.
             lastConversations = [Object.assign({}, c)].concat(lastConversations || []);
         }
+        lastConversations = collapseInboxConversations(lastConversations);
         paintConversationList(filterConversations(lastConversations));
     }
 
@@ -940,7 +986,7 @@
                     paintConversationList([]);
                     return;
                 }
-                lastConversations = data.conversations;
+                lastConversations = collapseInboxConversations(data.conversations || []);
                 paintConversationList(filterConversations(lastConversations));
 
                 // Keep the open chat mounted even if inbox hides IP duplicates.
