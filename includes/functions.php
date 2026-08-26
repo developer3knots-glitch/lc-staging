@@ -287,6 +287,57 @@ function lc_assign_agent(int $conversationId): ?int
     return null;
 }
 
+
+/** Seconds to wait before auto-assigning an agent (visitor sees "Connecting..."). */
+function lc_agent_connect_delay_seconds(?int $accountId = null): int
+{
+    $raw = $accountId && $accountId > 0
+        ? lc_account_setting($accountId, 'agent_connect_delay_seconds', '4')
+        : lc_setting('agent_connect_delay_seconds', '4');
+    return max(2, min(30, (int) $raw));
+}
+
+/**
+ * Assign agent only after a short connect delay so the widget can show a loader.
+ */
+function lc_try_assign_agent_after_delay(int $conversationId): ?int
+{
+    if ($conversationId < 1) {
+        return null;
+    }
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT c.id, c.status, c.agent_id, c.started_at, c.last_message_at, c.brand_id, b.account_id
+            FROM conversations c
+            LEFT JOIN brands b ON b.id = c.brand_id
+            WHERE c.id = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$conversationId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+        if ((string) ($row['status'] ?? '') !== 'waiting') {
+            return null;
+        }
+        if (!empty($row['agent_id'])) {
+            return (int) $row['agent_id'];
+        }
+
+        $accountId = isset($row['account_id']) ? (int) $row['account_id'] : 0;
+        $delay = lc_agent_connect_delay_seconds($accountId > 0 ? $accountId : null);
+        $anchor = $row['last_message_at'] ?? $row['started_at'] ?? null;
+        $ts = $anchor ? strtotime((string) $anchor) : false;
+        if ($ts === false || (time() - $ts) < $delay) {
+            return null;
+        }
+
+        return lc_assign_agent($conversationId);
+    } catch (Throwable $e) {
+        return null;
+    }
+}
 function lc_add_agent_join_message(int $conversationId, int $agentId): void
 {
     $stmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');

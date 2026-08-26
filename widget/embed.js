@@ -355,7 +355,14 @@
                 '</div>' +
                 '<div id="lc-waiting-bar" class="lcw-waiting-bar">' +
                     '<span class="lcw-typing-dots"><span></span><span></span><span></span></span>' +
-                    '<span id="lc-waiting-text">Connecting you with a team member...</span>' +
+                    '<span id="lc-waiting-text">Connecting to live agent...</span>' +
+                '</div>' +
+                '<div id="lc-connecting-card" class="lcw-connecting-card" hidden>' +
+                    '<div class="lcw-connecting-spinner" aria-hidden="true"></div>' +
+                    '<div class="lcw-connecting-copy">' +
+                        '<strong>Connecting to live agent</strong>' +
+                        '<span>Please wait a moment...</span>' +
+                    '</div>' +
                 '</div>' +
                 '<div id="lc-panel-prechat" class="lcw-prechat" style="display:none">' +
                     '<div id="lc-prechat-status" class="lcw-status-card">' +
@@ -1559,7 +1566,7 @@
             updateStatus('Chatting with ' + data.agent.name, true);
         } else if (data.status === 'waiting') {
             setWaitingState(true);
-            updateStatus('Waiting for an agent...', agentsOnline > 0);
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
         } else {
             setWaitingState(false);
             updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
@@ -1687,6 +1694,21 @@
         isWaitingForAgent = waiting;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
+        var card = document.getElementById('lc-connecting-card');
+        var text = document.getElementById('lc-waiting-text');
+        if (text) {
+            text.textContent = waiting ? 'Connecting to live agent...' : text.textContent;
+        }
+        if (card) {
+            if (waiting && !chatClosed) {
+                card.hidden = false;
+            } else {
+                card.hidden = true;
+            }
+        }
+        if (waiting && !chatClosed) {
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
+        }
     }
 
     function setPeerTypingVisible(show, name) {
@@ -2084,7 +2106,7 @@
                     updateStatus('Chatting with ' + data.agent_name, true);
                 } else if (data.status === 'waiting') {
                     setWaitingState(true);
-                    updateStatus('Waiting for an agent...', agentsOnline > 0);
+                    updateStatus('Connecting to live agent...', agentsOnline > 0);
                 } else if (agentsOnline > 0) {
                     updateStatus('Team online', true);
                 }

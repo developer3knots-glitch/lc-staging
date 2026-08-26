@@ -17,6 +17,17 @@ if (function_exists('lc_sweep_inactive_conversations')) {
     } catch (Throwable $e) {
     }
 }
+// Promote waiting chats past connect delay so agents see them promptly.
+if (function_exists('lc_try_assign_agent_after_delay')) {
+    try {
+        $pending = lc_db()->prepare("SELECT id FROM conversations WHERE status = 'waiting' AND agent_id IS NULL ORDER BY id DESC LIMIT 20");
+        $pending->execute();
+        foreach ($pending->fetchAll() as $prow) {
+            lc_try_assign_agent_after_delay((int) $prow['id']);
+        }
+    } catch (Throwable $e) {
+    }
+}
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];

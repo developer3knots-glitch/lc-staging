@@ -1285,3 +1285,43 @@
         to { opacity: 1; transform: translateY(0); }
     }
 }
+
+/* Connecting to live agent */
+.lcw-connecting-card {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin: 0.85rem 1rem 0.35rem;
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+}
+.lcw-connecting-card[hidden] { display: none !important; }
+.lcw-connecting-spinner {
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--lcw-primary) 25%, #e2e8f0);
+    border-top-color: var(--lcw-primary);
+    animation: lcw-spin 0.75s linear infinite;
+    flex-shrink: 0;
+}
+.lcw-connecting-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    min-width: 0;
+}
+.lcw-connecting-copy strong {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.lcw-connecting-copy span {
+    font-size: 0.75rem;
+    color: var(--lcw-muted, #64748b);
+}
+@keyframes lcw-spin {
+    to { transform: rotate(360deg); }
+}
