@@ -5327,3 +5327,371 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     color: #d1d5db;
     line-height: 1.35;
 }
+
+/* ===== LiveChat-style Home Dashboard ===== */
+body.lc-page-dashboard .lc-main {
+    background: #f5f7fa;
+}
+body.lc-page-dashboard .lc-topbar {
+    background: #fff;
+    border-bottom: 1px solid #e8edf3;
+    box-shadow: none;
+}
+body.lc-page-dashboard .lc-topbar-title h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+body.lc-page-dashboard .lc-topbar-sub { display: none; }
+body.lc-page-dashboard .lc-content {
+    background: #f5f7fa;
+    padding: 1.25rem 1.5rem 2.5rem;
+}
+
+.lc-home { max-width: 1100px; margin: 0 auto; }
+.lc-home-hello {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin: 0.25rem 0 1.25rem;
+    flex-wrap: wrap;
+}
+.lc-home-hello-av {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #1b2a4a;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+.lc-home-hello-text h1 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #152033;
+}
+.lc-home-hello-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.2rem;
+    color: #2f6fed;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.lc-home-hello-link:hover { text-decoration: underline; }
+.lc-home-hello-actions { margin-left: auto; }
+
+.lc-home-unread {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    background: #eef4ff;
+    color: #1e3a8a;
+    font-size: 0.9rem;
+}
+.lc-home-unread a { color: #1d4ed8; }
+
+.lc-home-banner {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 0 1.5rem;
+    padding: 1.25rem 1.35rem;
+    border-radius: 16px;
+    background: linear-gradient(105deg, #e8f1ff 0%, #f3f7ff 55%, #eef6ff 100%);
+    border: 1px solid #d7e6ff;
+    overflow: hidden;
+}
+.lc-home-banner-copy { max-width: 34rem; }
+.lc-home-banner h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #152033;
+}
+.lc-home-banner p {
+    margin: 0 0 0.95rem;
+    color: #4b5b76;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+.lc-home-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+}
+.lc-home-banner-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0.45rem 0.95rem;
+    border-radius: 8px;
+    background: #1b2a4a;
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+.lc-home-banner-btn:hover { background: #111827; color: #fff; }
+.lc-home-banner-link {
+    color: #2f6fed;
+    font-weight: 700;
+    font-size: 0.88rem;
+    text-decoration: none;
+}
+.lc-home-banner-link:hover { text-decoration: underline; }
+.lc-home-banner-art {
+    width: 88px;
+    min-width: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f5b942;
+    font-size: 3rem;
+    opacity: 0.95;
+}
+
+.lc-home-section { margin: 0 0 1.5rem; }
+.lc-home-section-title {
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #152033;
+}
+.lc-home-rt {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+.lc-home-rt-card {
+    background: #fff;
+    border: 1px solid #e6ebf2;
+    border-radius: 14px;
+    padding: 1.15rem 1.2rem 1.25rem;
+    text-decoration: none;
+    color: inherit;
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+a.lc-home-rt-card:hover {
+    border-color: #c9d7ea;
+    box-shadow: 0 8px 24px rgba(21, 32, 51, 0.06);
+}
+.lc-home-rt-label {
+    font-size: 0.92rem;
+    color: #5b6b82;
+    font-weight: 600;
+}
+.lc-home-rt-value {
+    font-size: 2.35rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: #152033;
+    line-height: 1;
+    margin-top: 0.85rem;
+}
+.lc-home-rt-agents { justify-content: center; gap: 0.75rem; }
+.lc-home-invite {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    min-height: 40px;
+    padding: 0.45rem 1rem;
+    border-radius: 8px;
+    background: #1b2a4a;
+    color: #fff !important;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+.lc-home-invite:hover { background: #111827; }
+
+.lc-home-week {
+    background: #fff;
+    border: 1px solid #e6ebf2;
+    border-radius: 16px;
+    padding: 1.2rem 1.25rem 1rem;
+}
+.lc-home-week-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+.lc-home-week-head h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #152033;
+}
+.lc-home-week-kicker {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #6b7a90;
+    font-weight: 600;
+}
+.lc-home-week-total {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-top: 0.25rem;
+}
+.lc-home-week-total strong {
+    font-size: 2.1rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: #152033;
+}
+.lc-home-week-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: #e8f8ef;
+    color: #0f7a45;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+.lc-home-week-link {
+    color: #2f6fed;
+    font-weight: 700;
+    font-size: 0.88rem;
+    text-decoration: none;
+}
+.lc-home-week-link:hover { text-decoration: underline; }
+.lc-home-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.55rem;
+    min-height: 160px;
+    padding: 0.5rem 0.25rem 0.25rem;
+}
+.lc-home-chart .lc-activity-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    min-width: 0;
+    height: 150px;
+}
+.lc-home-chart .lc-activity-bar {
+    width: 100%;
+    max-width: 36px;
+    min-height: 4px;
+    border-radius: 8px 8px 4px 4px;
+    background: linear-gradient(180deg, #5b9bff 0%, #2f6fed 100%);
+}
+.lc-home-chart .lc-activity-label {
+    font-size: 0.72rem;
+    color: #7a879c;
+    font-weight: 600;
+}
+.lc-home-chart .lc-activity-val {
+    font-size: 0.72rem;
+    color: #95a1b3;
+    font-weight: 600;
+}
+.lc-home-week-foot {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid #eef2f7;
+}
+.lc-home-week-foot div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.lc-home-week-foot span {
+    font-size: 0.8rem;
+    color: #6b7a90;
+    font-weight: 600;
+}
+.lc-home-week-foot strong {
+    font-size: 1.05rem;
+    color: #152033;
+    font-weight: 800;
+}
+
+.lc-home-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
+    gap: 1rem;
+    align-items: start;
+}
+.lc-home-panel {
+    background: #fff;
+    border: 1px solid #e6ebf2;
+    border-radius: 14px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+.lc-home-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.95rem 1.1rem;
+    border-bottom: 1px solid #eef2f7;
+}
+.lc-home-panel-head h3 {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: #152033;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.lc-home-panel-head a,
+.lc-home-panel-head span {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #2f6fed;
+    text-decoration: none;
+}
+.lc-home-count {
+    display: inline-flex;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    padding: 0 0.35rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #fff4e5;
+    color: #b45309;
+    font-size: 0.75rem;
+}
+.lc-home-panel .lc-conv-feed,
+.lc-home-panel .lc-team-list,
+.lc-home-panel .lc-brand-stack {
+    padding: 0.35rem 0.4rem 0.55rem;
+}
+
+@media (max-width: 960px) {
+    .lc-home-rt { grid-template-columns: 1fr; }
+    .lc-home-grid { grid-template-columns: 1fr; }
+    .lc-home-week-foot { grid-template-columns: 1fr 1fr; }
+    .lc-home-banner-art { display: none; }
+}

@@ -26,7 +26,7 @@ if ($agent['role'] === 'admin') {
     <?php require __DIR__ . '/head-assets.php'; ?>
     <style>:root { --lc-primary: <?= lc_sanitize($primary) ?>; --lc-primary-dark: <?= lc_sanitize($primary) ?>; }</style>
 </head>
-<body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?>">
+<body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?><?= (($activeNav ?? '') === 'dashboard') ? ' lc-page-dashboard' : '' ?>">
 <div class="lc-app" id="lc-app">
     <div class="lc-sidebar-backdrop" id="lc-sidebar-backdrop"></div>
     <aside class="lc-sidebar" id="lc-sidebar">
@@ -65,7 +65,7 @@ if ($agent['role'] === 'admin') {
         <header class="lc-topbar<?= (($activeNav ?? '') === 'chats') ? ' lc-topbar-desk' : '' ?>">
             <button type="button" class="lc-sidebar-toggle" id="lc-sidebar-toggle" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
             <div class="lc-topbar-title">
-                <h2><?= lc_sanitize($pageTitle ?? 'Dashboard') ?></h2>
+                <h2><?= lc_sanitize($pageTitle ?? 'Home') ?></h2>
                 <?php if (($activeNav ?? '') !== 'chats'): ?>
                 <p class="lc-topbar-sub">Support operations console</p>
                 <?php endif; ?>

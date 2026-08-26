@@ -81,12 +81,18 @@
         var wrap = document.getElementById('lc-dash-cta-wrap');
         var cta = document.getElementById('lc-dash-cta');
         if (count > 0) {
+            var ctaCount = document.getElementById('lc-dash-cta-count');
+            if (ctaCount) ctaCount.textContent = count;
             if (cta) {
-                cta.innerHTML = '<i class="ti ti-bolt"></i> Answer ' + count + ' waiting chat' + (count === 1 ? '' : 's');
+                cta.style.display = '';
+                if (!ctaCount) {
+                    cta.innerHTML = '<i class="ti ti-bolt"></i> Answer ' + count + ' waiting';
+                }
             }
             if (wrap) wrap.style.display = '';
-        } else if (wrap) {
-            wrap.style.display = 'none';
+        } else {
+            if (cta) cta.style.display = 'none';
+            if (wrap) wrap.style.display = 'none';
         }
     }
 
