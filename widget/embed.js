@@ -440,7 +440,7 @@
                         '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code"> - </code></p>' +
                     '</div>' +
                     '<div class="lcw-ended-actions">' +
-                        '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
+                        '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Resume this chat</button>' +
                         '<div class="lcw-email-export" id="lc-email-export">' +
                             '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
                             '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
@@ -472,7 +472,7 @@
         document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
         document.getElementById('lc-close-chat').addEventListener('click', endChat);
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
-        document.getElementById('lc-resume-ticket').addEventListener('click', openTicketResumeFromEnded);
+        document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
         var emailSendBtn = document.getElementById('lc-email-transcript-send');
         if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
@@ -680,6 +680,78 @@
         showTicketResumeError('');
     }
 
+    function updateEndedResumeButton() {
+        var resumeBtn = document.getElementById('lc-resume-ticket');
+        if (!resumeBtn) return;
+        if (conversationId) {
+            resumeBtn.textContent = 'Resume this chat';
+            resumeBtn.hidden = false;
+            resumeBtn.disabled = false;
+        } else if (ticketResumeEnabled) {
+            resumeBtn.textContent = 'Continue with ticket';
+            resumeBtn.hidden = false;
+            resumeBtn.disabled = false;
+        } else {
+            resumeBtn.hidden = true;
+        }
+    }
+
+    function resumeFromEnded() {
+        if (conversationId) {
+            resumeSameChat();
+            return;
+        }
+        openTicketResumeFromEnded();
+    }
+
+    function resumeSameChat() {
+        if (!conversationId) {
+            openTicketResumeFromEnded();
+            return;
+        }
+        var resumeBtn = document.getElementById('lc-resume-ticket');
+        if (resumeBtn) {
+            resumeBtn.disabled = true;
+            resumeBtn.classList.add('is-loading');
+        }
+        fetch(siteUrl + '/api/visitor-resume.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                conversation_id: conversationId,
+                chat_token: chatToken || '',
+                page_url: window.location.href,
+                website_url: ''
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (resumeBtn) {
+                resumeBtn.disabled = false;
+                resumeBtn.classList.remove('is-loading');
+            }
+            if (!data.success) {
+                // Fall back to ticket form when one-click resume is not possible
+                if (ticketResumeEnabled) {
+                    openTicketResumeFromEnded();
+                } else {
+                    alert(data.error || 'Unable to resume this chat. Please start a new conversation.');
+                }
+                return;
+            }
+            leaveCloseSent = false;
+            handleChatStarted(data, { keepMessages: false });
+        })
+        .catch(function () {
+            if (resumeBtn) {
+                resumeBtn.disabled = false;
+                resumeBtn.classList.remove('is-loading');
+            }
+            alert('Unable to resume this chat. Please try again.');
+        });
+    }
     function openTicketResumeFromEnded() {
         if (!ticketResumeEnabled) {
             return;

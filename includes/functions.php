@@ -725,6 +725,61 @@ function lc_reopen_recent_visitor_close(int $conversationId, int $visitorId): ?a
     return ['id' => $conversationId, 'status' => 'active'];
 }
 
+
+/**
+ * Visitor one-click resume of a closed chat (same visitor + brand), up to $maxDays.
+ *
+ * @return array{ok:bool,conversation_id?:int,status?:string,error?:string}
+ */
+function lc_visitor_resume_closed_conversation(int $conversationId, int $visitorId, int $brandId, int $maxDays = 14): array
+{
+    if ($conversationId < 1 || $visitorId < 1 || $brandId < 1) {
+        return ['ok' => false, 'error' => 'Invalid conversation'];
+    }
+    $maxDays = max(1, min(90, $maxDays));
+    $db = lc_db();
+    $stmt = $db->prepare('
+        SELECT id, status, agent_id, brand_id, visitor_id, closed_at
+        FROM conversations
+        WHERE id = ? AND visitor_id = ? AND brand_id = ?
+        LIMIT 1
+    ');
+    $stmt->execute([$conversationId, $visitorId, $brandId]);
+    $conv = $stmt->fetch();
+    if (!$conv) {
+        return ['ok' => false, 'error' => 'Conversation not found'];
+    }
+
+    $status = (string) ($conv['status'] ?? '');
+    if ($status === 'waiting' || $status === 'active') {
+        return [
+            'ok' => true,
+            'conversation_id' => (int) $conv['id'],
+            'status' => $status,
+        ];
+    }
+    if ($status !== 'closed') {
+        return ['ok' => false, 'error' => 'This chat cannot be resumed'];
+    }
+
+    if (!empty($conv['closed_at'])) {
+        $closedTs = strtotime((string) $conv['closed_at']);
+        if ($closedTs !== false && (time() - $closedTs) > ($maxDays * 86400)) {
+            return ['ok' => false, 'error' => 'This chat is too old to resume. Please start a new conversation.'];
+        }
+    }
+
+    $newStatus = !empty($conv['agent_id']) ? 'active' : 'waiting';
+    $db->prepare("UPDATE conversations SET status = ?, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
+        ->execute([$newStatus, $conversationId]);
+    lc_add_system_message($conversationId, 'Visitor resumed this conversation.');
+
+    return [
+        'ok' => true,
+        'conversation_id' => $conversationId,
+        'status' => $newStatus,
+    ];
+}
 function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
 {
     $stmt = lc_db()->prepare("
