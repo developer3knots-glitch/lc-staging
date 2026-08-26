@@ -133,7 +133,16 @@
     justify-content: center;
     transition: transform 0.2s ease;
 }
-#lc-bubble.lcw-open #lc-bubble-icon { transform: rotate(-8deg) scale(0.92); }
+#lc-bubble.lcw-open {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scale(0.5);
+}
+#lc-bubble.lcw-open::before {
+    display: none;
+}
+#lc-bubble.lcw-open #lc-bubble-icon { transform: none; }
 
 #lc-bubble-badge {
     position: absolute;
