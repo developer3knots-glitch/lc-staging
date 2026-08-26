@@ -291,7 +291,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=37';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=38';
         document.head.appendChild(link);
     }
 
