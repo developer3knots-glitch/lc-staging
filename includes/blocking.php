@@ -50,6 +50,103 @@ function lc_resolve_geo(string $ip): array
  */
 
 /**
+ * @return array<string, mixed>|null
+ */
+function lc_http_get_json(string $url, float $timeout = 3.0): ?array
+{
+    $ua = '3Knots-LiveChat/1.0';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => (int) ceil($timeout),
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_USERAGENT => $ua,
+        ]);
+        $raw = curl_exec($ch);
+        curl_close($ch);
+        if (is_string($raw) && $raw !== '') {
+            $data = json_decode($raw, true);
+            if (is_array($data)) {
+                return $data;
+            }
+        }
+    }
+
+    $ctx = stream_context_create([
+        'http' => ['timeout' => $timeout, 'header' => "User-Agent: {$ua}\r\n"],
+        'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
+    ]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw) {
+        $data = json_decode($raw, true);
+        return is_array($data) ? $data : null;
+    }
+
+    return null;
+}
+
+/**
+ * @param array<string, mixed> $data
+ * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}|null
+ */
+function lc_geo_payload_from_ip_api(array $data): ?array
+{
+    if (empty($data['status']) || $data['status'] !== 'success') {
+        return null;
+    }
+    $countryName = (string) ($data['country'] ?? 'Unknown');
+    $code = strtoupper((string) ($data['countryCode'] ?? ''));
+    $city = trim((string) ($data['city'] ?? ''));
+    $region = trim((string) ($data['regionName'] ?? ''));
+    $lat = isset($data['lat']) ? (float) $data['lat'] : null;
+    $lon = isset($data['lon']) ? (float) $data['lon'] : null;
+    $parts = array_values(array_filter([$city, $region, $countryName]));
+    $label = $parts ? implode(', ', $parts) : $countryName;
+
+    return [
+        'country' => $countryName,
+        'country_code' => $code,
+        'city' => $city,
+        'region' => $region,
+        'lat' => $lat,
+        'lon' => $lon,
+        'label' => $label,
+    ];
+}
+
+/**
+ * @param array<string, mixed> $data
+ * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}|null
+ */
+function lc_geo_payload_from_ipwho(array $data): ?array
+{
+    if (empty($data['success'])) {
+        return null;
+    }
+    $countryName = (string) ($data['country'] ?? 'Unknown');
+    $code = strtoupper((string) ($data['country_code'] ?? ''));
+    $city = trim((string) ($data['city'] ?? ''));
+    $region = trim((string) ($data['region'] ?? ''));
+    $lat = isset($data['latitude']) ? (float) $data['latitude'] : null;
+    $lon = isset($data['longitude']) ? (float) $data['longitude'] : null;
+    $parts = array_values(array_filter([$city, $region, $countryName]));
+    $label = $parts ? implode(', ', $parts) : $countryName;
+
+    return [
+        'country' => $countryName,
+        'country_code' => $code,
+        'city' => $city,
+        'region' => $region,
+        'lat' => $lat,
+        'lon' => $lon,
+        'label' => $label,
+    ];
+}
+
+/**
  * Full IP geolocation for maps (city/region + coordinates). Cached per request.
  * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}
  */
@@ -77,31 +174,23 @@ function lc_resolve_geo_full(string $ip): array
         return $fallback;
     }
 
-    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=status,country,countryCode,city,regionName,lat,lon';
-    $ctx = stream_context_create(['http' => ['timeout' => 2.5]]);
-    $raw = @file_get_contents($url, false, $ctx);
-    if ($raw) {
-        $data = json_decode($raw, true);
-        if (!empty($data['status']) && $data['status'] === 'success') {
-            $countryName = (string) ($data['country'] ?? 'Unknown');
-            $code = strtoupper((string) ($data['countryCode'] ?? ''));
-            $city = trim((string) ($data['city'] ?? ''));
-            $region = trim((string) ($data['regionName'] ?? ''));
-            $lat = isset($data['lat']) ? (float) $data['lat'] : null;
-            $lon = isset($data['lon']) ? (float) $data['lon'] : null;
-            $parts = array_values(array_filter([$city, $region, $countryName]));
-            $label = $parts ? implode(', ', $parts) : $countryName;
-            $cache[$ip] = [
-                'country' => $countryName,
-                'country_code' => $code,
-                'city' => $city,
-                'region' => $region,
-                'lat' => $lat,
-                'lon' => $lon,
-                'label' => $label,
-            ];
-            return $cache[$ip];
+    $encoded = urlencode($ip);
+    $result = null;
+
+    $ipApi = lc_http_get_json('https://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon');
+    if ($ipApi) {
+        $result = lc_geo_payload_from_ip_api($ipApi);
+    }
+    if ($result === null) {
+        $ipWho = lc_http_get_json('https://ipwho.is/' . $encoded);
+        if ($ipWho) {
+            $result = lc_geo_payload_from_ipwho($ipWho);
         }
+    }
+
+    if ($result !== null) {
+        $cache[$ip] = $result;
+        return $result;
     }
 
     $cache[$ip] = $fallback;

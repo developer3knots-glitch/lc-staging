@@ -75,6 +75,9 @@ try {
             $country,
         ]);
         $visitorId = (int) $db->lastInsertId();
+        if (function_exists('lc_refresh_visitor_geo')) {
+            lc_refresh_visitor_geo($visitorId, $ip);
+        }
         $visitorName = $name;
         $visitorEmail = $email;
     } else {

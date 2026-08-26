@@ -1174,15 +1174,26 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         'visitor_geo_lon' => $row['geo_lon'] ?? null,
     ]);
 
-    if ($payload['lat'] !== null && $payload['lon'] !== null) {
+    $hasCoords = $payload['lat'] !== null && $payload['lon'] !== null;
+    $hasCity = $payload['city'] !== '';
+    if ($hasCoords && $hasCity) {
         return $payload;
     }
 
+    $ip = trim($ip);
+    if ($ip === '' && !empty($row['ip_address'])) {
+        $ip = trim((string) $row['ip_address']);
+    }
     if ($ip === '' || !function_exists('lc_resolve_geo_full')) {
         return $payload;
     }
 
     $geo = lc_resolve_geo_full($ip);
+    $gotData = ($geo['lat'] !== null && $geo['lon'] !== null) || $geo['city'] !== '';
+    if (!$gotData) {
+        return $payload;
+    }
+
     $countryStore = $geo['country'];
     if (!empty($geo['country_code'])) {
         $countryStore .= ' (' . $geo['country_code'] . ')';

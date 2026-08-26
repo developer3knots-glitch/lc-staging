@@ -252,4 +252,7 @@ function lc_update_visitor_geo(int $visitorId, string $ip, ?string $userAgent, ?
     $geo = lc_resolve_geo($ip);
     $stmt = lc_db()->prepare('UPDATE visitors SET ip_address = ?, country = ?, user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP() WHERE id = ?');
     $stmt->execute([$ip, $geo['country'], $userAgent, $pageUrl, $visitorId]);
+    if (function_exists('lc_refresh_visitor_geo')) {
+        lc_refresh_visitor_geo($visitorId, $ip);
+    }
 }
