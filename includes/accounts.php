@@ -187,6 +187,20 @@ function lc_migrate_legacy_account(): void
         }
     }
 
+
+    // One-time: switch workspaces to manual "Assign to me" (can re-enable in Settings).
+    try {
+        $mig = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'manual_assign_migrated' LIMIT 1");
+        $mig->execute();
+        $flag = (string) ($mig->fetchColumn() ?: '0');
+        if ($flag !== '1') {
+            try { $pdo->exec("UPDATE account_settings SET setting_value = '0' WHERE setting_key = 'auto_assign'"); } catch (Throwable $e) {}
+            try { $pdo->exec("UPDATE settings SET setting_value = '0' WHERE setting_key = 'auto_assign'"); } catch (Throwable $e) {}
+            $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('manual_assign_migrated', '1')
+                ON DUPLICATE KEY UPDATE setting_value = '1'")->execute();
+        }
+    } catch (Throwable $e) {
+    }
     lc_repair_non_owner_admin_workspaces();
 }
 
@@ -266,7 +280,7 @@ function lc_create_workspace_for_existing_agent(array $agent): int
         }
 
         $defaults = [
-            'auto_assign' => '1',
+            'auto_assign' => '0',
             'poll_interval_ms' => '1500',
             'inactivity_close_enabled' => '1',
             'inactivity_close_minutes' => '15',
@@ -502,7 +516,7 @@ function lc_register_workspace(string $companyName, string $adminName, string $e
         ]);
 
         $defaults = [
-            'auto_assign' => '1',
+            'auto_assign' => '0',
             'poll_interval_ms' => '1500',
             'inactivity_close_enabled' => '1',
             'inactivity_close_minutes' => '15',

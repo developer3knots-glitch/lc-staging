@@ -60,7 +60,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="lc-chat-header-actions">
-                        <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none"><i class="ti ti-check"></i> Accept</button>
+                        <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none" hidden aria-hidden="true">Assign to me</button>
                         <div class="lc-chat-more-wrap" id="lc-chat-more-wrap">
                             <button type="button" class="lc-chat-more-btn" id="lc-chat-more-btn" aria-label="Chat actions" aria-haspopup="true" aria-expanded="false" title="More actions">
                                 <i class="ti ti-dots-vertical"></i>
@@ -145,7 +145,23 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="lc-chat-compose lc-chat-compose-pro">
+                                <div class="lc-unassigned-bar" id="lc-unassigned-bar" hidden>
+                    <p class="lc-unassigned-title">This chat is unassigned.</p>
+                    <div class="lc-unassigned-actions">
+                        <button type="button" class="lc-btn lc-btn-secondary" id="lc-archive-chat">Close &amp; archive</button>
+                        <button type="button" class="lc-btn lc-btn-primary" id="lc-assign-to-me">Assign to me</button>
+                    </div>
+                    <div class="lc-chat-tags-row">
+                        <div class="lc-chat-tags" id="lc-chat-tags"></div>
+                        <button type="button" class="lc-add-tag-btn" id="lc-add-tag-btn"><i class="ti ti-tag"></i> Add tag</button>
+                        <form class="lc-add-tag-form" id="lc-add-tag-form" hidden>
+                            <input type="text" id="lc-add-tag-input" maxlength="40" placeholder="Tag name" autocomplete="off">
+                            <button type="submit">Add</button>
+                            <button type="button" id="lc-add-tag-cancel">Cancel</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
                     <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach image or PDF" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>

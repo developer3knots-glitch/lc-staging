@@ -25,19 +25,14 @@ try {
     if (!lc_agent_can_view_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
+    if (($conv['status'] ?? '') === 'waiting') {
+        lc_json(['success' => false, 'error' => 'Assign this chat to yourself before sending a file'], 400);
+    }
     if (!lc_agent_can_handle_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
     }
 
     $agentId = (int) $agent['id'];
-    $wasWaiting = $conv['status'] === 'waiting';
-    if ($conv['status'] === 'waiting' || $conv['agent_id'] === null) {
-        $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, NOW()) WHERE id = ?");
-        $upd->execute([$agentId, $conversationId]);
-        if ($wasWaiting && $upd->rowCount()) {
-            lc_add_agent_join_message($conversationId, $agentId);
-        }
-    }
 
     $saved = lc_attachment_save_message($conversationId, 'agent', $agentId, $_FILES['file'], $caption);
     if (!$saved['ok']) {

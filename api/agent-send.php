@@ -31,19 +31,12 @@ try {
         lc_json(['success' => false, 'error' => 'Conversation closed'], 400);
     }
 
-    $wasWaiting = $conv['status'] === 'waiting';
+    if (($conv['status'] ?? '') === 'waiting') {
+        lc_json(['success' => false, 'error' => 'Assign this chat to yourself before sending a message'], 400);
+    }
 
     if (!lc_agent_can_handle_conversation($agent, $conv)) {
         lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
-    }
-
-    // Claim chat if waiting or unassigned
-    if ($conv['status'] === 'waiting' || $conv['agent_id'] === null) {
-        $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, NOW()) WHERE id = ?");
-        $upd->execute([$agentId, $conversationId]);
-        if ($wasWaiting && $upd->rowCount()) {
-            lc_add_agent_join_message($conversationId, $agentId);
-        }
     }
 
     $ins = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');

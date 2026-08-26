@@ -251,8 +251,8 @@ function lc_assign_agent(int $conversationId): ?int
     $accountId = $row && $row['account_id'] !== null ? (int) $row['account_id'] : 0;
 
     $autoAssign = $accountId > 0
-        ? lc_account_setting($accountId, 'auto_assign', '1')
-        : lc_setting('auto_assign', '1');
+        ? lc_account_setting($accountId, 'auto_assign', '0')
+        : lc_setting('auto_assign', '0');
     if ($autoAssign !== '1') {
         return null;
     }
@@ -490,15 +490,26 @@ function lc_agent_can_handle_conversation(array $agent, array $conv): bool
         return false;
     }
 
+    // Waiting/unassigned chats stay in queue until an agent clicks "Assign to me".
+    if ($status === 'waiting' && $assignedId === 0) {
+        return false;
+    }
+
     if ($assignedId === $agentId) {
         return true;
     }
 
-    if ($status === 'waiting' && $assignedId === 0) {
-        return lc_agent_can_access_conversation($agent, $conv);
-    }
-
     return false;
+}
+
+function lc_agent_can_claim_conversation(array $agent, array $conv): bool
+{
+    $assignedId = (int) ($conv['agent_id'] ?? 0);
+    $status = (string) ($conv['status'] ?? '');
+    if ($status !== 'waiting' || $assignedId !== 0) {
+        return false;
+    }
+    return lc_agent_can_access_conversation($agent, $conv);
 }
 
 
@@ -533,6 +544,11 @@ function lc_agent_can_close_conversation(array $agent, array $conv): bool
 {
     if (($conv['status'] ?? '') === 'closed') {
         return false;
+    }
+
+    // Agents can archive waiting chats from the unassigned bar.
+    if (lc_agent_can_claim_conversation($agent, $conv)) {
+        return true;
     }
 
     return lc_agent_can_handle_conversation($agent, $conv);
@@ -1363,4 +1379,66 @@ function lc_mark_inbox_messages_delivered(array $conversationIds): void
         ")->execute($ids);
     } catch (Throwable $e) {
     }
+}
+
+function lc_ensure_conversation_tags_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->exec("CREATE TABLE IF NOT EXISTS `conversation_tags` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `conversation_id` INT UNSIGNED NOT NULL,
+            `tag` VARCHAR(40) NOT NULL,
+            `created_by` INT UNSIGNED NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `idx_conv_tag` (`conversation_id`, `tag`),
+            KEY `idx_conv_tags_conversation` (`conversation_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {
+    }
+}
+
+/** @return list<array{id:int,tag:string}> */
+function lc_conversation_tags(int $conversationId): array
+{
+    lc_ensure_conversation_tags_schema();
+    if ($conversationId < 1) {
+        return [];
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT id, tag FROM conversation_tags WHERE conversation_id = ? ORDER BY id ASC');
+        $stmt->execute([$conversationId]);
+        $rows = $stmt->fetchAll() ?: [];
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = ['id' => (int) $row['id'], 'tag' => (string) $row['tag']];
+        }
+        return $out;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function lc_add_conversation_tag(int $conversationId, string $tag, int $agentId): array
+{
+    lc_ensure_conversation_tags_schema();
+    $tag = trim($tag);
+    $ins = lc_db()->prepare('INSERT IGNORE INTO conversation_tags (conversation_id, tag, created_by) VALUES (?, ?, ?)');
+    $ins->execute([$conversationId, $tag, $agentId > 0 ? $agentId : null]);
+    $stmt = lc_db()->prepare('SELECT id, tag FROM conversation_tags WHERE conversation_id = ? AND tag = ? LIMIT 1');
+    $stmt->execute([$conversationId, $tag]);
+    $row = $stmt->fetch();
+    return ['id' => (int) ($row['id'] ?? 0), 'tag' => (string) ($row['tag'] ?? $tag)];
+}
+
+function lc_delete_conversation_tag(int $conversationId, int $tagId): void
+{
+    lc_ensure_conversation_tags_schema();
+    $del = lc_db()->prepare('DELETE FROM conversation_tags WHERE id = ? AND conversation_id = ?');
+    $del->execute([$tagId, $conversationId]);
 }

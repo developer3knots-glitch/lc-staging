@@ -163,7 +163,7 @@ $allCountries = lc_country_list();
 asort($allCountries);
 
 $pollMs = (int) lc_account_setting($accountId, 'poll_interval_ms', '1500');
-$autoAssign = lc_account_setting($accountId, 'auto_assign', '1') === '1';
+$autoAssign = lc_account_setting($accountId, 'auto_assign', '0') === '1';
 $inactivityCloseEnabled = lc_account_setting($accountId, 'inactivity_close_enabled', '1') === '1';
 $inactivityCloseMinutes = (int) lc_account_setting($accountId, 'inactivity_close_minutes', '15');
 $inactivityWarnMinutes = (int) lc_account_setting($accountId, 'inactivity_warn_minutes', '12');
@@ -264,7 +264,7 @@ require __DIR__ . '/includes/header.php';
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
                                             <strong>Auto-assign chats</strong>
-                                            <small>Waiting chats go to the next available online agent</small>
+                                            <small>Off by default — agents claim chats with Assign to me. Turn on to auto-route waiting chats.</small>
                                         </span>
                                     </label>
                                 </div>

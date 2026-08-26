@@ -28,6 +28,16 @@
     var journeyListEl = document.getElementById('lc-page-journey-list');
     var journeyCountEl = document.getElementById('lc-journey-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
+    var assignToMeBtn = document.getElementById('lc-assign-to-me');
+    var archiveChatBtn = document.getElementById('lc-archive-chat');
+    var unassignedBar = document.getElementById('lc-unassigned-bar');
+    var composeBox = document.getElementById('lc-chat-compose') || document.querySelector('.lc-chat-compose');
+    var chatTagsEl = document.getElementById('lc-chat-tags');
+    var addTagBtn = document.getElementById('lc-add-tag-btn');
+    var addTagForm = document.getElementById('lc-add-tag-form');
+    var addTagInput = document.getElementById('lc-add-tag-input');
+    var addTagCancel = document.getElementById('lc-add-tag-cancel');
+    var currentTags = [];
     var cannedSelect = document.getElementById('lc-canned-select');
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
@@ -1055,7 +1065,7 @@
         if (typeof serverFlag === 'boolean') {
             return serverFlag;
         }
-        if (c.status === 'waiting') return true;
+        if (c.status === 'waiting') return false;
         if (!c.agent_id) return false;
         return parseInt(c.agent_id, 10) === myAgentId;
     }
@@ -1065,13 +1075,57 @@
         return parseInt(c.agent_id || 0, 10) === myAgentId;
     }
 
+    function setUnassignedMode(on) {
+        if (unassignedBar) {
+            if (on) {
+                unassignedBar.hidden = false;
+                unassignedBar.classList.add('is-on');
+            } else {
+                unassignedBar.hidden = true;
+                unassignedBar.classList.remove('is-on');
+            }
+        }
+        if (composeBox) {
+            if (on) composeBox.classList.add('is-hidden-for-unassigned');
+            else composeBox.classList.remove('is-hidden-for-unassigned');
+        }
+    }
+
+    function renderChatTags(tags) {
+        currentTags = Array.isArray(tags) ? tags : [];
+        if (!chatTagsEl) return;
+        if (!currentTags.length) {
+            chatTagsEl.innerHTML = '';
+            return;
+        }
+        chatTagsEl.innerHTML = currentTags.map(function (t) {
+            return '<span class="lc-chat-tag-chip" data-id="' + t.id + '">' + esc(t.tag) +
+                ' <button type="button" data-remove-tag="' + t.id + '" aria-label="Remove tag">&times;</button></span>';
+        }).join('');
+    }
+
+    function loadChatTags(conversationId) {
+        if (!conversationId) {
+            renderChatTags([]);
+            return;
+        }
+        fetch(base + '/api/agent-tags.php?conversation_id=' + encodeURIComponent(conversationId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.success) renderChatTags(data.tags || []);
+            })
+            .catch(function () {});
+    }
+
     function updateChatActions(c, canCompose) {
         canCompose = canComposeChat(c, canCompose);
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
+        var isUnassigned = c.status === 'waiting';
         replyInput.disabled = !canCompose;
         document.getElementById('lc-send-reply').disabled = !canCompose;
-        acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
+        if (acceptBtn) acceptBtn.style.display = 'none';
+        setUnassignedMode(isUnassigned);
         if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
         chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
@@ -1428,7 +1482,8 @@
                     replyInput.value = '';
                     replyInput.placeholder = 'Chat closed - visitor ended this conversation';
                     if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
-                    acceptBtn.style.display = 'none';
+                    if (acceptBtn) acceptBtn.style.display = 'none';
+                    setUnassignedMode(false);
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
                     closeMoreMenu();
@@ -1459,6 +1514,7 @@
                 }
                 setVisitorMeta(formatVisitorMeta(c), true);
                 updateChatActions(c, data.can_compose);
+                loadChatTags(selectedId);
 
                 if (isFirstLoad) {
                     paintFirstLoadFrame();
@@ -1517,14 +1573,100 @@
         setTimeout(onAgentComposeActivity, 0);
     });
 
-    acceptBtn.addEventListener('click', function () {
+    function assignChatToMe() {
+        if (!selectedId) return;
         fetch(base + '/api/agent-accept.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function () { pollMessages(); loadConversations(); });
-    });
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data && data.success === false) {
+                alert(data.error || 'Could not assign chat');
+                return;
+            }
+            pollMessages();
+            loadConversations();
+        }).catch(function () { alert('Could not assign chat'); });
+    }
+
+    function archiveSelectedChat() {
+        if (!selectedId) return;
+        if (!confirm('Close & archive this chat?')) return;
+        fetch(base + '/api/agent-close.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data && data.success === false) {
+                alert(data.error || 'Could not archive chat');
+                return;
+            }
+            pollMessages();
+            loadConversations();
+        }).catch(function () { alert('Could not archive chat'); });
+    }
+
+    if (acceptBtn) acceptBtn.addEventListener('click', assignChatToMe);
+    if (assignToMeBtn) assignToMeBtn.addEventListener('click', assignChatToMe);
+    if (archiveChatBtn) archiveChatBtn.addEventListener('click', archiveSelectedChat);
+
+    if (addTagBtn && addTagForm) {
+        addTagBtn.addEventListener('click', function () {
+            addTagForm.hidden = false;
+            addTagBtn.hidden = true;
+            if (addTagInput) {
+                addTagInput.value = '';
+                addTagInput.focus();
+            }
+        });
+    }
+    if (addTagCancel && addTagForm && addTagBtn) {
+        addTagCancel.addEventListener('click', function () {
+            addTagForm.hidden = true;
+            addTagBtn.hidden = false;
+        });
+    }
+    if (addTagForm) {
+        addTagForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (!selectedId || !addTagInput) return;
+            var tag = (addTagInput.value || '').trim();
+            if (!tag) return;
+            fetch(base + '/api/agent-tags.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: selectedId, tag: tag })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (!data || !data.success) {
+                    alert((data && data.error) || 'Could not add tag');
+                    return;
+                }
+                renderChatTags(data.tags || []);
+                addTagForm.hidden = true;
+                if (addTagBtn) addTagBtn.hidden = false;
+                addTagInput.value = '';
+            });
+        });
+    }
+    if (chatTagsEl) {
+        chatTagsEl.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-remove-tag]');
+            if (!btn || !selectedId) return;
+            var tagId = parseInt(btn.getAttribute('data-remove-tag'), 10);
+            if (!tagId) return;
+            fetch(base + '/api/agent-tags.php', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: selectedId, tag_id: tagId })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data && data.success) renderChatTags(data.tags || []);
+            });
+        });
+    }
 
     var emailPanel = document.getElementById('lc-email-panel');
     var emailPanelClose = document.getElementById('lc-email-panel-close');
