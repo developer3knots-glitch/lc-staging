@@ -4971,8 +4971,8 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 
 /* 3-column LiveChat desk */
 .lc-chat-layout-pro.lc-chat-desk {
-    --lc-inbox-w: 352px;
-    --lc-details-w: 336px;
+    --lc-inbox-w: 400px;
+    --lc-details-w: 380px;
     grid-template-columns: var(--lc-inbox-w) minmax(0, 1fr) var(--lc-details-w);
     background: #f1f5f9;
 }
@@ -5193,8 +5193,8 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 
 @media (max-width: 1180px) {
     .lc-chat-layout-pro.lc-chat-desk {
-        --lc-details-w: 300px;
-        --lc-inbox-w: 320px;
+        --lc-details-w: 340px;
+        --lc-inbox-w: 360px;
     }
 }
 @media (max-width: 980px) {
@@ -6461,17 +6461,17 @@ body.lc-page-chats .lc-chat-layout-pro.lc-chat-desk { background: #eef1f5; }
 body.lc-page-chats .lc-chat-layout-pro.lc-chat-desk .lc-chat-inbox-pro { background: #f8f9fb; }
 body.lc-page-chats .lc-chat-details { border-left: 1px solid #e5e7eb; }
 
-/* Desk side rails wider + slight zoom v121 (LiveChat proportions) */
+/* Desk side rails wider + slight zoom v122 (LiveChat proportions) */
 @media (min-width: 1281px) {
     .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: 352px;
-        --lc-details-w: 336px;
+        --lc-inbox-w: 400px;
+        --lc-details-w: 380px;
     }
 }
 @media (min-width: 981px) and (max-width: 1280px) {
     .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: 328px;
-        --lc-details-w: 312px;
+        --lc-inbox-w: 372px;
+        --lc-details-w: 356px;
     }
 }
 
