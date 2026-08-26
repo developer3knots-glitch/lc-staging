@@ -773,6 +773,15 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
     $db->prepare("UPDATE conversations SET status = ?, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
         ->execute([$newStatus, $conversationId]);
     lc_add_system_message($conversationId, 'Visitor resumed this conversation.');
+    // Ensure idle clock restarts even if something else touched timestamps.
+    $db->prepare('UPDATE conversations SET last_message_at = NOW(), closed_at = NULL WHERE id = ?')
+        ->execute([$conversationId]);
+    if (function_exists('lc_clear_typing')) {
+        try {
+            lc_clear_typing($conversationId);
+        } catch (Throwable $e) {
+        }
+    }
 
     return [
         'ok' => true,

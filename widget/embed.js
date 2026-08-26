@@ -41,6 +41,7 @@
     var RELOAD_FLAG_KEY = 'lc_reload_' + brandKey;
     var SITE_NAV_FLAG_KEY = 'lc_site_nav_' + brandKey;
     var leaveCloseSent = false;
+    var resumeGraceUntil = 0;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
@@ -742,6 +743,7 @@
                 return;
             }
             leaveCloseSent = false;
+            resumeGraceUntil = Date.now() + 45000;
             handleChatStarted(data, { keepMessages: false });
         })
         .catch(function () {
@@ -1538,8 +1540,12 @@
             updateWidgetReference(data.reference);
         }
         if (chatClosed) {
-            showEndedState();
-            return;
+            if (Date.now() < resumeGraceUntil) {
+                chatClosed = false;
+            } else {
+                showEndedState();
+                return;
+            }
         }
         hideEndedState();
         showChatView();
@@ -2056,6 +2062,9 @@
                 }
 
                 if (data.status === 'closed') {
+                    if (Date.now() < resumeGraceUntil) {
+                        return;
+                    }
                     showEndedState();
                     return;
                 }

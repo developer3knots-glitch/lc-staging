@@ -2,7 +2,7 @@
 
 /**
  * Auto-warn / auto-close chats after visitor+agent inactivity.
- * Idle time is based on last visitor/agent message only (system notes do not reset the timer).
+ * Idle time uses visitor/agent messages + last_message_at (resume bumps it). Inactivity warnings do not reset the timer.
  */
 
 function lc_inactivity_settings(?int $accountId = null): array
@@ -54,13 +54,17 @@ function lc_add_inactivity_system_message(int $conversationId, string $message):
 }
 
 /**
- * Last real chat activity (visitor or agent). Falls back to started_at.
+ * Activity clock for idle close:
+ * - visitor/agent messages
+ * - conversation.last_message_at (bumped on resume / real sends; NOT on inactivity warnings)
+ * - "Visitor resumed this conversation" system notes
  */
 function lc_inactivity_human_anchor(int $conversationId, array $conv = []): ?string
 {
     if ($conversationId < 1) {
         return null;
     }
+    $candidates = [];
     try {
         $stmt = lc_db()->prepare("
             SELECT MAX(created_at)
@@ -71,13 +75,45 @@ function lc_inactivity_human_anchor(int $conversationId, array $conv = []): ?str
         $stmt->execute([$conversationId]);
         $human = $stmt->fetchColumn();
         if ($human) {
-            return (string) $human;
+            $candidates[] = (string) $human;
+        }
+
+        $resumeStmt = lc_db()->prepare("
+            SELECT MAX(created_at)
+            FROM messages
+            WHERE conversation_id = ?
+              AND sender_type = 'system'
+              AND message LIKE 'Visitor resumed this conversation%'
+        ");
+        $resumeStmt->execute([$conversationId]);
+        $resumedAt = $resumeStmt->fetchColumn();
+        if ($resumedAt) {
+            $candidates[] = (string) $resumedAt;
         }
     } catch (Throwable $e) {
     }
 
-    $fallback = $conv['started_at'] ?? $conv['last_message_at'] ?? null;
-    return $fallback ? (string) $fallback : null;
+    if (!empty($conv['last_message_at'])) {
+        $candidates[] = (string) $conv['last_message_at'];
+    }
+    if (!empty($conv['started_at'])) {
+        $candidates[] = (string) $conv['started_at'];
+    }
+
+    if (!$candidates) {
+        return null;
+    }
+
+    $best = null;
+    $bestTs = 0;
+    foreach ($candidates as $c) {
+        $ts = strtotime($c);
+        if ($ts !== false && $ts >= $bestTs) {
+            $bestTs = $ts;
+            $best = $c;
+        }
+    }
+    return $best;
 }
 
 function lc_inactivity_idle_seconds_from_anchor(?string $anchor): int
@@ -226,15 +262,27 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
         }
         $sql .= "
             WHERE c.status IN ('waiting', 'active')
-              AND COALESCE(
-                    (SELECT MAX(m.created_at) FROM messages m
-                     WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
-                    c.started_at
+              AND GREATEST(
+                    COALESCE(
+                        (SELECT MAX(m.created_at) FROM messages m
+                         WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
+                        c.started_at
+                    ),
+                    COALESCE(c.last_message_at, c.started_at),
+                    COALESCE(
+                        (SELECT MAX(m2.created_at) FROM messages m2
+                         WHERE m2.conversation_id = c.id AND m2.sender_type = 'system'
+                           AND m2.message LIKE 'Visitor resumed this conversation%'),
+                        c.started_at
+                    )
                   ) <= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-            ORDER BY COALESCE(
-                    (SELECT MAX(m.created_at) FROM messages m
-                     WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
-                    c.started_at
+            ORDER BY GREATEST(
+                    COALESCE(
+                        (SELECT MAX(m.created_at) FROM messages m
+                         WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
+                        c.started_at
+                    ),
+                    COALESCE(c.last_message_at, c.started_at)
                   ) ASC
             LIMIT {$limit}
         ";
