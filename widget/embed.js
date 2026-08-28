@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 46;
+    var LC_WIDGET_BUILD = 47;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -297,7 +297,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=46';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=47';
         document.head.appendChild(link);
     }
 
@@ -524,13 +524,15 @@
                 '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
                     '<input type="text" id="lc-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
-                    '<div class="lcw-compose-inner lcw-compose-pill">' +
-                        '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
-                        '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
-                        '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" aria-hidden="true" tabindex="-1">' + ICON_EMOJI + '</button>' +
+                    '<div class="lcw-compose-row">' +
+                        '<div class="lcw-compose-inner lcw-compose-pill">' +
+                            '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
+                            '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
+                            '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" aria-hidden="true" tabindex="-1">' + ICON_EMOJI + '</button>' +
+                        '</div>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND_UP + '</button>' +
-                        '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
+                    '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                 '</div>' +
                 '<div id="lc-transcript-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-confirm-text">' +
                     '<div class="lcw-sheet lcw-sheet-dark lcw-transcript-confirm">' +
@@ -2430,8 +2432,9 @@
 
     function autoResizeTextarea(el) {
         if (!el) return;
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+        el.style.height = '34px';
+        var next = Math.min(Math.max(el.scrollHeight, 34), 88);
+        el.style.height = next + 'px';
     }
 
     function formatMsgTime(ts) {

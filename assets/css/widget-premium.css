@@ -1034,14 +1034,21 @@
     font-weight: 500;
 }
 .lcw-trust-bar svg { opacity: 0.75; flex-shrink: 0; }
+.lcw-compose-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
 .lcw-compose-inner {
     display: flex;
-    align-items: flex-end;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 1;
+    min-width: 0;
     background: var(--lcw-bg);
     border: 1.5px solid var(--lcw-border);
-    border-radius: 12px;
-    padding: 0.28rem 0.35rem 0.28rem 0.65rem;
+    border-radius: 999px;
+    padding: 0.28rem 0.4rem 0.28rem 0.35rem;
     transition: border-color 0.15s, box-shadow 0.15s;
 }
 .lcw-compose-inner:focus-within {
@@ -1049,36 +1056,64 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
     background: #fff;
 }
+.lcw-compose-plus,
+.lcw-compose-emoji,
+.lcw-attach-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    line-height: 0;
+}
+.lcw-compose-plus svg,
+.lcw-compose-emoji svg {
+    display: block;
+}
 .lcw-compose textarea,
 #lc-input {
     flex: 1;
     border: none;
     background: transparent;
-    padding: 0.35rem 0;
+    padding: 0.55rem 0.2rem;
+    margin: 0;
     font-family: inherit;
-    font-size: 0.84rem;
+    font-size: 0.86rem;
     resize: none;
     min-height: 34px;
     max-height: 88px;
+    height: 34px;
     color: var(--lcw-ink);
-    line-height: 1.4;
+    line-height: 1.35;
+    align-self: center;
 }
 .lcw-compose textarea:focus,
 #lc-input:focus { outline: none; }
 #lc-send {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 50%;
     border: none;
     background: linear-gradient(135deg, var(--lcw-primary), var(--lcw-primary-dark));
     color: #fff;
     cursor: pointer;
     flex-shrink: 0;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
+    line-height: 0;
     transition: transform 0.15s, filter 0.15s, opacity 0.15s;
 }
+#lc-send svg { display: block; }
 #lc-send:hover { filter: brightness(1.05); transform: scale(1.04); }
 #lc-send:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 #lc-send.is-sending { opacity: 0.7; pointer-events: none; }
@@ -1917,17 +1952,21 @@
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-panel-compose {
     background: var(--lcw-chat-bg);
     border-top: 1px solid var(--lcw-chat-border);
-    padding: 0.45rem 0.65rem 0.35rem;
+    padding: 0.55rem 0.7rem 0.55rem;
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-trust-bar {
     display: none;
+}
+#lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose-row {
+    align-items: center;
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose-pill {
     background: var(--lcw-chat-input);
     border: 1px solid #3f3f46;
     border-radius: 999px;
-    padding: 0.22rem 0.3rem 0.22rem 0.45rem;
-    gap: 0.25rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.3rem;
+    gap: 0.15rem;
+    align-items: center;
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose-pill:focus-within {
     border-color: color-mix(in srgb, var(--lcw-primary) 55%, #3f3f46);
@@ -1937,15 +1976,18 @@
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-input {
     color: #f9fafb;
     font-size: 0.86rem;
-    min-height: 36px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0.5rem 0.2rem;
+    line-height: 1.35;
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-input::placeholder {
     color: #6b7280;
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose-plus,
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose-emoji {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border: none;
     border-radius: 50%;
     background: transparent;
@@ -1962,8 +2004,9 @@
     background: rgba(255, 255, 255, 0.06);
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-send {
-    width: 34px;
-    height: 34px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
     border-radius: 50%;
     background: #f4f4f5;
     color: #111827;
@@ -2232,33 +2275,45 @@
 }
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose,
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-panel-compose {
-    padding: 0.45rem 0.65rem 0.35rem;
+    padding: 0.55rem 0.7rem 0.55rem;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+}
+#lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-row {
+    align-items: center;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-pill {
     border-radius: 999px;
-    padding: 0.22rem 0.3rem 0.22rem 0.45rem;
-    gap: 0.25rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.3rem;
+    gap: 0.15rem;
     display: flex;
     align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-pill:focus-within {
     border-color: color-mix(in srgb, var(--lcw-primary) 45%, #e2e8f0);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
+    background: #fff;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-input {
     font-size: 0.86rem;
-    min-height: 36px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0.5rem 0.2rem;
+    line-height: 1.35;
     border: none;
     background: transparent;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-plus,
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-emoji,
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-attach-btn {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border: none;
     border-radius: 50%;
     background: transparent;
+    color: #64748b;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2271,9 +2326,9 @@
     background: rgba(15, 23, 42, 0.06);
 }
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-send {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
     border-radius: 50%;
     border: none;
     display: inline-flex;
