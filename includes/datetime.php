@@ -238,3 +238,37 @@ function lc_format_datetime_tz($value, ?string $timezone = null, string $pattern
         return (string) $value;
     }
 }
+
+function lc_timezone_short_label(string $timezone): string
+{
+    $timezone = lc_validate_timezone($timezone);
+    try {
+        $dt = new DateTimeImmutable('now', new DateTimeZone($timezone));
+        $label = $dt->format('T');
+        if ($label === '' || $label === 'GMT') {
+            return $timezone === 'UTC' ? 'UTC' : $timezone;
+        }
+        return $label;
+    } catch (Throwable $e) {
+        return $timezone;
+    }
+}
+
+function lc_format_transcript_timestamp($value, ?string $timezone = null, bool $full = false): string
+{
+    $iso = lc_to_iso8601($value);
+    if ($iso === null) {
+        return '';
+    }
+    $timezone = lc_validate_timezone($timezone ?? lc_account_timezone());
+    try {
+        $dt = new DateTimeImmutable($iso);
+        $dt = $dt->setTimezone(new DateTimeZone($timezone));
+        if ($full) {
+            return $dt->format('D, d M Y H:i:s') . ' ' . lc_timezone_short_label($timezone);
+        }
+        return $dt->format('H:i');
+    } catch (Throwable $e) {
+        return (string) $value;
+    }
+}

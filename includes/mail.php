@@ -15,6 +15,41 @@ function lc_mail_esc(string $text): string
     return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function lc_mail_transcript_message_html(string $who, string $when, string $text, string $attachHtml = ''): string
+{
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-bottom:1px solid #e8e8e8">'
+        . '<tr>'
+        . '<td style="padding:14px 22px 4px;font-size:13px;color:#888888;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($who) . '</td>'
+        . '<td align="right" style="padding:14px 22px 4px;font-size:12px;color:#888888;white-space:nowrap;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($when) . '</td>'
+        . '</tr>'
+        . '<tr>'
+        . '<td colspan="2" style="padding:0 22px 14px;font-size:15px;line-height:1.55;color:#333333;white-space:pre-wrap;font-family:Segoe UI,Arial,sans-serif">'
+        . ($text !== '' ? lc_mail_esc($text) : '')
+        . $attachHtml
+        . '</td></tr></table>';
+}
+
+function lc_mail_transcript_shell_html(string $title, string $messagesHtml, string $reference = '', string $footer = ''): string
+{
+    $refLine = $reference !== ''
+        ? '<div style="padding:0 22px 12px;font-size:12px;color:#888888;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($reference) . '</div>'
+        : '';
+    $footerText = $footer !== '' ? $footer : 'Sent by your support team.';
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+        . '<body style="margin:0;padding:32px 14px;background:#ececec;font-family:Segoe UI,Arial,sans-serif">'
+        . '<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-bottom:1px solid #eeeeee">'
+        . '<tr>'
+        . '<td style="padding:18px 22px;font-size:20px;font-weight:700;color:#333333">' . lc_mail_esc($title) . '</td>'
+        . '<td align="right" style="padding:18px 22px;width:52px">'
+        . '<div style="width:40px;height:40px;border-radius:50%;background:#f59e0b;color:#ffffff;text-align:center;line-height:40px;font-size:18px;font-weight:700">&#128172;</div>'
+        . '</td></tr></table>'
+        . $refLine
+        . '<!-- lc-transcript-msgs -->' . $messagesHtml . '<!-- /lc-transcript-msgs -->'
+        . '<div style="padding:14px 22px;font-size:12px;color:#aaaaaa;text-align:center">' . lc_mail_esc($footerText) . '</div>'
+        . '</div></body></html>';
+}
+
 /**
  * @return array<string,string>
  */
@@ -638,6 +673,7 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
 
     $lines = [];
     $htmlParts = [];
+    $transcriptMsgIndex = 0;
     foreach ($rows as $row) {
         $text = trim((string) ($row['message'] ?? ''));
         if (($row['sender_type'] ?? '') === 'system'
@@ -655,10 +691,11 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
             $who = 'System';
         }
 
+        $useFullTs = ($transcriptMsgIndex === 0);
         $when = '';
         if (!empty($row['created_at'])) {
-            $when = function_exists('lc_format_datetime_tz')
-                ? lc_format_datetime_tz($row['created_at'], $timezone)
+            $when = function_exists('lc_format_transcript_timestamp')
+                ? lc_format_transcript_timestamp($row['created_at'], $timezone, $useFullTs)
                 : (string) $row['created_at'];
         }
 
@@ -679,13 +716,8 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         }
 
         $lines[] = '[' . $when . '] ' . $who . ': ' . ($text !== '' ? $text : '') . $attachNote;
-        $htmlParts[] = '<tr>'
-            . '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;width:130px;color:#64748b;font-size:12px">'
-            . lc_mail_esc($when) . '<br><strong style="color:#0f172a">'
-            . lc_mail_esc($who) . '</strong></td>'
-            . '<td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;white-space:pre-wrap">'
-            . ($text !== '' ? lc_mail_esc($text) : '')
-            . $attachHtml . '</td></tr>';
+        $htmlParts[] = lc_mail_transcript_message_html($who, $when, $text !== '' ? $text : '', $attachHtml);
+        $transcriptMsgIndex++;
     }
 
     if (!$lines) {
@@ -706,21 +738,16 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     if ($reference !== '') {
         $textOut .= 'Ticket: ' . $reference . "\n";
     }
-    $textOut .= 'Conversation started: ' . (function_exists('lc_format_datetime_tz') ? lc_format_datetime_tz($conv['started_at'] ?? '', $timezone) : (string) ($conv['started_at'] ?? '')) . "\n";
+    $startedLabel = function_exists('lc_format_transcript_timestamp')
+        ? lc_format_transcript_timestamp($conv['started_at'] ?? '', $timezone, true)
+        : (function_exists('lc_format_datetime_tz') ? lc_format_datetime_tz($conv['started_at'] ?? '', $timezone) : (string) ($conv['started_at'] ?? ''));
+    $textOut .= 'Conversation started: ' . $startedLabel . "\n";
     $textOut .= str_repeat('-', 48) . "\n\n";
     $textOut .= implode("\n\n", $lines);
     $textOut .= "\n\n" . str_repeat('-', 48) . "\n";
 
-    $html = '<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif">'
-        . '<div style="max-width:680px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">'
-        . '<div style="padding:18px 20px;background:#0f172a;color:#fff">'
-        . '<div style="font-size:18px;font-weight:700">' . lc_mail_esc($siteName) . '</div>'
-        . '<div style="font-size:13px;opacity:.85;margin-top:4px">Chat transcript'
-        . ($reference !== '' ? ' · ' . lc_mail_esc($reference) : '')
-        . '</div></div>'
-        . '<table style="width:100%;border-collapse:collapse">' . implode('', $htmlParts) . '</table>'
-        . '<div style="padding:14px 20px;color:#94a3b8;font-size:12px">Sent by your support team.</div>'
-        . '</div></body></html>';
+    $refLabel = $reference !== '' ? 'Ticket: ' . $reference : '';
+    $html = lc_mail_transcript_shell_html('Chat transcript', implode('', $htmlParts), $refLabel);
 
     return [
         'ok' => true,
@@ -855,28 +882,26 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
         $label = 'Chat ' . $n . ($ref !== '' ? ' · ' . $ref : '');
         $text .= '--- ' . $label . " ---\n\n";
         $text .= (string) ($part['text'] ?? '') . "\n\n";
-        $htmlSections .= '<div style="padding:14px 20px 6px;background:#f1f5f9;border-top:1px solid #e2e8f0;font-size:12px;font-weight:700;color:#334155">'
+        $htmlSections .= '<div style="padding:14px 22px 6px;background:#f5f5f5;border-top:1px solid #e8e8e8;font-size:12px;font-weight:700;color:#555555;font-family:Segoe UI,Arial,sans-serif">'
             . lc_mail_esc($label) . '</div>';
-        // Extract inner table rows from part html if present; else reuse text block
         $partHtml = (string) ($part['html'] ?? '');
-        if (preg_match('/<table[^>]*>(.*)<\/table>/is', $partHtml, $m)) {
+        if (preg_match('/<!-- lc-transcript-msgs -->(.*?)<!-- \/lc-transcript-msgs -->/is', $partHtml, $m)) {
+            $htmlSections .= $m[1];
+        } elseif (preg_match('/<div class="lc-transcript-msgs">(.*?)<\/div>/is', $partHtml, $m)) {
             $htmlSections .= '<table style="width:100%;border-collapse:collapse">' . $m[1] . '</table>';
         } else {
-            $htmlSections .= '<div style="padding:12px 20px;white-space:pre-wrap;font-size:13px;color:#0f172a">'
+            $htmlSections .= '<div style="padding:12px 22px;white-space:pre-wrap;font-size:13px;color:#333333">'
                 . lc_mail_esc((string) ($part['text'] ?? '')) . '</div>';
         }
     }
 
-    $html = '<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif">'
-        . '<div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">'
-        . '<div style="padding:18px 20px;background:#0f172a;color:#fff">'
-        . '<div style="font-size:18px;font-weight:700">' . lc_mail_esc($siteName) . '</div>'
-        . '<div style="font-size:13px;opacity:.85;margin-top:4px">Full chat history'
-        . ($mainRef !== '' ? ' · ' . lc_mail_esc($mainRef) : '')
-        . '</div></div>'
-        . $htmlSections
-        . '<div style="padding:14px 20px;color:#94a3b8;font-size:12px">Sent by your support team.</div>'
-        . '</div></body></html>';
+    $refLabel = $mainRef !== '' ? 'Latest ticket: ' . $mainRef : '';
+    if ($refLabel !== '') {
+        $refLabel = 'Includes ' . count($sections) . ' related conversations · ' . $refLabel;
+    } else {
+        $refLabel = 'Includes ' . count($sections) . ' related conversations';
+    }
+    $html = lc_mail_transcript_shell_html('Full chat history', $htmlSections, $refLabel);
 
     return [
         'ok' => true,
