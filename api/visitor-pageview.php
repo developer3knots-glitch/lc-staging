@@ -22,8 +22,7 @@ if (lc_is_bot_user_agent($userAgent)) {
     lc_json(['success' => false, 'error' => 'Automated access blocked.'], 403);
 }
 
-$honeypot = trim((string) ($input['website_url'] ?? $input['company_website'] ?? ''));
-if ($honeypot !== '') {
+if (lc_widget_honeypot_hit($input)) {
     lc_json(['success' => false, 'error' => 'Automated access blocked.'], 403);
 }
 

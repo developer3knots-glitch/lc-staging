@@ -46,6 +46,16 @@ function lc_resolve_country(string $ip): string
     return lc_resolve_geo($ip)['country'];
 }
 
+function lc_widget_honeypot_hit(array $input): bool
+{
+    foreach (['lc_hp', 'website_url', 'company_website'] as $key) {
+        if (trim((string) ($input[$key] ?? '')) !== '') {
+            return true;
+        }
+    }
+    return false;
+}
+
 function lc_is_bot_user_agent(?string $ua): bool
 {
     if ($ua === null || trim($ua) === '') {
@@ -135,8 +145,7 @@ function lc_widget_security_check(array $input, string $ip, ?string $userAgent, 
         return 'Automated access blocked.';
     }
 
-    $honeypot = trim((string) ($input['website_url'] ?? $input['company_website'] ?? ''));
-    if ($honeypot !== '') {
+    if (lc_widget_honeypot_hit($input)) {
         return 'Automated access blocked.';
     }
 
@@ -195,8 +204,7 @@ function lc_widget_upload_security_check(array $input, string $ip, ?string $user
         return 'Automated access blocked.';
     }
 
-    $honeypot = trim((string) ($input['website_url'] ?? $input['company_website'] ?? ''));
-    if ($honeypot !== '') {
+    if (lc_widget_honeypot_hit($input)) {
         return 'Automated access blocked.';
     }
 
@@ -231,12 +239,11 @@ function lc_widget_ticket_resume_security_check(array $input, string $ip, ?strin
         return $block;
     }
 
-    if (lc_is_bot_user_agent($userAgent)) {
+    if ($userAgent !== null && trim($userAgent) !== '' && lc_is_bot_user_agent($userAgent)) {
         return 'Automated access blocked.';
     }
 
-    $honeypot = trim((string) ($input['website_url'] ?? $input['company_website'] ?? ''));
-    if ($honeypot !== '') {
+    if (lc_widget_honeypot_hit($input)) {
         return 'Automated access blocked.';
     }
 

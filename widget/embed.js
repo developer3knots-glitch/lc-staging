@@ -293,7 +293,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=39';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=40';
         document.head.appendChild(link);
     }
 
@@ -425,7 +425,7 @@
                                 '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
                                 '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or request..."></textarea>' +
                             '</div>' +
-                            '<input type="text" name="website_url" id="lc-prechat-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                            '<input type="text" id="lc-prechat-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
                             '<div id="lc-prechat-error" class="lcw-prechat-error" style="display:none"></div>' +
                             '<button type="submit" class="lcw-prechat-btn" id="lc-prechat-submit">' +
                                 '<span class="lcw-btn-spinner"></span>' +
@@ -450,7 +450,7 @@
                                         '<label for="lc-ticket-email">Email <span>*</span></label>' +
                                         '<input type="email" id="lc-ticket-email" required placeholder="you@company.com" autocomplete="email">' +
                                     '</div>' +
-                                    '<input type="text" name="website_url" id="lc-ticket-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                                    '<input type="text" id="lc-ticket-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
                                     '<div id="lc-ticket-resume-error" class="lcw-prechat-error" style="display:none"></div>' +
                                     '<button type="submit" class="lcw-prechat-btn" id="lc-ticket-resume-submit">' +
                                         '<span class="lcw-btn-spinner"></span>' +
@@ -495,7 +495,7 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
-                    '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                    '<input type="text" id="lc-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
                     '<div class="lcw-compose-inner lcw-compose-pill">' +
                         '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
@@ -730,6 +730,19 @@
         }
     }
 
+    function readHoneypotField(id) {
+        var el = document.getElementById(id);
+        if (!el) return '';
+        return (el.value || '').trim();
+    }
+
+    function clearHoneypotFields() {
+        ['lc-prechat-honeypot', 'lc-ticket-honeypot', 'lc-honeypot'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    }
+
     function showTicketResumeError(msg) {
         var el = document.getElementById('lc-ticket-resume-error');
         if (!el) return;
@@ -746,6 +759,7 @@
         if (!ticketResumeEnabled) {
             return;
         }
+        clearHoneypotFields();
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
         var toggle = document.getElementById('lc-show-ticket-resume');
@@ -899,6 +913,7 @@
         }
 
         showTicketResumeError('');
+        clearHoneypotFields();
         if (submitBtn) submitBtn.classList.add('is-loading');
 
         fetch(siteUrl + '/api/visitor-resume-ticket.php', {
@@ -910,7 +925,7 @@
                 ticket_reference: ticketRef,
                 email: email,
                 page_url: window.location.href,
-                website_url: (document.getElementById('lc-ticket-honeypot') || {}).value || ''
+                lc_hp: readHoneypotField('lc-ticket-honeypot')
             })
         })
         .then(function (r) { return r.json(); })
@@ -1353,7 +1368,7 @@
         var name = document.getElementById('lc-prechat-name').value.trim();
         var email = document.getElementById('lc-prechat-email').value.trim();
         var message = document.getElementById('lc-prechat-message').value.trim();
-        var honeypot = (document.getElementById('lc-prechat-honeypot') || {}).value || '';
+        var honeypot = readHoneypotField('lc-prechat-honeypot');
 
         showPrechatError('');
         if (!name || !email || !message) {
@@ -1379,7 +1394,7 @@
                 email: email,
                 initial_message: message,
                 page_url: window.location.href,
-                website_url: honeypot,
+                lc_hp: honeypot,
                 resume_conversation_id: pendingResumeConvId || 0
             })
         })
@@ -2033,7 +2048,7 @@
                 visitor_uid: visitorUid,
                 chat_token: chatToken,
                 widget_loaded_at: widgetLoadedAt || Date.now(),
-                website_url: (document.getElementById('lc-honeypot') || {}).value || '',
+                lc_hp: readHoneypotField('lc-honeypot'),
                 email: email,
                 brand_key: brandKey
             })
@@ -3043,7 +3058,7 @@
             caption: useCaption,
             visitorUid: visitorUid,
             chatToken: chatToken,
-            websiteUrl: (document.getElementById('lc-honeypot') || {}).value || '',
+            websiteUrl: readHoneypotField('lc-honeypot'),
             widgetLoadedAt: widgetLoadedAt
         }).then(function (data) {
             if (data && data.success) {
@@ -3132,7 +3147,7 @@
                 visitor_uid: visitorUid,
                 chat_token: chatToken,
                 widget_loaded_at: widgetLoadedAt,
-                website_url: (document.getElementById('lc-honeypot') || {}).value || '',
+                lc_hp: readHoneypotField('lc-honeypot'),
                 message: msg
             })
         })
