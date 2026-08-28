@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 45;
+    var LC_WIDGET_BUILD = 46;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -297,7 +297,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=45';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=46';
         document.head.appendChild(link);
     }
 
@@ -385,7 +385,10 @@
                     '</div>' +                    '<div class="lcw-head-agent-pill" id="lc-head-agent-pill">' +
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
                         '<div class="lcw-head-agent-fallback" id="lc-head-agent-fallback"><span class="lcw-online-dot"></span></div>' +
-                        '<strong id="lc-panel-agent-name">Connecting...</strong>' +
+                        '<div class="lcw-head-agent-copy">' +
+                            '<strong id="lc-panel-agent-name">Connecting...</strong>' +
+                            '<span id="lc-panel-agent-role" class="lcw-head-agent-role">Support</span>' +
+                        '</div>' +
                     '</div>' +
                     '<span id="lc-panel-ref" class="lcw-ref-badge lcw-ref-hidden" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
                     '<small id="lc-panel-status" class="lcw-sr-only"><span class="lcw-online-dot"></span>Connecting...</small>' +
@@ -476,6 +479,18 @@
                     '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential</div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
+                '<div id="lc-idle-intro" class="lcw-idle-intro" hidden>' +
+                    '<div class="lcw-idle-agent-card">' +
+                        '<div class="lcw-idle-avatars" id="lc-idle-avatars" aria-hidden="true"></div>' +
+                        '<strong id="lc-idle-agent-name">Support</strong>' +
+                        '<span id="lc-idle-agent-role" class="lcw-idle-role">We\'re here to help</span>' +
+                    '</div>' +
+                    '<div class="lcw-idle-msg">' +
+                        '<div id="lc-idle-msg-avatar" class="lcw-idle-msg-avatar" aria-hidden="true"></div>' +
+                        '<div class="lcw-idle-bubble" id="lc-idle-bubble-text">Hi! How can we help you today?</div>' +
+                    '</div>' +
+                    '<button type="button" id="lc-lets-chat" class="lcw-lets-chat">Let\'s chat</button>' +
+                '</div>' +
                 '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
                     '<div class="lcw-typing-row">' +
                         '<div class="lcw-typing-bubble" aria-hidden="true"><span></span><span></span><span></span></div>' +
@@ -562,6 +577,8 @@
         bindHeadMenu();
         bindToolbarMenu();
         bindTranscriptEmailInputs();
+        var letsChatBtn = document.getElementById('lc-lets-chat');
+        if (letsChatBtn) letsChatBtn.addEventListener('click', beginChatFromIdle);
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
@@ -811,6 +828,7 @@
         }
         hideHeadMenu();
         hideToolbarMenu();
+        hideIdleIntro();
         showPrechatForm(true, true);
         if (!prechatFormEnabled) {
             var startPanel = document.getElementById('lc-prechat-start-panel');
@@ -982,14 +1000,95 @@
 
     function showChatView() {
         document.getElementById('lc-panel').classList.add('lcw-chat-active');
-        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat');
+        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat', 'lcw-mode-idle');
         document.getElementById('lc-panel-prechat').style.display = 'none';
         document.getElementById('lc-panel-messages').style.display = 'flex';
         document.getElementById('lc-panel-compose').style.display = 'block';
         document.getElementById('lc-panel-head').style.display = 'flex';
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         document.getElementById('lc-panel-ended').style.display = 'none';
+        hideIdleIntro();
         setComposeEnabled(!chatClosed);
+        var closeBtn = document.getElementById('lc-close-chat');
+        if (closeBtn) closeBtn.style.display = '';
+    }
+
+    function hideIdleIntro() {
+        var intro = document.getElementById('lc-idle-intro');
+        if (intro) intro.hidden = true;
+        var panel = document.getElementById('lc-panel');
+        if (panel) panel.classList.remove('lcw-mode-idle');
+    }
+
+    function showIdleIntro() {
+        var panel = document.getElementById('lc-panel');
+        var intro = document.getElementById('lc-idle-intro');
+        if (!intro || !panel) return;
+        panel.classList.add('lcw-chat-active', 'lcw-mode-idle');
+        panel.classList.remove('lcw-mode-prechat');
+        document.getElementById('lc-panel-prechat').style.display = 'none';
+        document.getElementById('lc-panel-messages').style.display = 'none';
+        document.getElementById('lc-panel-compose').style.display = 'none';
+        document.getElementById('lc-panel-ended').style.display = 'none';
+        document.getElementById('lc-panel-head').style.display = 'flex';
+        document.getElementById('lc-panel-toolbar').style.display = 'none';
+        var closeBtn = document.getElementById('lc-close-chat');
+        if (closeBtn) closeBtn.style.display = 'none';
+        setWaitingState(false);
+        setComposeEnabled(false);
+
+        var team = (settings && settings.site_name) ? settings.site_name : 'Support';
+        var color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
+        var role = agentsOnline > 0 ? 'Online now' : 'Leave a message';
+        var welcome = idleWelcomeText();
+
+        var nameEl = document.getElementById('lc-idle-agent-name');
+        var roleEl = document.getElementById('lc-idle-agent-role');
+        var bubbleEl = document.getElementById('lc-idle-bubble-text');
+        if (nameEl) nameEl.textContent = team;
+        if (roleEl) roleEl.textContent = role;
+        if (bubbleEl) bubbleEl.textContent = welcome;
+
+        var avatars = document.getElementById('lc-idle-avatars');
+        if (avatars) {
+            var initials = team.replace(/[^A-Za-z0-9]/g, ' ').trim().split(/\s+/).slice(0, 2).map(function (w) {
+                return w.charAt(0).toUpperCase();
+            }).join('') || 'S';
+            avatars.innerHTML =
+                '<span class="lcw-idle-avatar lcw-idle-avatar-brand" style="background:' + esc(color) + '">' + esc(initials.charAt(0) || 'S') + '</span>' +
+                '<span class="lcw-idle-avatar lcw-idle-avatar-support">' + ICON_CHAT.replace('width="26"', 'width="14"').replace('height="26"', 'height="14"') + '</span>';
+        }
+        var msgAv = document.getElementById('lc-idle-msg-avatar');
+        if (msgAv) {
+            var one = team.replace(/[^A-Za-z0-9]/g, ' ').trim().charAt(0).toUpperCase() || 'S';
+            msgAv.innerHTML = '<span class="lcw-idle-avatar-sm" style="background:' + esc(color) + '">' + esc(one) + '</span>';
+        }
+
+        updateHeaderAgent(null);
+        var headRole = document.getElementById('lc-panel-agent-role');
+        if (headRole) {
+            headRole.textContent = role;
+            headRole.hidden = false;
+        }
+        intro.hidden = false;
+    }
+
+    function beginChatFromIdle() {
+        hideIdleIntro();
+        showChatView();
+        var box = document.getElementById('lc-panel-messages');
+        if (box) box.innerHTML = '';
+        lastDateLabel = '';
+        showIdleWelcomePreview();
+        setComposeEnabled(true);
+        var input = document.getElementById('lc-input');
+        if (input) {
+            input.placeholder = 'Write a message...';
+            setTimeout(function () { input.focus(); }, 40);
+        }
+        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
+        var headRole = document.getElementById('lc-panel-agent-role');
+        if (headRole) headRole.hidden = true;
     }
 
     function updatePrechatStatus(count) {
@@ -1282,21 +1381,12 @@
         persistConversationId(null);
         persistChatToken('');
         try { chatStore().removeItem(LAST_MSG_KEY); } catch (e) {}
-        showChatView();
         var box = document.getElementById('lc-panel-messages');
         if (box) box.innerHTML = '';
-        updateHeaderAgent(null);
         var refWrap = document.getElementById('lc-panel-ref');
         if (refWrap) refWrap.hidden = true;
         setWaitingState(false);
-        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
-        setComposeEnabled(true);
-        var input = document.getElementById('lc-input');
-        if (input) {
-            input.placeholder = 'Write a message to start chat...';
-        }
-        showIdleWelcomePreview();
-        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
+        showIdleIntro();
     }
 
     function startDirectChat(options) {
@@ -2647,6 +2737,7 @@
         function updateHeaderAgent(agent) {
         var wrap = document.getElementById('lc-head-agent-avatar');
         var nameEl = document.getElementById('lc-panel-agent-name');
+        var roleEl = document.getElementById('lc-panel-agent-role');
         var fallback = document.getElementById('lc-head-agent-fallback');
         var pill = document.getElementById('lc-head-agent-pill');
         var titleEl = document.getElementById('lc-panel-title');
@@ -2658,6 +2749,10 @@
             if (pill) pill.classList.remove('is-live');
             var team = (settings && settings.site_name) ? settings.site_name : 'LiveChat';
             nameEl.textContent = team;
+            if (roleEl) {
+                roleEl.textContent = agentsOnline > 0 ? 'Online now' : 'Support';
+                roleEl.hidden = false;
+            }
             if (titleEl) titleEl.textContent = team;
             return;
         }
@@ -2669,6 +2764,10 @@
         if (!av.color) av.color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
         wrap.innerHTML = renderAvatar(av, agent.name, 'lcw-head-avatar');
         nameEl.textContent = agent.name;
+        if (roleEl) {
+            roleEl.textContent = agent.role || 'Agent';
+            roleEl.hidden = false;
+        }
         if (titleEl) titleEl.textContent = agent.name;
     }
 
