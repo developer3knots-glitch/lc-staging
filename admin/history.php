@@ -178,76 +178,68 @@ $extraScript = 'admin-history.js';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-history">
+<div class="lc-history lc-home">
     <?php if (!empty($historyError)): ?>
         <div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($historyError) ?></div>
     <?php endif; ?>
-    <div class="lc-hero lc-hero-pro lc-hero-history">
-        <div class="lc-hero-glow lc-hero-glow-1"></div>
-        <div class="lc-hero-glow lc-hero-glow-2"></div>
-        <div class="lc-hero-main">
-            <div class="lc-hero-eyebrow"><i class="ti ti-archive"></i> Conversation Archive</div>
-            <h1 class="lc-hero-title">Chat History</h1>
-            <p class="lc-hero-sub">Browse, search and review every closed conversation - visitor details, agent handoffs, and full transcripts.</p>
-            <div class="lc-hero-actions">
-                <a href="<?= lc_admin_url('chats') ?>" class="lc-hero-chip"><i class="ti ti-messages"></i> Live Inbox</a>
-                <a href="<?= lc_admin_url('history') ?>" class="lc-hero-chip"><i class="ti ti-refresh"></i> Reset filters</a>
-            </div>
+
+    <div class="lc-home-hello">
+        <div class="lc-home-hello-av"><i class="ti ti-history" style="font-size:1.1rem"></i></div>
+        <div class="lc-home-hello-text">
+            <h1>Chat History</h1>
+            <a href="<?= lc_admin_url('chats') ?>" class="lc-home-hello-link"><i class="ti ti-messages"></i> Browse closed conversations and transcripts</a>
         </div>
-        <div class="lc-hero-metrics lc-hero-metrics-4">
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= (int) $stats['total_closed'] ?></span>
-                <span class="lc-hero-metric-label">All closed</span>
-            </div>
-            <div class="lc-hero-metric is-accent">
-                <span class="lc-hero-metric-val"><?= (int) $stats['closed_today'] ?></span>
-                <span class="lc-hero-metric-label">Today</span>
-            </div>
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= (int) $stats['closed_week'] ?></span>
-                <span class="lc-hero-metric-label">This week</span>
-            </div>
-            <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= number_format((float) $stats['avg_messages'], 1) ?></span>
-                <span class="lc-hero-metric-label">Avg msgs</span>
-            </div>
+        <div class="lc-home-hello-actions">
+            <a href="<?= lc_admin_url('chats') ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-inbox"></i> Live Inbox</a>
+            <?php if ($hasFilters): ?>
+                <a href="<?= lc_admin_url('history') ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-refresh"></i> Reset filters</a>
+            <?php endif; ?>
         </div>
     </div>
 
-    <div class="lc-kpi-grid lc-kpi-grid-pro lc-history-kpi">
-        <div class="lc-kpi lc-kpi-pro lc-kpi-closed">
-            <div class="lc-kpi-icon purple"><i class="ti ti-circle-check"></i></div>
-            <div class="lc-kpi-body">
-                <div class="lc-kpi-name">Showing</div>
-                <div class="lc-kpi-val"><?= count($rows) ?></div>
-                <div class="lc-kpi-hint">of <?= $totalMatching ?> matching</div>
+    <section class="lc-home-section">
+        <h3 class="lc-home-section-title">Archive overview</h3>
+        <div class="lc-home-rt lc-home-rt-4">
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">All closed</span>
+                <span class="lc-home-rt-value"><?= (int) $stats['total_closed'] ?></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Today</span>
+                <span class="lc-home-rt-value"><?= (int) $stats['closed_today'] ?></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">This week</span>
+                <span class="lc-home-rt-value"><?= (int) $stats['closed_week'] ?></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Avg messages</span>
+                <span class="lc-home-rt-value"><?= number_format((float) $stats['avg_messages'], 1) ?></span>
             </div>
         </div>
-        <div class="lc-kpi lc-kpi-pro lc-kpi-active">
-            <div class="lc-kpi-icon green"><i class="ti ti-filter"></i></div>
-            <div class="lc-kpi-body">
-                <div class="lc-kpi-name">Filters</div>
-                <div class="lc-kpi-val"><?= $hasFilters ? 'Active' : 'None' ?></div>
-                <div class="lc-kpi-hint"><?= $hasFilters ? 'Refined results' : 'All closed chats' ?></div>
+    </section>
+
+    <section class="lc-home-section">
+        <h3 class="lc-home-section-title">At a glance</h3>
+        <div class="lc-home-rt lc-home-rt-4">
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Showing</span>
+                <span class="lc-home-rt-value lc-home-rt-value-sm"><?= count($rows) ?><span class="lc-home-rt-suffix"> of <?= (int) $totalMatching ?></span></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Filters</span>
+                <span class="lc-home-rt-value lc-home-rt-value-sm"><?= $hasFilters ? 'Active' : 'None' ?></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Agents</span>
+                <span class="lc-home-rt-value"><?= count($agents) ?></span>
+            </div>
+            <div class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Period</span>
+                <span class="lc-home-rt-value lc-home-rt-value-sm"><?= lc_sanitize($period === 'all' ? 'All time' : ($period === 'week' ? '7 days' : ($period === 'month' ? '30 days' : 'Today'))) ?></span>
             </div>
         </div>
-        <div class="lc-kpi lc-kpi-pro lc-kpi-agents">
-            <div class="lc-kpi-icon blue"><i class="ti ti-users"></i></div>
-            <div class="lc-kpi-body">
-                <div class="lc-kpi-name">Agents</div>
-                <div class="lc-kpi-val"><?= count($agents) ?></div>
-                <div class="lc-kpi-hint">With closed chats</div>
-            </div>
-        </div>
-        <div class="lc-kpi lc-kpi-pro lc-kpi-waiting">
-            <div class="lc-kpi-icon orange"><i class="ti ti-clock"></i></div>
-            <div class="lc-kpi-body">
-                <div class="lc-kpi-name">Period</div>
-                <div class="lc-kpi-val" style="font-size:1rem;text-transform:capitalize"><?= lc_sanitize($period === 'all' ? 'All time' : $period) ?></div>
-                <div class="lc-kpi-hint">Date range</div>
-            </div>
-        </div>
-    </div>
+    </section>
 
     <div class="lc-card lc-card-pro lc-history-filters">
         <div class="lc-card-head">
@@ -341,6 +333,13 @@ require __DIR__ . '/includes/header.php';
                 $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                 $brandColor = $r['brand_color'] ?? '#6FD943';
                 $ticketRef = $r['ticket_reference'] ?: lc_conversation_reference((int) $r['id'], $r['started_at'] ?? null);
+                $closedAbs = '—';
+                if (!empty($r['closed_at'])) {
+                    $closedAbs = function_exists('lc_format_datetime_tz')
+                        ? lc_format_datetime_tz($r['closed_at'], function_exists('lc_account_timezone') ? lc_account_timezone() : null, 'M j, Y, g:i A')
+                        : (string) $r['closed_at'];
+                }
+                $closedRel = !empty($r['closed_at']) ? lc_time_span($r['closed_at'], 'relative') : '';
             ?>
                 <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-history-item" data-search="<?= lc_sanitize(strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? '') . ' ' . $ticketRef)) ?>">
                     <div class="lc-history-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
@@ -368,18 +367,15 @@ require __DIR__ . '/includes/header.php';
                             <?php endif; ?>
                         </div>
                     </div>
-                    <div class="lc-history-item-stats">
-                        <div class="lc-history-stat">
-                            <span class="lc-history-stat-val"><?= (int) $r['msg_count'] ?></span>
-                            <span class="lc-history-stat-label">Messages</span>
-                        </div>
-                        <div class="lc-history-stat">
-                            <span class="lc-history-stat-val"><?= lc_sanitize($duration) ?></span>
-                            <span class="lc-history-stat-label">Duration</span>
-                        </div>
-                    </div>
                     <div class="lc-history-item-side">
-                        <div class="lc-history-closed-at"><?= $r['closed_at'] ? lc_time_span($r['closed_at'], 'absolute') : ' - ' ?></div>
+                        <div class="lc-history-chips">
+                            <span class="lc-history-chip"><strong><?= (int) $r['msg_count'] ?></strong> messages</span>
+                            <span class="lc-history-chip"><strong><?= lc_sanitize($duration) ?></strong></span>
+                        </div>
+                        <div class="lc-history-closed-at"><?= lc_sanitize((string) $closedAbs) ?></div>
+                        <?php if ($closedRel !== ''): ?>
+                            <div class="lc-history-closed-rel"><?= $closedRel ?></div>
+                        <?php endif; ?>
                         <span class="lc-history-view"><i class="ti ti-eye"></i> View transcript</span>
                     </div>
                     <i class="ti ti-chevron-right lc-history-item-arrow"></i>
