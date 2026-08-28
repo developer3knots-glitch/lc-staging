@@ -3,9 +3,9 @@
 /**
  * Outbound mail for chat transcripts.
  *
- * Prefer SMTP (cPanel email) — PHP mail() often returns success without Gmail delivery.
+ * Prefer SMTP (cPanel email) ΓÇö PHP mail() often returns success without Gmail delivery.
  *
- * Config constants (optional) OR Admin → Settings → Email:
+ * Config constants (optional) OR Admin ΓåÆ Settings ΓåÆ Email:
  *   LC_MAIL_FROM, LC_MAIL_FROM_NAME
  *   LC_SMTP_HOST, LC_SMTP_PORT, LC_SMTP_USER, LC_SMTP_PASS, LC_SMTP_ENCRYPTION (tls|ssl|none)
  */
@@ -15,39 +15,161 @@ function lc_mail_esc(string $text): string
     return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function lc_mail_transcript_message_html(string $who, string $when, string $text, string $attachHtml = ''): string
+/** Sanitize hex color for email inline CSS (fallback brand orange). */
+function lc_mail_safe_hex_color(?string $color, string $fallback = '#f59e0b'): string
 {
-    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-bottom:1px solid #e8e8e8">'
-        . '<tr>'
-        . '<td style="padding:14px 22px 4px;font-size:13px;color:#888888;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($who) . '</td>'
-        . '<td align="right" style="padding:14px 22px 4px;font-size:12px;color:#888888;white-space:nowrap;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($when) . '</td>'
-        . '</tr>'
-        . '<tr>'
-        . '<td colspan="2" style="padding:0 22px 14px;font-size:15px;line-height:1.55;color:#333333;white-space:pre-wrap;font-family:Segoe UI,Arial,sans-serif">'
-        . ($text !== '' ? lc_mail_esc($text) : '')
-        . $attachHtml
+    $color = trim((string) $color);
+    if (preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color)) {
+        if (strlen($color) === 4) {
+            $color = '#' . $color[1] . $color[1] . $color[2] . $color[2] . $color[3] . $color[3];
+        }
+        return strtolower($color);
+    }
+    return $fallback;
+}
+
+/**
+ * Premium chat-bubble row for transcript emails.
+ * $role: visitor | agent | system
+ */
+function lc_mail_transcript_message_html(
+    string $who,
+    string $when,
+    string $text,
+    string $attachHtml = '',
+    string $role = 'system',
+    string $brandColor = '#f59e0b'
+): string
+{
+    $role = strtolower(trim($role));
+    if (!in_array($role, ['visitor', 'agent', 'system'], true)) {
+        $role = 'system';
+    }
+    $brandColor = lc_mail_safe_hex_color($brandColor);
+    $body = ($text !== '' ? lc_mail_esc($text) : '') . $attachHtml;
+
+    if ($role === 'system') {
+        return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">'
+            . '<tr><td align="center" style="padding:10px 24px">'
+            . '<div style="display:inline-block;max-width:92%;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:7px 14px;'
+            . 'font-family:Segoe UI,Helvetica Neue,Arial,sans-serif;font-size:12px;line-height:1.45;color:#64748b;text-align:center">'
+            . ($text !== '' ? lc_mail_esc($text) : '')
+            . ($when !== '' ? ' <span style="color:#94a3b8">&middot; ' . lc_mail_esc($when) . '</span>' : '')
+            . '</div>'
+            . ($attachHtml !== '' ? '<div style="margin-top:8px">' . $attachHtml . '</div>' : '')
+            . '</td></tr></table>';
+    }
+
+    $isVisitor = ($role === 'visitor');
+    $align = $isVisitor ? 'right' : 'left';
+    $bubbleBg = $isVisitor ? $brandColor : '#f8fafc';
+    $bubbleColor = $isVisitor ? '#ffffff' : '#0f172a';
+    $bubbleBorder = $isVisitor ? 'none' : '1px solid #e2e8f0';
+    $radius = $isVisitor ? '18px 18px 4px 18px' : '18px 18px 18px 4px';
+    $whoColor = $isVisitor ? $brandColor : '#64748b';
+
+    if ($attachHtml !== '' && $isVisitor) {
+        $attachHtml = str_replace('color:#2563eb', 'color:#ffffff', $attachHtml);
+        $attachHtml = str_replace('color:#1d4ed8', 'color:#ffffff', $attachHtml);
+        $body = ($text !== '' ? lc_mail_esc($text) : '') . $attachHtml;
+    } elseif ($attachHtml !== '') {
+        $attachHtml = str_replace('color:#2563eb', 'color:' . $brandColor, $attachHtml);
+        $body = ($text !== '' ? lc_mail_esc($text) : '') . $attachHtml;
+    }
+
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">'
+        . '<tr><td align="' . $align . '" style="padding:8px 22px">'
+        . '<div style="display:inline-block;max-width:78%;text-align:left;font-family:Segoe UI,Helvetica Neue,Arial,sans-serif">'
+        . '<div style="font-size:11px;font-weight:600;letter-spacing:0.02em;color:' . $whoColor . ';margin:0 4px 5px;opacity:0.95">'
+        . lc_mail_esc($who)
+        . ($when !== '' ? '<span style="font-weight:500;color:#94a3b8;margin-left:8px">' . lc_mail_esc($when) . '</span>' : '')
+        . '</div>'
+        . '<div style="background:' . $bubbleBg . ';color:' . $bubbleColor . ';border:' . $bubbleBorder . ';'
+        . 'border-radius:' . $radius . ';padding:11px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap;'
+        . 'box-shadow:0 1px 2px rgba(15,23,42,0.06)">'
+        . $body
+        . '</div>'
+        . '</div>'
         . '</td></tr></table>';
 }
 
-function lc_mail_transcript_shell_html(string $title, string $messagesHtml, string $reference = '', string $footer = ''): string
-{
-    $refLine = $reference !== ''
-        ? '<div style="padding:0 22px 12px;font-size:12px;color:#888888;font-family:Segoe UI,Arial,sans-serif">' . lc_mail_esc($reference) . '</div>'
-        : '';
+/**
+ * @param array{brand_name?:string,brand_color?:string,started?:string,subtitle?:string} $meta
+ */
+function lc_mail_transcript_shell_html(
+    string $title,
+    string $messagesHtml,
+    string $reference = '',
+    string $footer = '',
+    array $meta = []
+): string {
+    $brandName = trim((string) ($meta['brand_name'] ?? ''));
+    $brandColor = lc_mail_safe_hex_color($meta['brand_color'] ?? null);
+    $started = trim((string) ($meta['started'] ?? ''));
+    $subtitle = trim((string) ($meta['subtitle'] ?? 'Conversation record'));
     $footerText = $footer !== '' ? $footer : 'Sent by your support team.';
-    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
-        . '<body style="margin:0;padding:32px 14px;background:#ececec;font-family:Segoe UI,Arial,sans-serif">'
-        . '<div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
-        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border-bottom:1px solid #eeeeee">'
-        . '<tr>'
-        . '<td style="padding:18px 22px;font-size:20px;font-weight:700;color:#333333">' . lc_mail_esc($title) . '</td>'
-        . '<td align="right" style="padding:18px 22px;width:52px">'
-        . '<div style="width:40px;height:40px;border-radius:50%;background:#f59e0b;color:#ffffff;text-align:center;line-height:40px;font-size:18px;font-weight:700">&#128172;</div>'
+
+    // Darken brand slightly for header gradient end (email-safe approximate)
+    $brandDark = $brandColor;
+    if (preg_match('/^#([0-9a-f]{6})$/', $brandColor, $m)) {
+        $r = max(0, hexdec(substr($m[1], 0, 2)) - 28);
+        $g = max(0, hexdec(substr($m[1], 2, 2)) - 28);
+        $b = max(0, hexdec(substr($m[1], 4, 2)) - 28);
+        $brandDark = sprintf('#%02x%02x%02x', $r, $g, $b);
+    }
+
+    $ticketHtml = '';
+    if ($reference !== '') {
+        $ticketHtml = '<div style="margin-top:14px">'
+            . '<span style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.28);'
+            . 'color:#ffffff;font-size:12px;font-weight:600;letter-spacing:0.02em;padding:6px 12px;border-radius:999px;'
+            . 'font-family:Segoe UI,Helvetica Neue,Arial,sans-serif">'
+            . lc_mail_esc($reference)
+            . '</span></div>';
+    }
+
+    $startedHtml = $started !== ''
+        ? '<div style="padding:14px 24px 4px;font-size:12px;color:#94a3b8;font-family:Segoe UI,Helvetica Neue,Arial,sans-serif">'
+            . 'Started ' . lc_mail_esc($started)
+            . '</div>'
+        : '';
+
+    $brandLine = $brandName !== ''
+        ? '<div style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:6px">'
+            . lc_mail_esc($brandName) . '</div>'
+        : '';
+
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        . '<title>' . lc_mail_esc($title) . '</title></head>'
+        . '<body style="margin:0;padding:0;background:#e8edf3;font-family:Segoe UI,Helvetica Neue,Arial,sans-serif">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#e8edf3">'
+        . '<tr><td align="center" style="padding:36px 14px">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;max-width:600px;'
+        . 'background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(15,23,42,0.10)">'
+        // Header
+        . '<tr><td style="background:linear-gradient(135deg,' . $brandColor . ' 0%,' . $brandDark . ' 100%);'
+        . 'padding:28px 28px 26px;color:#ffffff">'
+        . $brandLine
+        . '<div style="font-size:26px;font-weight:700;letter-spacing:-0.03em;line-height:1.2">' . lc_mail_esc($title) . '</div>'
+        . '<div style="margin-top:6px;font-size:13px;opacity:0.88">' . lc_mail_esc($subtitle) . '</div>'
+        . $ticketHtml
+        . '</td></tr>'
+        // Body
+        . '<tr><td style="padding:8px 0 18px;background:#ffffff">'
+        . $startedHtml
+        . '<!-- lc-transcript-msgs -->'
+        . '<div style="padding:6px 0 10px">' . $messagesHtml . '</div>'
+        . '<!-- /lc-transcript-msgs -->'
+        . '</td></tr>'
+        // Footer strip
+        . '<tr><td style="padding:16px 24px 20px;background:#f8fafc;border-top:1px solid #eef2f7;'
+        . 'font-size:12px;color:#94a3b8;text-align:center">'
+        . lc_mail_esc($footerText)
+        . ($brandName !== '' ? ' &middot; ' . lc_mail_esc($brandName) : '')
+        . '</td></tr>'
+        . '</table>'
         . '</td></tr></table>'
-        . $refLine
-        . '<!-- lc-transcript-msgs -->' . $messagesHtml . '<!-- /lc-transcript-msgs -->'
-        . '<div style="padding:14px 22px;font-size:12px;color:#aaaaaa;text-align:center">' . lc_mail_esc($footerText) . '</div>'
-        . '</div></body></html>';
+        . '</body></html>';
 }
 
 /**
@@ -284,7 +406,7 @@ function lc_mail_send_smtp(
             $auth = $read();
             if (!$expect($auth, [235])) {
                 fclose($fp);
-                return ['ok' => false, 'error' => 'SMTP login failed — check email password'];
+                return ['ok' => false, 'error' => 'SMTP login failed ΓÇö check email password'];
             }
         }
 
@@ -464,7 +586,7 @@ function lc_mail_test_smtp(?int $accountId = null, ?array $override = null): arr
             if ($codeOf($tls) !== 220) {
                 $add('starttls', false, trim(substr($tls, 0, 120)));
                 fclose($fp);
-                return ['ok' => false, 'error' => 'STARTTLS failed — try SSL/465 or check port', 'steps' => $steps];
+                return ['ok' => false, 'error' => 'STARTTLS failed ΓÇö try SSL/465 or check port', 'steps' => $steps];
             }
             if (!@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
                 $add('starttls', false, 'TLS handshake failed');
@@ -487,13 +609,13 @@ function lc_mail_test_smtp(?int $accountId = null, ?array $override = null): arr
         }
 
         if ($user === '') {
-            $add('auth', false, 'No SMTP username — set mailbox email as username');
+            $add('auth', false, 'No SMTP username ΓÇö set mailbox email as username');
             $write('QUIT');
             fclose($fp);
             return ['ok' => false, 'error' => 'SMTP username is empty', 'steps' => $steps];
         }
         if ($pass === '') {
-            $add('auth', false, 'No SMTP password saved — enter password and Save, or type it for this test');
+            $add('auth', false, 'No SMTP password saved ΓÇö enter password and Save, or type it for this test');
             $write('QUIT');
             fclose($fp);
             return ['ok' => false, 'error' => 'SMTP password is empty', 'steps' => $steps];
@@ -516,9 +638,9 @@ function lc_mail_test_smtp(?int $accountId = null, ?array $override = null): arr
         $write(base64_encode($pass));
         $auth = $read();
         if ($codeOf($auth) !== 235) {
-            $add('auth', false, 'Login failed — check mailbox password');
+            $add('auth', false, 'Login failed ΓÇö check mailbox password');
             fclose($fp);
-            return ['ok' => false, 'error' => 'SMTP login failed — check email password', 'steps' => $steps];
+            return ['ok' => false, 'error' => 'SMTP login failed ΓÇö check email password', 'steps' => $steps];
         }
         $add('auth', true, 'Logged in as ' . $user);
 
@@ -529,7 +651,7 @@ function lc_mail_test_smtp(?int $accountId = null, ?array $override = null): arr
         return [
             'ok' => true,
             'steps' => $steps,
-            'detail' => "SMTP OK — {$host}:{$port} ({$enc}), user {$user}",
+            'detail' => "SMTP OK ΓÇö {$host}:{$port} ({$enc}), user {$user}",
         ];
     } catch (Throwable $e) {
         if (is_resource($fp)) {
@@ -581,7 +703,7 @@ function lc_mail_send_php(
     if (!$ok) {
         return [
             'ok' => false,
-            'error' => 'Email could not be sent. Configure SMTP in Settings (cPanel email) — PHP mail() is unreliable for Gmail.',
+            'error' => 'Email could not be sent. Configure SMTP in Settings (cPanel email) ΓÇö PHP mail() is unreliable for Gmail.',
         ];
     }
     return ['ok' => true, 'via' => 'mail'];
@@ -613,6 +735,18 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     $conv = $stmt->fetch();
     if (!$conv) {
         return ['ok' => false, 'error' => 'Conversation not found'];
+    }
+
+    $brandColor = '#f59e0b';
+    try {
+        $brandId = (int) ($conv['brand_id'] ?? 0);
+        if ($brandId > 0 && function_exists('lc_get_brand')) {
+            $brandRow = lc_get_brand($brandId);
+            if ($brandRow && !empty($brandRow['widget_color'])) {
+                $brandColor = lc_mail_safe_hex_color((string) $brandRow['widget_color']);
+            }
+        }
+    } catch (Throwable $e) {
     }
 
     if ($timezone === null && function_exists('lc_timezone_for_conversation')) {
@@ -707,7 +841,7 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
             $name = trim((string) ($row['attachment_original_name'] ?? 'Attachment'));
             $attachNote = ' [Attachment: ' . $name . ($url !== '' ? ' - ' . $url : '') . ']';
             if ($url !== '') {
-                $attachHtml = '<div style="margin-top:6px"><a href="' . lc_mail_esc($url) . '">'
+                $attachHtml = '<div style="margin-top:6px"><a href="' . lc_mail_esc($url) . '" style="color:#2563eb;text-decoration:underline">'
                     . lc_mail_esc($name !== '' ? $name : 'Attachment') . '</a></div>';
             }
         }
@@ -716,7 +850,14 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
         }
 
         $lines[] = '[' . $when . '] ' . $who . ': ' . ($text !== '' ? $text : '') . $attachNote;
-        $htmlParts[] = lc_mail_transcript_message_html($who, $when, $text !== '' ? $text : '', $attachHtml);
+        $htmlParts[] = lc_mail_transcript_message_html(
+            $who,
+            $when,
+            $text !== '' ? $text : '',
+            $attachHtml,
+            (string) $sender,
+            $brandColor
+        );
         $transcriptMsgIndex++;
     }
 
@@ -747,7 +888,12 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     $textOut .= "\n\n" . str_repeat('-', 48) . "\n";
 
     $refLabel = $reference !== '' ? 'Ticket: ' . $reference : '';
-    $html = lc_mail_transcript_shell_html('Chat transcript', implode('', $htmlParts), $refLabel);
+    $html = lc_mail_transcript_shell_html('Chat transcript', implode('', $htmlParts), $refLabel, '', [
+        'brand_name' => $siteName,
+        'brand_color' => $brandColor,
+        'started' => $startedLabel,
+        'subtitle' => 'Conversation record',
+    ]);
 
     return [
         'ok' => true,
@@ -882,13 +1028,14 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
         $label = 'Chat ' . $n . ($ref !== '' ? ' · ' . $ref : '');
         $text .= '--- ' . $label . " ---\n\n";
         $text .= (string) ($part['text'] ?? '') . "\n\n";
-        $htmlSections .= '<div style="padding:14px 22px 6px;background:#f5f5f5;border-top:1px solid #e8e8e8;font-size:12px;font-weight:700;color:#555555;font-family:Segoe UI,Arial,sans-serif">'
+        $htmlSections .= '<div style="margin:16px 22px 8px;padding:8px 14px;background:#f1f5f9;border:1px solid #e2e8f0;'
+            . 'border-radius:999px;font-size:12px;font-weight:700;color:#475569;font-family:Segoe UI,Helvetica Neue,Arial,sans-serif;display:inline-block">'
             . lc_mail_esc($label) . '</div>';
         $partHtml = (string) ($part['html'] ?? '');
         if (preg_match('/<!-- lc-transcript-msgs -->(.*?)<!-- \/lc-transcript-msgs -->/is', $partHtml, $m)) {
             $htmlSections .= $m[1];
         } elseif (preg_match('/<div class="lc-transcript-msgs">(.*?)<\/div>/is', $partHtml, $m)) {
-            $htmlSections .= '<table style="width:100%;border-collapse:collapse">' . $m[1] . '</table>';
+            $htmlSections .= $m[1];
         } else {
             $htmlSections .= '<div style="padding:12px 22px;white-space:pre-wrap;font-size:13px;color:#333333">'
                 . lc_mail_esc((string) ($part['text'] ?? '')) . '</div>';
@@ -901,7 +1048,22 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
     } else {
         $refLabel = 'Includes ' . count($sections) . ' related conversations';
     }
-    $html = lc_mail_transcript_shell_html('Full chat history', $htmlSections, $refLabel);
+    $overallColor = '#f59e0b';
+    try {
+        $brandId = (int) ($conv['brand_id'] ?? 0);
+        if ($brandId > 0 && function_exists('lc_get_brand')) {
+            $brandRow = lc_get_brand($brandId);
+            if ($brandRow && !empty($brandRow['widget_color'])) {
+                $overallColor = lc_mail_safe_hex_color((string) $brandRow['widget_color']);
+            }
+        }
+    } catch (Throwable $e) {
+    }
+    $html = lc_mail_transcript_shell_html('Full chat history', $htmlSections, $refLabel, '', [
+        'brand_name' => $siteName,
+        'brand_color' => $overallColor,
+        'subtitle' => count($sections) . ' related conversations',
+    ]);
 
     return [
         'ok' => true,

@@ -256,7 +256,7 @@ function lc_conversation_reference_message(int $conversationId, ?string $started
 {
     $ref = lc_conversation_reference($conversationId, $startedAt);
 
-    return 'Your support ticket reference is ' . $ref . '. Please save this number ??? when you return, share it so we can continue this same conversation without starting over.';
+    return 'Your support ticket reference is ' . $ref . '. Please save this number, and when you return, share it so we can continue this same conversation without starting over.';
 }
 
 /**
