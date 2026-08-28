@@ -65,8 +65,9 @@ try {
     $online = lc_get_online_agents_count($brandId);
 
     $agentInfo = null;
+    $agentId = 0;
     $agentStmt = $db->prepare('
-        SELECT a.name, a.avatar
+        SELECT c.agent_id, c.status AS conv_status, a.name, a.avatar
         FROM conversations c
         LEFT JOIN agents a ON a.id = c.agent_id
         WHERE c.id = ?
@@ -74,8 +75,12 @@ try {
     ');
     $agentStmt->execute([$convId]);
     $agentRow = $agentStmt->fetch();
-    if ($agentRow && !empty($agentRow['name'])) {
-        $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
+    if ($agentRow) {
+        $agentId = (int) ($agentRow['agent_id'] ?? 0);
+        $status = (string) ($agentRow['conv_status'] ?? $status);
+        if ($status === 'active' && $agentId > 0 && !empty($agentRow['name'])) {
+            $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
+        }
     }
 
     lc_json([
@@ -89,8 +94,10 @@ try {
         'brand_id' => $brandId,
         'brand_key' => $brand['brand_key'],
         'status' => $status,
+        'agent_id' => $agentId,
         'agents_online' => $online,
         'agent' => $agentInfo,
+        'is_assigned' => $status === 'active' && $agentId > 0,
         'settings' => $brandSettings,
         'attachments' => lc_attachment_public_config(),
         'resumed_by_ticket' => true,

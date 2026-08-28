@@ -52,6 +52,7 @@
     var currentReference = '';
     var agentsOnline = 0;
     var isWaitingForAgent = false;
+    var ticketResumeAwaitingAgent = false;
     var lastDateLabel = '';
     var teaserTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
@@ -2144,6 +2145,7 @@
         if (endedRef) endedRef.hidden = true;
         hideTicketResumePanel(true);
         fullHistoryMode = false;
+        ticketResumeAwaitingAgent = false;
         resetTranscriptSentState();
         conversationId = null;
         lastMsgId = 0;
@@ -2237,22 +2239,25 @@
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
-        updateHeaderAgent(data.agent || null);
-        applyAgentConnectionState(data);
-        if (!data.agent && !data.agent_name && data.status !== 'waiting' && !(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0)) {
-            updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
-        }
         if (options.resumedByTicket || data.resumed_by_ticket) {
             fullHistoryMode = true;
+            ticketResumeAwaitingAgent = data.status !== 'active';
         }
         if (!options.keepMessages) {
             lastMsgId = 0;
             lastDateLabel = '';
             document.getElementById('lc-panel-messages').innerHTML = '';
         }
-        if (data.status === 'waiting') {
+        if (ticketResumeAwaitingAgent || data.status === 'waiting') {
+            updateHeaderAgent(null);
             setWaitingState(true);
             updateStatus('Connecting to live agent...', (data.agents_online || 0) > 0);
+        } else {
+            updateHeaderAgent(data.agent || null);
+            applyAgentConnectionState(data);
+            if (!data.agent && !data.agent_name && data.status !== 'waiting' && !(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0)) {
+                updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
+            }
         }
         pollMessages(true);
         if (pollTimer) clearInterval(pollTimer);
@@ -2379,6 +2384,16 @@
 
     function applyAgentConnectionState(data) {
         if (!data) return;
+        if (ticketResumeAwaitingAgent) {
+            if (data.status === 'active' && (data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0 || (data.agent && data.agent.name) || data.agent_name)) {
+                ticketResumeAwaitingAgent = false;
+            } else {
+                setWaitingState(true);
+                updateHeaderAgent(null);
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
+                return;
+            }
+        }
         var assigned = !!(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0);
         var agentObj = data.agent && data.agent.name ? data.agent : null;
         var agentName = agentObj ? agentObj.name : (data.agent_name || '');
@@ -2666,26 +2681,34 @@
         var timeHtml = msgTimeHtml(m.created_at);
 
         if (isAgentJoinMessage(m)) {
-            setWaitingState(false);
+            if (!options.suppressAgentState) {
+                setWaitingState(false);
+                var joinName = m.agent_name || 'Agent';
+                var joinAvatar = m.agent_avatar || null;
+                updateHeaderAgent({ name: joinName, avatar: joinAvatar });
+                updateStatus('Chatting with ' + joinName, true);
+            }
             var div = document.createElement('div');
             div.className = 'lcw-join-event';
             if (msgKey) div.setAttribute('data-msg-id', msgKey);
             var joinName = m.agent_name || 'Agent';
             var joinAvatar = m.agent_avatar || null;
-            updateHeaderAgent({ name: joinName, avatar: joinAvatar });
-            updateStatus('Chatting with ' + joinName, true);
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> joined the conversation</div>';
             box.appendChild(div);
         } else if (m.sender_type === 'agent') {
-            setWaitingState(false);
+            if (!options.suppressAgentState) {
+                setWaitingState(false);
+                var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
+                var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
+                updateHeaderAgent({ name: agentName, avatar: agentAvatar });
+                updateStatus('Chatting with ' + agentName, true);
+            }
             var row = document.createElement('div');
             row.className = 'lcw-msg-row lcw-agent-row';
             if (msgKey) row.setAttribute('data-msg-id', msgKey);
             var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
             var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
-            updateHeaderAgent({ name: agentName, avatar: agentAvatar });
-            updateStatus('Chatting with ' + agentName, true);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
@@ -2864,7 +2887,8 @@
                     }
                     if (isHistoryLoad || m.id > lastMsgId) {
                         var isNewIncoming = !isHistoryLoad && m.id > lastMsgId && m.sender_type !== 'visitor';
-                        appendMessage(m);
+                        var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
+                        appendMessage(m, { suppressAgentState: suppressAgentState });
                         if (m.id > lastMsgId) lastMsgId = m.id;
                         persistLastMsgId(lastMsgId);
                         if (isNewIncoming) {

@@ -104,8 +104,15 @@ try {
     $typing = lc_typing_state_for_viewer($conversationId, 'visitor');
 
     $agentId = (int) ($conv['agent_id'] ?? 0);
+    $convStatus = (string) ($conv['status'] ?? '');
     $agentName = trim((string) ($conv['agent_name'] ?? ''));
-    $agentPublic = $agentName !== '' ? lc_agent_public($agentName, $conv['agent_avatar'] ?? null) : null;
+    $agentPublic = null;
+    if ($convStatus === 'active' && $agentId > 0 && $agentName !== '') {
+        $agentPublic = lc_agent_public($agentName, $conv['agent_avatar'] ?? null);
+    } else {
+        $agentId = 0;
+        $agentName = '';
+    }
 
     lc_json([
         'success' => true,
@@ -113,7 +120,7 @@ try {
         'receipts' => $receipts,
         'status' => $conv['status'],
         'agent_id' => $agentId,
-        'is_assigned' => $agentId > 0 && ($conv['status'] ?? '') !== 'closed',
+        'is_assigned' => $agentId > 0 && $convStatus === 'active',
         'reference' => $reference,
         'agent_name' => $agentName !== '' ? $agentName : null,
         'agent' => $agentPublic,

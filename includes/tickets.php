@@ -124,7 +124,7 @@ function lc_build_ticket_reference(int $id, ?string $startedAt = null): string
 }
 
 /**
- * Write ticket to DB only — never calls lc_ensure_ticket_schema() (safe for backfill loops).
+ * Write ticket to DB only ??? never calls lc_ensure_ticket_schema() (safe for backfill loops).
  */
 function lc_persist_conversation_ticket(int $conversationId, ?string $startedAt = null): string
 {
@@ -239,7 +239,7 @@ function lc_ticket_resume_enabled(?int $accountId = null): bool
 
 /**
  * When enabled, visitors must fill the pre-chat form (name, email, message) before chatting.
- * Default off → open widget goes straight into live chat.
+ * Default off ??? open widget goes straight into live chat.
  */
 function lc_prechat_form_enabled(?int $accountId = null): bool
 {
@@ -256,7 +256,7 @@ function lc_conversation_reference_message(int $conversationId, ?string $started
 {
     $ref = lc_conversation_reference($conversationId, $startedAt);
 
-    return 'Your support ticket reference is ' . $ref . '. Please save this number — when you return, share it so we can continue this same conversation without starting over.';
+    return 'Your support ticket reference is ' . $ref . '. Please save this number ??? when you return, share it so we can continue this same conversation without starting over.';
 }
 
 /**
@@ -312,8 +312,8 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
 
     $status = (string) $conv['status'];
     if ($status === 'closed') {
-        $status = !empty($conv['agent_id']) ? 'active' : 'waiting';
-        $db->prepare('UPDATE conversations SET status = ?, closed_at = NULL WHERE id = ?')
+        $status = 'waiting';
+        $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
         if (function_exists('lc_clear_transcript_request')) {
             lc_clear_transcript_request($convId);
@@ -322,9 +322,6 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
             $convId,
             'Visitor resumed this conversation using ticket ' . $reference . '.'
         );
-        if ($status === 'waiting') {
-            lc_assign_agent($convId);
-        }
     }
 
     lc_touch_conversation($convId);
