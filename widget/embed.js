@@ -294,7 +294,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=43';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=44';
         document.head.appendChild(link);
     }
 
@@ -794,7 +794,8 @@
         showTicketResumeError('');
         if (!prechatFormEnabled) {
             if (cancelOnly) {
-                showDirectEntryWithTicketOption();
+                if (prechat) prechat.style.display = 'none';
+                showIdleChatReady();
             }
             return;
         }
@@ -813,6 +814,8 @@
             if (startPanel) startPanel.style.display = 'none';
             var directStart = document.getElementById('lc-direct-chat-start');
             if (directStart) directStart.style.display = 'none';
+            var statusCard = document.getElementById('lc-prechat-status');
+            if (statusCard) statusCard.style.display = 'none';
         }
         showTicketResumePanel();
     }
@@ -1197,7 +1200,7 @@
             scheduleAutoOpenOnLoad();
             return;
         }
-        showDirectEntryWithTicketOption();
+        showIdleChatReady();
         scheduleAutoOpenOnLoad();
     }
 
@@ -1232,49 +1235,14 @@
     }
 
     function showDirectEntryWithTicketOption() {
-        if (!ticketResumeEnabled) {
-            showIdleChatReady();
-            return;
-        }
-        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
-        document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
-        document.getElementById('lc-panel-prechat').style.display = 'flex';
-        document.getElementById('lc-panel-messages').style.display = 'none';
-        document.getElementById('lc-panel-compose').style.display = 'none';
-        document.getElementById('lc-panel-ended').style.display = 'none';
-        document.getElementById('lc-panel-head').style.display = 'none';
-        document.getElementById('lc-panel-toolbar').style.display = 'flex';
-        var startPanel = document.getElementById('lc-prechat-start-panel');
-        if (startPanel) startPanel.style.display = prechatFormEnabled ? '' : 'none';
-        var ticketPanel = document.getElementById('lc-ticket-resume-panel');
-        if (ticketPanel) ticketPanel.hidden = true;
-        showTicketResumeError('');
-        ensureDirectChatStartButton();
+        // Direct chat: skip status card / start button — go straight to idle compose.
+        // Ticket resume stays in the 3-dot head menu.
+        showIdleChatReady();
     }
 
     function ensureDirectChatStartButton() {
-        if (prechatFormEnabled || !ticketResumeEnabled) {
-            return;
-        }
-        var wrap = document.getElementById('lc-ticket-resume-wrap');
-        if (!wrap) {
-            return;
-        }
         var btn = document.getElementById('lc-direct-chat-start');
-        if (!btn) {
-            btn = document.createElement('button');
-            btn.type = 'button';
-            btn.id = 'lc-direct-chat-start';
-            btn.className = 'lcw-prechat-btn lcw-direct-start-btn';
-            btn.textContent = 'Start a new conversation';
-            btn.addEventListener('click', function () {
-                var prechat = document.getElementById('lc-panel-prechat');
-                if (prechat) prechat.style.display = 'none';
-                showIdleChatReady();
-            });
-            wrap.parentNode.insertBefore(btn, wrap.nextSibling);
-        }
-        btn.style.display = '';
+        if (btn) btn.style.display = 'none';
     }
 
     function showIdleChatReady() {
