@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
     'use strict';
 
     var app = document.getElementById('lc-chat-app');
@@ -1492,13 +1492,23 @@
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
         var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !parseInt(c.agent_id || 0, 10));
+        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
         replyInput.disabled = !canCompose;
         document.getElementById('lc-send-reply').disabled = !canCompose;
+        // Always sync placeholder with live status (reopen must clear "Chat closed...")
+        if (c.status === 'closed') {
+            replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+        } else if (chatTransferredAway) {
+            replyInput.placeholder = 'Transferred - view only';
+        } else if (!canCompose) {
+            replyInput.placeholder = 'Assign to yourself to reply';
+        } else {
+            replyInput.placeholder = 'Type a message...';
+        }
         if (acceptBtn) acceptBtn.style.display = 'none';
         setUnassignedMode(isUnassigned);
         if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
-        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
     }
 
     function loadCanned() {
@@ -1536,6 +1546,11 @@
         closeTransferPanel();
         closeMoreMenu();
         transferAgentsLoaded = false;
+        if (replyInput) {
+            replyInput.value = '';
+            replyInput.placeholder = 'Type a message...';
+            replyInput.disabled = false;
+        }
         currentReference = '';
         currentVisitorIp = '';
         currentIpBlocked = false;
@@ -1875,6 +1890,7 @@
 
                 replyInput.disabled = false;
                 document.getElementById('lc-send-reply').disabled = false;
+                replyInput.placeholder = 'Type a message...';
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
                 currentConversationMeta = {
