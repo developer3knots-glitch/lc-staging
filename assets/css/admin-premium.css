@@ -1,5 +1,5 @@
 /**
- * LiveChat Admin ╬ô├ç├╢ Professional UI
+ * LiveChat Admin Γò¼├┤Γö£├ºΓö£Γòó Professional UI
  * Icons: Tabler Icons | Font: Work Sans
  */
 
@@ -33,7 +33,7 @@ body,
     overflow-x: clip;
 }
 
-/* Shell: only main pane scrolls ╬ô├ç├╢ sidebar stays pinned (brand + nav + user footer) */
+/* Shell: only main pane scrolls Γò¼├┤Γö£├ºΓö£Γòó sidebar stays pinned (brand + nav + user footer) */
 html {
     height: 100%;
 }
@@ -43,7 +43,7 @@ body.lc-admin-body {
     overflow: hidden;
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Auth ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Auth Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-auth-body {
     min-height: 100vh;
     display: flex;
@@ -78,7 +78,7 @@ body.lc-admin-body {
 .lc-auth-card h1 { margin: 0 0 0.35rem; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; }
 .lc-auth-sub { color: var(--lc-muted); margin: 0 0 1.5rem; font-size: 0.88rem; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Layout ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Layout Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-app {
     display: flex;
     height: 100%;
@@ -208,7 +208,7 @@ body.lc-admin-body {
 .lc-agent-name { color: #fff; font-weight: 600; font-size: 0.84rem; }
 .lc-agent-status-line { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: #94a3b8; margin-top: 0.1rem; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Avatars ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Avatars Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-avatar {
     display: inline-block;
     width: 40px;
@@ -439,7 +439,7 @@ body.lc-admin-body {
     -webkit-overflow-scrolling: touch;
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Hero ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Hero Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-hero {
     border-radius: var(--lc-radius-lg);
     padding: 1.4rem 1.5rem;
@@ -492,7 +492,7 @@ body.lc-admin-body {
 .lc-hero-stat-val { font-size: 1.65rem; font-weight: 800; display: block; line-height: 1.1; }
 .lc-hero-stat small { font-size: 0.72rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç KPI ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º KPI Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -528,7 +528,7 @@ body.lc-admin-body {
 .lc-kpi-name { font-size: 0.72rem; color: var(--lc-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .lc-kpi-val { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin-top: 0.1rem; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Cards ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Cards Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-card {
     background: var(--lc-surface);
     border: 1px solid var(--lc-border);
@@ -557,7 +557,7 @@ body.lc-admin-body {
 .lc-card-head h3 i { color: var(--lc-primary); font-size: 1rem; }
 .lc-card-body { padding: 1rem 1.15rem; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Chat ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Chat Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-chat-layout {
     display: grid;
     grid-template-columns: 340px 1fr;
@@ -883,7 +883,7 @@ body.lc-admin-body {
     height: 11px;
 }
 .lc-msg-ticks.is-sent .lc-tick-svg { width: 12px; }
-/* On agent (own) green bubbles ╬ô├ç├╢ high contrast (lime washes out WA-blue #53bdeb) */
+/* On agent (own) green bubbles Γò¼├┤Γö£├ºΓö£Γòó high contrast (lime washes out WA-blue #53bdeb) */
 .lc-msg.agent .lc-msg-ticks.is-sent,
 .lc-msg.agent .lc-msg-ticks.is-delivered {
     color: rgba(255, 255, 255, 0.85);
@@ -931,7 +931,7 @@ body.lc-admin-body {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-primary) 18%, transparent);
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Visitor meta chips ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Visitor meta chips Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-visitor-details { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
 .lc-visitor-details span {
     display: inline-flex;
@@ -974,7 +974,7 @@ body.lc-admin-body {
 .lc-block-ip-btn.is-blocked:hover { background: #dcfce7; }
 .lc-block-ip-btn i { font-size: 0.78rem; line-height: 1; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Country blocking picker ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Country blocking picker Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-country-picker {
     border: 1px solid var(--lc-border);
     border-radius: 12px;
@@ -1053,7 +1053,7 @@ body.lc-admin-body {
     .lc-ip-block-row { grid-template-columns: 1fr; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Page journey timeline ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Page journey timeline Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-page-journey {
     border-bottom: 1px solid var(--lc-border);
     background: #fff;
@@ -1138,7 +1138,7 @@ body.lc-admin-body {
     text-overflow: ellipsis;
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Forms & buttons ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Forms & buttons Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-form label:not(.lc-settings-toggle):not(.lc-country-option) {
     display: block;
     font-size: 0.74rem;
@@ -1202,7 +1202,7 @@ body.lc-admin-body {
 .lc-btn-sm { padding: 0.38rem 0.75rem; font-size: 0.78rem; }
 .lc-btn-block { width: 100%; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Tables ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Tables Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-table { width: 100%; border-collapse: collapse; }
 .lc-table th {
     background: #f8fafc;
@@ -1274,7 +1274,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: 0.84rem; color: 
 
 .lc-kpi-icon.red { background: #fef2f2; color: #dc2626; }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Advanced Dashboard ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Advanced Dashboard Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-content {
     background:
         radial-gradient(circle at top right, color-mix(in srgb, var(--lc-primary) 6%, transparent), transparent 32%),
@@ -1752,7 +1752,7 @@ a.lc-conv-item:hover {
     .lc-history-form-grid { grid-template-columns: 1fr; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Chat History ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Chat History Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-hero-history {
     background:
         radial-gradient(circle at 12% 85%, rgba(139, 92, 246, 0.22), transparent 40%),
@@ -2067,7 +2067,7 @@ a.lc-conv-item:hover {
     .lc-sidebar-backdrop { display: none !important; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Canned Replies ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Canned Replies Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-hero-canned {
     background:
         radial-gradient(circle at 15% 80%, rgba(245, 158, 11, 0.28), transparent 42%),
@@ -2324,7 +2324,7 @@ a.lc-conv-item:hover {
     }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Brands ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Brands Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-hero-brands {
     background:
         radial-gradient(circle at 10% 75%, rgba(20, 184, 166, 0.25), transparent 42%),
@@ -2629,7 +2629,7 @@ a.lc-conv-item:hover {
     .lc-brand-edit-grid { grid-template-columns: 1fr; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Agents ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Agents Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-hero-agents {
     background:
         radial-gradient(circle at 12% 80%, rgba(99, 102, 241, 0.28), transparent 42%),
@@ -2905,7 +2905,7 @@ a.lc-conv-item:hover {
     .lc-agent-card-meta { grid-template-columns: 1fr; gap: 0.35rem; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Settings ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Settings Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 .lc-settings-page {
     max-width: 100%;
     min-width: 0;
@@ -3407,7 +3407,7 @@ a.lc-conv-item:hover {
     .lc-settings-aside .lc-settings-section { position: static; }
 }
 
-/* ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç Live Chats Pro (inbox ~ LiveChat console width) ╬ô├╢├ç╬ô├╢├ç╬ô├╢├ç */
+/* Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º Live Chats Pro (inbox ~ LiveChat console width) Γò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├ºΓò¼├┤Γö£ΓòóΓö£├º */
 /* Full-bleed: use entire right column (no side padding / gap) */
 body.lc-page-chats {
     overflow: hidden;
@@ -4910,10 +4910,10 @@ body.lc-page-chats .lc-content {
     30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë
+/* Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½
    LiveChat-style agent desk
    Icon rail + slim topbar + 3-col (inbox | thread | details)
-   ╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë╬ô├▓├ë */
+   Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½Γò¼├┤Γö£ΓûôΓö£├½ */
 body.lc-page-chats {
     --lc-sidebar-w: 68px;
 }
@@ -5493,62 +5493,78 @@ body.lc-page-dashboard .lc-content {
 
 .lc-home-section { margin: 0 0 1.5rem; }
 .lc-home-section-title {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.85rem;
     font-size: 1.05rem;
     font-weight: 800;
-    color: #152033;
+    color: #0f172a;
+    letter-spacing: -0.02em;
 }
 .lc-home-rt {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.85rem;
+    gap: 1rem;
 }
 .lc-home-rt-card {
-    background: #fff;
-    border: 1px solid #e6ebf2;
-    border-radius: 14px;
-    padding: 1.15rem 1.2rem 1.25rem;
+    background: #f3f4f6;
+    border: none;
+    border-radius: 10px;
+    padding: 1.2rem 1.35rem 1.3rem;
     text-decoration: none;
     color: inherit;
-    min-height: 118px;
+    min-height: 124px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    align-items: flex-start;
+    justify-content: flex-start;
+    box-shadow: none;
+    transition: background 0.15s ease;
 }
 a.lc-home-rt-card:hover {
-    border-color: #c9d7ea;
-    box-shadow: 0 8px 24px rgba(21, 32, 51, 0.06);
+    background: #eceef1;
+    border: none;
+    box-shadow: none;
 }
 .lc-home-rt-label {
-    font-size: 0.92rem;
-    color: #5b6b82;
-    font-weight: 600;
+    font-size: 0.9rem;
+    color: #0f172a;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
 }
 .lc-home-rt-value {
-    font-size: 2.35rem;
+    font-size: 2.55rem;
     font-weight: 800;
-    letter-spacing: -0.04em;
-    color: #152033;
+    letter-spacing: -0.045em;
+    color: #0f172a;
     line-height: 1;
-    margin-top: 0.85rem;
+    margin-top: auto;
+    padding-top: 1.15rem;
 }
-.lc-home-rt-agents { justify-content: center; gap: 0.75rem; }
+.lc-home-rt-agents {
+    justify-content: flex-start;
+    gap: 0.9rem;
+}
 .lc-home-invite {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    align-self: center;
-    min-height: 40px;
-    padding: 0.45rem 1rem;
+    align-self: flex-start;
+    min-height: 38px;
+    padding: 0.45rem 0.95rem;
     border-radius: 8px;
-    background: #1b2a4a;
-    color: #fff !important;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    color: #0f172a !important;
     text-decoration: none;
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
+    box-shadow: none;
+    margin-top: 0.15rem;
 }
-.lc-home-invite:hover { background: #111827; }
+.lc-home-invite:hover {
+    background: #fff;
+    border-color: #9ca3af;
+}
 
 .lc-home-week {
     background: #fff;
@@ -5798,7 +5814,7 @@ a.lc-home-rt-card:hover {
     color: #fff;
 }
 
-/* Hover tooltips — fixed layer via JS class; CSS fallback absolute */
+/* Hover tooltips ΓÇö fixed layer via JS class; CSS fallback absolute */
 .lc-tip {
     position: relative;
 }
@@ -6218,7 +6234,7 @@ body.lc-page-chats .lc-chat-item-pro.is-waiting.active {
     background: #eceff3;
 }
 
-/* Unassigned action dock — LiveChat exact feel */
+/* Unassigned action dock ΓÇö LiveChat exact feel */
 .lc-unassigned-bar {
     display: none;
     flex-direction: column;
