@@ -311,7 +311,9 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
     }
 
     $status = (string) $conv['status'];
-    if ($status === 'closed') {
+    $hadAgent = (int) ($conv['agent_id'] ?? 0) > 0;
+    $requeue = $status === 'closed' || $status === 'active' || $hadAgent;
+    if ($requeue) {
         $status = 'waiting';
         $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
@@ -322,6 +324,9 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
             $convId,
             'Visitor resumed this conversation using ticket ' . $reference . '.'
         );
+    } elseif ($status === 'waiting') {
+        $db->prepare('UPDATE conversations SET agent_id = NULL, accepted_at = NULL WHERE id = ?')
+            ->execute([$convId]);
     }
 
     lc_touch_conversation($convId);

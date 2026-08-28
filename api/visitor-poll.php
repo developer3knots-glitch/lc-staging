@@ -57,8 +57,12 @@ try {
     $reference = lc_ticket_display_enabled()
         ? (string) lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
         : '';
+    $ticketRef = trim((string) ($_GET['ticket_ref'] ?? ''));
+    if ($ticketRef !== '') {
+        $reference = $ticketRef;
+    }
     $fullHistory = isset($_GET['full_history']) && (string) $_GET['full_history'] === '1';
-    if ($fullHistory || (function_exists('lc_visitor_has_ticket_resume_history') && lc_visitor_has_ticket_resume_history($conversationId))) {
+    if ($fullHistory) {
         $floorId = 0;
     } else {
         $floorId = function_exists('lc_visitor_visible_message_floor')

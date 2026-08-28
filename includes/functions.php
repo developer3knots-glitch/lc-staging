@@ -369,9 +369,6 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
     if ($conversationId < 1) {
         return 0;
     }
-    if (lc_visitor_has_ticket_resume_history($conversationId)) {
-        return 0;
-    }
     $db = lc_db();
     $ticketId = 0;
     $reference = trim($reference);
@@ -408,6 +405,32 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
         return $ticketId;
     }
 }
+function lc_conversation_awaiting_manual_accept(int $conversationId): bool
+{
+    if ($conversationId < 1) {
+        return false;
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT status, agent_id FROM conversations WHERE id = ? LIMIT 1');
+        $stmt->execute([$conversationId]);
+        $conv = $stmt->fetch();
+        if (!$conv || (string) ($conv['status'] ?? '') !== 'waiting' || (int) ($conv['agent_id'] ?? 0) > 0) {
+            return false;
+        }
+        $msg = lc_db()->prepare("
+            SELECT 1 FROM messages
+            WHERE conversation_id = ?
+              AND sender_type = 'system'
+              AND message LIKE 'Visitor resumed this conversation using ticket%'
+            LIMIT 1
+        ");
+        $msg->execute([$conversationId]);
+        return (bool) $msg->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function lc_add_system_message(int $conversationId, string $message): void
 {
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
@@ -1531,7 +1554,7 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
 }
 
 /**
- * Message delivery ticks (WhatsApp-style): sent → delivered → read
+ * Message delivery ticks (WhatsApp-style): sent ??? delivered ??? read
  */
 function lc_ensure_message_receipts_schema(): void
 {

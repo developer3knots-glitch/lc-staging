@@ -294,7 +294,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=40';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=41';
         document.head.appendChild(link);
     }
 
@@ -937,7 +937,7 @@
                 return;
             }
             localStorage.setItem('lc_visitor_email', email);
-            fullHistoryMode = true;
+            fullHistoryMode = false;
             handleChatStarted(data, { keepMessages: false, resumedByTicket: true });
         })
         .catch(function () {
@@ -2240,7 +2240,7 @@
         if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
         if (options.resumedByTicket || data.resumed_by_ticket) {
-            fullHistoryMode = true;
+            fullHistoryMode = false;
             ticketResumeAwaitingAgent = data.status !== 'active';
         }
         if (!options.keepMessages) {
@@ -2385,7 +2385,7 @@
     function applyAgentConnectionState(data) {
         if (!data) return;
         if (ticketResumeAwaitingAgent) {
-            if (data.status === 'active' && (data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0 || (data.agent && data.agent.name) || data.agent_name)) {
+            if (data.status === 'active' && (parseInt(data.agent_id, 10) || 0) > 0 && (data.is_assigned || (data.agent && data.agent.name))) {
                 ticketResumeAwaitingAgent = false;
             } else {
                 setWaitingState(true);
@@ -2837,7 +2837,8 @@
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
             '&chat_token=' + encodeURIComponent(chatToken || '') +
             '&viewing=' + viewing +
-            (fullHistoryMode ? '&full_history=1' : ''))
+            (fullHistoryMode ? '&full_history=1' : '') +
+            (currentReference ? '&ticket_ref=' + encodeURIComponent(currentReference) : ''))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
