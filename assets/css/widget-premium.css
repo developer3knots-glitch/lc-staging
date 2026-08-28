@@ -1,6 +1,6 @@
 /**
- * LiveChat Widget — Enterprise UI
- * Panel sizing aligned with LiveChat.com desktop widget (~360×520).
+ * LiveChat Widget ??? Enterprise UI
+ * Panel sizing aligned with LiveChat.com desktop widget (~360??520).
  */
 :root {
     --lcw-primary: #6FD943;
@@ -38,7 +38,7 @@
     height: min(var(--lcw-panel-h), calc(100vh - (var(--lcw-offset) * 2)));
     max-height: min(var(--lcw-panel-h), calc(100vh - (var(--lcw-offset) * 2)));
 }
-/* ─── Proactive teaser ─── */
+/* ????????? Proactive teaser ????????? */
 .lcw-teaser {
     position: absolute;
     bottom: calc(var(--lcw-bubble-size) + 12px);
@@ -100,7 +100,7 @@
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ─── Launcher bubble ─── */
+/* ????????? Launcher bubble ????????? */
 #lc-bubble {
     width: var(--lcw-bubble-size);
     height: var(--lcw-bubble-size);
@@ -190,7 +190,7 @@
     50% { opacity: 0.55; }
 }
 
-/* ─── Panel shell (LiveChat-sized floating window) ─── */
+/* ????????? Panel shell (LiveChat-sized floating window) ????????? */
 .lcw-panel,
 #lc-panel {
     position: absolute;
@@ -218,7 +218,7 @@
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ─── Toolbar (pre-chat mode) ─── */
+/* ????????? Toolbar (pre-chat mode) ????????? */
 .lcw-toolbar {
     display: flex;
     align-items: center;
@@ -238,6 +238,26 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
+}
+.lcw-toolbar-menu-wrap {
+    position: relative;
+    display: inline-flex;
+}
+.lcw-toolbar-menu-pop {
+    right: 0;
+    left: auto;
+}
+#lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop {
+    background: #fff;
+    border-color: #e2e8f0;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
+}
+#lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop .lcw-head-menu-item {
+    color: #0f172a;
+}
+#lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop button.lcw-head-menu-item:hover,
+#lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop button.lcw-head-menu-item:focus-visible {
+    background: #f1f5f9;
 }
 .lcw-icon-btn {
     width: 34px;
@@ -265,7 +285,7 @@
     font-family: inherit;
 }
 
-/* ─── Chat header ─── */
+/* ????????? Chat header ????????? */
 .lcw-chat-head,
 #lc-panel-head {
     padding: 0.75rem 0.85rem;
@@ -398,7 +418,7 @@
     justify-content: space-between;
 }
 
-/* ─── Waiting bar ─── */
+/* ????????? Waiting bar ????????? */
 .lcw-waiting-bar {
     display: none;
     align-items: center;
@@ -430,7 +450,7 @@
     30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* Peer typing (agent is typing) — WhatsApp-style bubble */
+/* Peer typing (agent is typing) ??? WhatsApp-style bubble */
 .lcw-typing-indicator {
     flex-shrink: 0;
     padding: 0.15rem 0.9rem 0.45rem;
@@ -468,7 +488,7 @@
     font-style: italic;
 }
 
-/* ─── Pre-chat ─── */
+/* ????????? Pre-chat ????????? */
 .lcw-prechat {
     flex: 1;
     min-height: 0;
@@ -661,7 +681,7 @@
 }
 .lcw-powered svg { flex-shrink: 0; opacity: 0.7; }
 
-/* ─── Messages ─── */
+/* ????????? Messages ????????? */
 .lcw-messages,
 #lc-panel-messages {
     flex: 1;
@@ -782,7 +802,7 @@
 }
 .lcw-msg-ticks.is-sent .lcw-tick-svg { width: 12px; }
 .lcw-msg-ticks.is-pending .lcw-tick-svg { width: 12px; height: 12px; }
-/* Visitor (own) green bubbles — white ticks (cyan washes out on brand green) */
+/* Visitor (own) green bubbles ??? white ticks (cyan washes out on brand green) */
 .lcw-visitor .lcw-msg-ticks.is-sent,
 .lcw-visitor .lcw-msg-ticks.is-delivered {
     color: rgba(255, 255, 255, 0.85);
@@ -797,7 +817,7 @@
 }
 .lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }
 .lcw-msg-pending { opacity: 0.72; }
-/* Outer meta (off bubble) — keep classic blue read */
+/* Outer meta (off bubble) ??? keep classic blue read */
 .lcw-msg-meta .lcw-msg-ticks.is-sent,
 .lcw-msg-meta .lcw-msg-ticks.is-delivered { color: #94a3b8; }
 .lcw-msg-meta .lcw-msg-ticks.is-read { color: #0ea5e9; }
@@ -838,7 +858,7 @@
 }
 .lcw-join-text strong { color: var(--lcw-ink); font-weight: 700; }
 
-/* ─── Compose ─── */
+/* ????????? Compose ????????? */
 .lcw-compose,
 #lc-panel-compose {
     padding: 0.5rem 0.7rem 0.6rem;
@@ -906,7 +926,7 @@
 #lc-send:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 #lc-send.is-sending { opacity: 0.7; pointer-events: none; }
 
-/* ─── Ended state ─── */
+/* ????????? Ended state ????????? */
 .lcw-ended,
 #lc-panel-ended {
     flex: 1;
@@ -1317,7 +1337,7 @@
     background: color-mix(in srgb, var(--lcw-primary) 8%, #fff);
 }
 
-/* ─── Mobile fullscreen ─── */
+/* ????????? Mobile fullscreen ????????? */
 @media (max-width: 480px) {
     #lc-widget-root { right: 12px; bottom: 12px; }
     #lc-panel, .lcw-panel {
@@ -1890,7 +1910,7 @@
     border-color: #e2e8f0;
 }
 
-/* Light theme — active chat layout (same structure as dark pro chat) */
+/* Light theme ??? active chat layout (same structure as dark pro chat) */
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-chat-head,
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-panel-head {
     padding: 0.55rem 0.65rem;

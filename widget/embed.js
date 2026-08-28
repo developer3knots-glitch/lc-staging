@@ -294,7 +294,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=42';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=43';
         document.head.appendChild(link);
     }
 
@@ -344,6 +344,15 @@
                 '<div id="lc-panel-toolbar" class="lcw-toolbar">' +
                     '<span class="lcw-toolbar-brand" id="lc-toolbar-brand">LiveChat</span>' +
                     '<div class="lcw-toolbar-actions">' +
+                        '<div class="lcw-toolbar-menu-wrap" id="lc-toolbar-menu-wrap">' +
+                            '<button type="button" id="lc-toolbar-menu" class="lcw-icon-btn" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">' + ICON_MENU + '</button>' +
+                            '<div id="lc-toolbar-menu-pop" class="lcw-head-menu-pop lcw-toolbar-menu-pop" hidden role="menu">' +
+                                '<button type="button" id="lc-toolbar-menu-resume-ticket" class="lcw-head-menu-item" role="menuitem">' +
+                                    '<span class="lcw-head-menu-icon">' + ICON_TICKET + '</span>' +
+                                    '<span class="lcw-head-menu-label">Continue with ticket</span>' +
+                                '</button>' +
+                            '</div>' +
+                        '</div>' +
                         '<button type="button" id="lc-toolbar-minimize" class="lcw-icon-btn" title="Minimize chat" aria-label="Minimize chat">' +
                             ICON_MINIMIZE +
                         '</button>' +
@@ -435,7 +444,6 @@
                         '</form>' +
                     '</div>' +
                     '<div class="lcw-ticket-resume-wrap" id="lc-ticket-resume-wrap">' +
-                        '<button type="button" class="lcw-ticket-resume-toggle" id="lc-show-ticket-resume">Already have a ticket? Continue your conversation</button>' +
                         '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
                             '<div class="lcw-form-card lcw-ticket-resume-card">' +
                                 '<div class="lcw-form-card-head">' +
@@ -462,7 +470,7 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
-                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential ┬╖ <strong id="lc-powered-name">LiveChat</strong></div>' +
+                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential</div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
                 '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
@@ -549,6 +557,7 @@
         document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
         bindConfirmSheets();
         bindHeadMenu();
+        bindToolbarMenu();
         bindTranscriptEmailInputs();
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
@@ -556,7 +565,6 @@
         var emailSendBtn = document.getElementById('lc-email-transcript-send');
         if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
         if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
-                document.getElementById('lc-show-ticket-resume').addEventListener('click', openTicketResumeEntry);
         document.getElementById('lc-ticket-resume-back').addEventListener('click', function () { hideTicketResumePanel(true); });
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
@@ -763,10 +771,8 @@
         clearHoneypotFields();
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
-        var toggle = document.getElementById('lc-show-ticket-resume');
         if (startPanel) startPanel.style.display = 'none';
         if (ticketPanel) ticketPanel.hidden = false;
-        if (toggle) toggle.style.display = 'none';
         var directStart = document.getElementById('lc-direct-chat-start');
         if (directStart) directStart.style.display = 'none';
         var refEl = document.getElementById('lc-ticket-ref');
@@ -783,15 +789,12 @@
     function hideTicketResumePanel(cancelOnly) {
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
-        var toggle = document.getElementById('lc-show-ticket-resume');
         var prechat = document.getElementById('lc-panel-prechat');
         if (ticketPanel) ticketPanel.hidden = true;
-        if (toggle) toggle.style.display = '';
         showTicketResumeError('');
         if (!prechatFormEnabled) {
             if (cancelOnly) {
-                if (prechat) prechat.style.display = 'none';
-                showIdleChatReady();
+                showDirectEntryWithTicketOption();
             }
             return;
         }
@@ -803,6 +806,7 @@
             return;
         }
         hideHeadMenu();
+        hideToolbarMenu();
         showPrechatForm(true, true);
         if (!prechatFormEnabled) {
             var startPanel = document.getElementById('lc-prechat-start-panel');
@@ -1046,6 +1050,8 @@
         if (endedBtn) endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
         var menuResume = document.getElementById('lc-menu-resume-ticket');
         if (menuResume) menuResume.style.display = ticketResumeEnabled ? '' : 'none';
+        var toolbarMenuWrap = document.getElementById('lc-toolbar-menu-wrap');
+        if (toolbarMenuWrap) toolbarMenuWrap.style.display = ticketResumeEnabled ? '' : 'none';
         if (!ticketDisplayEnabled) {
             if (refWrap) refWrap.hidden = true;
             if (endedRef) endedRef.hidden = true;
@@ -1082,8 +1088,6 @@
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;
-        var powered = document.getElementById('lc-powered-name');
-        if (powered) powered.textContent = name;
         var agentName = document.getElementById('lc-panel-agent-name');
         if (agentName && !(currentAgent && currentAgent.name)) agentName.textContent = name;
         var brandColor = settings.widget_color || '#6FD943';
@@ -1244,8 +1248,6 @@
         if (startPanel) startPanel.style.display = prechatFormEnabled ? '' : 'none';
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
         if (ticketPanel) ticketPanel.hidden = true;
-        var toggle = document.getElementById('lc-show-ticket-resume');
-        if (toggle) toggle.style.display = '';
         showTicketResumeError('');
         ensureDirectChatStartButton();
     }
@@ -1695,6 +1697,19 @@
         toggleHeadMenu(false);
     }
 
+    function toggleToolbarMenu(forceOpen) {
+        var pop = document.getElementById('lc-toolbar-menu-pop');
+        var btn = document.getElementById('lc-toolbar-menu');
+        if (!pop) return;
+        var open = typeof forceOpen === 'boolean' ? forceOpen : pop.hidden;
+        pop.hidden = !open;
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    function hideToolbarMenu() {
+        toggleToolbarMenu(false);
+    }
+
     function showTranscriptSheet() {
         hideHeadMenu();
         var sheet = document.getElementById('lc-transcript-sheet');
@@ -1766,6 +1781,10 @@
             if (wrap && !wrap.contains(e.target)) {
                 hideHeadMenu();
             }
+            var toolbarWrap = document.getElementById('lc-toolbar-menu-wrap');
+            if (toolbarWrap && !toolbarWrap.contains(e.target)) {
+                hideToolbarMenu();
+            }
         });
 
         var menuResumeTicket = document.getElementById('lc-menu-resume-ticket');
@@ -1824,6 +1843,31 @@
         if (transcriptConfirm) {
             transcriptConfirm.addEventListener('click', function (e) {
                 if (e.target === transcriptConfirm) hideTranscriptConfirm();
+            });
+        }
+    }
+
+    function bindToolbarMenu() {
+        var toolbarMenuBtn = document.getElementById('lc-toolbar-menu');
+        if (toolbarMenuBtn) {
+            toolbarMenuBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var pop = document.getElementById('lc-toolbar-menu-pop');
+                toggleToolbarMenu(pop && pop.hidden);
+            });
+        }
+
+        var toolbarMenuPop = document.getElementById('lc-toolbar-menu-pop');
+        if (toolbarMenuPop) {
+            toolbarMenuPop.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+        }
+
+        var toolbarResume = document.getElementById('lc-toolbar-menu-resume-ticket');
+        if (toolbarResume) {
+            toolbarResume.addEventListener('click', function () {
+                openTicketResumeEntry();
             });
         }
     }
