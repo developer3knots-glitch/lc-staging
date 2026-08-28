@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 47;
+    var LC_WIDGET_BUILD = 48;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -297,7 +297,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=47';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=48';
         document.head.appendChild(link);
     }
 
@@ -1254,34 +1254,27 @@
 
     /**
      * Entry rules (enterprise):
-     * - No auto-resume of old chats by IP / past device
-     * - Session continue: sessionStorage conversation id only (same tab refresh)
+     * - No auto-resume of old chats by IP / past device / localStorage
+     * - Same-tab continue: sessionStorage conversation id (survives refresh, dies with tab)
      * - Widget never shows combined IP history - that is admin/agent only
      * - Ticket resume: separate form when setting ON (visitor + agent share history)
-     * - Form ON ΓåÆ gate identity; Form OFF ΓåÆ direct chat
+     * - Form ON → gate identity; Form OFF → direct chat
      */
     function routeVisitorEntry(data) {
         if (!data || !data.success) return;
         applyWidgetSettings(data);
 
         var identityOk = !!data.visitor_identity_complete;
-        // Session-only reconnect - never use server has_active_chat for silent resume
-        var allowSessionResume = false;
-        try {
-            allowSessionResume = isDocumentReload() || isSiteNavigation();
-        } catch (e) {
-            allowSessionResume = false;
-        }
-        var resumeId = null;
-        if (allowSessionResume) {
-            resumeId = getStoredConversationId() || pendingResumeConvId || null;
-        } else {
-            // New browser visit: widget must show a fresh chat (admin keeps combined history)
-            pendingResumeConvId = null;
-            persistConversationId(null);
-            persistChatToken('');
-            try { chatStore().removeItem(LAST_MSG_KEY); } catch (e2) {}
-            lastMsgId = 0;
+        // sessionStorage already clears when the tab closes — always resume if present.
+        // Do NOT wipe on "non-reload" navigations; that was dropping chats on refresh.
+        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
+        if (resumeId) {
+            // Keep token for reconnect; widget-init will re-issue if needed
+            try {
+                if (!getStoredChatToken()) {
+                    /* ok - server issues a fresh token on resume */
+                }
+            } catch (eTok) {}
         }
 
         if (prechatFormEnabled) {
