@@ -315,6 +315,7 @@
         script.onerror = callback;
         document.head.appendChild(script);
     }
+    var ICON_TICKET = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h16v12H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
     var ICON_MAIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
     var ICON_SOUND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
     var ICON_MENU = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -350,6 +351,10 @@
                     '<div class="lcw-head-menu-wrap" id="lc-head-menu-wrap">' +
                         '<button type="button" id="lc-head-menu" class="lcw-head-icon-btn" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">' + ICON_MENU + '</button>' +
                         '<div id="lc-head-menu-pop" class="lcw-head-menu-pop" hidden role="menu">' +
+                            '<button type="button" id="lc-menu-resume-ticket" class="lcw-head-menu-item" role="menuitem">' +
+                                '<span class="lcw-head-menu-icon">' + ICON_TICKET + '</span>' +
+                                '<span class="lcw-head-menu-label">Resume with ticket</span>' +
+                            '</button>' +
                             '<button type="button" id="lc-menu-send-transcript" class="lcw-head-menu-item" role="menuitem">' +
                                 '<span class="lcw-head-menu-icon">' + ICON_MAIL + '</span>' +
                                 '<span class="lcw-head-menu-label">Send transcript</span>' +
@@ -549,7 +554,7 @@
         var emailSendBtn = document.getElementById('lc-email-transcript-send');
         if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
         if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
-                document.getElementById('lc-show-ticket-resume').addEventListener('click', showTicketResumePanel);
+                document.getElementById('lc-show-ticket-resume').addEventListener('click', openTicketResumeEntry);
         document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
@@ -757,10 +762,32 @@
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
         var toggle = document.getElementById('lc-show-ticket-resume');
+        var prechat = document.getElementById('lc-panel-prechat');
+        if (!prechatFormEnabled) {
+            if (ticketPanel) ticketPanel.hidden = true;
+            if (toggle) toggle.style.display = '';
+            if (prechat) prechat.style.display = 'none';
+            showTicketResumeError('');
+            showIdleChatReady();
+            return;
+        }
         if (startPanel) startPanel.style.display = '';
         if (ticketPanel) ticketPanel.hidden = true;
         if (toggle) toggle.style.display = '';
         showTicketResumeError('');
+    }
+
+    function openTicketResumeEntry() {
+        if (!ticketResumeEnabled) {
+            return;
+        }
+        hideHeadMenu();
+        showPrechatForm(true);
+        if (!prechatFormEnabled) {
+            var startPanel = document.getElementById('lc-prechat-start-panel');
+            if (startPanel) startPanel.style.display = 'none';
+        }
+        showTicketResumePanel();
     }
 
     function updateEndedResumeButton() {
@@ -841,8 +868,7 @@
             return;
         }
         hideEndedState();
-        showPrechatForm();
-        showTicketResumePanel();
+        openTicketResumeEntry();
         var refCode = document.getElementById('lc-ended-ref-code');
         var refInput = document.getElementById('lc-ticket-ref');
         if (refCode && refInput && refCode.textContent && refCode.textContent !== ' - ') {
@@ -992,6 +1018,8 @@
         var endedRef = document.getElementById('lc-ended-ref');
         if (resumeWrap) resumeWrap.style.display = ticketResumeEnabled ? '' : 'none';
         if (endedBtn) endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
+        var menuResume = document.getElementById('lc-menu-resume-ticket');
+        if (menuResume) menuResume.style.display = ticketResumeEnabled ? '' : 'none';
         if (!ticketDisplayEnabled) {
             if (refWrap) refWrap.hidden = true;
             if (endedRef) endedRef.hidden = true;
@@ -1139,7 +1167,7 @@
             scheduleAutoOpenOnLoad();
             return;
         }
-        showIdleChatReady();
+        showDirectEntryWithTicketOption();
         scheduleAutoOpenOnLoad();
     }
 
@@ -1171,6 +1199,54 @@
             created_at: new Date().toISOString(),
             _idlePreview: true
         });
+    }
+
+    function showDirectEntryWithTicketOption() {
+        if (!ticketResumeEnabled) {
+            showIdleChatReady();
+            return;
+        }
+        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
+        document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
+        document.getElementById('lc-panel-prechat').style.display = 'flex';
+        document.getElementById('lc-panel-messages').style.display = 'none';
+        document.getElementById('lc-panel-compose').style.display = 'none';
+        document.getElementById('lc-panel-ended').style.display = 'none';
+        document.getElementById('lc-panel-head').style.display = 'none';
+        document.getElementById('lc-panel-toolbar').style.display = 'flex';
+        var startPanel = document.getElementById('lc-prechat-start-panel');
+        if (startPanel) startPanel.style.display = prechatFormEnabled ? '' : 'none';
+        var ticketPanel = document.getElementById('lc-ticket-resume-panel');
+        if (ticketPanel) ticketPanel.hidden = true;
+        var toggle = document.getElementById('lc-show-ticket-resume');
+        if (toggle) toggle.style.display = '';
+        showTicketResumeError('');
+        ensureDirectChatStartButton();
+    }
+
+    function ensureDirectChatStartButton() {
+        if (prechatFormEnabled || !ticketResumeEnabled) {
+            return;
+        }
+        var wrap = document.getElementById('lc-ticket-resume-wrap');
+        if (!wrap) {
+            return;
+        }
+        var btn = document.getElementById('lc-direct-chat-start');
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'lc-direct-chat-start';
+            btn.className = 'lcw-prechat-btn lcw-direct-start-btn';
+            btn.textContent = 'Start a new conversation';
+            btn.addEventListener('click', function () {
+                var prechat = document.getElementById('lc-panel-prechat');
+                if (prechat) prechat.style.display = 'none';
+                showIdleChatReady();
+            });
+            wrap.parentNode.insertBefore(btn, wrap.nextSibling);
+        }
+        btn.style.display = '';
     }
 
     function showIdleChatReady() {
@@ -1665,6 +1741,13 @@
                 hideHeadMenu();
             }
         });
+
+        var menuResumeTicket = document.getElementById('lc-menu-resume-ticket');
+        if (menuResumeTicket) {
+            menuResumeTicket.addEventListener('click', function () {
+                openTicketResumeEntry();
+            });
+        }
 
         var menuTranscript = document.getElementById('lc-menu-send-transcript');
         if (menuTranscript) {

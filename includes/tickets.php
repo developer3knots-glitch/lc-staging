@@ -51,6 +51,38 @@ function lc_ensure_ticket_schema(): void
 
     $running = false;
     $done = true;
+    lc_ensure_ticket_visitor_features_enabled();
+}
+
+function lc_ensure_ticket_visitor_features_enabled(): void
+{
+    static $ran = false;
+    if ($ran) {
+        return;
+    }
+    $ran = true;
+    if (!function_exists('lc_get_setting') || !function_exists('lc_set_setting')) {
+        return;
+    }
+    if (lc_get_setting('ticket_features_enabled_v1', '0') === '1') {
+        return;
+    }
+    lc_set_setting('ticket_display_enabled', '1');
+    lc_set_setting('ticket_resume_enabled', '1');
+    lc_set_setting('ticket_features_enabled_v1', '1');
+    if (function_exists('lc_ensure_accounts_schema')) {
+        try {
+            lc_ensure_accounts_schema();
+            $ids = lc_db()->query('SELECT id FROM accounts')->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($ids as $aid) {
+                if (function_exists('lc_set_account_setting')) {
+                    lc_set_account_setting((int) $aid, 'ticket_display_enabled', '1');
+                    lc_set_account_setting((int) $aid, 'ticket_resume_enabled', '1');
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    }
 }
 
 function lc_ticket_prefix(): string
@@ -258,7 +290,7 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
     }
 
     $storedEmail = strtolower(trim((string) ($conv['visitor_email'] ?? '')));
-    if ($storedEmail === '' || $storedEmail !== $email) {
+    if ($storedEmail !== '' && $storedEmail !== $email) {
         return ['ok' => false, 'error' => 'Ticket and email do not match. Please check your details.'];
     }
 

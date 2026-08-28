@@ -27,13 +27,13 @@ try {
     lc_ensure_ticket_schema();
     lc_ensure_attachments_schema();
 
-    if (!lc_ticket_resume_enabled((int) ($brand['account_id'] ?? 0) > 0 ? (int) $brand['account_id'] : null)) {
-        lc_json(['success' => false, 'error' => 'Ticket resume is not enabled for this site'], 403);
-    }
-
     $brand = lc_get_brand_by_key($brandKey);
     if (!$brand) {
         lc_json(['success' => false, 'error' => 'Invalid brand key'], 400);
+    }
+    $brandAccountId = (int) ($brand['account_id'] ?? 0);
+    if (!lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null)) {
+        lc_json(['success' => false, 'error' => 'Ticket resume is not enabled for this site'], 403);
     }
     $brandId = (int) $brand['id'];
     $brandSettings = lc_brand_settings($brand);
