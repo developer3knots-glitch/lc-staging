@@ -169,7 +169,7 @@ function lc_brand_embed_code(array $brand): string
     $url = LC_BASE_URL;
     $key = $brand['brand_key'];
     // Force cache bust when embed changes (coming-soon pages often pin old ?v=).
-    $embedVer = max(48, (int) (@filemtime(dirname(__DIR__) . '/widget/embed.js') ?: time()));
+    $embedVer = max(49, (int) (@filemtime(dirname(__DIR__) . '/widget/embed.js') ?: time()));
     $timeVer = @filemtime(dirname(__DIR__) . '/assets/js/lc-time.js') ?: 1;
     return '<script src="' . $url . '/assets/js/lc-time.js?v=' . (int) $timeVer . '"></script>' . "\n"
         . '<script src="' . $url . '/widget/embed.js?v=' . $embedVer . '" charset="utf-8" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';

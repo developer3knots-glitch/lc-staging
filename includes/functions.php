@@ -899,6 +899,67 @@ function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
     return null;
 }
 
+/** Max age for widget to treat a waiting/active thread as the same live session. */
+function lc_widget_resume_max_idle_seconds(): int
+{
+    return 90 * 60;
+}
+
+/**
+ * Freshness gate shared by widget resume / live reconnect (not IP-based).
+ */
+function lc_conversation_fresh_for_widget(array $conv, ?int $maxIdleSeconds = null): bool
+{
+    $maxIdleSeconds = $maxIdleSeconds ?? lc_widget_resume_max_idle_seconds();
+    $anchor = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
+    $ts = $anchor ? strtotime((string) $anchor) : false;
+    if ($ts === false || (time() - $ts) > $maxIdleSeconds) {
+        return false;
+    }
+    try {
+        $oldestStmt = lc_db()->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
+        $oldestStmt->execute([(int) ($conv['id'] ?? 0)]);
+        $oldest = $oldestStmt->fetchColumn();
+        $oldestTs = $oldest ? strtotime((string) $oldest) : false;
+        if ($oldestTs !== false && (time() - $oldestTs) > $maxIdleSeconds) {
+            return false;
+        }
+    } catch (Throwable $e) {
+    }
+    return true;
+}
+
+/**
+ * Live waiting/active thread for this visitor+brand (widget reconnect).
+ * Same visitor_uid only — never IP / other devices.
+ *
+ * @return array{id:int|string,status:string,agent_id?:mixed,visitor_id?:mixed,last_message_at?:mixed,started_at?:mixed}|null
+ */
+function lc_live_widget_conversation(int $visitorId, int $brandId, bool $activeOnly = false, ?int $maxIdleSeconds = null): ?array
+{
+    if ($visitorId < 1 || $brandId < 1) {
+        return null;
+    }
+    $maxIdleSeconds = $maxIdleSeconds ?? lc_widget_resume_max_idle_seconds();
+    $statusSql = $activeOnly ? "status = 'active'" : "status IN ('waiting','active')";
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT id, status, agent_id, visitor_id, last_message_at, started_at
+            FROM conversations
+            WHERE visitor_id = ? AND brand_id = ? AND {$statusSql}
+            ORDER BY COALESCE(last_message_at, started_at) DESC, id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$visitorId, $brandId]);
+        $row = $stmt->fetch() ?: null;
+        if ($row && lc_conversation_fresh_for_widget($row, $maxIdleSeconds)) {
+            return $row;
+        }
+    } catch (Throwable $e) {
+    }
+    return null;
+}
+
 /**
  * Prior conversations for the same visitor IP and/or visitor record (agent-only).
  * Visitor widgets never use this list for auto-resume.

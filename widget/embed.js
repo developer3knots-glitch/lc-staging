@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 48;
+    var LC_WIDGET_BUILD = 49;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -297,7 +297,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=48';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=49';
         document.head.appendChild(link);
     }
 
@@ -1268,6 +1268,11 @@
         // sessionStorage already clears when the tab closes — always resume if present.
         // Do NOT wipe on "non-reload" navigations; that was dropping chats on refresh.
         var resumeId = getStoredConversationId() || pendingResumeConvId || null;
+        // Same visitor_uid still has waiting/active on server (sessionStorage lost) → reconnect
+        // so dashboard Active and widget stay in sync. Never IP-based.
+        if (!resumeId && data.has_active_chat && data.conversation_id) {
+            resumeId = parseInt(data.conversation_id, 10) || null;
+        }
         if (resumeId) {
             // Keep token for reconnect; widget-init will re-issue if needed
             try {

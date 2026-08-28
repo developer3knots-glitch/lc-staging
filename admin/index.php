@@ -6,6 +6,12 @@ lc_ensure_brands_schema();
 $db = lc_db();
 $agentBrandId = lc_agent_brand_id($agent);
 $accountId = lc_agent_account_id($agent);
+if (function_exists('lc_sweep_inactive_conversations')) {
+    try {
+        lc_sweep_inactive_conversations($accountId > 0 ? $accountId : null);
+    } catch (Throwable $e) {
+    }
+}
 [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
 $waiting = lc_waiting_count($agentBrandId, $accountId);
@@ -134,19 +140,19 @@ require __DIR__ . '/includes/header.php';
     <?php if ($unread > 0): ?>
     <div class="lc-home-unread" id="lc-dash-unread-alert">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text"><?= (int) $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text"><?= (int) $unread ?></strong> unread message<?= $unread === 1 ? '' : 's' ?> ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php else: ?>
     <div class="lc-home-unread" id="lc-dash-unread-alert" style="display:none">
         <i class="ti ti-bell-ringing"></i>
-        <span><strong id="lc-dash-unread-text">0</strong> unread messages — <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
+        <span><strong id="lc-dash-unread-text">0</strong> unread messages ΓÇö <a href="<?= lc_admin_url('chats') ?>"><strong>open inbox</strong></a></span>
     </div>
     <?php endif; ?>
 
     <div class="lc-home-banner">
         <div class="lc-home-banner-copy">
             <h2>Stay in touch with customers</h2>
-            <p>Inactive chats auto-close after a quiet period so your queue stays clean — and visitors can resume when they return.</p>
+            <p>Inactive chats auto-close after a quiet period so your queue stays clean ΓÇö and visitors can resume when they return.</p>
             <div class="lc-home-banner-actions">
                 <?php if (($agent['role'] ?? '') === 'admin'): ?>
                     <a href="<?= lc_admin_url('settings') ?>#lc-settings-system" class="lc-home-banner-btn">Set inactivity timeout</a>

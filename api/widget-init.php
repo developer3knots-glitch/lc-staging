@@ -96,12 +96,17 @@ try {
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
     if ($settingsOnly) {
-        // Widget: never expose old IP thread for silent resume. Admin keeps combined history.
+        // Same visitor_uid live waiting/active → reconnect (fixes idle widget vs dashboard Active).
+        // Never IP / other visitors — admin keeps combined history separately.
+        $liveForSettings = function_exists('lc_live_widget_conversation')
+            ? lc_live_widget_conversation($visitorId, $brandId, false)
+            : null;
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => false,
-            'conversation_id' => null,
+            'has_active_chat' => $liveForSettings !== null,
+            'conversation_id' => $liveForSettings ? (int) $liveForSettings['id'] : null,
+            'conversation_status' => $liveForSettings['status'] ?? null,
             'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
         ]);
@@ -109,7 +114,9 @@ try {
 
     $conv = null;
     // Widget: resume only for a short live session (page refresh). Older threads stay for admin history only.
-    $resumeMaxIdleSeconds = 90 * 60; // 90 minutes
+    $resumeMaxIdleSeconds = function_exists('lc_widget_resume_max_idle_seconds')
+        ? lc_widget_resume_max_idle_seconds()
+        : (90 * 60);
     if ($resumeConvId > 0) {
         $stmt = $db->prepare("
             SELECT id, status, agent_id, visitor_id, last_message_at, started_at
@@ -125,62 +132,15 @@ try {
                 $conv = $reopened;
             }
         }
-        if ($conv) {
-            $anchor = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
-            $ts = $anchor ? strtotime((string) $anchor) : false;
-            if ($ts === false || (time() - $ts) > $resumeMaxIdleSeconds) {
-                $conv = null; // force brand-new widget chat
-            } else {
-                // If this thread already has older history, do not show it on widget - start fresh.
-                try {
-                    $oldestStmt = $db->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
-                    $oldestStmt->execute([(int) $conv['id']]);
-                    $oldest = $oldestStmt->fetchColumn();
-                    $oldestTs = $oldest ? strtotime((string) $oldest) : false;
-                    if ($oldestTs !== false && (time() - $oldestTs) > $resumeMaxIdleSeconds) {
-                        $conv = null;
-                    }
-                } catch (Throwable $e) {
-                }
-            }
+        if ($conv && function_exists('lc_conversation_fresh_for_widget') && !lc_conversation_fresh_for_widget($conv, $resumeMaxIdleSeconds)) {
+            $conv = null; // force brand-new widget chat
         }
     }
 
     // Agent follow-up: same visitor may rejoin a fresh active thread only.
     // Never attach by IP (that reloads other people/history into the widget).
-    if (!$conv) {
-        try {
-            $live = $db->prepare("
-                SELECT id, status, agent_id, visitor_id, last_message_at, started_at
-                FROM conversations
-                WHERE visitor_id = ? AND brand_id = ? AND status = 'active'
-                ORDER BY COALESCE(last_message_at, started_at) DESC, id DESC
-                LIMIT 1
-            ");
-            $live->execute([$visitorId, $brandId]);
-            $liveRow = $live->fetch() ?: null;
-            if ($liveRow) {
-                $anchor = $liveRow['last_message_at'] ?? $liveRow['started_at'] ?? null;
-                $ts = $anchor ? strtotime((string) $anchor) : false;
-                $freshEnough = $ts !== false && (time() - $ts) <= $resumeMaxIdleSeconds;
-                if ($freshEnough) {
-                    try {
-                        $oldestStmt = $db->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
-                        $oldestStmt->execute([(int) $liveRow['id']]);
-                        $oldest = $oldestStmt->fetchColumn();
-                        $oldestTs = $oldest ? strtotime((string) $oldest) : false;
-                        if ($oldestTs !== false && (time() - $oldestTs) > $resumeMaxIdleSeconds) {
-                            $freshEnough = false;
-                        }
-                    } catch (Throwable $e) {
-                    }
-                }
-                if ($freshEnough) {
-                    $conv = $liveRow;
-                }
-            }
-        } catch (Throwable $e) {
-        }
+    if (!$conv && function_exists('lc_live_widget_conversation')) {
+        $conv = lc_live_widget_conversation($visitorId, $brandId, true, $resumeMaxIdleSeconds);
     }
 
     // Otherwise visitor starts a fresh chat thread. Agent UI still keeps history/merge.
