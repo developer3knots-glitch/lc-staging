@@ -339,9 +339,37 @@ function lc_message_hidden_from_visitor(string $message): bool
  * Lowest message id the visitor widget may show for this live thread.
  * After IP-merge, older ticket segments can sit in the same conversation_id - * cut the timeline at the current ticket's intro so the widget stays "fresh".
  */
+function lc_visitor_has_ticket_resume_history(int $conversationId): bool
+{
+    if ($conversationId < 1) {
+        return false;
+    }
+    static $cache = [];
+    if (array_key_exists($conversationId, $cache)) {
+        return $cache[$conversationId];
+    }
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT 1 FROM messages
+            WHERE conversation_id = ?
+              AND sender_type = 'system'
+              AND message LIKE 'Visitor resumed this conversation using ticket%'
+            LIMIT 1
+        ");
+        $stmt->execute([$conversationId]);
+        $cache[$conversationId] = (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        $cache[$conversationId] = false;
+    }
+    return $cache[$conversationId];
+}
+
 function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
 {
     if ($conversationId < 1) {
+        return 0;
+    }
+    if (lc_visitor_has_ticket_resume_history($conversationId)) {
         return 0;
     }
     $db = lc_db();

@@ -34,6 +34,7 @@
     var transcriptSentConvId = null;
     var transcriptDeferredConvId = null;
     var transcriptEmailForClose = '';
+    var fullHistoryMode = false;
     var isOpen = false;
     var chatClosed = false;
     var chatToken = '';
@@ -555,7 +556,7 @@
         if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
         if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
                 document.getElementById('lc-show-ticket-resume').addEventListener('click', openTicketResumeEntry);
-        document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
+        document.getElementById('lc-ticket-resume-back').addEventListener('click', function () { hideTicketResumePanel(true); });
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
@@ -751,6 +752,12 @@
         if (startPanel) startPanel.style.display = 'none';
         if (ticketPanel) ticketPanel.hidden = false;
         if (toggle) toggle.style.display = 'none';
+        var directStart = document.getElementById('lc-direct-chat-start');
+        if (directStart) directStart.style.display = 'none';
+        var refEl = document.getElementById('lc-ticket-ref');
+        if (refEl) {
+            setTimeout(function () { refEl.focus(); }, 30);
+        }
         var emailEl = document.getElementById('lc-ticket-email');
         if (emailEl) {
             emailEl.value = localStorage.getItem('lc_visitor_email') || emailEl.value || '';
@@ -758,23 +765,22 @@
         showTicketResumeError('');
     }
 
-    function hideTicketResumePanel() {
+    function hideTicketResumePanel(cancelOnly) {
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
         var toggle = document.getElementById('lc-show-ticket-resume');
         var prechat = document.getElementById('lc-panel-prechat');
-        if (!prechatFormEnabled) {
-            if (ticketPanel) ticketPanel.hidden = true;
-            if (toggle) toggle.style.display = '';
-            if (prechat) prechat.style.display = 'none';
-            showTicketResumeError('');
-            showIdleChatReady();
-            return;
-        }
-        if (startPanel) startPanel.style.display = '';
         if (ticketPanel) ticketPanel.hidden = true;
         if (toggle) toggle.style.display = '';
         showTicketResumeError('');
+        if (!prechatFormEnabled) {
+            if (cancelOnly) {
+                if (prechat) prechat.style.display = 'none';
+                showIdleChatReady();
+            }
+            return;
+        }
+        if (startPanel) startPanel.style.display = '';
     }
 
     function openTicketResumeEntry() {
@@ -782,10 +788,12 @@
             return;
         }
         hideHeadMenu();
-        showPrechatForm(true);
+        showPrechatForm(true, true);
         if (!prechatFormEnabled) {
             var startPanel = document.getElementById('lc-prechat-start-panel');
             if (startPanel) startPanel.style.display = 'none';
+            var directStart = document.getElementById('lc-direct-chat-start');
+            if (directStart) directStart.style.display = 'none';
         }
         showTicketResumePanel();
     }
@@ -913,8 +921,8 @@
                 return;
             }
             localStorage.setItem('lc_visitor_email', email);
-            hideTicketResumePanel();
-            handleChatStarted(data, { keepMessages: false });
+            fullHistoryMode = true;
+            handleChatStarted(data, { keepMessages: false, resumedByTicket: true });
         })
         .catch(function () {
             if (submitBtn) submitBtn.classList.remove('is-loading');
@@ -922,7 +930,7 @@
         });
     }
 
-    function showPrechatForm(skipSettingsFetch) {
+    function showPrechatForm(skipSettingsFetch, skipTicketReset) {
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
@@ -933,7 +941,9 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
-        hideTicketResumePanel();
+        if (!skipTicketReset) {
+            hideTicketResumePanel(true);
+        }
         // Do not re-fetch settings here when already routing - avoids stealing form ΓåÆ active chat
         if (!skipSettingsFetch) {
             loadWidgetSettings();
@@ -2117,7 +2127,8 @@
         var endedRef = document.getElementById('lc-ended-ref');
         if (refWrap) refWrap.hidden = true;
         if (endedRef) endedRef.hidden = true;
-        hideTicketResumePanel();
+        hideTicketResumePanel(true);
+        fullHistoryMode = false;
         resetTranscriptSentState();
         conversationId = null;
         lastMsgId = 0;
@@ -2216,10 +2227,17 @@
         if (!data.agent && !data.agent_name && data.status !== 'waiting' && !(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0)) {
             updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
         }
+        if (options.resumedByTicket || data.resumed_by_ticket) {
+            fullHistoryMode = true;
+        }
         if (!options.keepMessages) {
             lastMsgId = 0;
             lastDateLabel = '';
             document.getElementById('lc-panel-messages').innerHTML = '';
+        }
+        if (data.status === 'waiting') {
+            setWaitingState(true);
+            updateStatus('Connecting to live agent...', (data.agents_online || 0) > 0);
         }
         pollMessages(true);
         if (pollTimer) clearInterval(pollTimer);
@@ -2769,7 +2787,8 @@
             '&last_id=' + fetchLastId +
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
             '&chat_token=' + encodeURIComponent(chatToken || '') +
-            '&viewing=' + viewing)
+            '&viewing=' + viewing +
+            (fullHistoryMode ? '&full_history=1' : ''))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;

@@ -57,9 +57,14 @@ try {
     $reference = lc_ticket_display_enabled()
         ? (string) lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
         : '';
-    $floorId = function_exists('lc_visitor_visible_message_floor')
-        ? lc_visitor_visible_message_floor($conversationId, $reference)
-        : 0;
+    $fullHistory = isset($_GET['full_history']) && (string) $_GET['full_history'] === '1';
+    if ($fullHistory || (function_exists('lc_visitor_has_ticket_resume_history') && lc_visitor_has_ticket_resume_history($conversationId))) {
+        $floorId = 0;
+    } else {
+        $floorId = function_exists('lc_visitor_visible_message_floor')
+            ? lc_visitor_visible_message_floor($conversationId, $reference)
+            : 0;
+    }
     // History load (last_id=0) starts at floor; incremental polls keep last_id.
     $afterId = $lastId > 0 ? $lastId : max(0, $floorId - 1);
 
