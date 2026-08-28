@@ -283,6 +283,9 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
         $status = !empty($conv['agent_id']) ? 'active' : 'waiting';
         $db->prepare('UPDATE conversations SET status = ?, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
+        if (function_exists('lc_clear_transcript_request')) {
+            lc_clear_transcript_request($convId);
+        }
         lc_add_system_message(
             $convId,
             'Visitor resumed this conversation using ticket ' . $reference . '.'

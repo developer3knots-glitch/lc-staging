@@ -32,7 +32,7 @@ if (!lc_rate_limit('email-transcript-conv:' . $conversationId, 3, 600)) {
 try {
     $db = lc_db();
     $stmt = $db->prepare('
-        SELECT c.id, c.visitor_id, v.email AS visitor_email, v.visitor_uid,
+        SELECT c.id, c.status, c.visitor_id, v.email AS visitor_email, v.visitor_uid,
                b.name AS brand_name, b.account_id AS brand_account_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
@@ -46,35 +46,44 @@ try {
         lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
     }
 
-    // Current chat only — visitors cannot see / export overall history
-    $built = lc_build_chat_transcript($conversationId, true);
-    if (empty($built['ok'])) {
-        lc_json(['success' => false, 'error' => $built['error'] ?? 'Unable to build transcript'], 400);
-    }
-
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $email = strtolower(trim((string) ($built['visitor_email'] ?? $conv['visitor_email'] ?? '')));
+        $email = strtolower(trim((string) ($conv['visitor_email'] ?? '')));
     }
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         lc_json(['success' => false, 'error' => 'Please enter a valid email address'], 400);
+    }
+
+    $status = (string) ($conv['status'] ?? '');
+
+    // Active chat: queue email for when the conversation closes.
+    if ($status !== 'closed') {
+        $queued = lc_set_transcript_request($conversationId, $email, (int) $conv['visitor_id']);
+        if (empty($queued['ok'])) {
+            lc_json(['success' => false, 'error' => $queued['error'] ?? 'Unable to save request'], 400);
+        }
+        lc_json([
+            'success' => true,
+            'deferred' => true,
+            'email' => (string) ($queued['email'] ?? $email),
+            'message' => 'Transcript will be emailed when this chat ends.',
+        ]);
+    }
+
+    // Closed chat: send immediately (ended screen / missed auto-send).
+    $built = lc_build_chat_transcript($conversationId, true);
+    if (empty($built['ok'])) {
+        lc_json(['success' => false, 'error' => $built['error'] ?? 'Unable to build transcript'], 400);
     }
 
     $storedEmail = trim((string) ($conv['visitor_email'] ?? ''));
     if ($storedEmail === '') {
         $db->prepare('UPDATE visitors SET email = ? WHERE id = ?')->execute([$email, (int) $conv['visitor_id']]);
     }
+    lc_ensure_transcript_schema();
+    $db->prepare('UPDATE conversations SET transcript_email = ? WHERE id = ?')->execute([$email, $conversationId]);
 
-    $accountId = (int) ($conv['brand_account_id'] ?? 0);
-    $brandName = trim((string) ($built['brand_name'] ?? $conv['brand_name'] ?? ''));
-    $sent = lc_mail_send(
-        $email,
-        (string) $built['subject'],
-        (string) $built['text'],
-        (string) $built['html'],
-        $accountId > 0 ? $accountId : null,
-        $brandName !== '' ? $brandName : null
-    );
-    if (empty($sent['ok'])) {
+    $sent = lc_send_pending_transcript($conversationId, true);
+    if (empty($sent['ok']) && empty($sent['skipped'])) {
         lc_json(['success' => false, 'error' => $sent['error'] ?? 'Failed to send email'], 500);
     }
 
@@ -86,7 +95,8 @@ try {
 
     lc_json([
         'success' => true,
-        'email' => $email,
+        'deferred' => false,
+        'email' => (string) ($sent['email'] ?? $email),
         'message_count' => (int) ($built['message_count'] ?? 0),
         'scope' => 'current',
         'via' => $via,

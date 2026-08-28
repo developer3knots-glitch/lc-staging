@@ -13,6 +13,7 @@ require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
 require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/transcript.php';
 require_once __DIR__ . '/ip-resume.php';
 require_once __DIR__ . '/inactivity.php';
 
@@ -736,6 +737,9 @@ function lc_reopen_if_visitor_returning(int $conversationId, int $visitorId): bo
 
     lc_db()->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?")
         ->execute([$conversationId]);
+    if (function_exists('lc_clear_transcript_request')) {
+        lc_clear_transcript_request($conversationId);
+    }
 
     return true;
 }
@@ -795,6 +799,9 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
     $newStatus = 'waiting';
     $db->prepare("UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
         ->execute([$newStatus, $conversationId]);
+    if (function_exists('lc_clear_transcript_request')) {
+        lc_clear_transcript_request($conversationId);
+    }
     lc_add_system_message($conversationId, 'Visitor resumed this conversation.');
     // Ensure idle clock restarts even if something else touched timestamps.
     $db->prepare('UPDATE conversations SET last_message_at = NOW(), closed_at = NULL WHERE id = ?')

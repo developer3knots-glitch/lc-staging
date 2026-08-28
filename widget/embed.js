@@ -32,6 +32,7 @@
     var pollMs = 1500;
     var visitorSoundsEnabled = true;
     var transcriptSentConvId = null;
+    var transcriptDeferredConvId = null;
     var transcriptEmailForClose = '';
     var isOpen = false;
     var chatClosed = false;
@@ -510,10 +511,10 @@
                         '<button type="button" class="lcw-sheet-x" id="lc-transcript-sheet-close" aria-label="Close">&times;</button>' +
                         '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
                         '<p class="lcw-sheet-title lcw-sheet-title-lg" id="lc-transcript-sheet-title">Send transcript</p>' +
-                        '<p class="lcw-sheet-text">We will email a copy of this chat to you.</p>' +
+                        '<p class="lcw-sheet-text">We will email a copy of this chat when the conversation ends.</p>' +
                         '<label class="lcw-email-export-label" for="lc-menu-transcript-input">Email address</label>' +
                         '<input type="email" id="lc-menu-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
-                        '<button type="button" id="lc-menu-transcript-send" class="lcw-sheet-btn lcw-sheet-btn-light">Send transcript</button>' +
+                        '<button type="button" id="lc-menu-transcript-send" class="lcw-sheet-btn lcw-sheet-btn-light">Request transcript</button>' +
                         '<p id="lc-menu-transcript-status" class="lcw-email-export-status" hidden></p>' +
                     '</div>' +
                 '</div>' +                '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
@@ -1555,7 +1556,7 @@
         }
         syncTicketFeatureUi();
         syncTranscriptSentUi('ended');
-        maybeAutoSendTranscriptOnClose();
+        syncTranscriptEndedUi();
     }
 
     function loadVisitorSoundPref() {
@@ -1617,14 +1618,19 @@
         if (sheet) sheet.hidden = true;
     }
 
-    function showTranscriptConfirm(email) {
+    function showTranscriptConfirm(email, opts) {
+        opts = opts || {};
         hideHeadMenu();
         hideTranscriptSheet();
         var sheet = document.getElementById('lc-transcript-confirm');
         var textEl = document.getElementById('lc-transcript-confirm-text');
         if (!sheet || !textEl) return;
         var addr = String(email || '').trim();
-        textEl.innerHTML = 'Chat transcript will be sent to <strong>' + esc(addr) + '</strong>. If your email isn\'t verified, you\'ll get a confirmation link first.';
+        if (opts.deferred) {
+            textEl.innerHTML = 'When this chat ends, we will email the transcript to <strong>' + esc(addr) + '</strong>.';
+        } else {
+            textEl.innerHTML = 'Chat transcript sent to <strong>' + esc(addr) + '</strong>.';
+        }
         sheet.hidden = false;
     }
 
@@ -1720,7 +1726,7 @@
                 input: 'lc-menu-transcript-input',
                 send: 'lc-menu-transcript-send',
                 status: 'lc-menu-transcript-status',
-                sendLabel: 'Send transcript'
+                sendLabel: 'Request transcript'
             };
         }
         return {
@@ -1798,26 +1804,32 @@
         });
     }
 
-    function maybeAutoSendTranscriptOnClose() {
-        if (!conversationId || isTranscriptSentThisSession()) {
-            return;
-        }
-        syncTranscriptEmailFromInputs();
-        if (!transcriptEmailForClose) {
-            return;
-        }
+    function syncTranscriptEndedUi() {
         var endedInput = document.getElementById('lc-email-transcript-input');
-        if (endedInput && !endedInput.value) {
+        if (endedInput && transcriptEmailForClose && !endedInput.value) {
             endedInput.value = transcriptEmailForClose;
         }
-        sendChatTranscriptEmail(transcriptEmailForClose, 'ended', { auto: true });
+        if (isTranscriptDeferredThisSession()) {
+            setTranscriptControlsDisabled(true, 'scheduled');
+            setEmailTranscriptStatus('Transcript will be emailed to ' + transcriptEmailForClose + '.', false, 'ended');
+            return;
+        }
+        if (isTranscriptSentThisSession()) {
+            setTranscriptControlsDisabled(true, 'sent');
+            setEmailTranscriptStatus('Transcript sent to ' + transcriptEmailForClose + '.', false, 'ended');
+        }
     }
 
     function isTranscriptSentThisSession() {
         return !!(transcriptSentConvId && conversationId && transcriptSentConvId === conversationId);
     }
 
-    function setTranscriptControlsDisabled(disabled) {
+    function isTranscriptDeferredThisSession() {
+        return !!(transcriptDeferredConvId && conversationId && transcriptDeferredConvId === conversationId);
+    }
+
+    function setTranscriptControlsDisabled(disabled, mode) {
+        mode = mode || (disabled ? 'sent' : '');
         var endedSend = document.getElementById('lc-email-transcript-send');
         var menuSend = document.getElementById('lc-menu-transcript-send');
         var menuItem = document.getElementById('lc-menu-send-transcript');
@@ -1825,12 +1837,12 @@
             if (!btn) return;
             btn.disabled = !!disabled;
             btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-            if (disabled) {
+            if (!disabled) {
+                btn.textContent = btn.id === 'lc-email-transcript-send' ? 'Send to email' : 'Request transcript';
+            } else if (mode === 'scheduled') {
+                btn.textContent = 'Scheduled';
+            } else {
                 btn.textContent = 'Sent to email';
-            } else if (btn.id === 'lc-email-transcript-send') {
-                btn.textContent = 'Send to email';
-            } else if (btn.id === 'lc-menu-transcript-send') {
-                btn.textContent = 'Send transcript';
             }
         });
         if (menuItem) {
@@ -1841,22 +1853,55 @@
 
     function markTranscriptSent() {
         transcriptSentConvId = conversationId;
-        setTranscriptControlsDisabled(true);
+        transcriptDeferredConvId = null;
+        setTranscriptControlsDisabled(true, 'sent');
+    }
+
+    function markTranscriptDeferred(email) {
+        transcriptDeferredConvId = conversationId;
+        transcriptSentConvId = null;
+        transcriptEmailForClose = (email || transcriptEmailForClose || '').toLowerCase();
+        setTranscriptControlsDisabled(true, 'scheduled');
     }
 
     function resetTranscriptSentState() {
         transcriptSentConvId = null;
+        transcriptDeferredConvId = null;
         transcriptEmailForClose = '';
         setTranscriptControlsDisabled(false);
     }
 
     function syncTranscriptSentUi(which) {
+        if (isTranscriptDeferredThisSession()) {
+            setTranscriptControlsDisabled(true, 'scheduled');
+            if (which) {
+                setEmailTranscriptStatus('Transcript will be emailed when this chat ends.', false, which);
+            }
+            return;
+        }
         if (!isTranscriptSentThisSession()) {
             return;
         }
-        setTranscriptControlsDisabled(true);
+        setTranscriptControlsDisabled(true, 'sent');
         if (which) {
             setEmailTranscriptStatus('Transcript already sent for this chat.', false, which);
+        }
+    }
+
+    function applyTranscriptPollState(data) {
+        if (!data || !conversationId) return;
+        if (data.transcript_sent && data.transcript_email) {
+            transcriptEmailForClose = String(data.transcript_email).toLowerCase();
+            markTranscriptSent();
+            return;
+        }
+        if (data.transcript_requested && data.transcript_email) {
+            transcriptEmailForClose = String(data.transcript_email).toLowerCase();
+            markTranscriptDeferred(transcriptEmailForClose);
+            return;
+        }
+        if ((data.status === 'active' || data.status === 'waiting') && (isTranscriptDeferredThisSession() || isTranscriptSentThisSession())) {
+            resetTranscriptSentState();
         }
     }
 
@@ -1885,7 +1930,7 @@
             sendBtn.setAttribute('aria-disabled', 'true');
             sendBtn.textContent = 'Sending...';
         }
-        setEmailTranscriptStatus(opts.auto ? 'Sending transcript to your email...' : 'Sending this chat...', false, which);
+        setEmailTranscriptStatus(which === 'menu' ? 'Saving transcript request...' : 'Sending this chat...', false, which);
 
         fetch(siteUrl + '/api/visitor-email-transcript.php', {
             method: 'POST',
@@ -1906,9 +1951,15 @@
                 try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
                 transcriptEmailForClose = (data.email || email || '').toLowerCase();
                 if (input) input.value = data.email || email;
-                markTranscriptSent();
-                setEmailTranscriptStatus('', false, which);
-                showTranscriptConfirm(data.email || email);
+                if (data.deferred) {
+                    markTranscriptDeferred(transcriptEmailForClose);
+                    setEmailTranscriptStatus('Transcript will be emailed when this chat ends.', false, which);
+                    showTranscriptConfirm(data.email || email, { deferred: true });
+                } else {
+                    markTranscriptSent();
+                    setEmailTranscriptStatus('Transcript sent to your email.', false, which);
+                    showTranscriptConfirm(data.email || email, { deferred: false });
+                }
                 return;
             }
             if (sendBtn) {
@@ -2053,6 +2104,9 @@
         persistConversationId(conversationId);
         persistChatToken(chatToken);
         chatClosed = data.status === 'closed';
+        if (!chatClosed) {
+            resetTranscriptSentState();
+        }
         applyWidgetSettings(data);
         if (data.attachments && window.LCChatFiles) {
             window.LCChatFiles.setLimits(data.attachments);
@@ -2644,6 +2698,8 @@
                 if (data.reference && ticketDisplayEnabled) {
                     updateWidgetReference(data.reference);
                 }
+
+                applyTranscriptPollState(data);
 
                 if (data.status === 'closed') {
                     if (Date.now() < resumeGraceUntil) {

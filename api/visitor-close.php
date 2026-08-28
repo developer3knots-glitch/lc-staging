@@ -56,6 +56,13 @@ try {
         : 'Visitor closed the live chat.';
     lc_add_system_message($conversationId, $closeMsg);
 
+    if (function_exists('lc_send_pending_transcript')) {
+        try {
+            lc_send_pending_transcript($conversationId, true);
+        } catch (Throwable $e) {
+        }
+    }
+
     if ($autoClose) {
         http_response_code(204);
         exit;

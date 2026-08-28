@@ -206,6 +206,12 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
                 } catch (Throwable $e) {
                 }
             }
+            if (function_exists('lc_send_pending_transcript')) {
+                try {
+                    lc_send_pending_transcript($conversationId, true);
+                } catch (Throwable $e) {
+                }
+            }
             return 'closed';
         }
 

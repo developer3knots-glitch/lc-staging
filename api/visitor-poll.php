@@ -14,9 +14,13 @@ if ($conversationId < 1 || $visitorUid === '') {
 }
 
 try {
+    if (function_exists('lc_ensure_transcript_schema')) {
+        lc_ensure_transcript_schema();
+    }
     $db = lc_db();
     $stmt = $db->prepare('
-        SELECT c.status, c.agent_id, c.visitor_id, c.started_at, a.name AS agent_name, a.avatar AS agent_avatar
+        SELECT c.status, c.agent_id, c.visitor_id, c.started_at, c.transcript_email, c.transcript_sent_at,
+               a.name AS agent_name, a.avatar AS agent_avatar
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN agents a ON a.id = c.agent_id
@@ -115,6 +119,9 @@ try {
         'ticket_resume_enabled' => lc_ticket_resume_enabled(),
         'peer_typing' => !empty($typing['peer_typing']),
         'peer_typing_name' => $typing['peer_name'] ?? '',
+        'transcript_requested' => trim((string) ($conv['transcript_email'] ?? '')) !== '',
+        'transcript_sent' => !empty($conv['transcript_sent_at']),
+        'transcript_email' => trim((string) ($conv['transcript_email'] ?? '')),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

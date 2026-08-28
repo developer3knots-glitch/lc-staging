@@ -159,6 +159,9 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
         $status = 'waiting';
         $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
+        if (function_exists('lc_clear_transcript_request')) {
+            lc_clear_transcript_request($convId);
+        }
         lc_add_system_message($convId, 'Visitor returned. Previous conversation is open again.');
     }
 
