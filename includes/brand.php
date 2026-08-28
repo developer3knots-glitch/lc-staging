@@ -168,10 +168,11 @@ function lc_brand_embed_code(array $brand): string
 {
     $url = LC_BASE_URL;
     $key = $brand['brand_key'];
-    $embedVer = @filemtime(dirname(__DIR__) . '/widget/embed.js') ?: time();
+    // Force cache bust when embed changes (coming-soon pages often pin old ?v=).
+    $embedVer = max(45, (int) (@filemtime(dirname(__DIR__) . '/widget/embed.js') ?: time()));
     $timeVer = @filemtime(dirname(__DIR__) . '/assets/js/lc-time.js') ?: 1;
     return '<script src="' . $url . '/assets/js/lc-time.js?v=' . (int) $timeVer . '"></script>' . "\n"
-        . '<script src="' . $url . '/widget/embed.js?v=' . (int) $embedVer . '" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
+        . '<script src="' . $url . '/widget/embed.js?v=' . $embedVer . '" charset="utf-8" data-site="' . $url . '" data-brand="' . htmlspecialchars($key, ENT_QUOTES) . '"></script>';
 }
 
 function lc_brand_settings(array $brand): array

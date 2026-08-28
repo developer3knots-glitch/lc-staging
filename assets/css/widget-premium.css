@@ -259,6 +259,11 @@
 #lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop button.lcw-head-menu-item:focus-visible {
     background: #f1f5f9;
 }
+/* Never show the old direct-entry gate button */
+#lc-direct-chat-start,
+.lcw-direct-start-btn {
+    display: none !important;
+}
 .lcw-icon-btn {
     width: 34px;
     height: 34px;

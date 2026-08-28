@@ -5,6 +5,9 @@
 (function () {
     'use strict';
 
+    // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
+    var LC_WIDGET_BUILD = 45;
+
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
     if (!siteUrl) {
@@ -294,7 +297,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=44';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=45';
         document.head.appendChild(link);
     }
 
@@ -408,7 +411,7 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-prechat" class="lcw-prechat" style="display:none">' +
-                    '<div id="lc-prechat-status" class="lcw-status-card">' +
+                    '<div id="lc-prechat-status" class="lcw-status-card" style="display:none" hidden>' +
                         '<div class="lcw-status-icon" id="lc-prechat-status-icon">' +
                             '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>' +
                         '</div>' +
@@ -815,7 +818,10 @@
             var directStart = document.getElementById('lc-direct-chat-start');
             if (directStart) directStart.style.display = 'none';
             var statusCard = document.getElementById('lc-prechat-status');
-            if (statusCard) statusCard.style.display = 'none';
+            if (statusCard) {
+                statusCard.hidden = true;
+                statusCard.style.display = 'none';
+            }
         }
         showTicketResumePanel();
     }
@@ -967,6 +973,7 @@
         if (!skipTicketReset) {
             hideTicketResumePanel(true);
         }
+        syncPrechatGateUi();
         // Do not re-fetch settings here when already routing - avoids stealing form ΓåÆ active chat
         if (!skipSettingsFetch) {
             loadWidgetSettings();
@@ -1088,6 +1095,7 @@
             } catch (e) {}
         }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
+        syncPrechatGateUi();
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;
@@ -1234,15 +1242,29 @@
         });
     }
 
+    function syncPrechatGateUi() {
+        var statusCard = document.getElementById('lc-prechat-status');
+        if (statusCard) {
+            // Online status card only with prechat form — never as a standalone gate.
+            var showStatus = !!prechatFormEnabled;
+            statusCard.hidden = !showStatus;
+            statusCard.style.display = showStatus ? '' : 'none';
+        }
+        var directStart = document.getElementById('lc-direct-chat-start');
+        if (directStart && directStart.parentNode) {
+            directStart.parentNode.removeChild(directStart);
+        }
+    }
+
     function showDirectEntryWithTicketOption() {
         // Direct chat: skip status card / start button — go straight to idle compose.
         // Ticket resume stays in the 3-dot head menu.
+        syncPrechatGateUi();
         showIdleChatReady();
     }
 
     function ensureDirectChatStartButton() {
-        var btn = document.getElementById('lc-direct-chat-start');
-        if (btn) btn.style.display = 'none';
+        syncPrechatGateUi();
     }
 
     function showIdleChatReady() {
