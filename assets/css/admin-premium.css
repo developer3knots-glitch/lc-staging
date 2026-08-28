@@ -1185,11 +1185,17 @@ body.lc-admin-body {
 }
 .lc-btn i { font-size: 1rem; }
 .lc-btn-primary {
-    background: linear-gradient(145deg, var(--lc-primary), var(--lc-primary-dark));
+    background: #111827;
     color: #fff;
-    box-shadow: 0 4px 14px color-mix(in srgb, var(--lc-primary) 28%, transparent);
+    border: 1px solid #111827;
+    box-shadow: none;
 }
-.lc-btn-primary:hover { transform: translateY(-1px); color: #fff; }
+.lc-btn-primary:hover {
+    background: #1f2937;
+    border-color: #1f2937;
+    transform: translateY(-1px);
+    color: #fff;
+}
 .lc-btn-secondary { background: #fff; color: var(--lc-ink); border: 1px solid var(--lc-border); }
 .lc-btn-secondary:hover { background: #f8fafc; }
 .lc-btn-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
@@ -4733,7 +4739,7 @@ body.lc-page-chats .lc-content {
     height: 42px;
     border: none;
     border-radius: 12px;
-    background: linear-gradient(145deg, var(--lc-primary), color-mix(in srgb, var(--lc-primary) 80%, #15803d));
+    background: #111827;
     color: #fff;
     cursor: pointer;
     display: flex;
@@ -4741,10 +4747,11 @@ body.lc-page-chats .lc-content {
     justify-content: center;
     font-size: 1.05rem;
     flex-shrink: 0;
-    transition: transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 6px 16px color-mix(in srgb, var(--lc-primary) 35%, transparent);
+    transition: transform 0.15s, background 0.15s;
+    box-shadow: none;
 }
 .lc-chat-send-btn:hover:not(:disabled) {
+    background: #1f2937;
     transform: translateY(-1px);
 }
 .lc-chat-send-btn:disabled {
@@ -6115,12 +6122,12 @@ body.lc-page-chats {
     background: #f5f7fa;
 }
 .lc-unassigned-actions .lc-btn-primary {
-    background: #2f6fed;
-    border-color: #2f6fed;
+    background: #111827;
+    border-color: #111827;
     color: #fff;
 }
 .lc-unassigned-actions .lc-btn-primary:hover {
-    background: #245fd4;
+    background: #1f2937;
 }
 .lc-chat-compose.is-hidden-for-unassigned {
     display: none !important;
@@ -6321,12 +6328,12 @@ body.lc-page-chats .lc-chat-item-pro.is-waiting.active {
     color: #1d4ed8 !important;
 }
 .lc-btn-assign {
-    background: #2f6fed !important;
-    border: 1.5px solid #2f6fed !important;
+    background: #111827 !important;
+    border: 1.5px solid #111827 !important;
     color: #fff !important;
 }
 .lc-btn-assign:hover {
-    background: #1d5fe0 !important;
+    background: #1f2937 !important;
 }
 .lc-chat-tags-row {
     display: flex;
@@ -6959,6 +6966,13 @@ body.lc-page-chats .lc-details-hero-av {
     gap: 0.55rem;
     margin-top: 0.55rem;
     flex-wrap: wrap;
+}
+.lc-details-contact-actions .lc-btn-primary {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 38px;
+    border-radius: 8px;
+    box-shadow: none;
 }
 .lc-details-contact-status {
     font-size: 0.72rem;
