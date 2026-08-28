@@ -2739,15 +2739,26 @@
     function updateVisitorTicks(msgKey, status) {
         var root = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]');
         if (!root) return;
-        var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read');
-        if (!existing) {
-            var foot = root.querySelector('.lcw-msg-foot') || root.querySelector('.lcw-msg-meta');
-            if (foot) foot.insertAdjacentHTML('beforeend', msgTicksHtml(status));
+        var html = msgTicksHtml(status);
+        var slot = root.querySelector('.lcw-msg-status-out');
+        if (slot) {
+            slot.innerHTML = html;
             return;
         }
-        var wrap = document.createElement('div');
-        wrap.innerHTML = msgTicksHtml(status);
-        if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
+        var foot = root.querySelector('.lcw-msg-foot') || root.querySelector('.lcw-msg-meta');
+        if (foot) {
+            foot.querySelectorAll('.lcw-msg-ticks, .lcw-msg-read-label, .lcw-msg-read').forEach(function (el) {
+                el.remove();
+            });
+        }
+        var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read-label, .lcw-msg-read');
+        if (existing) {
+            var wrap = document.createElement('div');
+            wrap.innerHTML = html;
+            if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
+            return;
+        }
+        if (foot) foot.insertAdjacentHTML('beforeend', html);
     }
 
     function isAdminOnlySystemMessage(m) {
