@@ -378,8 +378,9 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
                 SELECT id FROM messages
                 WHERE conversation_id = ?
                   AND sender_type = 'system'
+                  AND message LIKE 'Your support ticket reference is %'
                   AND message LIKE ?
-                ORDER BY id DESC
+                ORDER BY id ASC
                 LIMIT 1
             ");
             $stmt->execute([$conversationId, '%' . $reference . '%']);
