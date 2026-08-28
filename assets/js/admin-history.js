@@ -10,7 +10,7 @@
 
     function filterListLocally(q) {
         q = (q || '').trim().toLowerCase();
-        var items = list.querySelectorAll('.lc-history-item');
+        var items = list.querySelectorAll('.lc-hx-row, .lc-history-item');
         var visible = 0;
         items.forEach(function (item) {
             var hay = item.getAttribute('data-search') || '';

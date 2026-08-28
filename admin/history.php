@@ -187,7 +187,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hx-top">
             <div class="lc-hx-top-left">
                 <h1 class="lc-hx-title">Closed conversations</h1>
-                <p class="lc-hx-sub"><?= (int) $totalMatching ?> archived chat<?= (int) $totalMatching === 1 ? '' : 's' ?><?= $totalMatching > 100 ? ' · showing latest 100' : '' ?></p>
+                <p class="lc-hx-sub"><?= (int) $totalMatching ?> archived chat<?= (int) $totalMatching === 1 ? '' : 's' ?><?= $totalMatching > 100 ? ' ┬╖ showing latest 100' : '' ?></p>
             </div>
             <div class="lc-hx-top-right">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hx-btn"><i class="ti ti-inbox"></i> Live Inbox</a>
@@ -273,6 +273,17 @@ require __DIR__ . '/includes/header.php';
                 </div>
             <?php else: ?>
             <table class="lc-hx-table">
+                <colgroup>
+                    <col class="lc-hx-col-visitor">
+                    <col class="lc-hx-col-ticket">
+                    <col class="lc-hx-col-brand">
+                    <col class="lc-hx-col-country">
+                    <col class="lc-hx-col-agent">
+                    <col class="lc-hx-col-msgs">
+                    <col class="lc-hx-col-dur">
+                    <col class="lc-hx-col-closed">
+                    <col class="lc-hx-col-action">
+                </colgroup>
                 <thead>
                     <tr>
                         <th>Visitor</th>
@@ -292,7 +303,7 @@ require __DIR__ . '/includes/header.php';
                     $duration = $formatDuration($r['started_at'], $r['closed_at']);
                     $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                     $ticketRef = $r['ticket_reference'] ?: lc_conversation_reference((int) $r['id'], $r['started_at'] ?? null);
-                    $closedAbs = '—';
+                    $closedAbs = 'ΓÇö';
                     if (!empty($r['closed_at'])) {
                         $closedAbs = function_exists('lc_format_datetime_tz')
                             ? lc_format_datetime_tz($r['closed_at'], function_exists('lc_account_timezone') ? lc_account_timezone() : null, 'M j, Y, g:i A')
@@ -301,7 +312,7 @@ require __DIR__ . '/includes/header.php';
                     $closedRel = !empty($r['closed_at']) ? lc_time_span($r['closed_at'], 'relative') : '';
                     $searchBlob = strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? '') . ' ' . $ticketRef);
                 ?>
-                    <tr class="lc-history-item lc-hx-row" data-search="<?= lc_sanitize($searchBlob) ?>">
+                    <tr class="lc-hx-row" data-search="<?= lc_sanitize($searchBlob) ?>">
                         <td class="lc-hx-visitor">
                             <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-hx-visitor-link">
                                 <span class="lc-hx-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></span>
@@ -316,9 +327,9 @@ require __DIR__ . '/includes/header.php';
                             </a>
                         </td>
                         <td><code class="lc-hx-ticket"><?= lc_sanitize($ticketRef) ?></code></td>
-                        <td><?= !empty($r['brand_name']) ? lc_sanitize($r['brand_name']) : '—' ?></td>
-                        <td><?= !empty($r['visitor_country']) ? lc_sanitize($r['visitor_country']) : '—' ?></td>
-                        <td><?= !empty($r['agent_name']) ? lc_sanitize($r['agent_name']) : '—' ?></td>
+                        <td><?= !empty($r['brand_name']) ? lc_sanitize($r['brand_name']) : 'ΓÇö' ?></td>
+                        <td><?= !empty($r['visitor_country']) ? lc_sanitize($r['visitor_country']) : 'ΓÇö' ?></td>
+                        <td><?= !empty($r['agent_name']) ? lc_sanitize($r['agent_name']) : 'ΓÇö' ?></td>
                         <td class="lc-hx-num"><?= (int) $r['msg_count'] ?></td>
                         <td class="lc-hx-num"><?= lc_sanitize($duration) ?></td>
                         <td class="lc-hx-closed">
