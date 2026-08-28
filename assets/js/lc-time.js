@@ -6,6 +6,7 @@
     'use strict';
 
     var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var fixedTimezone = (typeof global.LC_ADMIN_TIMEZONE === 'string' && global.LC_ADMIN_TIMEZONE) ? global.LC_ADMIN_TIMEZONE : '';
     var registry = new Set();
     var tickTimer = null;
 
@@ -47,6 +48,19 @@
     }
 
     function formatAbsolute(date) {
+        if (fixedTimezone) {
+            try {
+                return date.toLocaleString(undefined, {
+                    timeZone: fixedTimezone,
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {}
+        }
         var day = String(date.getDate()).padStart(2, '0');
         var month = MONTHS[date.getMonth()];
         var year = date.getFullYear();
@@ -96,7 +110,9 @@
         if (!date) {
             return '';
         }
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        var opts = { hour: '2-digit', minute: '2-digit' };
+        if (fixedTimezone) { opts.timeZone = fixedTimezone; }
+        return date.toLocaleTimeString([], opts);
     }
 
     function formatDateLabel(value) {
@@ -114,11 +130,13 @@
         if (diff === 1) {
             return 'Yesterday';
         }
-        return date.toLocaleDateString([], {
+        var opts = {
             month: 'short',
             day: 'numeric',
             year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-        });
+        };
+        if (fixedTimezone) { opts.timeZone = fixedTimezone; }
+        return date.toLocaleDateString([], opts);
     }
 
     function refreshElement(el) {

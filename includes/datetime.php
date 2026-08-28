@@ -133,10 +133,108 @@ function lc_time_span(?string $datetime, string $mode = 'relative'): string
     }
 
     $label = $mode === 'absolute'
-        ? (new DateTimeImmutable($iso))->setTimezone(new DateTimeZone('UTC'))->format('d M Y, g:i A')
+        ? lc_format_datetime_tz($datetime, lc_account_timezone(), 'd M Y, g:i A')
         : lc_time_ago($datetime);
 
     return '<span class="lc-time" data-timestamp="' . htmlspecialchars($iso, ENT_QUOTES, 'UTF-8') . '"'
         . ($mode !== 'relative' ? ' data-time-mode="' . htmlspecialchars($mode, ENT_QUOTES, 'UTF-8') . '"' : '')
         . '>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</span>';
+}
+
+
+/** @return array<string, string> */
+function lc_timezone_options(): array
+{
+    return [
+        'UTC' => 'UTC (Coordinated Universal Time)',
+        'Asia/Karachi' => 'Pakistan (Karachi)',
+        'Asia/Dubai' => 'UAE (Dubai)',
+        'Asia/Kolkata' => 'India (Kolkata)',
+        'Asia/Singapore' => 'Singapore',
+        'Europe/London' => 'UK (London)',
+        'Europe/Paris' => 'Central Europe (Paris)',
+        'America/New_York' => 'US Eastern (New York)',
+        'America/Chicago' => 'US Central (Chicago)',
+        'America/Denver' => 'US Mountain (Denver)',
+        'America/Los_Angeles' => 'US Pacific (Los Angeles)',
+        'Australia/Sydney' => 'Australia (Sydney)',
+    ];
+}
+
+function lc_validate_timezone(string $timezone): string
+{
+    $timezone = trim($timezone);
+    if ($timezone === '') {
+        return 'UTC';
+    }
+    try {
+        new DateTimeZone($timezone);
+        return $timezone;
+    } catch (Throwable $e) {
+        return 'UTC';
+    }
+}
+
+function lc_account_timezone(?int $accountId = null): string
+{
+    if (($accountId === null || $accountId < 1) && function_exists('lc_current_account_id')) {
+        $accountId = lc_current_account_id();
+    }
+    $tz = 'UTC';
+    if ($accountId > 0 && function_exists('lc_account_setting')) {
+        $tz = (string) lc_account_setting($accountId, 'admin_timezone', 'UTC');
+    } elseif (function_exists('lc_get_setting')) {
+        $tz = (string) lc_get_setting('admin_timezone', 'UTC');
+    }
+    return lc_validate_timezone($tz);
+}
+
+/**
+ * @param array<string, mixed> $conv
+ */
+function lc_timezone_for_conversation(array $conv, ?array $agent = null): string
+{
+    if ($agent !== null && function_exists('lc_agent_account_id')) {
+        $aid = lc_agent_account_id($agent);
+        if ($aid > 0) {
+            return lc_account_timezone($aid);
+        }
+    }
+    $brandId = (int) ($conv['brand_id'] ?? 0);
+    if ($brandId > 0) {
+        static $brandAccounts = [];
+        if (!array_key_exists($brandId, $brandAccounts)) {
+            try {
+                $stmt = lc_db()->prepare('SELECT account_id FROM brands WHERE id = ? LIMIT 1');
+                $stmt->execute([$brandId]);
+                $brandAccounts[$brandId] = (int) $stmt->fetchColumn();
+            } catch (Throwable $e) {
+                $brandAccounts[$brandId] = 0;
+            }
+        }
+        if ($brandAccounts[$brandId] > 0) {
+            return lc_account_timezone($brandAccounts[$brandId]);
+        }
+    }
+    return lc_account_timezone(null);
+}
+
+function lc_format_datetime_tz($value, ?string $timezone = null, string $pattern = 'Y-m-d H:i'): string
+{
+    $iso = lc_to_iso8601($value);
+    if ($iso === null) {
+        return '';
+    }
+    $timezone = lc_validate_timezone($timezone ?? lc_account_timezone());
+    try {
+        $dt = new DateTimeImmutable($iso);
+        $dt = $dt->setTimezone(new DateTimeZone($timezone));
+        $label = $dt->format('T');
+        if ($label === '' || $label === 'GMT' || $label === 'UTC') {
+            $label = $timezone;
+        }
+        return $dt->format($pattern) . ' ' . $label;
+    } catch (Throwable $e) {
+        return (string) $value;
+    }
 }

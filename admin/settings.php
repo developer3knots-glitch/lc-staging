@@ -51,6 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_set_account_setting($accountId, 'inactivity_close_enabled', $inactOn);
             lc_set_account_setting($accountId, 'inactivity_close_minutes', (string) $closeMin);
             lc_set_account_setting($accountId, 'inactivity_warn_minutes', (string) $warnMin);
+            $tz = function_exists('lc_validate_timezone')
+                ? lc_validate_timezone(trim((string) ($_POST['admin_timezone'] ?? 'UTC')))
+                : 'UTC';
+            lc_set_account_setting($accountId, 'admin_timezone', $tz);
             $flashMessage = 'System settings saved successfully.';
         } elseif ($action === 'save_email') {
             lc_set_account_setting($accountId, 'mail_from', trim((string) ($_POST['mail_from'] ?? '')));
@@ -174,6 +178,8 @@ if ($inactivityWarnMinutes < 3 || $inactivityWarnMinutes >= $inactivityCloseMinu
 $prechatFormEnabled = lc_prechat_form_enabled($accountId);
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
+$adminTimezone = function_exists('lc_account_timezone') ? lc_account_timezone($accountId) : 'UTC';
+$timezoneOptions = function_exists('lc_timezone_options') ? lc_timezone_options() : ['UTC' => 'UTC'];
 $mailSettings = function_exists('lc_mail_settings') ? lc_mail_settings($accountId) : [];
 $mailFrom = $mailSettings['mail_from'] ?? '';
 $mailFromName = $mailSettings['mail_from_name'] ?? '';
@@ -256,7 +262,19 @@ require __DIR__ . '/includes/header.php';
                                     </div>
                                 </div>
                             </div>
-                            <div class="lc-settings-tile">
+                                                        <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon amber"><i class="ti ti-clock"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label for="lc-admin-timezone">Admin timezone</label>
+                                    <p class="lc-settings-tile-hint">All times in the admin panel and email transcripts use this timezone.</p>
+                                    <select name="admin_timezone" id="lc-admin-timezone" class="lc-input">
+                                        <?php foreach ($timezoneOptions as $tzValue => $tzLabel): ?>
+                                            <option value="<?= lc_sanitize($tzValue) ?>" <?= $adminTimezone === $tzValue ? 'selected' : '' ?>><?= lc_sanitize($tzLabel) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+<div class="lc-settings-tile">
                                 <div class="lc-settings-tile-icon green"><i class="ti ti-users"></i></div>
                                 <div class="lc-settings-tile-body">
                                     <label class="lc-settings-toggle">

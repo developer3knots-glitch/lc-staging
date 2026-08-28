@@ -557,7 +557,7 @@ function lc_mail_send_php(
  *
  * @return array{ok:bool,error?:string,subject?:string,text?:string,html?:string,message_count?:int,reference?:string,visitor_email?:string,visitor_name?:string}
  */
-function lc_build_chat_transcript(int $conversationId, bool $visitorView = false): array
+function lc_build_chat_transcript(int $conversationId, bool $visitorView = false, ?string $timezone = null): array
 {
     if ($conversationId < 1) {
         return ['ok' => false, 'error' => 'Invalid conversation'];
@@ -579,6 +579,14 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     if (!$conv) {
         return ['ok' => false, 'error' => 'Conversation not found'];
     }
+
+    if ($timezone === null && function_exists('lc_timezone_for_conversation')) {
+        $timezone = lc_timezone_for_conversation($conv);
+    }
+    if ($timezone === null) {
+        $timezone = function_exists('lc_account_timezone') ? lc_account_timezone() : 'UTC';
+    }
+    $timezone = function_exists('lc_validate_timezone') ? lc_validate_timezone($timezone) : 'UTC';
 
     $reference = function_exists('lc_conversation_reference')
         ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
@@ -649,12 +657,9 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
 
         $when = '';
         if (!empty($row['created_at'])) {
-            try {
-                $dt = new DateTimeImmutable((string) $row['created_at'], new DateTimeZone('UTC'));
-                $when = $dt->format('Y-m-d H:i') . ' UTC';
-            } catch (Throwable $e) {
-                $when = (string) $row['created_at'];
-            }
+            $when = function_exists('lc_format_datetime_tz')
+                ? lc_format_datetime_tz($row['created_at'], $timezone)
+                : (string) $row['created_at'];
         }
 
         $attachNote = '';
@@ -701,7 +706,7 @@ function lc_build_chat_transcript(int $conversationId, bool $visitorView = false
     if ($reference !== '') {
         $textOut .= 'Ticket: ' . $reference . "\n";
     }
-    $textOut .= 'Conversation started: ' . (string) ($conv['started_at'] ?? '') . " UTC\n";
+    $textOut .= 'Conversation started: ' . (function_exists('lc_format_datetime_tz') ? lc_format_datetime_tz($conv['started_at'] ?? '', $timezone) : (string) ($conv['started_at'] ?? '')) . "\n";
     $textOut .= str_repeat('-', 48) . "\n\n";
     $textOut .= implode("\n\n", $lines);
     $textOut .= "\n\n" . str_repeat('-', 48) . "\n";
@@ -740,7 +745,11 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
 {
     $scope = strtolower(trim($scope));
     if ($scope !== 'overall') {
-        $built = lc_build_chat_transcript($conversationId, false);
+        $convForTz = function_exists('lc_get_conversation') ? lc_get_conversation($conversationId) : null;
+        $timezone = $convForTz && function_exists('lc_timezone_for_conversation')
+            ? lc_timezone_for_conversation($convForTz, $agent)
+            : (function_exists('lc_account_timezone') ? lc_account_timezone() : 'UTC');
+        $built = lc_build_chat_transcript($conversationId, false, $timezone);
         if (!empty($built['ok'])) {
             $built['scope'] = 'current';
             $built['chat_count'] = 1;
@@ -801,8 +810,12 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
         ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
         : '';
 
+    $timezone = function_exists('lc_timezone_for_conversation')
+        ? lc_timezone_for_conversation($conv, $agent)
+        : (function_exists('lc_account_timezone') ? lc_account_timezone() : 'UTC');
+
     foreach ($ids as $id) {
-        $part = lc_build_chat_transcript((int) $id, false);
+        $part = lc_build_chat_transcript((int) $id, false, $timezone);
         if (empty($part['ok'])) {
             continue;
         }
