@@ -243,10 +243,6 @@
     position: relative;
     display: inline-flex;
 }
-.lcw-toolbar-menu-pop {
-    right: 0;
-    left: auto;
-}
 #lc-panel.lcw-theme-light.lcw-mode-prechat .lcw-toolbar-menu-pop {
     background: #fff;
     border-color: #e2e8f0;
@@ -2363,13 +2359,22 @@
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
+    right: auto;
     min-width: 228px;
+    width: max-content;
+    max-width: calc(100vw - 48px);
     padding: 0.35rem;
     border-radius: 12px;
     background: #2a3038;
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
     z-index: 50;
+    box-sizing: border-box;
+}
+/* Toolbar ⋯ sits on the right — open leftward (must come after left:0 above) */
+.lcw-toolbar-menu-pop {
+    left: auto;
+    right: 0;
 }
 .lcw-head-menu-pop[hidden] {
     display: none !important;
@@ -2408,6 +2413,7 @@ button.lcw-head-menu-item:focus-visible {
 .lcw-head-menu-label {
     flex: 1;
     min-width: 0;
+    white-space: nowrap;
 }
 .lcw-head-menu-sounds {
     cursor: default;
