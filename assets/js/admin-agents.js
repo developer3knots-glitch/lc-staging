@@ -16,6 +16,30 @@
         });
     }
 
+    function presetSrc(radio) {
+        if (!radio) return base + '/assets/img/avatars/preset-31.jpg';
+        var img = radio.parentElement && radio.parentElement.querySelector('[data-avatar-src]');
+        if (img && img.getAttribute('data-avatar-src')) {
+            return img.getAttribute('data-avatar-src');
+        }
+        var id = radio.value || '31';
+        var isPeople = parseInt(id, 10) >= 31;
+        return base + '/assets/img/avatars/preset-' + id + (isPeople ? '.jpg' : '.svg');
+    }
+
+    function setAvatarTab(root, tab) {
+        var active = tab || 'people';
+        root.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
+            var on = btn.getAttribute('data-avatar-tab') === active;
+            btn.classList.toggle('is-active', on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        root.querySelectorAll('.lc-avatar-preset').forEach(function (item) {
+            var category = item.getAttribute('data-gallery-category') || 'people';
+            item.hidden = !(active === 'all' || category === active);
+        });
+    }
+
     function initAvatarPicker(root) {
         var previewImg = root.querySelector('[data-avatar-preview]');
         if (!previewImg) return;
@@ -31,9 +55,15 @@
             var radio = label.querySelector('input[type="radio"]');
             if (radio) radio.checked = true;
             if (uploadInput && !uploadInput.files.length) {
-                previewImg.src = base + '/assets/img/avatars/preset-' + radio.value + '.svg';
+                previewImg.src = presetSrc(radio);
             }
         }
+
+        root.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                setAvatarTab(root, btn.getAttribute('data-avatar-tab') || 'people');
+            });
+        });
 
         presetLabels.forEach(function (label) {
             label.addEventListener('click', function () { selectPreset(label); });
@@ -57,7 +87,7 @@
                 if (uploadName) uploadName.textContent = 'No file selected';
                 clearUpload.style.display = 'none';
                 var checked = root.querySelector('input[name="avatar_preset"]:checked');
-                previewImg.src = base + '/assets/img/avatars/preset-' + (checked ? checked.value : '01') + '.svg';
+                previewImg.src = presetSrc(checked);
             });
         }
     }
@@ -103,7 +133,6 @@
             var panel = document.getElementById(targetId);
             if (!panel) return;
             var willOpen = panel.hidden;
-            // Close other edit panels
             document.querySelectorAll('.lc-agent-edit-panel').forEach(function (p) {
                 if (p.id !== targetId) setEditPanel(p.id, false);
             });
@@ -118,7 +147,6 @@
         });
     });
 
-    // Soft validation for optional password pair
     document.querySelectorAll('.lc-agent-edit-form').forEach(function (form) {
         form.addEventListener('submit', function (e) {
             var pass = form.querySelector('input[name="password"]');

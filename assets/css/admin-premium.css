@@ -2882,14 +2882,101 @@ a.lc-history-item:hover .lc-history-item-arrow {
 .lc-agents-compose { position: sticky; top: 5.5rem; }
 .lc-avatar-picker-pro {
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 1.1rem;
-    border-radius: 14px;
+    align-items: stretch;
+    gap: 0.85rem;
 }
 .lc-avatar-picker-pro .lc-avatar-picker-body { width: 100%; }
-.lc-avatar-picker-pro .lc-avatar-presets { justify-content: center; }
-.lc-avatar-picker-pro .lc-avatar-upload { justify-content: center; }
+.lc-avatar-picker-pro .lc-avatar-presets { justify-content: flex-start; }
+.lc-avatar-picker-pro .lc-avatar-upload { justify-content: flex-start; }
+
+.lc-avatar-picker-gallery {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 0.9rem;
+    background: #fff;
+}
+.lc-avatar-picker-gallery .lc-avatar-picker-preview {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 0.35rem;
+}
+.lc-avatar-picker-gallery .lc-avatar-picker-preview img {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 0 0 3px #eff6ff;
+}
+.lc-avatar-picker-tabs {
+    display: flex;
+    gap: 1rem;
+    margin: 0.35rem 0 0.75rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+.lc-avatar-picker-tab {
+    position: relative;
+    border: 0;
+    background: transparent;
+    padding: 0.45rem 0 0.65rem;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+}
+.lc-avatar-picker-tab.is-active {
+    color: #111827;
+    font-weight: 600;
+}
+.lc-avatar-picker-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: #2563eb;
+    border-radius: 2px 2px 0 0;
+}
+.lc-avatar-presets-gallery {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.55rem;
+    max-height: 220px;
+    overflow: auto;
+    padding: 0.15rem 0.1rem 0.35rem;
+}
+.lc-avatar-presets-gallery .lc-avatar-preset {
+    margin: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    padding: 0;
+    aspect-ratio: 1;
+    overflow: hidden;
+    cursor: pointer;
+    background: transparent;
+}
+.lc-avatar-presets-gallery .lc-avatar-preset[hidden] { display: none !important; }
+.lc-avatar-presets-gallery .lc-avatar-preset img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: block;
+    object-fit: cover;
+}
+.lc-avatar-presets-gallery .lc-avatar-preset:hover {
+    transform: none;
+    box-shadow: 0 0 0 2px #cbd5e1;
+}
+.lc-avatar-presets-gallery .lc-avatar-preset.selected {
+    border-color: transparent;
+    box-shadow: 0 0 0 3px #2563eb;
+}
+@media (max-width: 640px) {
+    .lc-avatar-presets-gallery {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
 .lc-agent-brand-hint {
     margin: 0.35rem 0 0.75rem;
     font-size: 0.74rem;

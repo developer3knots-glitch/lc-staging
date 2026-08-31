@@ -56,6 +56,67 @@ function lc_avatar_preset_asset(?string $presetId): ?string
     return 'preset-' . $presetId . '.' . $ext;
 }
 
+/**
+ * Shared People / Abstract gallery picker used on Home + Agents forms.
+ *
+ * @param array{selected?:string,hint?:string,preview_url?:string,name?:string} $opts
+ */
+function lc_render_avatar_picker(array $opts = []): string
+{
+    $presets = lc_avatar_presets();
+    $selected = (string) ($opts['selected'] ?? '31');
+    if ($selected === '' || !isset($presets[$selected])) {
+        $selected = '31';
+    }
+    $hint = (string) ($opts['hint'] ?? 'Pick from People or Abstract, or upload your own photo (JPG/PNG/WebP, max 2MB).');
+    $name = (string) ($opts['name'] ?? 'avatar_preset');
+    $previewUrl = (string) ($opts['preview_url'] ?? '');
+    if ($previewUrl === '') {
+        $asset = lc_avatar_preset_asset($selected);
+        $previewUrl = LC_BASE_URL . '/assets/img/avatars/' . ($asset ?: 'preset-31.jpg');
+    }
+    $selectedCategory = (string) ($presets[$selected]['category'] ?? 'people');
+
+    $html = '<div class="lc-avatar-picker lc-avatar-picker-pro lc-avatar-picker-gallery" data-avatar-picker>';
+    $html .= '<div class="lc-avatar-picker-preview">';
+    $html .= '<img src="' . lc_sanitize($previewUrl) . '" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview>';
+    $html .= '</div>';
+    $html .= '<div class="lc-avatar-picker-body">';
+    $html .= '<p class="lc-avatar-picker-hint">' . lc_sanitize($hint) . '</p>';
+    $html .= '<div class="lc-avatar-picker-tabs" role="tablist" aria-label="Avatar categories">';
+    $defaultTab = $selectedCategory === 'abstract' ? 'abstract' : 'people';
+    foreach (['all' => 'All', 'people' => 'People', 'abstract' => 'Abstract'] as $tab => $label) {
+        $isActive = $tab === $defaultTab;
+        $html .= '<button type="button" class="lc-avatar-picker-tab' . ($isActive ? ' is-active' : '') . '" data-avatar-tab="' . lc_sanitize($tab) . '" role="tab" aria-selected="' . ($isActive ? 'true' : 'false') . '">' . lc_sanitize($label) . '</button>';
+    }
+    $html .= '</div>';
+    $html .= '<div class="lc-avatar-presets lc-avatar-presets-gallery">';
+    foreach ($presets as $pid => $meta) {
+        $asset = lc_avatar_preset_asset($pid);
+        $src = LC_BASE_URL . '/assets/img/avatars/' . ($asset ?: ('preset-' . $pid . '.svg'));
+        $category = (string) ($meta['category'] ?? 'people');
+        $hidden = $defaultTab === 'all' ? false : ($category !== $defaultTab);
+        $html .= '<label class="lc-avatar-preset' . ($pid === $selected ? ' selected' : '') . '"'
+            . ' data-gallery-category="' . lc_sanitize($category) . '"'
+            . ($hidden ? ' hidden' : '')
+            . ' title="' . lc_sanitize($meta['label']) . '">';
+        $html .= '<input type="radio" name="' . lc_sanitize($name) . '" value="' . lc_sanitize($pid) . '"' . ($pid === $selected ? ' checked' : '') . '>';
+        $html .= '<img src="' . lc_sanitize($src) . '" alt="' . lc_sanitize($meta['label']) . '" class="lc-avatar lc-avatar-md" data-avatar-src="' . lc_sanitize($src) . '">';
+        $html .= '</label>';
+    }
+    $html .= '</div>';
+    $html .= '<div class="lc-avatar-upload">';
+    $html .= '<label class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-upload"></i> Upload photo';
+    $html .= '<input type="file" name="avatar_upload" accept="image/jpeg,image/png,image/webp" hidden data-avatar-upload>';
+    $html .= '</label>';
+    $html .= '<span class="lc-avatar-upload-name" data-avatar-upload-name>No file selected</span>';
+    $html .= '<button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" data-avatar-clear style="display:none"><i class="ti ti-x"></i></button>';
+    $html .= '</div>';
+    $html .= '</div></div>';
+
+    return $html;
+}
+
 function lc_avatar_is_preset(?string $avatar): bool
 {
     return $avatar !== null && preg_match('/^preset:\d{2}$/', $avatar) === 1;

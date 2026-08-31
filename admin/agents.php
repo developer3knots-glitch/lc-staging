@@ -265,10 +265,11 @@ require __DIR__ . '/includes/header.php';
                     $brandLabel = $a['role'] === 'admin' ? 'All brands' : ($a['brand_name'] ?? 'Unassigned');
                     $status = $a['status'] ?? 'offline';
                     $isEditing = $openEditId === (int) $a['id'];
-                    $presetId = lc_avatar_preset_id($a['avatar'] ?? null) ?: '01';
+                    $presetId = lc_avatar_preset_id($a['avatar'] ?? null) ?: '31';
                     $previewUrl = lc_avatar_url($a['avatar'] ?? null, $a['name']);
                     if ($previewUrl === '') {
-                        $previewUrl = LC_BASE_URL . '/assets/img/avatars/preset-' . $presetId . '.svg';
+                        $asset = lc_avatar_preset_asset($presetId);
+                        $previewUrl = LC_BASE_URL . '/assets/img/avatars/' . ($asset ?: 'preset-31.jpg');
                     }
                     $editPanelId = 'lc-agent-edit-' . (int) $a['id'];
                 ?>
@@ -326,30 +327,11 @@ require __DIR__ . '/includes/header.php';
                             <input type="hidden" name="action" value="edit">
                             <input type="hidden" name="id" value="<?= (int) $a['id'] ?>">
 
-                            <div class="lc-avatar-picker lc-avatar-picker-pro" data-avatar-picker>
-                                <div class="lc-avatar-picker-preview">
-                                    <img src="<?= lc_sanitize($previewUrl) ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview>
-                                </div>
-                                <div class="lc-avatar-picker-body">
-                                    <p class="lc-avatar-picker-hint">Change preset or upload a photo (optional).</p>
-                                    <div class="lc-avatar-presets">
-                                        <?php foreach ($presets as $pid => $meta): ?>
-                                        <label class="lc-avatar-preset<?= $pid === $presetId ? ' selected' : '' ?>" title="<?= lc_sanitize($meta['label']) ?>">
-                                            <input type="radio" name="avatar_preset" value="<?= lc_sanitize($pid) ?>"<?= $pid === $presetId ? ' checked' : '' ?>>
-                                            <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>" class="lc-avatar lc-avatar-md">
-                                        </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div class="lc-avatar-upload">
-                                        <label class="lc-btn lc-btn-secondary lc-btn-sm">
-                                            <i class="ti ti-upload"></i> Upload photo
-                                            <input type="file" name="avatar_upload" accept="image/jpeg,image/png,image/webp" hidden data-avatar-upload>
-                                        </label>
-                                        <span class="lc-avatar-upload-name" data-avatar-upload-name>No file selected</span>
-                                        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" data-avatar-clear style="display:none"><i class="ti ti-x"></i></button>
-                                    </div>
-                                </div>
-                            </div>
+                            <?= lc_render_avatar_picker([
+                                'selected' => $presetId,
+                                'preview_url' => $previewUrl,
+                                'hint' => 'Pick from People or Abstract, or upload a photo (optional).',
+                            ]) ?>
 
                             <label>Name</label>
                             <input type="text" name="name" required value="<?= lc_sanitize($a['name']) ?>" placeholder="Full name">
@@ -403,30 +385,10 @@ require __DIR__ . '/includes/header.php';
                         <input type="hidden" name="action" value="add">
 
                         <label>Profile avatar</label>
-                        <div class="lc-avatar-picker lc-avatar-picker-pro" data-avatar-picker>
-                            <div class="lc-avatar-picker-preview" id="lc-avatar-preview">
-                                <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-01.svg') ?>" alt="Avatar preview" class="lc-avatar lc-avatar-lg" data-avatar-preview id="lc-avatar-preview-img">
-                            </div>
-                            <div class="lc-avatar-picker-body">
-                                <p class="lc-avatar-picker-hint">Preset avatar ya apni photo upload karein (JPG, PNG, WebP - max 2MB).</p>
-                                <div class="lc-avatar-presets" id="lc-avatar-presets">
-                                    <?php foreach ($presets as $id => $meta): ?>
-                                    <label class="lc-avatar-preset<?= $id === '01' ? ' selected' : '' ?>" title="<?= lc_sanitize($meta['label']) ?>">
-                                        <input type="radio" name="avatar_preset" value="<?= lc_sanitize($id) ?>"<?= $id === '01' ? ' checked' : '' ?>>
-                                        <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $id . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>" class="lc-avatar lc-avatar-md">
-                                    </label>
-                                    <?php endforeach; ?>
-                                </div>
-                                <div class="lc-avatar-upload">
-                                    <label class="lc-btn lc-btn-secondary lc-btn-sm">
-                                        <i class="ti ti-upload"></i> Upload photo
-                                        <input type="file" name="avatar_upload" id="lc-avatar-upload-input" accept="image/jpeg,image/png,image/webp" hidden data-avatar-upload>
-                                    </label>
-                                    <span class="lc-avatar-upload-name" id="lc-avatar-upload-name" data-avatar-upload-name>No file selected</span>
-                                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-avatar-clear-upload" data-avatar-clear style="display:none"><i class="ti ti-x"></i></button>
-                                </div>
-                            </div>
-                        </div>
+                        <?= lc_render_avatar_picker([
+                            'selected' => '31',
+                            'hint' => 'Pick from People or Abstract, or upload your own photo (JPG/PNG/WebP, max 2MB).',
+                        ]) ?>
 
                         <label>Name</label>
                         <input type="text" name="name" required placeholder="Full name">
