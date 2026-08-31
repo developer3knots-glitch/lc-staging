@@ -8,6 +8,7 @@ $primary = lc_setting('widget_color', '#6FD943');
 $navItems = [
     ['id' => 'dashboard', 'page' => '', 'icon' => 'ti-home', 'label' => 'Home'],
     ['id' => 'chats', 'page' => 'chats', 'icon' => 'ti-messages', 'label' => 'Live Chats'],
+    ['id' => 'traffic', 'page' => 'traffic', 'icon' => 'ti-world', 'label' => 'Traffic'],
     ['id' => 'history', 'page' => 'history', 'icon' => 'ti-history', 'label' => 'History'],
     ['id' => 'canned', 'page' => 'canned', 'icon' => 'ti-bolt', 'label' => 'Canned Replies'],
 ];
