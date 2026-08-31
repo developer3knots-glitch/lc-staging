@@ -5459,65 +5459,114 @@ body.lc-page-dashboard .lc-content {
 .lc-home-unread a { color: #1d4ed8; }
 
 .lc-home-banner {
+    position: relative;
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    margin: 0 0 1.5rem;
-    padding: 1.25rem 1.35rem;
-    border-radius: 16px;
-    background: linear-gradient(105deg, #e8f1ff 0%, #f3f7ff 55%, #eef6ff 100%);
-    border: 1px solid #d7e6ff;
+    gap: 1.5rem;
+    margin: 0 0 1.75rem;
+    padding: 1.65rem 1.75rem 1.65rem 1.85rem;
+    min-height: 148px;
+    border-radius: 14px;
+    background: #e8f3fc;
+    border: none;
     overflow: hidden;
+    box-shadow: none;
 }
-.lc-home-banner-copy { max-width: 34rem; }
+.lc-home-banner[hidden] { display: none !important; }
+.lc-home-banner-close {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.7rem;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+}
+.lc-home-banner-close:hover {
+    background: rgba(15, 23, 42, 0.06);
+    color: #0f172a;
+}
+.lc-home-banner-copy {
+    max-width: 36rem;
+    position: relative;
+    z-index: 1;
+}
 .lc-home-banner h2 {
-    margin: 0 0 0.35rem;
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: #152033;
+    margin: 0 0 0.45rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    line-height: 1.25;
 }
 .lc-home-banner p {
-    margin: 0 0 0.95rem;
-    color: #4b5b76;
-    font-size: 0.92rem;
-    line-height: 1.45;
+    margin: 0 0 1.15rem;
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    font-weight: 500;
+    max-width: 32rem;
 }
 .lc-home-banner-actions {
     display: flex;
     align-items: center;
-    gap: 0.85rem;
+    gap: 1rem;
     flex-wrap: wrap;
 }
 .lc-home-banner-btn {
     display: inline-flex;
     align-items: center;
-    min-height: 38px;
-    padding: 0.45rem 0.95rem;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0.55rem 1.15rem;
     border-radius: 8px;
-    background: #1b2a4a;
+    background: #000;
     color: #fff;
     text-decoration: none;
-    font-size: 0.88rem;
-    font-weight: 700;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid #000;
+    box-shadow: none;
 }
-.lc-home-banner-btn:hover { background: #111827; color: #fff; }
+.lc-home-banner-btn:hover {
+    background: #1a1a1a;
+    border-color: #1a1a1a;
+    color: #fff;
+}
 .lc-home-banner-link {
-    color: #2f6fed;
-    font-weight: 700;
-    font-size: 0.88rem;
-    text-decoration: none;
+    color: #2563eb;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
-.lc-home-banner-link:hover { text-decoration: underline; }
+.lc-home-banner-link:hover { color: #1d4ed8; }
 .lc-home-banner-art {
-    width: 88px;
-    min-width: 88px;
+    width: 168px;
+    min-width: 140px;
+    height: 110px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #f5b942;
-    font-size: 3rem;
-    opacity: 0.95;
+    flex-shrink: 0;
+    margin-right: 0.75rem;
+    position: relative;
+    z-index: 1;
+}
+.lc-home-banner-mail {
+    width: 150px;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 6px 12px rgba(245, 197, 24, 0.25));
 }
 
 .lc-home-section { margin: 0 0 1.5rem; }
@@ -5782,7 +5831,25 @@ a.lc-home-rt-card:hover {
     .lc-home-rt-4 { grid-template-columns: 1fr 1fr; }
     .lc-home-grid { grid-template-columns: 1fr; }
     .lc-home-week-foot { grid-template-columns: 1fr 1fr; }
-    .lc-home-banner-art { display: none; }
+    .lc-home-banner {
+        padding: 1.35rem 1.25rem 1.4rem;
+        min-height: 0;
+        align-items: flex-start;
+    }
+    .lc-home-banner-art {
+        position: absolute;
+        right: 0.35rem;
+        bottom: 0.35rem;
+        width: 96px;
+        min-width: 96px;
+        height: 72px;
+        opacity: 0.92;
+        margin: 0;
+        pointer-events: none;
+    }
+    .lc-home-banner-mail { width: 92px; }
+    .lc-home-banner-copy { max-width: calc(100% - 4.5rem); }
+    .lc-home-banner p { margin-bottom: 1rem; }
 }
 
 /* ===== Icon-only sidebar rail + hover tooltips (LiveChat-style) ===== */

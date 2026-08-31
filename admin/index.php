@@ -149,10 +149,13 @@ require __DIR__ . '/includes/header.php';
     </div>
     <?php endif; ?>
 
-    <div class="lc-home-banner">
+    <div class="lc-home-banner" id="lc-home-banner">
+        <button type="button" class="lc-home-banner-close" id="lc-home-banner-close" aria-label="Dismiss banner" title="Dismiss">
+            <i class="ti ti-x"></i>
+        </button>
         <div class="lc-home-banner-copy">
             <h2>Stay in touch with customers</h2>
-            <p>Inactive chats auto-close after a quiet period so your queue stays clean - and visitors can resume when they return.</p>
+            <p>Inactive chats auto-close after a quiet period so your queue stays clean — and visitors can resume when they return.</p>
             <div class="lc-home-banner-actions">
                 <?php if (($agent['role'] ?? '') === 'admin'): ?>
                     <a href="<?= lc_admin_url('settings') ?>#lc-settings-system" class="lc-home-banner-btn">Set inactivity timeout</a>
@@ -163,9 +166,37 @@ require __DIR__ . '/includes/header.php';
             </div>
         </div>
         <div class="lc-home-banner-art" aria-hidden="true">
-            <i class="ti ti-mail-forward"></i>
+            <svg class="lc-home-banner-mail" viewBox="0 0 160 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 58c-8-6-14-4-16 2 4 2 10 3 16 1V58z" fill="#F5C518" opacity=".9"/>
+                <path d="M142 58c8-6 14-4 16 2-4 2-10 3-16 1V58z" fill="#F5C518" opacity=".9"/>
+                <path d="M28 42c8-18 28-28 52-28s44 10 52 28c2 5 2 10 0 14-8 18-28 28-52 28s-44-10-52-28c-2-4-2-9 0-14z" fill="#F5C518"/>
+                <path d="M34 48c7-14 24-22 46-22s39 8 46 22c1 3 1 6 0 9-7 14-24 22-46 22s-39-8-46-22c-1-3-1-6 0-9z" fill="#FFE56A"/>
+                <rect x="48" y="38" width="64" height="42" rx="6" fill="#fff" stroke="#E8B400" stroke-width="2"/>
+                <path d="M50 42l30 20 30-20" stroke="#E8B400" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M52 76l20-14M108 76l-20-14" stroke="#E8B400" stroke-width="2" stroke-linecap="round"/>
+            </svg>
         </div>
     </div>
+    <script>
+    (function () {
+        var key = 'lc_home_banner_dismissed_v1';
+        var banner = document.getElementById('lc-home-banner');
+        var closeBtn = document.getElementById('lc-home-banner-close');
+        if (!banner) return;
+        try {
+            if (localStorage.getItem(key) === '1') {
+                banner.hidden = true;
+                return;
+            }
+        } catch (e) {}
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                banner.hidden = true;
+                try { localStorage.setItem(key, '1'); } catch (e) {}
+            });
+        }
+    })();
+    </script>
 
     <section class="lc-home-section">
         <h3 class="lc-home-section-title">Real time overview</h3>
