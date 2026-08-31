@@ -5387,62 +5387,71 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 
 /* ===== LiveChat-style Home Dashboard ===== */
 body.lc-page-dashboard .lc-main {
-    background: #f5f7fa;
+    background: #fff;
 }
 body.lc-page-dashboard .lc-topbar {
     background: #fff;
-    border-bottom: 1px solid #e8edf3;
+    border-bottom: 1px solid #eef2f6;
     box-shadow: none;
 }
 body.lc-page-dashboard .lc-topbar-title h2 {
-    font-size: 1.05rem;
-    font-weight: 700;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
 }
 body.lc-page-dashboard .lc-topbar-sub { display: none; }
 body.lc-page-dashboard .lc-content {
-    background: #f5f7fa;
-    padding: 1.25rem 1.5rem 2.5rem;
+    background: #fff;
+    padding: 1.5rem 2rem 2.75rem;
 }
 
-.lc-home { max-width: 1100px; margin: 0 auto; }
+.lc-home {
+    max-width: 980px;
+    margin: 0 auto;
+    font-family: inherit;
+}
 .lc-home-hello {
     display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    margin: 0.25rem 0 1.25rem;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin: 0 0 1.5rem;
     flex-wrap: wrap;
 }
 .lc-home-hello-av {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    background: #1b2a4a;
+    background: #374151;
     color: #fff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    font-size: 0.95rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
     flex-shrink: 0;
+    margin-top: 0.15rem;
 }
 .lc-home-hello-text h1 {
     margin: 0;
-    font-size: 1.55rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    color: #152033;
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: #111827;
+    line-height: 1.25;
 }
 .lc-home-hello-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    margin-top: 0.2rem;
-    color: #2f6fed;
-    font-size: 0.88rem;
-    font-weight: 600;
+    display: inline-block;
+    margin-top: 0.35rem;
+    color: #64748b;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.4;
     text-decoration: none;
 }
-.lc-home-hello-link:hover { text-decoration: underline; }
+.lc-home-hello-link:hover {
+    color: #2563eb;
+    text-decoration: underline;
+}
 .lc-home-hello-actions { margin-left: auto; }
 
 .lc-home-unread {
@@ -5463,12 +5472,12 @@ body.lc-page-dashboard .lc-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1.5rem;
-    margin: 0 0 1.75rem;
-    padding: 1.65rem 1.75rem 1.65rem 1.85rem;
-    min-height: 148px;
-    border-radius: 14px;
-    background: #e8f3fc;
+    gap: 2rem;
+    margin: 0 0 2rem;
+    padding: 1.5rem 2rem 1.55rem;
+    min-height: 0;
+    border-radius: 8px;
+    background: #eaf4ff;
     border: none;
     overflow: hidden;
     box-shadow: none;
@@ -5476,66 +5485,68 @@ body.lc-page-dashboard .lc-content {
 .lc-home-banner[hidden] { display: none !important; }
 .lc-home-banner-close {
     position: absolute;
-    top: 0.7rem;
-    right: 0.7rem;
-    width: 28px;
-    height: 28px;
+    top: 0.65rem;
+    right: 0.65rem;
+    width: 24px;
+    height: 24px;
     border: 0;
-    border-radius: 8px;
+    border-radius: 4px;
     background: transparent;
-    color: #64748b;
+    color: #94a3b8;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 1.05rem;
+    font-size: 0.95rem;
     line-height: 1;
 }
 .lc-home-banner-close:hover {
-    background: rgba(15, 23, 42, 0.06);
-    color: #0f172a;
+    background: rgba(15, 23, 42, 0.05);
+    color: #475569;
 }
 .lc-home-banner-copy {
-    max-width: 36rem;
+    max-width: 31rem;
     position: relative;
     z-index: 1;
+    padding-right: 0.5rem;
 }
 .lc-home-banner h2 {
-    margin: 0 0 0.45rem;
-    font-size: 1.35rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: #0f172a;
-    line-height: 1.25;
+    margin: 0 0 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #111827;
+    line-height: 1.3;
 }
 .lc-home-banner p {
-    margin: 0 0 1.15rem;
-    color: #334155;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    font-weight: 500;
-    max-width: 32rem;
+    margin: 0 0 1.25rem;
+    color: #111827;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    font-weight: 400;
+    max-width: 27rem;
 }
 .lc-home-banner-actions {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
 }
 .lc-home-banner-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 40px;
-    padding: 0.55rem 1.15rem;
-    border-radius: 8px;
+    min-height: 36px;
+    padding: 0.4375rem 1rem;
+    border-radius: 6px;
     background: #000;
     color: #fff;
     text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: 0.875rem;
+    font-weight: 500;
     border: 1px solid #000;
     box-shadow: none;
+    line-height: 1.2;
 }
 .lc-home-banner-btn:hover {
     background: #1a1a1a;
@@ -5544,38 +5555,39 @@ body.lc-page-dashboard .lc-content {
 }
 .lc-home-banner-link {
     color: #2563eb;
-    font-weight: 600;
-    font-size: 0.9rem;
+    font-weight: 400;
+    font-size: 0.875rem;
     text-decoration: underline;
     text-underline-offset: 2px;
+    line-height: 1.2;
 }
 .lc-home-banner-link:hover { color: #1d4ed8; }
 .lc-home-banner-art {
-    width: 168px;
-    min-width: 140px;
-    height: 110px;
+    width: 148px;
+    min-width: 120px;
+    height: 96px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    margin-right: 0.75rem;
+    margin-right: 0.25rem;
     position: relative;
     z-index: 1;
 }
 .lc-home-banner-mail {
-    width: 150px;
+    width: 132px;
     height: auto;
     display: block;
-    filter: drop-shadow(0 6px 12px rgba(245, 197, 24, 0.25));
+    filter: none;
 }
 
-.lc-home-section { margin: 0 0 1.5rem; }
+.lc-home-section { margin: 0 0 1.75rem; }
 .lc-home-section-title {
     margin: 0 0 0.85rem;
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: #0f172a;
-    letter-spacing: -0.02em;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+    letter-spacing: -0.01em;
 }
 .lc-home-rt {
     display: grid;

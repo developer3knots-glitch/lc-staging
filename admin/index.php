@@ -127,7 +127,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-home-hello-av"><?= lc_sanitize(lc_avatar_initials($agent['name'] ?? 'A')) ?></div>
         <div class="lc-home-hello-text">
             <h1><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agentFirst) ?>!</h1>
-            <a href="<?= lc_admin_url('chats') ?>" class="lc-home-hello-link"><i class="ti ti-plus"></i> Check your inbox and live conversations</a>
+            <a href="<?= lc_admin_url('chats') ?>" class="lc-home-hello-link">+ Check your inbox and live conversations</a>
         </div>
         <div class="lc-home-hello-actions">
             <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta" style="<?= $waiting > 0 ? '' : 'display:none' ?>">
@@ -155,14 +155,14 @@ require __DIR__ . '/includes/header.php';
         </button>
         <div class="lc-home-banner-copy">
             <h2>Stay in touch with customers</h2>
-            <p>Inactive chats auto-close after a quiet period so your queue stays clean — and visitors can resume when they return.</p>
+            <p>Inactive chats auto-close after a quiet period so your queue stays clean. Visitors can resume when they return.</p>
             <div class="lc-home-banner-actions">
                 <?php if (($agent['role'] ?? '') === 'admin'): ?>
                     <a href="<?= lc_admin_url('settings') ?>#lc-settings-system" class="lc-home-banner-btn">Set inactivity timeout</a>
                 <?php else: ?>
                     <a href="<?= lc_admin_url('chats') ?>" class="lc-home-banner-btn">Open live chats</a>
                 <?php endif; ?>
-                <a href="<?= lc_admin_url('chats') ?>" class="lc-home-banner-link">Go to inbox</a>
+                <a href="<?= lc_admin_url('settings') ?>#lc-settings-system" class="lc-home-banner-link">Learn more</a>
             </div>
         </div>
         <div class="lc-home-banner-art" aria-hidden="true">
