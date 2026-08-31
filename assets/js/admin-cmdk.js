@@ -31,49 +31,89 @@
     function defaultCommands() {
         var status = currentStatus();
         var cmds = [];
+        var homeHref = (nav[0] && nav[0].href) || (base + '/admin/');
+        var canned = null;
+        var traffic = null;
+        var chats = null;
+        nav.forEach(function (item) {
+            if (item.id === 'canned') canned = item;
+            if (item.id === 'traffic') traffic = item;
+            if (item.id === 'chats') chats = item;
+        });
 
         if (status === 'online') {
             cmds.push({
                 id: 'stop-chats',
                 icon: 'ti-eye-off',
                 title: 'Stop Accepting Chats',
-                subtitle: 'Set status to Away',
-                action: 'status:away'
+                action: 'status:away',
+                featured: true
             });
         } else {
             cmds.push({
                 id: 'start-chats',
                 icon: 'ti-eye',
                 title: 'Start Accepting Chats',
-                subtitle: 'Set status to Online',
-                action: 'status:online'
+                action: 'status:online',
+                featured: true
             });
         }
+
+        if (canned) {
+            cmds.push({
+                id: 'nav-canned',
+                icon: 'ti-bolt',
+                title: 'Canned Replies',
+                subtitle: '- Go to Automate',
+                href: canned.href,
+                featured: true
+            });
+        }
+
+        cmds.push({
+            id: 'team-activity',
+            icon: 'ti-sparkles',
+            title: "Summarize My Team's Activity In The Last 30 Days.",
+            href: homeHref,
+            featured: true
+        });
 
         cmds.push({
             id: 'go-offline',
             icon: 'ti-player-pause',
             title: 'Go Offline',
-            subtitle: 'Stop presence and chat acceptance',
+            subtitle: '- Set status offline',
             action: 'status:offline'
         });
 
+        if (chats) {
+            cmds.push({
+                id: 'nav-chats',
+                icon: 'ti-messages',
+                title: 'Live Chats',
+                subtitle: '- Go to Inbox',
+                href: chats.href
+            });
+        }
+        if (traffic) {
+            cmds.push({
+                id: 'nav-traffic',
+                icon: 'ti-world',
+                title: 'Traffic',
+                subtitle: '- Go to Customers',
+                href: traffic.href
+            });
+        }
+
         nav.forEach(function (item) {
+            if (item.id === 'canned' || item.id === 'chats' || item.id === 'traffic') return;
             cmds.push({
                 id: 'nav-' + item.id,
                 icon: item.icon || 'ti-arrow-right',
                 title: item.label,
-                subtitle: 'Go to ' + item.label,
+                subtitle: '- Go to ' + item.label,
                 href: item.href
             });
-        });
-
-        cmds.push({
-            id: 'team-activity',
-            icon: 'ti-sparkles',
-            title: "Summarize My Team's Activity",
-            subtitle: 'Open Home dashboard overview',
-            href: (nav[0] && nav[0].href) || (base + '/admin/')
         });
 
         return cmds;
@@ -81,7 +121,9 @@
 
     function filterCommands(q) {
         var all = defaultCommands();
-        if (!q) return all.slice(0, 8);
+        if (!q) {
+            return all.filter(function (c) { return c.featured; }).slice(0, 3);
+        }
         var needle = q.toLowerCase();
         return all.filter(function (c) {
             return (c.title + ' ' + (c.subtitle || '')).toLowerCase().indexOf(needle) !== -1;
@@ -97,12 +139,16 @@
         }
         if (activeIndex >= items.length) activeIndex = 0;
         list.innerHTML = items.map(function (item, idx) {
+            var remoteClass = item.remote ? ' is-remote' : '';
+            var sub = item.subtitle
+                ? '<span class="lc-cmdk-item-sub">' + esc(item.subtitle) + '</span>'
+                : '';
             return (
-                '<button type="button" class="lc-cmdk-item' + (idx === activeIndex ? ' is-active' : '') + '" data-index="' + idx + '" role="option" aria-selected="' + (idx === activeIndex ? 'true' : 'false') + '">' +
+                '<button type="button" class="lc-cmdk-item' + (idx === activeIndex ? ' is-active' : '') + remoteClass + '" data-index="' + idx + '" role="option" aria-selected="' + (idx === activeIndex ? 'true' : 'false') + '">' +
                     '<span class="lc-cmdk-item-icon"><i class="ti ' + esc(item.icon || 'ti-search') + '"></i></span>' +
                     '<span class="lc-cmdk-item-text">' +
                         '<span class="lc-cmdk-item-title">' + esc(item.title) + '</span>' +
-                        (item.subtitle ? '<span class="lc-cmdk-item-sub">' + esc(item.subtitle) + '</span>' : '') +
+                        sub +
                     '</span>' +
                 '</button>'
             );
@@ -191,7 +237,8 @@
                             icon: row.icon || 'ti-search',
                             title: row.title,
                             subtitle: row.subtitle || '',
-                            href: row.href
+                            href: row.href,
+                            remote: true
                         };
                     });
                 }
@@ -214,6 +261,25 @@
         closeBtn.addEventListener('click', function (e) {
             e.preventDefault();
             close();
+        });
+    }
+
+    var walkBtn = document.getElementById('lc-cmdk-walkthrough');
+    if (walkBtn) {
+        walkBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            if (openBtn) {
+                openBtn.classList.add('is-walkthrough');
+                openBtn.focus();
+                setTimeout(function () {
+                    openBtn.classList.remove('is-walkthrough');
+                    open();
+                }, 450);
+            } else {
+                open();
+            }
         });
     }
 

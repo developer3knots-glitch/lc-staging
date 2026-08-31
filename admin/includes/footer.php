@@ -12,9 +12,12 @@
         </div>
         <div class="lc-cmdk-list" id="lc-cmdk-list" role="listbox"></div>
         <div class="lc-cmdk-foot">
-            <span>Open search <kbd>Ctrl K</kbd></span>
-            <span>Up/down <kbd>↑</kbd> <kbd>↓</kbd></span>
-            <span>Close <kbd>esc</kbd></span>
+            <div class="lc-cmdk-foot-hints">
+                <span class="lc-cmdk-hint">Open search <kbd>Ctrl</kbd> <kbd>K</kbd></span>
+                <span class="lc-cmdk-hint">Up/down <kbd class="lc-cmdk-kbd-arrow">↑</kbd> <kbd class="lc-cmdk-kbd-arrow">↓</kbd></span>
+                <span class="lc-cmdk-hint">Close <kbd>esc</kbd></span>
+            </div>
+            <button type="button" class="lc-cmdk-walkthrough" id="lc-cmdk-walkthrough">Walkthrough</button>
         </div>
     </div>
 </div>
@@ -36,8 +39,8 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-time.js?v=136"></script>
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-notify-sound.js?v=136"></script>
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-tab-notify.js?v=136"></script>
-<script src="<?= LC_BASE_URL ?>/assets/js/admin-core.js?v=159"></script>
-<script src="<?= LC_BASE_URL ?>/assets/js/admin-cmdk.js?v=159"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/admin-core.js?v=160"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/admin-cmdk.js?v=160"></script>
 <?php
 $footerScripts = $extraScripts ?? [];
 if (!empty($extraScript)) {
@@ -45,7 +48,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=159"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=160"></script>
 <?php endforeach; ?>
 </body>
 </html>
