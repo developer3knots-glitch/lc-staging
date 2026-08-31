@@ -82,11 +82,36 @@ try {
             b.name AS brand_name,
             b.brand_key,
             (
-                SELECT COALESCE(SUM(pv.duration_seconds), 0)
+                SELECT COALESCE(SUM(COALESCE(pv.duration_seconds, 0)), 0)
                 FROM visitor_page_views pv
-                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
+                WHERE pv.visitor_id = v.id
+                  AND pv.{$brandSql}
+                  AND pv.visited_at >= DATE_SUB(COALESCE(v.last_seen, UTC_TIMESTAMP()), INTERVAL 4 HOUR)
             ) AS pages_duration_seconds,
-            TIMESTAMPDIFF(SECOND, v.created_at, COALESCE(v.last_seen, UTC_TIMESTAMP())) AS session_seconds,
+            (
+                SELECT TIMESTAMPDIFF(
+                    SECOND,
+                    pv.visited_at,
+                    LEAST(COALESCE(v.last_seen, UTC_TIMESTAMP()), UTC_TIMESTAMP())
+                )
+                FROM visitor_page_views pv
+                WHERE pv.visitor_id = v.id
+                  AND pv.{$brandSql}
+                  AND pv.duration_seconds IS NULL
+                ORDER BY pv.id DESC
+                LIMIT 1
+            ) AS open_page_seconds,
+            (
+                SELECT TIMESTAMPDIFF(
+                    SECOND,
+                    MIN(pv.visited_at),
+                    COALESCE(v.last_seen, UTC_TIMESTAMP())
+                )
+                FROM visitor_page_views pv
+                WHERE pv.visitor_id = v.id
+                  AND pv.{$brandSql}
+                  AND pv.visited_at >= DATE_SUB(COALESCE(v.last_seen, UTC_TIMESTAMP()), INTERVAL 4 HOUR)
+            ) AS recent_span_seconds,
             TIMESTAMPDIFF(SECOND, v.last_seen, UTC_TIMESTAMP()) AS seconds_since_seen
         FROM visitors v
         LEFT JOIN (
@@ -128,8 +153,10 @@ try {
         LIMIT 200
     ";
 
-    // Placeholder order: SUM brand, open-chat brand, EXISTS page_views, EXISTS conversations, search
+    // Placeholder order: pages SUM, open page, recent span, open-chat, EXISTS pv, EXISTS cx, search
     $execParams = array_merge(
+        $brandParams,
+        $brandParams,
         $brandParams,
         $brandParams,
         $brandParams,
@@ -176,9 +203,19 @@ try {
             $name = 'Visitor';
         }
 
-        $pagesDur = (int) ($row['pages_duration_seconds'] ?? 0);
-        $sessionSec = max(0, (int) ($row['session_seconds'] ?? 0));
-        $timeSec = max($pagesDur, $sessionSec);
+        $pagesDur = max(0, (int) ($row['pages_duration_seconds'] ?? 0));
+        $openPage = max(0, (int) ($row['open_page_seconds'] ?? 0));
+        $recentSpan = max(0, (int) ($row['recent_span_seconds'] ?? 0));
+        // Prefer measured page durations (+ current open page). Never use visitor lifetime
+        // (created_at → last_seen) — that was showing multi-day totals like 146h.
+        $timeSec = $pagesDur + $openPage;
+        if ($timeSec < 1 && $recentSpan > 0) {
+            $timeSec = $recentSpan;
+        }
+        // Cap display to one continuous visit window (4h query already scopes rows)
+        if ($timeSec > 4 * 3600) {
+            $timeSec = 4 * 3600;
+        }
 
         $pageUrl = (string) ($row['page_url'] ?: ($row['chat_page_url'] ?? ''));
         $pagePath = $pageUrl;
