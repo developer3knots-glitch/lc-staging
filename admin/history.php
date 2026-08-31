@@ -96,6 +96,7 @@ try {
             COUNT(*) AS total_closed,
             SUM(CASE WHEN DATE(c.closed_at) = CURDATE() THEN 1 ELSE 0 END) AS closed_today,
             SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS closed_week,
+            SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS closed_month,
             COALESCE(AVG(msg_counts.cnt), 0) AS avg_messages
         FROM conversations c
         LEFT JOIN (
@@ -104,7 +105,7 @@ try {
         WHERE {$statsWhereSql}
     ");
     $statsStmt->execute($statsParams);
-    $stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
+    $stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'closed_month' => 0, 'avg_messages' => 0];
 
     $sql = "
         SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at, c.ticket_reference,
@@ -144,7 +145,7 @@ try {
     $agents = $agentsStmt->fetchAll();
 } catch (Throwable $e) {
     $totalMatching = 0;
-    $stats = ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'avg_messages' => 0];
+    $stats = ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'closed_month' => 0, 'avg_messages' => 0];
     $rows = [];
     $agents = [];
     $historyError = 'Unable to load history. Please refresh or contact support.';
@@ -187,7 +188,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hx-top">
             <div class="lc-hx-top-left">
                 <h1 class="lc-hx-title">Closed conversations</h1>
-                <p class="lc-hx-sub"><?= (int) $totalMatching ?> archived chat<?= (int) $totalMatching === 1 ? '' : 's' ?><?= $totalMatching > 100 ? ' ┬╖ showing latest 100' : '' ?></p>
+                <p class="lc-hx-sub"><?= (int) $totalMatching ?> archived chat<?= (int) $totalMatching === 1 ? '' : 's' ?><?= $totalMatching > 100 ? ' · showing latest 100' : '' ?></p>
             </div>
             <div class="lc-hx-top-right">
                 <a href="<?= lc_admin_url('chats') ?>" class="lc-hx-btn"><i class="ti ti-inbox"></i> Live Inbox</a>
@@ -218,8 +219,13 @@ require __DIR__ . '/includes/header.php';
 
         <div class="lc-hx-tabs" role="tablist" aria-label="Period">
             <?php
-            $periods = ['all' => 'All', 'today' => 'Today', 'week' => '7 days', 'month' => '30 days'];
-            foreach ($periods as $key => $label):
+            $periods = [
+                'all' => ['label' => 'All closed', 'count' => (int) ($stats['total_closed'] ?? 0)],
+                'today' => ['label' => 'Today', 'count' => (int) ($stats['closed_today'] ?? 0)],
+                'week' => ['label' => '7 days', 'count' => (int) ($stats['closed_week'] ?? 0)],
+                'month' => ['label' => '30 days', 'count' => (int) ($stats['closed_month'] ?? 0)],
+            ];
+            foreach ($periods as $key => $meta):
                 $href = lc_admin_url('history', array_filter([
                     'q' => $search !== '' ? $search : null,
                     'brand' => $brandFilter > 0 ? $brandFilter : null,
@@ -229,11 +235,17 @@ require __DIR__ . '/includes/header.php';
                     return $value !== null && $value !== '';
                 }));
             ?>
-                <a href="<?= lc_sanitize($href) ?>" class="lc-hx-tab<?= $period === $key ? ' is-active' : '' ?>" role="tab" aria-selected="<?= $period === $key ? 'true' : 'false' ?>"><?= lc_sanitize($label) ?></a>
+                <a href="<?= lc_sanitize($href) ?>" class="lc-hx-tab<?= $period === $key ? ' is-active' : '' ?>" role="tab" aria-selected="<?= $period === $key ? 'true' : 'false' ?>">
+                    <?= lc_sanitize($meta['label']) ?> <span class="lc-hx-tab-count">(<?= (int) $meta['count'] ?>)</span>
+                </a>
             <?php endforeach; ?>
         </div>
 
         <form method="get" class="lc-hx-toolbar" id="lc-history-form">
+            <div class="lc-hx-filters-meta">
+                <i class="ti ti-filter" aria-hidden="true"></i>
+                <span>Match all filters</span>
+            </div>
             <div class="lc-hx-search">
                 <i class="ti ti-search" aria-hidden="true"></i>
                 <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Search ticket, visitor, IP, brand, agent..." autocomplete="off" aria-label="Search history">
@@ -258,7 +270,7 @@ require __DIR__ . '/includes/header.php';
                 <option value="week"<?= $period === 'week' ? ' selected' : '' ?>>Last 7 days</option>
                 <option value="month"<?= $period === 'month' ? ' selected' : '' ?>>Last 30 days</option>
             </select>
-            <button type="submit" class="lc-hx-apply"><i class="ti ti-filter"></i> Apply</button>
+            <button type="submit" class="lc-hx-add-filter"><i class="ti ti-plus"></i> Apply filters</button>
         </form>
 
         <div class="lc-hx-table-wrap" id="lc-history-list">
@@ -273,28 +285,16 @@ require __DIR__ . '/includes/header.php';
                 </div>
             <?php else: ?>
             <table class="lc-hx-table">
-                <colgroup>
-                    <col class="lc-hx-col-visitor">
-                    <col class="lc-hx-col-ticket">
-                    <col class="lc-hx-col-brand">
-                    <col class="lc-hx-col-country">
-                    <col class="lc-hx-col-agent">
-                    <col class="lc-hx-col-msgs">
-                    <col class="lc-hx-col-dur">
-                    <col class="lc-hx-col-closed">
-                    <col class="lc-hx-col-action">
-                </colgroup>
                 <thead>
                     <tr>
-                        <th>Visitor</th>
-                        <th>Ticket</th>
-                        <th>Brand</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Actions</th>
                         <th>Country</th>
+                        <th>Activity</th>
                         <th>Agent</th>
-                        <th>Messages</th>
                         <th>Duration</th>
-                        <th>Closed</th>
-                        <th></th>
+                        <th>Ticket</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -303,14 +303,9 @@ require __DIR__ . '/includes/header.php';
                     $duration = $formatDuration($r['started_at'], $r['closed_at']);
                     $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                     $ticketRef = $r['ticket_reference'] ?: lc_conversation_reference((int) $r['id'], $r['started_at'] ?? null);
-                    $closedAbs = 'ΓÇö';
-                    if (!empty($r['closed_at'])) {
-                        $closedAbs = function_exists('lc_format_datetime_tz')
-                            ? lc_format_datetime_tz($r['closed_at'], function_exists('lc_account_timezone') ? lc_account_timezone() : null, 'M j, Y, g:i A')
-                            : (string) $r['closed_at'];
-                    }
-                    $closedRel = !empty($r['closed_at']) ? lc_time_span($r['closed_at'], 'relative') : '';
-                    $searchBlob = strtolower($name . ' ' . ($r['visitor_email'] ?? '') . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . ($r['agent_name'] ?? '') . ' ' . $ticketRef);
+                    $email = trim((string) ($r['visitor_email'] ?? ''));
+                    $agentName = trim((string) ($r['agent_name'] ?? ''));
+                    $searchBlob = strtolower($name . ' ' . $email . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . $agentName . ' ' . $ticketRef);
                 ?>
                     <tr class="lc-hx-row" data-search="<?= lc_sanitize($searchBlob) ?>">
                         <td class="lc-hx-visitor">
@@ -318,29 +313,39 @@ require __DIR__ . '/includes/header.php';
                                 <span class="lc-hx-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></span>
                                 <span class="lc-hx-visitor-copy">
                                     <strong><?= lc_sanitize($name) ?></strong>
-                                    <?php if (!empty($r['visitor_email'])): ?>
-                                        <span><?= lc_sanitize($r['visitor_email']) ?></span>
-                                    <?php elseif (!empty($r['visitor_ip'])): ?>
+                                    <?php if (!empty($r['visitor_ip'])): ?>
                                         <span><?= lc_sanitize($r['visitor_ip']) ?></span>
                                     <?php endif; ?>
                                 </span>
                             </a>
                         </td>
-                        <td><code class="lc-hx-ticket"><?= lc_sanitize($ticketRef) ?></code></td>
-                        <td><?= !empty($r['brand_name']) ? lc_sanitize($r['brand_name']) : 'ΓÇö' ?></td>
-                        <td><?= !empty($r['visitor_country']) ? lc_sanitize($r['visitor_country']) : 'ΓÇö' ?></td>
-                        <td><?= !empty($r['agent_name']) ? lc_sanitize($r['agent_name']) : 'ΓÇö' ?></td>
-                        <td class="lc-hx-num"><?= (int) $r['msg_count'] ?></td>
-                        <td class="lc-hx-num"><?= lc_sanitize($duration) ?></td>
-                        <td class="lc-hx-closed">
-                            <span class="lc-hx-closed-abs"><?= lc_sanitize((string) $closedAbs) ?></span>
-                            <?php if ($closedRel !== ''): ?>
-                                <span class="lc-hx-closed-rel"><?= $closedRel ?></span>
+                        <td class="lc-hx-email"><?= $email !== '' ? lc_sanitize($email) : '—' ?></td>
+                        <td class="lc-hx-action">
+                            <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-hx-go-chat">Go to chat</a>
+                        </td>
+                        <td class="lc-hx-country">
+                            <?php if (!empty($r['visitor_country'])): ?>
+                                <span class="lc-hx-country-pill"><?= lc_sanitize($r['visitor_country']) ?></span>
+                            <?php else: ?>
+                                —
                             <?php endif; ?>
                         </td>
-                        <td class="lc-hx-action">
-                            <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-hx-view">View <i class="ti ti-chevron-right"></i></a>
+                        <td class="lc-hx-activity">
+                            <span class="lc-hx-activity-dot is-closed"></span>
+                            <span>Closed</span>
                         </td>
+                        <td class="lc-hx-agent">
+                            <?php if ($agentName !== ''): ?>
+                                <span class="lc-hx-agent-pill">
+                                    <span class="lc-hx-agent-av"><?= lc_sanitize(lc_avatar_initials($agentName)) ?></span>
+                                    <?= lc_sanitize($agentName) ?>
+                                </span>
+                            <?php else: ?>
+                                —
+                            <?php endif; ?>
+                        </td>
+                        <td class="lc-hx-num"><?= lc_sanitize($duration) ?></td>
+                        <td><code class="lc-hx-ticket"><?= lc_sanitize($ticketRef) ?></code></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
