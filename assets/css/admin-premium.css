@@ -1,6 +1,6 @@
 /**
  * LiveChat Admin ╬ô├▓┬╝Γö£Γöñ╬ô├╢┬ú╬ô├╗├┤╬ô├╢┬╝╬ô├▓┬ÑΓò¼├┤Γö£ΓòóΓö¼├║Γò¼├┤Γö£ΓòóΓö£ΓûÆ╬ô├▓┬╝Γö£Γöñ╬ô├╢┬ú╬ô├▓├│╬ô├╢┬╝Γö£ΓòæΓò¼├┤Γö£ΓòóΓö¼├║╬ô├╢┬╝╬ô├▓├ª╬ô├▓┬╝Γö£Γöñ╬ô├╢┬ú╬ô├▓├│╬ô├╢┬╝Γö£Γòæ╬ô├▓┬╝Γö£Γöñ╬ô├╢┬ú╬ô├╗├┤╬ô├╢┬ú╬ô├╢├⌐ Professional UI
- * Icons: Tabler Icons | Font: Work Sans
+ * Icons: Tabler Icons | Font: Inter
  */
 
 :root {
@@ -27,7 +27,7 @@
 body,
 .lc-admin-body {
     margin: 0;
-    font-family: 'Work Sans', system-ui, -apple-system, sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     background: var(--lc-bg);
     color: var(--lc-ink);
     -webkit-font-smoothing: antialiased;

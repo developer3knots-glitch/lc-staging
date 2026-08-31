@@ -29,9 +29,9 @@ $base = htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8');
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= $base ?>/assets/vendor/tabler-icons/tabler-icons.min.css">
-    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=10">
+    <link rel="stylesheet" href="<?= $base ?>/assets/css/superadmin.css?v=11">
 </head>
 <body class="sa-body<?= !empty($bodyClass) ? ' ' . lc_sanitize($bodyClass) : '' ?>">
 <div class="sa-app" id="sa-app">
