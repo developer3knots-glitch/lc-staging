@@ -116,7 +116,10 @@ $statusBadge = static function (string $status): string {
 
 $pageTitle = 'Home';
 $activeNav = 'dashboard';
+$extraScripts = ['admin-home-avatar.js'];
 $extraScript = 'admin-dashboard.js';
+$avatarPresets = lc_avatar_presets();
+$agentAvatarPreset = lc_avatar_preset_id($agent['avatar'] ?? null) ?: '01';
 $weekTotal = (int) array_sum(array_column($activityChart, 'count'));
 $agentFirst = trim(explode(' ', (string) ($agent['name'] ?? 'there'))[0]);
 require __DIR__ . '/includes/header.php';
@@ -124,10 +127,27 @@ require __DIR__ . '/includes/header.php';
 
 <div class="lc-home">
     <div class="lc-home-hello">
-        <div class="lc-home-hello-av"><?= lc_sanitize(lc_avatar_initials($agent['name'] ?? 'A')) ?></div>
-        <div class="lc-home-hello-text">
-            <h1><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agentFirst) ?>!</h1>
-            <a href="<?= lc_admin_url('chats') ?>" class="lc-home-hello-link">+ Check your inbox and live conversations</a>
+        <div class="lc-home-hello-profile">
+            <div class="lc-home-hello-avatar-wrap" id="lc-home-avatar-wrap"<?= lc_avatar_url($agent['avatar'] ?? null, $agent['name']) !== '' ? ' data-has-photo="1"' : '' ?>>
+                <div class="lc-home-hello-avatar" id="lc-home-avatar">
+                    <?= lc_avatar_html($agent['avatar'] ?? null, $agent['name'], 'lc-avatar lc-home-hello-avatar-img') ?>
+                </div>
+                <button type="button" class="lc-home-hello-avatar-add" id="lc-home-avatar-toggle" aria-label="Change profile photo" aria-expanded="false" aria-haspopup="true">
+                    <i class="ti ti-plus"></i>
+                </button>
+                <div class="lc-home-hello-avatar-menu" id="lc-home-avatar-menu" hidden role="menu">
+                    <button type="button" class="lc-home-hello-avatar-menu-item" id="lc-home-avatar-upload-btn" role="menuitem">
+                        <span>Upload your own</span>
+                        <small>max 1MB for JPEG/PNG</small>
+                    </button>
+                    <button type="button" class="lc-home-hello-avatar-menu-item" id="lc-home-avatar-gallery-btn" role="menuitem">Choose from gallery</button>
+                </div>
+                <input type="file" id="lc-home-avatar-file" accept="image/jpeg,image/png" hidden>
+            </div>
+            <div class="lc-home-hello-text">
+                <h1><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agentFirst) ?>!</h1>
+                <p class="lc-home-hello-sub">+ Check your inbox and live conversations</p>
+            </div>
         </div>
         <div class="lc-home-hello-actions">
             <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta" style="<?= $waiting > 0 ? '' : 'display:none' ?>">
@@ -372,6 +392,23 @@ require __DIR__ . '/includes/header.php';
             </div>
             <?php endif; ?>
         </aside>
+    </div>
+
+    <div class="lc-home-avatar-gallery" id="lc-home-avatar-gallery" hidden>
+        <div class="lc-home-avatar-gallery-backdrop" id="lc-home-avatar-gallery-backdrop"></div>
+        <div class="lc-home-avatar-gallery-card" role="dialog" aria-modal="true" aria-labelledby="lc-home-avatar-gallery-title">
+            <div class="lc-home-avatar-gallery-head">
+                <h4 id="lc-home-avatar-gallery-title">Choose from gallery</h4>
+                <button type="button" class="lc-home-avatar-gallery-close" id="lc-home-avatar-gallery-close" aria-label="Close"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="lc-home-avatar-gallery-grid">
+                <?php foreach ($avatarPresets as $pid => $meta): ?>
+                    <button type="button" class="lc-home-avatar-gallery-item<?= $pid === $agentAvatarPreset ? ' is-selected' : '' ?>" data-avatar-preset="<?= lc_sanitize($pid) ?>" title="<?= lc_sanitize($meta['label']) ?>">
+                        <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>">
+                    </button>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
 </div>
 

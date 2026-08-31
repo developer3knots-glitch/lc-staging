@@ -5424,24 +5424,103 @@ body.lc-page-dashboard .lc-content {
 .lc-home-hello {
     display: flex;
     align-items: flex-start;
-    gap: 0.875rem;
+    justify-content: space-between;
+    gap: 1rem;
     margin: 0 0 1.75rem;
     flex-wrap: wrap;
 }
-.lc-home-hello-av {
-    width: 44px;
-    height: 44px;
+.lc-home-hello-profile {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 0;
+}
+.lc-home-hello-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+.lc-home-hello-avatar {
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: #374151;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e5e7eb;
+}
+.lc-home-hello-avatar-img,
+.lc-home-hello-avatar .lc-avatar,
+.lc-home-hello-avatar img {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+.lc-home-hello-avatar .lc-avatar-initials {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+.lc-home-hello-avatar-add {
+    position: absolute;
+    right: -3px;
+    bottom: -1px;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #2563eb;
     color: #fff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
-    flex-shrink: 0;
-    margin-top: 0.1rem;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.72rem;
+    line-height: 1;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
 }
+.lc-home-hello-avatar-add:hover { background: #1d4ed8; }
+.lc-home-hello-avatar-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    min-width: 230px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+    padding: 0.35rem 0;
+    z-index: 50;
+}
+.lc-home-hello-avatar-menu[hidden] { display: none !important; }
+.lc-home-hello-avatar-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.7rem 1rem;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: #111827;
+    line-height: 1.35;
+}
+.lc-home-hello-avatar-menu-item span {
+    display: block;
+}
+.lc-home-hello-avatar-menu-item small {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 12px;
+    font-weight: 400;
+    color: #6b7280;
+    line-height: 1.35;
+}
+.lc-home-hello-avatar-menu-item:hover { background: #f9fafb; }
 .lc-home-hello-text h1 {
     margin: 0;
     font-size: 1.625rem;
@@ -5450,20 +5529,81 @@ body.lc-page-dashboard .lc-content {
     color: #111827;
     line-height: 1.2;
 }
-.lc-home-hello-link {
-    display: inline-block;
-    margin-top: 0.4rem;
+.lc-home-hello-sub {
+    margin: 0.4rem 0 0;
     color: #6b7280;
     font-size: 0.875rem;
     font-weight: 400;
     line-height: 1.45;
-    text-decoration: none;
-}
-.lc-home-hello-link:hover {
-    color: #2563eb;
-    text-decoration: underline;
 }
 .lc-home-hello-actions { margin-left: auto; }
+
+.lc-home-avatar-gallery[hidden] { display: none !important; }
+.lc-home-avatar-gallery {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.lc-home-avatar-gallery-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+}
+.lc-home-avatar-gallery-card {
+    position: relative;
+    width: min(100%, 420px);
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+    padding: 1rem 1rem 1.15rem;
+}
+.lc-home-avatar-gallery-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+.lc-home-avatar-gallery-head h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+}
+.lc-home-avatar-gallery-close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+}
+.lc-home-avatar-gallery-close:hover { background: #f3f4f6; color: #111827; }
+.lc-home-avatar-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+.lc-home-avatar-gallery-item {
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: #f9fafb;
+    padding: 0.35rem;
+    cursor: pointer;
+}
+.lc-home-avatar-gallery-item img {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: block;
+}
+.lc-home-avatar-gallery-item:hover { border-color: #cbd5e1; }
+.lc-home-avatar-gallery-item.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
 
 .lc-home-unread {
     display: flex;
