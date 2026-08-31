@@ -76,6 +76,11 @@ if ($agent['role'] === 'admin') {
                 <p class="lc-topbar-sub">Support operations console</p>
                 <?php endif; ?>
             </div>
+            <button type="button" class="lc-top-search" id="lc-cmdk-open" aria-label="Search" aria-haspopup="dialog">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <span class="lc-top-search-label">Search</span>
+                <kbd class="lc-top-search-kbd">Ctrl K</kbd>
+            </button>
             <div class="lc-topbar-actions">
                 <div class="lc-status-control" id="lc-status-control">
                     <div class="lc-status-dropdown">
@@ -111,3 +116,20 @@ if ($agent['role'] === 'admin') {
             </div>
         </header>
         <main class="lc-content">
+
+<div class="lc-cmdk" id="lc-cmdk" hidden>
+    <div class="lc-cmdk-backdrop" data-cmdk-close></div>
+    <div class="lc-cmdk-card" role="dialog" aria-modal="true" aria-label="Search">
+        <div class="lc-cmdk-input-row">
+            <i class="ti ti-search" aria-hidden="true"></i>
+            <input type="search" id="lc-cmdk-input" placeholder="Search" autocomplete="off" spellcheck="false">
+            <button type="button" class="lc-cmdk-close" id="lc-cmdk-close" aria-label="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="lc-cmdk-list" id="lc-cmdk-list" role="listbox"></div>
+        <div class="lc-cmdk-foot">
+            <span>Open search <kbd>Ctrl K</kbd></span>
+            <span>Up/down <kbd>↑</kbd> <kbd>↓</kbd></span>
+            <span>Close <kbd>esc</kbd></span>
+        </div>
+    </div>
+</div>

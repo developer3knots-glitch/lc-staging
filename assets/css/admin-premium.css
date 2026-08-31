@@ -314,6 +314,201 @@ body.lc-admin-body {
 .lc-topbar-sub { margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--lc-muted); font-weight: 500; }
 .lc-topbar-actions { display: flex; align-items: center; gap: 0.65rem; }
 
+/* LiveChat-style top search + command palette */
+.lc-top-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: min(100%, 320px);
+    max-width: 420px;
+    flex: 1 1 320px;
+    margin: 0 1rem;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #6b7280;
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.lc-top-search:hover {
+    background: #fff;
+    border-color: #d1d5db;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.lc-top-search i { font-size: 1rem; color: #9ca3af; }
+.lc-top-search-label { flex: 1; min-width: 0; }
+.lc-top-search-kbd {
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #9ca3af;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.12rem 0.4rem;
+    line-height: 1.2;
+}
+.lc-cmdk[hidden] { display: none !important; }
+.lc-cmdk {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 12vh 1rem 1rem;
+}
+.lc-cmdk-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.28);
+}
+.lc-cmdk-card {
+    position: relative;
+    width: min(100%, 560px);
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+}
+.lc-cmdk-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #eef2f6;
+}
+.lc-cmdk-input-row > i {
+    color: #9ca3af;
+    font-size: 1.15rem;
+}
+.lc-cmdk-input-row input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    font: inherit;
+    font-size: 1rem;
+    color: #111827;
+    background: transparent;
+}
+.lc-cmdk-close {
+    border: 0;
+    background: transparent;
+    color: #9ca3af;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.lc-cmdk-close:hover { background: #f3f4f6; color: #111827; }
+.lc-cmdk-list {
+    max-height: min(52vh, 360px);
+    overflow: auto;
+    padding: 0.4rem;
+}
+.lc-cmdk-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 0.7rem 0.75rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font: inherit;
+    color: #111827;
+}
+.lc-cmdk-item.is-active,
+.lc-cmdk-item:hover {
+    background: #f3f4f6;
+}
+.lc-cmdk-item-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #eef2f6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #4b5563;
+    flex-shrink: 0;
+}
+.lc-cmdk-item.is-active .lc-cmdk-item-icon {
+    background: #fff;
+}
+.lc-cmdk-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+.lc-cmdk-item-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+.lc-cmdk-item-sub {
+    font-size: 0.75rem;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lc-cmdk-empty {
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+.lc-cmdk-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.1rem;
+    align-items: center;
+    padding: 0.65rem 1rem;
+    border-top: 1px solid #eef2f6;
+    background: #fafbfc;
+    color: #6b7280;
+    font-size: 0.75rem;
+}
+.lc-cmdk-foot kbd {
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    border-radius: 5px;
+    padding: 0.08rem 0.35rem;
+    margin-left: 0.2rem;
+}
+body.lc-cmdk-open { overflow: hidden; }
+@media (max-width: 900px) {
+    .lc-top-search {
+        flex: 0 0 auto;
+        min-width: 0;
+        width: 40px;
+        margin: 0 0.35rem;
+        padding: 0.45rem;
+        justify-content: center;
+    }
+    .lc-top-search-label,
+    .lc-top-search-kbd { display: none; }
+}
+body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
+    background: #fff;
+}
+
 .lc-status-control {
     position: relative;
 }

@@ -65,6 +65,12 @@
         postStatus(false);
     }
 
+    window.LCAdmin = window.LCAdmin || {};
+    window.LCAdmin.setStatus = setStatus;
+    window.LCAdmin.getStatus = function () {
+        return statusSelect ? (statusSelect.value || 'online') : 'online';
+    };
+
     if (statusSelect) {
         syncStatusUi();
 
