@@ -16,58 +16,114 @@
         });
     }
 
-    function presetSrc(radio) {
-        if (!radio) return base + '/assets/img/avatars/preset-31.jpg';
-        var img = radio.parentElement && radio.parentElement.querySelector('[data-avatar-src]');
-        if (img && img.getAttribute('data-avatar-src')) {
-            return img.getAttribute('data-avatar-src');
-        }
-        var id = radio.value || '31';
-        var isPeople = parseInt(id, 10) >= 31;
+    function presetUrl(id) {
+        var n = parseInt(id, 10);
+        var isPeople = !isNaN(n) && n >= 31;
         return base + '/assets/img/avatars/preset-' + id + (isPeople ? '.jpg' : '.svg');
-    }
-
-    function setAvatarTab(root, tab) {
-        var active = tab || 'people';
-        root.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
-            var on = btn.getAttribute('data-avatar-tab') === active;
-            btn.classList.toggle('is-active', on);
-            btn.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-        root.querySelectorAll('.lc-avatar-preset').forEach(function (item) {
-            var category = item.getAttribute('data-gallery-category') || 'people';
-            item.hidden = !(active === 'all' || category === active);
-        });
     }
 
     function initAvatarPicker(root) {
         var previewImg = root.querySelector('[data-avatar-preview]');
-        if (!previewImg) return;
-
+        var openBtn = root.querySelector('[data-avatar-open]');
+        var modal = root.querySelector('[data-avatar-modal]');
+        var presetInput = root.querySelector('[data-avatar-preset-value]');
         var uploadInput = root.querySelector('[data-avatar-upload]');
         var uploadName = root.querySelector('[data-avatar-upload-name]');
         var clearUpload = root.querySelector('[data-avatar-clear]');
-        var presetLabels = root.querySelectorAll('.lc-avatar-preset');
+        var saveBtn = root.querySelector('[data-avatar-modal-save]');
+        var uploadOwnBtn = root.querySelector('[data-avatar-modal-upload]');
+        var draftPreset = root.getAttribute('data-selected-preset') || (presetInput && presetInput.value) || '31';
 
-        function selectPreset(label) {
-            presetLabels.forEach(function (el) { el.classList.remove('selected'); });
-            label.classList.add('selected');
-            var radio = label.querySelector('input[type="radio"]');
-            if (radio) radio.checked = true;
-            if (uploadInput && !uploadInput.files.length) {
-                previewImg.src = presetSrc(radio);
-            }
+        if (!previewImg || !modal) return;
+
+        function galleryItems() {
+            return modal.querySelectorAll('.lc-home-avatar-gallery-item');
         }
 
-        root.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
+        function setTab(tab) {
+            var active = tab || 'people';
+            modal.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
+                var on = btn.getAttribute('data-avatar-tab') === active;
+                btn.classList.toggle('is-active', on);
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            galleryItems().forEach(function (item) {
+                var category = item.getAttribute('data-gallery-category') || 'people';
+                item.hidden = !(active === 'all' || category === active);
+            });
+        }
+
+        function setDraftSelection(presetId) {
+            draftPreset = presetId || '';
+            galleryItems().forEach(function (item) {
+                item.classList.toggle('is-selected', (item.getAttribute('data-avatar-preset') || '') === draftPreset);
+            });
+            if (saveBtn) saveBtn.disabled = !draftPreset;
+        }
+
+        function closeModal() {
+            modal.hidden = true;
+        }
+
+        function openModal() {
+            var current = (presetInput && presetInput.value) || root.getAttribute('data-selected-preset') || '31';
+            setTab('people');
+            setDraftSelection(current);
+            modal.hidden = false;
+        }
+
+        function applyPreset(presetId) {
+            if (!presetId) return;
+            if (presetInput) presetInput.value = presetId;
+            root.setAttribute('data-selected-preset', presetId);
+            if (uploadInput) uploadInput.value = '';
+            if (uploadName) uploadName.textContent = 'No file selected';
+            if (clearUpload) clearUpload.style.display = 'none';
+            var selectedItem = modal.querySelector('[data-avatar-preset="' + presetId + '"]');
+            var src = selectedItem && selectedItem.getAttribute('data-avatar-src');
+            previewImg.src = src || presetUrl(presetId);
+        }
+
+        if (openBtn) {
+            openBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                openModal();
+            });
+        }
+
+        modal.querySelectorAll('[data-avatar-tab]').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                setAvatarTab(root, btn.getAttribute('data-avatar-tab') || 'people');
+                setTab(btn.getAttribute('data-avatar-tab') || 'people');
             });
         });
 
-        presetLabels.forEach(function (label) {
-            label.addEventListener('click', function () { selectPreset(label); });
+        galleryItems().forEach(function (item) {
+            item.addEventListener('click', function () {
+                setDraftSelection(item.getAttribute('data-avatar-preset') || '');
+            });
         });
+
+        modal.querySelectorAll('[data-avatar-modal-close]').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                closeModal();
+            });
+        });
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                if (!draftPreset) return;
+                applyPreset(draftPreset);
+                closeModal();
+            });
+        }
+
+        if (uploadOwnBtn && uploadInput) {
+            uploadOwnBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                uploadInput.click();
+            });
+        }
 
         if (uploadInput) {
             uploadInput.addEventListener('change', function () {
@@ -76,8 +132,11 @@
                 if (uploadName) uploadName.textContent = file.name;
                 if (clearUpload) clearUpload.style.display = 'inline-flex';
                 var reader = new FileReader();
-                reader.onload = function (e) { previewImg.src = e.target.result; };
+                reader.onload = function (ev) {
+                    previewImg.src = ev.target.result;
+                };
                 reader.readAsDataURL(file);
+                closeModal();
             });
         }
 
@@ -86,10 +145,14 @@
                 if (uploadInput) uploadInput.value = '';
                 if (uploadName) uploadName.textContent = 'No file selected';
                 clearUpload.style.display = 'none';
-                var checked = root.querySelector('input[name="avatar_preset"]:checked');
-                previewImg.src = presetSrc(checked);
+                var current = (presetInput && presetInput.value) || '31';
+                applyPreset(current);
             });
         }
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !modal.hidden) closeModal();
+        });
     }
 
     document.querySelectorAll('[data-avatar-picker]').forEach(initAvatarPicker);

@@ -330,7 +330,7 @@ require __DIR__ . '/includes/header.php';
                             <?= lc_render_avatar_picker([
                                 'selected' => $presetId,
                                 'preview_url' => $previewUrl,
-                                'hint' => 'Pick from People or Abstract, or upload a photo (optional).',
+                                'hint' => 'Click Upload photo to open the gallery, or upload your own (optional).',
                             ]) ?>
 
                             <label>Name</label>
@@ -387,7 +387,7 @@ require __DIR__ . '/includes/header.php';
                         <label>Profile avatar</label>
                         <?= lc_render_avatar_picker([
                             'selected' => '31',
-                            'hint' => 'Pick from People or Abstract, or upload your own photo (JPG/PNG/WebP, max 2MB).',
+                            'hint' => 'Click Upload photo to open People / Abstract gallery (JPG/PNG/WebP, max 2MB).',
                         ]) ?>
 
                         <label>Name</label>
