@@ -153,7 +153,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-home-hello-text">
                 <h1><?= lc_sanitize($greeting) ?>, <?= lc_sanitize($agentFirst) ?>!</h1>
-                <p class="lc-home-hello-sub">+ Check your inbox and live conversations</p>
+                <p class="lc-home-hello-sub">Check your inbox and live conversations</p>
             </div>
         </div>
         <div class="lc-home-hello-actions">
