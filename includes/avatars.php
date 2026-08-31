@@ -51,7 +51,9 @@ function lc_avatar_preset_asset(?string $presetId): ?string
     if ($presetId === null || !isset(lc_avatar_presets()[$presetId])) {
         return null;
     }
-    return 'preset-' . $presetId . '.svg';
+    $meta = lc_avatar_presets()[$presetId];
+    $ext = ($meta['category'] ?? '') === 'people' ? 'jpg' : 'svg';
+    return 'preset-' . $presetId . '.' . $ext;
 }
 
 function lc_avatar_is_preset(?string $avatar): bool
