@@ -63,13 +63,25 @@
 
         function closeModal() {
             modal.hidden = true;
+            if (modal._lcAvatarHost && modal.parentNode === document.body) {
+                modal._lcAvatarHost.appendChild(modal);
+            }
+            document.body.classList.remove('lc-avatar-modal-open');
         }
 
         function openModal() {
             var current = (presetInput && presetInput.value) || root.getAttribute('data-selected-preset') || '31';
+            if (!modal._lcAvatarHost) {
+                modal._lcAvatarHost = modal.parentNode;
+            }
+            // Escape overflow/sticky parents so fixed modal covers the full viewport.
+            if (modal.parentNode !== document.body) {
+                document.body.appendChild(modal);
+            }
             setTab('people');
             setDraftSelection(current);
             modal.hidden = false;
+            document.body.classList.add('lc-avatar-modal-open');
         }
 
         function applyPreset(presetId) {

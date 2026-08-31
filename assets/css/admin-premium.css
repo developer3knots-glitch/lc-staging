@@ -2923,6 +2923,13 @@ a.lc-history-item:hover .lc-history-item-arrow {
     justify-content: flex-start;
     flex-wrap: wrap;
 }
+/* Portaled to body — always above admin chrome */
+body > .lc-home-avatar-gallery[data-avatar-modal] {
+    z-index: 4000;
+}
+body.lc-avatar-modal-open {
+    overflow: hidden;
+}
 .lc-agent-brand-hint {
     margin: 0.35rem 0 0.75rem;
     font-size: 0.74rem;
