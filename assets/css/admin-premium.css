@@ -298,85 +298,174 @@ body.lc-admin-body {
 }
 
 .lc-topbar {
-    background: var(--lc-surface);
-    border-bottom: 1px solid var(--lc-border);
-    padding: 0.95rem 1.5rem;
+    background: #0b0c0f;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0 1rem 0 0.75rem;
+    min-height: 52px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.75rem;
     position: sticky;
     top: 0;
-    z-index: 20;
+    z-index: 40;
 }
-.lc-topbar-title { flex: 1; min-width: 0; }
-.lc-topbar-title h2 { margin: 0; font-size: 1.12rem; font-weight: 800; letter-spacing: -0.02em; }
-.lc-topbar-sub { margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--lc-muted); font-weight: 500; }
-.lc-topbar-actions { display: flex; align-items: center; gap: 0.65rem; }
+.lc-topbar-black { color: #e5e7eb; }
+.lc-topbar-title { flex: 0 1 auto; min-width: 0; max-width: 220px; }
+.lc-topbar-title h2 {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #f3f4f6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lc-topbar-sub { display: none !important; }
+.lc-topbar-center {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+    z-index: 45;
+}
+.lc-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+.lc-topbar-black .lc-sidebar-toggle {
+    color: #e5e7eb;
+    background: transparent;
+    border: 0;
+}
+.lc-topbar-black .lc-status-trigger {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #f3f4f6;
+}
+.lc-topbar-black .lc-status-trigger:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+.lc-topbar-avatar {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+}
+.lc-topbar-avatar .lc-avatar,
+.lc-topbar-avatar .lc-avatar-topbar,
+.lc-topbar-avatar img,
+.lc-topbar-avatar .lc-avatar-initials {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: block;
+    object-fit: cover;
+}
+.lc-topbar-avatar-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid #0b0c0f;
+    background: #64748b;
+}
+.lc-topbar-avatar-dot.online { background: #22c55e; }
+.lc-topbar-avatar-dot.away { background: #f59e0b; }
+.lc-topbar-avatar-dot.offline { background: #64748b; }
 
-/* LiveChat-style top search + command palette (pixel match) */
+/* Search IN black bar; white panel drops from same center */
 .lc-top-search {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    min-width: min(100%, 320px);
+    width: min(100%, 420px);
     max-width: 420px;
-    flex: 1 1 320px;
-    margin: 0 1rem;
-    padding: 0.45rem 0.75rem;
-    border: 1px solid #e5e7eb;
+    margin: 0;
+    padding: 0.48rem 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 10px;
-    background: #f3f4f6;
-    color: #6b7280;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
     font: inherit;
     font-size: 0.875rem;
     cursor: pointer;
     text-align: left;
-    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.lc-top-search:hover,
+.lc-topbar-center.is-open .lc-top-search {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.85);
 }
 .lc-top-search.is-walkthrough {
-    outline: 2px solid #2563eb;
+    outline: 2px solid #60a5fa;
     outline-offset: 2px;
-    background: #fff;
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
 }
-.lc-top-search i { font-size: 1.05rem; color: #9ca3af; stroke-width: 1.5; }
+.lc-top-search i { font-size: 1.05rem; color: rgba(255, 255, 255, 0.45); }
 .lc-top-search-label { flex: 1; min-width: 0; font-weight: 400; }
 .lc-top-search-kbd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
     font-family: inherit;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 500;
-    color: #9ca3af;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 0.1rem 0.35rem;
+    color: rgba(255, 255, 255, 0.45);
+    background: transparent;
+    border: 0;
+    padding: 0;
     line-height: 1.2;
+}
+.lc-top-search-kbd span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.2rem;
+    padding: 0 0.28rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.lc-cmdk-backdrop[hidden] { display: none !important; }
+.lc-cmdk-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgba(15, 23, 42, 0.22);
 }
 .lc-cmdk[hidden] { display: none !important; }
 .lc-cmdk {
-    position: fixed;
-    inset: 0;
-    z-index: 5000;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 11vh 1rem 1rem;
-}
-.lc-cmdk-backdrop {
     position: absolute;
-    inset: 0;
-    background: rgba(17, 24, 39, 0.18);
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(580px, calc(100vw - 1.5rem));
+    z-index: 50;
+    padding: 0;
+    margin: 0;
+    display: block;
 }
 .lc-cmdk-card {
     position: relative;
-    width: min(100%, 580px);
+    width: 100%;
     background: #fff;
     border-radius: 16px;
     box-shadow:
-        0 0 0 1px rgba(15, 23, 42, 0.04),
-        0 18px 50px rgba(15, 23, 42, 0.16);
+        0 0 0 1px rgba(15, 23, 42, 0.05),
+        0 22px 56px rgba(15, 23, 42, 0.22);
     overflow: hidden;
+    color: #18181b;
 }
 .lc-cmdk-input-row {
     display: flex;
@@ -577,17 +666,22 @@ body.lc-cmdk-open { overflow: hidden; }
         flex: 0 0 auto;
         min-width: 0;
         width: 40px;
-        margin: 0 0.35rem;
+        margin: 0;
         padding: 0.45rem;
         justify-content: center;
     }
     .lc-top-search-label,
     .lc-top-search-kbd { display: none; }
-    .lc-cmdk { padding-top: 8vh; }
+    .lc-cmdk {
+        width: min(580px, calc(100vw - 1rem));
+    }
     .lc-cmdk-foot-hints { gap: 0.55rem 0.75rem; }
+    .lc-topbar-title { display: none; }
 }
 body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
-    background: #f3f4f6;
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .lc-status-control {
@@ -5549,20 +5643,21 @@ body.lc-page-chats .lc-sidebar-footer .lc-btn i {
     margin: 0;
 }
 
-/* Slim desk topbar */
+/* Slim desk topbar — keep LiveChat black chrome */
 body.lc-page-chats .lc-topbar.lc-topbar-desk {
-    min-height: 44px;
-    height: 44px;
-    padding: 0 0.85rem 0 0.65rem;
-    border-bottom: 1px solid #e8edf3;
-    background: #fff;
+    min-height: 52px;
+    height: auto;
+    padding: 0 1rem 0 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: #0b0c0f;
     box-shadow: none;
 }
 body.lc-page-chats .lc-topbar-desk .lc-topbar-title h2 {
-    font-size: 0.88rem;
-    font-weight: 750;
+    font-size: 0.92rem;
+    font-weight: 600;
     letter-spacing: -0.01em;
     margin: 0;
+    color: #f3f4f6;
 }
 body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     min-height: 32px;
@@ -5922,15 +6017,15 @@ body.lc-page-dashboard .lc-main {
     background: #fff;
 }
 body.lc-page-dashboard .lc-topbar {
-    background: #fff;
-    border-bottom: 1px solid #e5e7eb;
+    background: #0b0c0f;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: none;
-    padding: 1rem 2rem;
+    padding: 0 1rem 0 0.75rem;
 }
 body.lc-page-dashboard .lc-topbar-title h2 {
-    font-size: 1.0625rem;
+    font-size: 0.92rem;
     font-weight: 600;
-    color: #111827;
+    color: #f3f4f6;
 }
 body.lc-page-dashboard .lc-topbar-sub { display: none; }
 body.lc-page-dashboard .lc-content {

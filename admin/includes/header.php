@@ -68,19 +68,36 @@ if ($agent['role'] === 'admin') {
         </div>
     </aside>
     <div class="lc-main">
-        <header class="lc-topbar<?= (($activeNav ?? '') === 'chats') ? ' lc-topbar-desk' : '' ?>">
+        <header class="lc-topbar lc-topbar-black<?= (($activeNav ?? '') === 'chats') ? ' lc-topbar-desk' : '' ?>">
             <button type="button" class="lc-sidebar-toggle" id="lc-sidebar-toggle" aria-label="Open menu"><i class="ti ti-menu-2"></i></button>
             <div class="lc-topbar-title">
                 <h2><?= lc_sanitize($pageTitle ?? 'Home') ?></h2>
-                <?php if (($activeNav ?? '') !== 'chats'): ?>
-                <p class="lc-topbar-sub">Support operations console</p>
-                <?php endif; ?>
             </div>
-            <button type="button" class="lc-top-search" id="lc-cmdk-open" aria-label="Search" aria-haspopup="dialog">
-                <i class="ti ti-search" aria-hidden="true"></i>
-                <span class="lc-top-search-label">Search</span>
-                <kbd class="lc-top-search-kbd">Ctrl K</kbd>
-            </button>
+            <div class="lc-topbar-center">
+                <button type="button" class="lc-top-search" id="lc-cmdk-open" aria-label="Search" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="ti ti-search" aria-hidden="true"></i>
+                    <span class="lc-top-search-label">Search</span>
+                    <kbd class="lc-top-search-kbd"><span>Ctrl</span><span>K</span></kbd>
+                </button>
+                <div class="lc-cmdk" id="lc-cmdk" hidden>
+                    <div class="lc-cmdk-card" role="dialog" aria-modal="true" aria-label="Search">
+                        <div class="lc-cmdk-input-row">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input type="search" id="lc-cmdk-input" placeholder="Search" autocomplete="off" spellcheck="false">
+                            <button type="button" class="lc-cmdk-close" id="lc-cmdk-close" aria-label="Close"><i class="ti ti-x"></i></button>
+                        </div>
+                        <div class="lc-cmdk-list" id="lc-cmdk-list" role="listbox"></div>
+                        <div class="lc-cmdk-foot">
+                            <div class="lc-cmdk-foot-hints">
+                                <span class="lc-cmdk-hint">Open search <kbd>Ctrl</kbd> <kbd>K</kbd></span>
+                                <span class="lc-cmdk-hint">Up/down <kbd class="lc-cmdk-kbd-arrow">↑</kbd> <kbd class="lc-cmdk-kbd-arrow">↓</kbd></span>
+                                <span class="lc-cmdk-hint">Close <kbd>esc</kbd></span>
+                            </div>
+                            <button type="button" class="lc-cmdk-walkthrough" id="lc-cmdk-walkthrough">Walkthrough</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="lc-topbar-actions">
                 <div class="lc-status-control" id="lc-status-control">
                     <div class="lc-status-dropdown">
@@ -113,6 +130,11 @@ if ($agent['role'] === 'admin') {
                         <option value="offline" <?= $agent['status'] === 'offline' ? 'selected' : '' ?>>Offline</option>
                     </select>
                 </div>
+                <div class="lc-topbar-avatar" title="<?= lc_sanitize($agent['name'] ?? 'Agent') ?>">
+                    <?= lc_avatar_html($agent['avatar'] ?? null, $agent['name'] ?? 'Agent', 'lc-avatar lc-avatar-topbar') ?>
+                    <span class="lc-topbar-avatar-dot <?= lc_sanitize($agent['status'] ?? 'offline') ?>" aria-hidden="true"></span>
+                </div>
             </div>
         </header>
+        <div class="lc-cmdk-backdrop" id="lc-cmdk-backdrop" hidden data-cmdk-close></div>
         <main class="lc-content">

@@ -6,6 +6,8 @@
     var input = document.getElementById('lc-cmdk-input');
     var list = document.getElementById('lc-cmdk-list');
     var closeBtn = document.getElementById('lc-cmdk-close');
+    var backdrop = document.getElementById('lc-cmdk-backdrop');
+    var center = openBtn ? openBtn.closest('.lc-topbar-center') : null;
     if (!root || !input || !list) return;
 
     var base = window.LC_BASE_URL || '';
@@ -195,6 +197,9 @@
 
     function open() {
         root.hidden = false;
+        if (backdrop) backdrop.hidden = false;
+        if (center) center.classList.add('is-open');
+        if (openBtn) openBtn.setAttribute('aria-expanded', 'true');
         document.body.classList.add('lc-cmdk-open');
         input.value = '';
         activeIndex = 0;
@@ -204,6 +209,9 @@
 
     function close() {
         root.hidden = true;
+        if (backdrop) backdrop.hidden = true;
+        if (center) center.classList.remove('is-open');
+        if (openBtn) openBtn.setAttribute('aria-expanded', 'false');
         document.body.classList.remove('lc-cmdk-open');
         if (searchTimer) clearTimeout(searchTimer);
     }
