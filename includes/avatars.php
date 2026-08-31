@@ -2,33 +2,66 @@
 
 function lc_avatar_presets(): array
 {
-    return [
-        '01' => ['label' => 'Green', 'color' => '#6FD943', 'category' => 'people'],
-        '02' => ['label' => 'Blue', 'color' => '#3b82f6', 'category' => 'people'],
-        '03' => ['label' => 'Purple', 'color' => '#8b5cf6', 'category' => 'people'],
-        '04' => ['label' => 'Orange', 'color' => '#f59e0b', 'category' => 'people'],
-        '05' => ['label' => 'Red', 'color' => '#ef4444', 'category' => 'people'],
-        '06' => ['label' => 'Pink', 'color' => '#ec4899', 'category' => 'people'],
-        '07' => ['label' => 'Teal', 'color' => '#14b8a6', 'category' => 'people'],
-        '08' => ['label' => 'Indigo', 'color' => '#6366f1', 'category' => 'people'],
-        '09' => ['label' => 'Sand', 'color' => '#d4a574', 'category' => 'people'],
-        '10' => ['label' => 'Brown', 'color' => '#8d5524', 'category' => 'people'],
-        '11' => ['label' => 'Rose', 'color' => '#fb7185', 'category' => 'people'],
-        '12' => ['label' => 'Sky', 'color' => '#38bdf8', 'category' => 'people'],
-        '21' => ['label' => 'Dots', 'color' => '#f97316', 'category' => 'abstract'],
-        '22' => ['label' => 'Waves', 'color' => '#2563eb', 'category' => 'abstract'],
-        '23' => ['label' => 'Spots', 'color' => '#ec4899', 'category' => 'abstract'],
-        '24' => ['label' => 'Grid', 'color' => '#22c55e', 'category' => 'abstract'],
-        '25' => ['label' => 'Cat', 'color' => '#f59e0b', 'category' => 'abstract'],
-        '26' => ['label' => 'Fox', 'color' => '#ea580c', 'category' => 'abstract'],
-        '27' => ['label' => 'Giraffe', 'color' => '#eab308', 'category' => 'abstract'],
-        '28' => ['label' => 'Bear', 'color' => '#78716c', 'category' => 'abstract'],
+    $people = [];
+    for ($i = 31; $i <= 54; $i++) {
+        $id = str_pad((string) $i, 2, '0', STR_PAD_LEFT);
+        $people[$id] = ['label' => 'Portrait ' . ($i - 30), 'color' => '#64748b', 'category' => 'people'];
+    }
+
+    $abstractSilhouettes = [
+        '01' => ['label' => 'Green', 'color' => '#6FD943'],
+        '02' => ['label' => 'Blue', 'color' => '#3b82f6'],
+        '03' => ['label' => 'Purple', 'color' => '#8b5cf6'],
+        '04' => ['label' => 'Orange', 'color' => '#f59e0b'],
+        '05' => ['label' => 'Red', 'color' => '#ef4444'],
+        '06' => ['label' => 'Pink', 'color' => '#ec4899'],
+        '07' => ['label' => 'Teal', 'color' => '#14b8a6'],
+        '08' => ['label' => 'Indigo', 'color' => '#6366f1'],
+        '09' => ['label' => 'Sand', 'color' => '#d4a574'],
+        '10' => ['label' => 'Brown', 'color' => '#8d5524'],
+        '11' => ['label' => 'Rose', 'color' => '#fb7185'],
+        '12' => ['label' => 'Sky', 'color' => '#38bdf8'],
     ];
+
+    $abstractArt = [
+        '21' => ['label' => 'Dots', 'color' => '#f97316'],
+        '22' => ['label' => 'Waves', 'color' => '#2563eb'],
+        '23' => ['label' => 'Spots', 'color' => '#ec4899'],
+        '24' => ['label' => 'Grid', 'color' => '#22c55e'],
+        '25' => ['label' => 'Cat', 'color' => '#f59e0b'],
+        '26' => ['label' => 'Fox', 'color' => '#ea580c'],
+        '27' => ['label' => 'Giraffe', 'color' => '#eab308'],
+        '28' => ['label' => 'Bear', 'color' => '#78716c'],
+    ];
+
+    $withCategory = static function (array $items, string $category): array {
+        foreach ($items as $id => $meta) {
+            $items[$id]['category'] = $category;
+        }
+        return $items;
+    };
+
+    return $people
+        + $withCategory($abstractSilhouettes, 'abstract')
+        + $withCategory($abstractArt, 'abstract');
+}
+
+function lc_avatar_preset_asset(?string $presetId): ?string
+{
+    if ($presetId === null || !isset(lc_avatar_presets()[$presetId])) {
+        return null;
+    }
+    return 'preset-' . $presetId . '.svg';
 }
 
 function lc_avatar_is_preset(?string $avatar): bool
 {
     return $avatar !== null && preg_match('/^preset:\d{2}$/', $avatar) === 1;
+}
+
+function lc_avatar_is_upload(?string $avatar): bool
+{
+    return $avatar !== null && str_starts_with($avatar, 'uploads/agents/');
 }
 
 function lc_avatar_preset_id(?string $avatar): ?string
@@ -44,7 +77,8 @@ function lc_avatar_url(?string $avatar, string $name = ''): string
     $presets = lc_avatar_presets();
     $presetId = lc_avatar_preset_id($avatar);
     if ($presetId !== null && isset($presets[$presetId])) {
-        return LC_BASE_URL . '/assets/img/avatars/preset-' . $presetId . '.svg';
+        $asset = lc_avatar_preset_asset($presetId);
+        return LC_BASE_URL . '/assets/img/avatars/' . $asset;
     }
     if ($avatar && str_starts_with($avatar, 'uploads/agents/')) {
         $path = __DIR__ . '/../' . $avatar;
@@ -96,7 +130,7 @@ function lc_avatar_upload_dir(): string
     }
     $index = $dir . '/index.html';
     if (!is_file($index)) {
-        file_put_contents($index, '');
+        file_put_contents($index, '');
     }
     return $dir;
 }
@@ -144,10 +178,10 @@ function lc_avatar_resolve_from_request(array $post, array $files): string
         return $uploaded;
     }
 
-    $preset = trim((string) ($post['avatar_preset'] ?? '01'));
+    $preset = trim((string) ($post['avatar_preset'] ?? '31'));
     $presets = lc_avatar_presets();
     if (!isset($presets[$preset])) {
-        $preset = '01';
+        $preset = '31';
     }
     return 'preset:' . $preset;
 }

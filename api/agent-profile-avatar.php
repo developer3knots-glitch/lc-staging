@@ -37,10 +37,35 @@ try {
             'success' => true,
             'avatar' => lc_avatar_meta($path, $agentName),
             'avatar_html' => lc_avatar_html($path, $agentName, 'lc-avatar lc-home-hello-avatar-img'),
+            'avatar_upload' => $path,
         ]);
     }
 
     $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $uploadPath = trim((string) ($input['avatar_upload'] ?? ''));
+    if ($uploadPath !== '') {
+        if (!lc_avatar_is_upload($uploadPath)) {
+            lc_json(['success' => false, 'error' => 'Invalid upload avatar'], 400);
+        }
+        $fullPath = __DIR__ . '/../' . $uploadPath;
+        if (!is_file($fullPath)) {
+            lc_json(['success' => false, 'error' => 'Upload not found'], 400);
+        }
+        if ($uploadPath !== (string) ($agent['avatar'] ?? '')) {
+            lc_json(['success' => false, 'error' => 'Upload not available'], 400);
+        }
+
+        $stmt = lc_db()->prepare('UPDATE agents SET avatar = ? WHERE id = ?');
+        $stmt->execute([$uploadPath, $agentId]);
+
+        lc_json([
+            'success' => true,
+            'avatar' => lc_avatar_meta($uploadPath, $agentName),
+            'avatar_html' => lc_avatar_html($uploadPath, $agentName, 'lc-avatar lc-home-hello-avatar-img'),
+            'avatar_upload' => $uploadPath,
+        ]);
+    }
+
     $preset = trim((string) ($input['avatar_preset'] ?? ''));
     $presets = lc_avatar_presets();
     if (!isset($presets[$preset])) {
@@ -55,6 +80,7 @@ try {
         'success' => true,
         'avatar' => lc_avatar_meta($avatar, $agentName),
         'avatar_html' => lc_avatar_html($avatar, $agentName, 'lc-avatar lc-home-hello-avatar-img'),
+        'avatar_preset' => $preset,
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

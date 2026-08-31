@@ -11,15 +11,20 @@
     var fileInput = document.getElementById('lc-home-avatar-file');
     var avatarHost = document.getElementById('lc-home-avatar');
     var gallery = document.getElementById('lc-home-avatar-gallery');
+    var galleryGrid = document.getElementById('lc-home-avatar-gallery-grid');
     var galleryBackdrop = document.getElementById('lc-home-avatar-gallery-backdrop');
     var galleryClose = document.getElementById('lc-home-avatar-gallery-close');
     var galleryCancel = document.getElementById('lc-home-avatar-gallery-cancel');
     var gallerySave = document.getElementById('lc-home-avatar-gallery-save');
     var galleryTabs = gallery ? gallery.querySelectorAll('[data-gallery-tab]') : [];
-    var galleryItems = gallery ? gallery.querySelectorAll('[data-avatar-preset]') : [];
     var base = window.LC_BASE_URL || '';
-    var selectedPreset = gallery ? (gallery.getAttribute('data-current-preset') || '') : '';
+    var selectedPreset = '';
+    var selectedUpload = '';
     var activeTab = 'all';
+
+    function galleryItems() {
+        return galleryGrid ? galleryGrid.querySelectorAll('.lc-home-avatar-gallery-item') : [];
+    }
 
     function closeMenu() {
         if (menu) menu.hidden = true;
@@ -32,14 +37,23 @@
         if (toggle) toggle.setAttribute('aria-expanded', 'true');
     }
 
-    function setGallerySelection(preset) {
-        selectedPreset = preset || '';
-        galleryItems.forEach(function (item) {
-            item.classList.toggle('is-selected', item.getAttribute('data-avatar-preset') === selectedPreset);
-        });
+    function updateSaveButton() {
         if (gallerySave) {
-            gallerySave.disabled = !selectedPreset;
+            gallerySave.disabled = !selectedPreset && !selectedUpload;
         }
+    }
+
+    function setGallerySelection(preset, upload) {
+        selectedPreset = preset || '';
+        selectedUpload = upload || '';
+        galleryItems().forEach(function (item) {
+            var itemPreset = item.getAttribute('data-avatar-preset') || '';
+            var itemUpload = item.getAttribute('data-avatar-upload') || '';
+            var isSelected = (selectedPreset && itemPreset === selectedPreset)
+                || (selectedUpload && itemUpload === selectedUpload);
+            item.classList.toggle('is-selected', isSelected);
+        });
+        updateSaveButton();
     }
 
     function setGalleryTab(tab) {
@@ -49,7 +63,7 @@
             btn.classList.toggle('is-active', isActive);
             btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
-        galleryItems.forEach(function (item) {
+        galleryItems().forEach(function (item) {
             var category = item.getAttribute('data-gallery-category') || 'people';
             var show = activeTab === 'all' || category === activeTab;
             item.hidden = !show;
@@ -63,9 +77,10 @@
 
     function openGallery() {
         if (!gallery) return;
-        var current = gallery.getAttribute('data-current-preset') || '';
-        setGalleryTab('all');
-        setGallerySelection(current);
+        var currentPreset = gallery.getAttribute('data-current-preset') || '';
+        var currentUpload = gallery.getAttribute('data-current-upload') || '';
+        setGalleryTab('people');
+        setGallerySelection(currentPreset, currentUpload);
         gallery.hidden = false;
         closeMenu();
     }
@@ -83,17 +98,45 @@
         return '<span class="lc-avatar lc-home-hello-avatar-img lc-avatar-initials" style="background:' + color + '">' + initials + '</span>';
     }
 
-    function applyAvatar(html, meta, preset) {
+    function ensureUploadGalleryItem(uploadPath, url) {
+        if (!galleryGrid || !uploadPath || !url) return;
+        var existing = galleryGrid.querySelector('[data-avatar-upload="' + uploadPath + '"]');
+        if (existing) {
+            existing.querySelector('img').src = url;
+            return;
+        }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'lc-home-avatar-gallery-item';
+        btn.setAttribute('data-avatar-upload', uploadPath);
+        btn.setAttribute('data-gallery-category', 'people');
+        btn.title = 'Your upload';
+        btn.innerHTML = '<img src="' + url + '" alt="Your upload">';
+        btn.addEventListener('click', function () {
+            setGallerySelection('', uploadPath);
+        });
+        galleryGrid.insertBefore(btn, galleryGrid.firstChild);
+    }
+
+    function applyAvatar(html, meta, preset, upload) {
         if (avatarHost) avatarHost.innerHTML = html;
         var side = sidebarAvatar();
         if (side) {
             side.outerHTML = html.replace(/lc-home-hello-avatar-img/g, 'lc-avatar lc-avatar-sidebar');
         }
-        if (gallery && preset) {
-            gallery.setAttribute('data-current-preset', preset);
-            setGallerySelection(preset);
+        if (gallery) {
+            gallery.setAttribute('data-current-preset', preset || '');
+            gallery.setAttribute('data-current-upload', upload || '');
+            if (upload && meta && meta.url) {
+                ensureUploadGalleryItem(upload, meta.url);
+            }
+            setGallerySelection(preset || '', upload || '');
         }
-        if (meta && meta.url && !String(meta.url).match(/preset-/)) {
+        if (meta && meta.url && upload) {
+            wrap.setAttribute('data-has-photo', '1');
+        } else if (meta && meta.url && preset && Number(preset) >= 31) {
+            wrap.setAttribute('data-has-photo', '1');
+        } else if (meta && meta.url && !String(meta.url).match(/preset-(0[1-9]|1[0-2]|2[1-8])\.svg/)) {
             wrap.setAttribute('data-has-photo', '1');
         } else {
             wrap.removeAttribute('data-has-photo');
@@ -141,7 +184,12 @@
                     alert((data && data.error) || 'Upload failed');
                     return;
                 }
-                applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar, '');
+                applyAvatar(
+                    data.avatar_html || renderAvatarHtml(data.avatar),
+                    data.avatar,
+                    '',
+                    data.avatar_upload || ''
+                );
                 closeMenu();
             }).catch(function () {
                 uploadBtn.disabled = false;
@@ -162,25 +210,34 @@
         });
     });
 
-    galleryItems.forEach(function (btn) {
+    galleryItems().forEach(function (btn) {
         btn.addEventListener('click', function () {
-            var preset = btn.getAttribute('data-avatar-preset');
-            if (!preset) return;
-            setGallerySelection(preset);
+            var preset = btn.getAttribute('data-avatar-preset') || '';
+            var upload = btn.getAttribute('data-avatar-upload') || '';
+            if (!preset && !upload) return;
+            setGallerySelection(preset, upload);
         });
     });
 
     if (gallerySave) {
         gallerySave.addEventListener('click', function () {
-            if (!selectedPreset) return;
+            if (!selectedPreset && !selectedUpload) return;
             gallerySave.disabled = true;
-            saveAvatar({ avatar_preset: selectedPreset }, false).then(function (data) {
+            var payload = selectedUpload
+                ? { avatar_upload: selectedUpload }
+                : { avatar_preset: selectedPreset };
+            saveAvatar(payload, false).then(function (data) {
                 gallerySave.disabled = false;
                 if (!data || !data.success) {
                     alert((data && data.error) || 'Unable to update avatar');
                     return;
                 }
-                applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar, selectedPreset);
+                applyAvatar(
+                    data.avatar_html || renderAvatarHtml(data.avatar),
+                    data.avatar,
+                    data.avatar_preset || selectedPreset,
+                    data.avatar_upload || selectedUpload
+                );
                 closeGallery();
             }).catch(function () {
                 gallerySave.disabled = false;

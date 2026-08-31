@@ -119,7 +119,14 @@ $activeNav = 'dashboard';
 $extraScripts = ['admin-home-avatar.js'];
 $extraScript = 'admin-dashboard.js';
 $avatarPresets = lc_avatar_presets();
-$agentAvatarPreset = lc_avatar_preset_id($agent['avatar'] ?? null) ?: '01';
+$agentAvatarPreset = lc_avatar_preset_id($agent['avatar'] ?? null) ?: '';
+$agentAvatarUpload = '';
+if (lc_avatar_is_upload($agent['avatar'] ?? null)) {
+    $uploadPath = __DIR__ . '/../' . ($agent['avatar'] ?? '');
+    if (is_file($uploadPath)) {
+        $agentAvatarUpload = (string) $agent['avatar'];
+    }
+}
 $weekTotal = (int) array_sum(array_column($activityChart, 'count'));
 $agentFirst = trim(explode(' ', (string) ($agent['name'] ?? 'there'))[0]);
 require __DIR__ . '/includes/header.php';
@@ -394,7 +401,7 @@ require __DIR__ . '/includes/header.php';
         </aside>
     </div>
 
-    <div class="lc-home-avatar-gallery" id="lc-home-avatar-gallery" hidden data-current-preset="<?= lc_sanitize($agentAvatarPreset) ?>">
+    <div class="lc-home-avatar-gallery" id="lc-home-avatar-gallery" hidden data-current-preset="<?= lc_sanitize($agentAvatarPreset) ?>" data-current-upload="<?= lc_sanitize($agentAvatarUpload) ?>">
         <div class="lc-home-avatar-gallery-backdrop" id="lc-home-avatar-gallery-backdrop"></div>
         <div class="lc-home-avatar-gallery-card" role="dialog" aria-modal="true" aria-labelledby="lc-home-avatar-gallery-title">
             <div class="lc-home-avatar-gallery-head">
@@ -408,13 +415,23 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-home-avatar-gallery-grid-wrap">
                 <div class="lc-home-avatar-gallery-grid" id="lc-home-avatar-gallery-grid">
+                    <?php if ($agentAvatarUpload !== ''): ?>
+                        <button type="button"
+                            class="lc-home-avatar-gallery-item<?= $agentAvatarUpload !== '' && $agentAvatarPreset === '' ? ' is-selected' : '' ?>"
+                            data-avatar-upload="<?= lc_sanitize($agentAvatarUpload) ?>"
+                            data-gallery-category="people"
+                            title="Your upload">
+                            <img src="<?= lc_sanitize(LC_BASE_URL . '/' . $agentAvatarUpload) ?>" alt="Your upload">
+                        </button>
+                    <?php endif; ?>
                     <?php foreach ($avatarPresets as $pid => $meta): ?>
+                        <?php $asset = lc_avatar_preset_asset($pid); ?>
                         <button type="button"
                             class="lc-home-avatar-gallery-item<?= $pid === $agentAvatarPreset ? ' is-selected' : '' ?>"
                             data-avatar-preset="<?= lc_sanitize($pid) ?>"
                             data-gallery-category="<?= lc_sanitize($meta['category'] ?? 'people') ?>"
                             title="<?= lc_sanitize($meta['label']) ?>">
-                            <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>">
+                            <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/' . $asset) ?>" alt="<?= lc_sanitize($meta['label']) ?>">
                         </button>
                     <?php endforeach; ?>
                 </div>
