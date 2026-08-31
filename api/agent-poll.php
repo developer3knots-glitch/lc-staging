@@ -13,6 +13,8 @@ $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);
 // full=1 only on first open (client) - loads continuous prior conversation history
 $fullLoad = (int) ($_GET['full'] ?? 0) === 1;
+// prior=1 returns history threads only (fast first paint of current chat, then history)
+$priorOnly = (int) ($_GET['prior'] ?? 0) === 1;
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid conversation'], 400);
@@ -49,20 +51,22 @@ try {
         }
     }
 
-    $stmt = lc_db()->prepare('
-        SELECT ' . lc_attachment_message_select_sql() . ',
-               CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
-               CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
-        FROM messages m
-        LEFT JOIN agents a ON a.id = m.sender_id
-        WHERE m.conversation_id = ? AND m.id > ?
-        ORDER BY m.id ASC
-    ');
-    $stmt->execute([$conversationId, $lastId]);
-    $rows = $stmt->fetchAll();
     $messages = [];
-    foreach ($rows as $row) {
-        $messages[] = lc_format_message_row($row);
+    if (!$priorOnly) {
+        $stmt = lc_db()->prepare('
+            SELECT ' . lc_attachment_message_select_sql() . ',
+                   CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
+                   CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
+            FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id
+            WHERE m.conversation_id = ? AND m.id > ?
+            ORDER BY m.id ASC
+        ');
+        $stmt->execute([$conversationId, $lastId]);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as $row) {
+            $messages[] = lc_format_message_row($row);
+        }
     }
 
     $cursorStmt = lc_db()->prepare('SELECT COALESCE(MAX(id), 0) FROM messages WHERE conversation_id = ?');
@@ -70,7 +74,7 @@ try {
     $messageCursor = (int) $cursorStmt->fetchColumn();
 
     // Visitor messages delivered as soon as pulled; read while agent is viewing this chat
-    if (lc_agent_can_handle_conversation($agent, $conv) || lc_agent_can_view_conversation($agent, $conv)) {
+    if (!$priorOnly && (lc_agent_can_handle_conversation($agent, $conv) || lc_agent_can_view_conversation($agent, $conv))) {
         lc_mark_messages_delivered($conversationId, 'visitor');
         if (lc_agent_can_handle_conversation($agent, $conv) || (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'] || ($conv['status'] ?? '') === 'waiting') {
             lc_mark_messages_read($conversationId, 'visitor');
@@ -125,14 +129,14 @@ try {
     $payload['peer_typing_name'] = $typing['peer_name'] ?? '';
     $payload['peer_typing_preview'] = $typing['peer_typing_preview'] ?? '';
 
-    // Full open only: prior same-visitor chats for LiveChat-style continuous timeline (agent-only)
-    if ($fullLoad) {
+    // Prior history on full open, or dedicated prior=1 follow-up request
+    if ($fullLoad || $priorOnly) {
         $payload['prior_threads'] = lc_agent_prior_threads_with_messages(
             (string) ($conv['visitor_ip'] ?? ''),
             $conversationId,
             $agent,
             (int) ($conv['visitor_id'] ?? 0),
-            8
+            4
         );
     }
 

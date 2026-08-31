@@ -1080,7 +1080,7 @@ function lc_agent_prior_threads_with_messages(
     int $excludeConversationId,
     ?array $agent = null,
     int $visitorId = 0,
-    int $threadLimit = 8
+    int $threadLimit = 4
 ): array {
     $metas = lc_conversations_related_by_ip($ip, $excludeConversationId, $agent, $threadLimit, $visitorId);
     if (!$metas) {
@@ -1120,7 +1120,7 @@ function lc_agent_prior_threads_with_messages(
             $grouped[$id] = [];
         }
         // Cap total prior messages so poll stays light (last N per thread if over cap)
-        $maxTotal = 250;
+        $maxTotal = 100;
         $rows = $stmt->fetchAll();
         if (count($rows) > $maxTotal) {
             $rows = array_slice($rows, -$maxTotal);
@@ -1724,7 +1724,8 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int 
 }
 
 /**
- * Message delivery ticks (WhatsApp-style): sent ??? delivered ??? read
+ * Message delivery ticks (WhatsApp-style): sent → delivered → read
+ * Runs migration at most once (settings flag). Never ALTER/backfill on every poll.
  */
 function lc_ensure_message_receipts_schema(): void
 {
@@ -1733,19 +1734,50 @@ function lc_ensure_message_receipts_schema(): void
         return;
     }
     $done = true;
+
+    if (lc_setting('schema_message_receipts_v1', '') === '1') {
+        return;
+    }
+
     $pdo = lc_db();
+    $hasDelivered = false;
+    $hasReadAt = false;
     try {
-        $pdo->exec('ALTER TABLE messages ADD COLUMN delivered_at DATETIME NULL DEFAULT NULL AFTER is_read');
+        $hasDelivered = (bool) $pdo->query("SHOW COLUMNS FROM messages LIKE 'delivered_at'")->fetch();
+        $hasReadAt = (bool) $pdo->query("SHOW COLUMNS FROM messages LIKE 'read_at'")->fetch();
     } catch (Throwable $e) {
     }
-    try {
-        $pdo->exec('ALTER TABLE messages ADD COLUMN read_at DATETIME NULL DEFAULT NULL AFTER delivered_at');
-    } catch (Throwable $e) {
+
+    $needBackfill = false;
+    if (!$hasDelivered) {
+        try {
+            $pdo->exec('ALTER TABLE messages ADD COLUMN delivered_at DATETIME NULL DEFAULT NULL AFTER is_read');
+            $needBackfill = true;
+            $hasDelivered = true;
+        } catch (Throwable $e) {
+        }
     }
-    try {
-        // Backfill older read messages
-        $pdo->exec('UPDATE messages SET delivered_at = COALESCE(delivered_at, created_at), read_at = COALESCE(read_at, created_at) WHERE is_read = 1 AND (delivered_at IS NULL OR read_at IS NULL)');
-    } catch (Throwable $e) {
+    if (!$hasReadAt) {
+        try {
+            $pdo->exec('ALTER TABLE messages ADD COLUMN read_at DATETIME NULL DEFAULT NULL AFTER delivered_at');
+            $needBackfill = true;
+            $hasReadAt = true;
+        } catch (Throwable $e) {
+        }
+    }
+
+    if ($needBackfill && $hasDelivered && $hasReadAt) {
+        try {
+            $pdo->exec('UPDATE messages SET delivered_at = COALESCE(delivered_at, created_at), read_at = COALESCE(read_at, created_at) WHERE is_read = 1 AND (delivered_at IS NULL OR read_at IS NULL)');
+        } catch (Throwable $e) {
+        }
+    }
+
+    if ($hasDelivered && $hasReadAt) {
+        try {
+            lc_set_setting('schema_message_receipts_v1', '1');
+        } catch (Throwable $e) {
+        }
     }
 }
 

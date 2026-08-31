@@ -1,23 +1,11 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-$ipResume = __DIR__ . '/../includes/ip-resume.php';
-if (is_file($ipResume)) {
-    require_once $ipResume;
-}
-
 $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
 lc_ensure_accounts_schema();
 $agent = lc_ensure_agent_workspace($agent);
-if (function_exists('lc_sweep_inactive_conversations')) {
-    try {
-        lc_sweep_inactive_conversations(lc_agent_account_id($agent));
-    } catch (Throwable $e) {
-    }
-}
-// Manual assign: do not auto-claim waiting chats when agents poll the inbox.
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];
@@ -25,26 +13,12 @@ $agentId = (int) $agent['id'];
 try {
     lc_ensure_brands_schema();
     lc_ensure_ticket_schema();
-    if (function_exists('lc_ensure_visitor_phone_schema')) {
-        lc_ensure_visitor_phone_schema();
-    }
-    if (function_exists('lc_ensure_returning_visitor_schema')) {
-        lc_ensure_returning_visitor_schema();
-    }
-    if (function_exists('lc_merge_same_ip_conversations')) {
-        try {
-            lc_merge_same_ip_conversations();
-        } catch (Throwable $mergeErr) {
-            // inbox still loads; list is collapsed below
-        }
-    }
     $db = lc_db();
     [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
 
     $sql = "
         SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
-               c.is_returning, c.prior_chat_count,
-               v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
+               v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
@@ -59,10 +33,9 @@ try {
         LEFT JOIN brands b ON b.id = c.brand_id
         WHERE {$where}
         ORDER BY
-            COALESCE(c.last_message_at, c.started_at) DESC,
-            CASE c.status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
-            c.id DESC
-        LIMIT 200
+            CASE c.status WHEN 'waiting' THEN 0 ELSE 1 END,
+            COALESCE(c.last_message_at, c.started_at) DESC
+        LIMIT 50
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute(array_merge([$agentId], $params));
@@ -70,28 +43,19 @@ try {
     foreach ($conversations as &$row) {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
         unset($row['ticket_reference']);
-        if (function_exists('lc_plain_text') && isset($row['last_message'])) {
-            $row['last_message'] = lc_plain_text((string) $row['last_message']);
-        }
-        if (function_exists('lc_enrich_returning_visitor_flags')) {
-            $row = lc_enrich_returning_visitor_flags($row);
-        } else {
-            $row['is_returning'] = !empty($row['is_returning']);
-            $row['prior_chat_count'] = (int) ($row['prior_chat_count'] ?? 0);
-            $row['visitor_kind'] = $row['is_returning'] ? 'returning' : 'new';
-        }
     }
     unset($row);
 
-    if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
-        $conversations = lc_dedupe_inbox_conversations_by_ip($conversations);
+    // Only touch messages when inbox actually shows unread visitor mail
+    $deliverIds = [];
+    foreach ($conversations as $row) {
+        if ((int) ($row['unread'] ?? 0) > 0) {
+            $deliverIds[] = (int) $row['id'];
+        }
     }
-    $conversations = array_slice($conversations, 0, 50);
-
-    $convIds = array_map(static function ($r) {
-        return (int) $r['id'];
-    }, $conversations);
-    lc_mark_inbox_messages_delivered($convIds);
+    if ($deliverIds) {
+        lc_mark_inbox_messages_delivered($deliverIds);
+    }
 
     $agentBrandId = lc_agent_brand_id($agent);
     $accountId = lc_agent_account_id($agent);

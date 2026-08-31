@@ -10,6 +10,35 @@
     var currentTab = 'all';
     var lastMsgId = 0;
     var needsFullHistory = false;
+    var priorHistoryLoadingId = 0;
+
+    function prependPriorThreads(threads, conversation) {
+        if (!messagesEl || !threads || !threads.length) return;
+        var html = buildPriorThreadsHtml(threads, conversation || null);
+        if (!html) return;
+        var keepBottom = stickToBottom;
+        var prevHeight = messagesEl.scrollHeight;
+        messagesEl.insertAdjacentHTML('afterbegin', html);
+        if (window.LCTime) window.LCTime.scan(messagesEl);
+        if (keepBottom) {
+            scrollMessagesToBottom(true);
+        } else {
+            messagesEl.scrollTop = Math.max(0, messagesEl.scrollHeight - prevHeight + messagesEl.scrollTop);
+        }
+    }
+
+    function loadPriorThreads(conversationId) {
+        if (!conversationId) return;
+        priorHistoryLoadingId = conversationId;
+        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=0&prior=1', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (selectedId !== conversationId || priorHistoryLoadingId !== conversationId) return;
+                if (!data || !data.success) return;
+                prependPriorThreads(data.prior_threads || [], data.conversation || null);
+            })
+            .catch(function () {});
+    }
     var stickToBottom = true;
     var pollTimer = null;
     var listTimer = null;
@@ -1785,7 +1814,8 @@
 
     function pollMessages() {
         if (!selectedId) return;
-        var full = needsFullHistory ? 1 : 0;
+        var isFirstLoadReq = needsFullHistory;
+        var full = 0;
         fetch(base + '/api/agent-poll.php?conversation_id=' + selectedId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -1804,7 +1834,7 @@
                     return;
                 }
                 var c = data.conversation;
-                var isFirstLoad = full === 1;
+                var isFirstLoad = isFirstLoadReq;
                 if (c) {
                     syncConversationListStatus(c);
                 }
@@ -1822,6 +1852,7 @@
                     });
                     messagesEl.innerHTML = html;
                     needsFullHistory = false;
+                    loadPriorThreads(selectedId);
                     if (typeof data.message_cursor === 'number' && data.message_cursor > lastMsgId) {
                         lastMsgId = data.message_cursor;
                     }
