@@ -1508,6 +1508,46 @@ function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 }
 
 /**
+ * Nice Y-axis scale for the home activity chart (LiveChat-style ticks).
+ *
+ * @return array{top: int, ticks: list<int>}
+ */
+function lc_dashboard_chart_y_scale(int $maxValue): array
+{
+    $maxValue = max(1, $maxValue);
+    $rawStep = $maxValue / 4;
+    $mag = 10 ** (int) floor(log10(max($rawStep, 1)));
+    $norm = $rawStep / $mag;
+    if ($norm <= 1) {
+        $step = 1 * $mag;
+    } elseif ($norm <= 2) {
+        $step = 2 * $mag;
+    } elseif ($norm <= 5) {
+        $step = 5 * $mag;
+    } else {
+        $step = 10 * $mag;
+    }
+    $step = max(1, (int) round($step));
+    $top = (int) (ceil($maxValue / $step) * $step);
+    if ($top < $maxValue) {
+        $top += $step;
+    }
+    if ($top === $maxValue) {
+        $top += $step;
+    }
+
+    $ticks = [];
+    for ($v = $top; $v >= 0; $v -= $step) {
+        $ticks[] = (int) $v;
+    }
+    if ($ticks === [] || end($ticks) !== 0) {
+        $ticks[] = 0;
+    }
+
+    return ['top' => $top, 'ticks' => $ticks];
+}
+
+/**
  * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
  */
 function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null): array

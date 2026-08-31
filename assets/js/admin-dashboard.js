@@ -96,26 +96,66 @@
         }
     }
 
+    function chartYScale(maxValue) {
+        maxValue = Math.max(1, maxValue || 1);
+        var rawStep = maxValue / 4;
+        var mag = Math.pow(10, Math.floor(Math.log10(Math.max(rawStep, 1))));
+        var norm = rawStep / mag;
+        var step;
+        if (norm <= 1) step = 1 * mag;
+        else if (norm <= 2) step = 2 * mag;
+        else if (norm <= 5) step = 5 * mag;
+        else step = 10 * mag;
+        step = Math.max(1, Math.round(step));
+        var top = Math.ceil(maxValue / step) * step;
+        if (top < maxValue) top += step;
+        if (top === maxValue) top += step;
+        var ticks = [];
+        for (var v = top; v >= 0; v -= step) ticks.push(v);
+        if (!ticks.length || ticks[ticks.length - 1] !== 0) ticks.push(0);
+        return { top: top, ticks: ticks };
+    }
+
     function updateActivityChart(activity) {
         var chart = document.getElementById('lc-activity-chart');
         if (!chart || !activity || !activity.length) return;
 
         var max = 1;
+        var total = 0;
         activity.forEach(function (bar) {
-            if (bar.count > max) max = bar.count;
+            var count = Number(bar.count) || 0;
+            if (count > max) max = count;
+            total += count;
         });
 
-        var total = 0;
-        activity.forEach(function (bar) { total += bar.count; });
+        var scale = chartYScale(max);
+        var top = scale.top || 1;
 
-        chart.innerHTML = activity.map(function (bar) {
-            var height = Math.round((bar.count / max) * 100);
-            return '<div class="lc-activity-bar-wrap" title="' + esc(bar.full_label) + ': ' + bar.count + ' chats">' +
-                '<div class="lc-activity-bar" style="height:' + height + '%" data-count="' + bar.count + '"></div>' +
+        var yHtml = scale.ticks.map(function (tick) {
+            return '<span>' + tick + '</span>';
+        }).join('');
+        var gridHtml = scale.ticks.map(function () {
+            return '<div class="lc-home-chart-grid-line"></div>';
+        }).join('');
+        var barsHtml = activity.map(function (bar) {
+            var count = Number(bar.count) || 0;
+            var height = Math.min(100, Math.round((count / top) * 10000) / 100);
+            var zeroClass = count === 0 ? ' is-zero' : '';
+            return '<div class="lc-activity-bar-wrap" title="' + esc(bar.full_label) + ': ' + count + ' chats">' +
+                '<div class="lc-activity-bar-track">' +
+                '<div class="lc-activity-bar' + zeroClass + '" style="height:' + height + '%" data-count="' + count + '"></div>' +
+                '</div>' +
                 '<span class="lc-activity-label">' + esc(bar.label) + '</span>' +
-                '<span class="lc-activity-val">' + bar.count + '</span>' +
                 '</div>';
         }).join('');
+
+        chart.setAttribute('data-chart-top', String(top));
+        chart.innerHTML =
+            '<div class="lc-home-chart-y" aria-hidden="true">' + yHtml + '</div>' +
+            '<div class="lc-home-chart-plot">' +
+            '<div class="lc-home-chart-grid" aria-hidden="true">' + gridHtml + '</div>' +
+            '<div class="lc-home-chart-bars">' + barsHtml + '</div>' +
+            '</div>';
 
         var totalEl = document.getElementById('lc-chart-total');
         if (totalEl) totalEl.textContent = total;

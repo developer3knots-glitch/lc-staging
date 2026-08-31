@@ -27,7 +27,10 @@ $closedToday = (int) $stmt->fetchColumn();
 $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
 $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
 $chartCounts = array_column($activityChart, 'count');
-$chartMax = $chartCounts !== [] ? max(1, ...$chartCounts) : 1;
+$chartMax = $chartCounts !== [] ? max(1, ...(array_map('intval', $chartCounts))) : 1;
+$chartY = lc_dashboard_chart_y_scale($chartMax);
+$chartTop = (int) $chartY['top'];
+$chartTicks = $chartY['ticks'];
 $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8, $accountId);
 
 $onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);
@@ -266,14 +269,31 @@ require __DIR__ . '/includes/header.php';
                 </div>
                 <a href="<?= lc_admin_url('history') ?>" class="lc-home-week-link">View history</a>
             </div>
-            <div class="lc-home-chart" id="lc-activity-chart">
-                <?php foreach ($activityChart as $bar): ?>
-                    <div class="lc-activity-bar-wrap" title="<?= lc_sanitize($bar['full_label']) ?>: <?= (int) $bar['count'] ?> chats">
-                        <div class="lc-activity-bar" style="height: <?= round(($bar['count'] / $chartMax) * 100) ?>%" data-count="<?= (int) $bar['count'] ?>"></div>
-                        <span class="lc-activity-label"><?= lc_sanitize($bar['label']) ?></span>
-                        <span class="lc-activity-val"><?= (int) $bar['count'] ?></span>
+            <div class="lc-home-chart" id="lc-activity-chart" data-chart-top="<?= $chartTop ?>">
+                <div class="lc-home-chart-y" aria-hidden="true">
+                    <?php foreach ($chartTicks as $tick): ?>
+                        <span><?= (int) $tick ?></span>
+                    <?php endforeach; ?>
+                </div>
+                <div class="lc-home-chart-plot">
+                    <div class="lc-home-chart-grid" aria-hidden="true">
+                        <?php foreach ($chartTicks as $tick): ?>
+                            <div class="lc-home-chart-grid-line"></div>
+                        <?php endforeach; ?>
                     </div>
-                <?php endforeach; ?>
+                    <div class="lc-home-chart-bars">
+                        <?php foreach ($activityChart as $bar):
+                            $pct = $chartTop > 0 ? min(100, round(((int) $bar['count'] / $chartTop) * 100, 2)) : 0;
+                            ?>
+                            <div class="lc-activity-bar-wrap" title="<?= lc_sanitize($bar['full_label']) ?>: <?= (int) $bar['count'] ?> chats">
+                                <div class="lc-activity-bar-track">
+                                    <div class="lc-activity-bar<?= (int) $bar['count'] === 0 ? ' is-zero' : '' ?>" style="height: <?= $pct ?>%" data-count="<?= (int) $bar['count'] ?>"></div>
+                                </div>
+                                <span class="lc-activity-label"><?= lc_sanitize($bar['label']) ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
             <div class="lc-home-week-foot">
                 <div><span>Waiting now</span><strong id="lc-home-foot-waiting"><?= (int) $waiting ?></strong></div>
