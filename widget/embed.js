@@ -248,12 +248,21 @@
             } else if (document.visibilityState === 'visible') {
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
+                // Tab focused again — restore Browsing presence immediately
+                lastSentUrl = '';
+                recordView();
             }
         });
 
         window.addEventListener('pagehide', function () {
             sendLeave(lastSentUrl, true);
         });
+
+        // Keep Traffic "Browsing" fresh while the tab stays open
+        setInterval(function () {
+            if (document.visibilityState !== 'visible' || !lastSentUrl) return;
+            postPageEvent({ event: 'ping', page_url: lastSentUrl }, false);
+        }, 25000);
     }
 
     function setupReloadDetection() {

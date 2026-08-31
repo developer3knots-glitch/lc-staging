@@ -55,14 +55,27 @@ try {
 
     if ($event === 'leave') {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
-        lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
+        // Do not refresh last_seen to NOW — that kept Traffic as "Browsing" for minutes.
+        // Backdate past the online window so status becomes Left on the next poll.
+        $left = $db->prepare('
+            UPDATE visitors
+            SET ip_address = ?,
+                user_agent = ?,
+                page_url = COALESCE(?, page_url),
+                last_seen = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE)
+            WHERE id = ?
+        ');
+        $left->execute([$ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         lc_json(['success' => true, 'event' => 'leave']);
     }
 
-    lc_record_visitor_page_view($visitorId, $brandId, $pageUrl, $pageTitle, $referrer);
+    // view / ping — presence heartbeat
+    if ($event !== 'ping') {
+        lc_record_visitor_page_view($visitorId, $brandId, $pageUrl, $pageTitle, $referrer);
+    }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
 
-    lc_json(['success' => true, 'event' => 'view']);
+    lc_json(['success' => true, 'event' => $event === 'ping' ? 'ping' : 'view']);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

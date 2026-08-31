@@ -20,7 +20,7 @@ if (!in_array($tab, $allowedTabs, true)) {
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $brandFilter = (int) ($_GET['brand'] ?? 0);
-$onlineSec = 180;
+$onlineSec = 60; // browsing only while recent presence pings (leave marks left immediately)
 $leftSec = 86400;
 
 try {
