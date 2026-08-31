@@ -394,19 +394,34 @@ require __DIR__ . '/includes/header.php';
         </aside>
     </div>
 
-    <div class="lc-home-avatar-gallery" id="lc-home-avatar-gallery" hidden>
+    <div class="lc-home-avatar-gallery" id="lc-home-avatar-gallery" hidden data-current-preset="<?= lc_sanitize($agentAvatarPreset) ?>">
         <div class="lc-home-avatar-gallery-backdrop" id="lc-home-avatar-gallery-backdrop"></div>
         <div class="lc-home-avatar-gallery-card" role="dialog" aria-modal="true" aria-labelledby="lc-home-avatar-gallery-title">
             <div class="lc-home-avatar-gallery-head">
-                <h4 id="lc-home-avatar-gallery-title">Choose from gallery</h4>
+                <h4 id="lc-home-avatar-gallery-title">Pick profile picture</h4>
                 <button type="button" class="lc-home-avatar-gallery-close" id="lc-home-avatar-gallery-close" aria-label="Close"><i class="ti ti-x"></i></button>
             </div>
-            <div class="lc-home-avatar-gallery-grid">
-                <?php foreach ($avatarPresets as $pid => $meta): ?>
-                    <button type="button" class="lc-home-avatar-gallery-item<?= $pid === $agentAvatarPreset ? ' is-selected' : '' ?>" data-avatar-preset="<?= lc_sanitize($pid) ?>" title="<?= lc_sanitize($meta['label']) ?>">
-                        <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>">
-                    </button>
-                <?php endforeach; ?>
+            <div class="lc-home-avatar-gallery-tabs" role="tablist" aria-label="Avatar categories">
+                <button type="button" class="lc-home-avatar-gallery-tab is-active" data-gallery-tab="all" role="tab" aria-selected="true">All</button>
+                <button type="button" class="lc-home-avatar-gallery-tab" data-gallery-tab="people" role="tab" aria-selected="false">People</button>
+                <button type="button" class="lc-home-avatar-gallery-tab" data-gallery-tab="abstract" role="tab" aria-selected="false">Abstract</button>
+            </div>
+            <div class="lc-home-avatar-gallery-grid-wrap">
+                <div class="lc-home-avatar-gallery-grid" id="lc-home-avatar-gallery-grid">
+                    <?php foreach ($avatarPresets as $pid => $meta): ?>
+                        <button type="button"
+                            class="lc-home-avatar-gallery-item<?= $pid === $agentAvatarPreset ? ' is-selected' : '' ?>"
+                            data-avatar-preset="<?= lc_sanitize($pid) ?>"
+                            data-gallery-category="<?= lc_sanitize($meta['category'] ?? 'people') ?>"
+                            title="<?= lc_sanitize($meta['label']) ?>">
+                            <img src="<?= lc_sanitize(LC_BASE_URL . '/assets/img/avatars/preset-' . $pid . '.svg') ?>" alt="<?= lc_sanitize($meta['label']) ?>">
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="lc-home-avatar-gallery-foot">
+                <button type="button" class="lc-home-avatar-gallery-cancel" id="lc-home-avatar-gallery-cancel">Cancel</button>
+                <button type="button" class="lc-home-avatar-gallery-save" id="lc-home-avatar-gallery-save" disabled>Set profile picture</button>
             </div>
         </div>
     </div>

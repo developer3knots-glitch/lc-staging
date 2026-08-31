@@ -13,7 +13,13 @@
     var gallery = document.getElementById('lc-home-avatar-gallery');
     var galleryBackdrop = document.getElementById('lc-home-avatar-gallery-backdrop');
     var galleryClose = document.getElementById('lc-home-avatar-gallery-close');
+    var galleryCancel = document.getElementById('lc-home-avatar-gallery-cancel');
+    var gallerySave = document.getElementById('lc-home-avatar-gallery-save');
+    var galleryTabs = gallery ? gallery.querySelectorAll('[data-gallery-tab]') : [];
+    var galleryItems = gallery ? gallery.querySelectorAll('[data-avatar-preset]') : [];
     var base = window.LC_BASE_URL || '';
+    var selectedPreset = gallery ? (gallery.getAttribute('data-current-preset') || '') : '';
+    var activeTab = 'all';
 
     function closeMenu() {
         if (menu) menu.hidden = true;
@@ -26,6 +32,30 @@
         if (toggle) toggle.setAttribute('aria-expanded', 'true');
     }
 
+    function setGallerySelection(preset) {
+        selectedPreset = preset || '';
+        galleryItems.forEach(function (item) {
+            item.classList.toggle('is-selected', item.getAttribute('data-avatar-preset') === selectedPreset);
+        });
+        if (gallerySave) {
+            gallerySave.disabled = !selectedPreset;
+        }
+    }
+
+    function setGalleryTab(tab) {
+        activeTab = tab || 'all';
+        galleryTabs.forEach(function (btn) {
+            var isActive = btn.getAttribute('data-gallery-tab') === activeTab;
+            btn.classList.toggle('is-active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        galleryItems.forEach(function (item) {
+            var category = item.getAttribute('data-gallery-category') || 'people';
+            var show = activeTab === 'all' || category === activeTab;
+            item.hidden = !show;
+        });
+    }
+
     function closeGallery() {
         if (gallery) gallery.hidden = true;
         closeMenu();
@@ -33,6 +63,9 @@
 
     function openGallery() {
         if (!gallery) return;
+        var current = gallery.getAttribute('data-current-preset') || '';
+        setGalleryTab('all');
+        setGallerySelection(current);
         gallery.hidden = false;
         closeMenu();
     }
@@ -50,18 +83,17 @@
         return '<span class="lc-avatar lc-home-hello-avatar-img lc-avatar-initials" style="background:' + color + '">' + initials + '</span>';
     }
 
-    function applyAvatar(html, meta) {
+    function applyAvatar(html, meta, preset) {
         if (avatarHost) avatarHost.innerHTML = html;
         var side = sidebarAvatar();
         if (side) {
             side.outerHTML = html.replace(/lc-home-hello-avatar-img/g, 'lc-avatar lc-avatar-sidebar');
         }
-        if (gallery) {
-            gallery.querySelectorAll('.lc-home-avatar-gallery-item').forEach(function (item) {
-                item.classList.remove('is-selected');
-            });
+        if (gallery && preset) {
+            gallery.setAttribute('data-current-preset', preset);
+            setGallerySelection(preset);
         }
-        if (meta && meta.url) {
+        if (meta && meta.url && !String(meta.url).match(/preset-/)) {
             wrap.setAttribute('data-has-photo', '1');
         } else {
             wrap.removeAttribute('data-has-photo');
@@ -109,7 +141,7 @@
                     alert((data && data.error) || 'Upload failed');
                     return;
                 }
-                applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar);
+                applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar, '');
                 closeMenu();
             }).catch(function () {
                 uploadBtn.disabled = false;
@@ -119,33 +151,40 @@
         });
     }
 
-    if (galleryBtn) {
-        galleryBtn.addEventListener('click', openGallery);
-    }
+    if (galleryBtn) galleryBtn.addEventListener('click', openGallery);
     if (galleryBackdrop) galleryBackdrop.addEventListener('click', closeGallery);
     if (galleryClose) galleryClose.addEventListener('click', closeGallery);
+    if (galleryCancel) galleryCancel.addEventListener('click', closeGallery);
 
-    if (gallery) {
-        gallery.querySelectorAll('[data-avatar-preset]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var preset = btn.getAttribute('data-avatar-preset');
-                if (!preset) return;
-                btn.disabled = true;
-                saveAvatar({ avatar_preset: preset }, false).then(function (data) {
-                    btn.disabled = false;
-                    if (!data || !data.success) {
-                        alert((data && data.error) || 'Unable to update avatar');
-                        return;
-                    }
-                    applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar);
-                    gallery.querySelectorAll('.lc-home-avatar-gallery-item').forEach(function (item) {
-                        item.classList.toggle('is-selected', item.getAttribute('data-avatar-preset') === preset);
-                    });
-                    closeGallery();
-                }).catch(function () {
-                    btn.disabled = false;
-                    alert('Unable to update avatar');
-                });
+    galleryTabs.forEach(function (tabBtn) {
+        tabBtn.addEventListener('click', function () {
+            setGalleryTab(tabBtn.getAttribute('data-gallery-tab') || 'all');
+        });
+    });
+
+    galleryItems.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var preset = btn.getAttribute('data-avatar-preset');
+            if (!preset) return;
+            setGallerySelection(preset);
+        });
+    });
+
+    if (gallerySave) {
+        gallerySave.addEventListener('click', function () {
+            if (!selectedPreset) return;
+            gallerySave.disabled = true;
+            saveAvatar({ avatar_preset: selectedPreset }, false).then(function (data) {
+                gallerySave.disabled = false;
+                if (!data || !data.success) {
+                    alert((data && data.error) || 'Unable to update avatar');
+                    return;
+                }
+                applyAvatar(data.avatar_html || renderAvatarHtml(data.avatar), data.avatar, selectedPreset);
+                closeGallery();
+            }).catch(function () {
+                gallerySave.disabled = false;
+                alert('Unable to update avatar');
             });
         });
     }

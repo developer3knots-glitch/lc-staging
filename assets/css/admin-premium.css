@@ -5551,26 +5551,26 @@ body.lc-page-dashboard .lc-content {
 .lc-home-avatar-gallery-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, 0.35);
+    background: rgba(15, 23, 42, 0.45);
 }
 .lc-home-avatar-gallery-card {
     position: relative;
-    width: min(100%, 420px);
+    width: min(100%, 720px);
     background: #fff;
     border-radius: 12px;
-    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
-    padding: 1rem 1rem 1.15rem;
+    box-shadow: 0 20px 52px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
 }
 .lc-home-avatar-gallery-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    margin-bottom: 0.85rem;
+    padding: 1.15rem 1.25rem 0.85rem;
 }
 .lc-home-avatar-gallery-head h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: #111827;
 }
@@ -5584,26 +5584,111 @@ body.lc-page-dashboard .lc-content {
     cursor: pointer;
 }
 .lc-home-avatar-gallery-close:hover { background: #f3f4f6; color: #111827; }
+.lc-home-avatar-gallery-tabs {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 0 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+.lc-home-avatar-gallery-tab {
+    position: relative;
+    border: 0;
+    background: transparent;
+    padding: 0.65rem 0 0.75rem;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+}
+.lc-home-avatar-gallery-tab.is-active {
+    color: #111827;
+    font-weight: 600;
+}
+.lc-home-avatar-gallery-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: #2563eb;
+    border-radius: 2px 2px 0 0;
+}
+.lc-home-avatar-gallery-grid-wrap {
+    max-height: 360px;
+    overflow: auto;
+    padding: 1rem 1.25rem 0.5rem;
+}
 .lc-home-avatar-gallery-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.65rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.75rem;
 }
 .lc-home-avatar-gallery-item {
     border: 2px solid transparent;
-    border-radius: 12px;
-    background: #f9fafb;
-    padding: 0.35rem;
+    border-radius: 50%;
+    background: transparent;
+    padding: 0;
     cursor: pointer;
+    aspect-ratio: 1;
 }
+.lc-home-avatar-gallery-item[hidden] { display: none !important; }
 .lc-home-avatar-gallery-item img {
     width: 100%;
-    aspect-ratio: 1;
+    height: 100%;
     border-radius: 50%;
     display: block;
+    object-fit: cover;
 }
-.lc-home-avatar-gallery-item:hover { border-color: #cbd5e1; }
-.lc-home-avatar-gallery-item.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+.lc-home-avatar-gallery-item:hover { box-shadow: 0 0 0 2px #cbd5e1; }
+.lc-home-avatar-gallery-item.is-selected {
+    box-shadow: 0 0 0 3px #2563eb;
+}
+.lc-home-avatar-gallery-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    padding: 0.85rem 1.25rem 1.15rem;
+    border-top: 1px solid #eef2f6;
+}
+.lc-home-avatar-gallery-cancel,
+.lc-home-avatar-gallery-save {
+    min-height: 38px;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+.lc-home-avatar-gallery-cancel {
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #111827;
+}
+.lc-home-avatar-gallery-cancel:hover { background: #f9fafb; }
+.lc-home-avatar-gallery-save {
+    border: 1px solid #93c5fd;
+    background: #bfdbfe;
+    color: #fff;
+}
+.lc-home-avatar-gallery-save:not(:disabled) {
+    background: #2563eb;
+    border-color: #2563eb;
+}
+.lc-home-avatar-gallery-save:not(:disabled):hover { background: #1d4ed8; border-color: #1d4ed8; }
+.lc-home-avatar-gallery-save:disabled {
+    opacity: 0.95;
+    cursor: not-allowed;
+}
+@media (max-width: 720px) {
+    .lc-home-avatar-gallery-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
 
 .lc-home-unread {
     display: flex;
