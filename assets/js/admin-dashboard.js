@@ -6,6 +6,11 @@
 
     var base = window.LC_BASE_URL;
     var pollMs = window.LC_POLL_INTERVAL || 1500;
+    var statsScope = 'all';
+    var weekCard = document.getElementById('lc-home-week');
+    if (weekCard && weekCard.getAttribute('data-stats-scope')) {
+        statsScope = weekCard.getAttribute('data-stats-scope') || 'all';
+    }
 
     function esc(s) {
         var d = document.createElement('div');
@@ -161,6 +166,47 @@
         if (totalEl) totalEl.textContent = total;
     }
 
+    function formatWeekDelta(delta) {
+        delta = Number(delta) || 0;
+        if (delta === 0) return '0 from previous 7 days';
+        return (delta > 0 ? '+' : '') + delta + ' from previous 7 days';
+    }
+
+    function updateWeekDelta(delta) {
+        var el = document.getElementById('lc-chart-delta');
+        if (!el) return;
+        delta = Number(delta) || 0;
+        el.textContent = formatWeekDelta(delta);
+        el.classList.toggle('is-down', delta < 0);
+        el.classList.toggle('is-up', delta > 0);
+    }
+
+    function updateWeekScopeStats(week) {
+        if (!week) return;
+        var totalEl = document.getElementById('lc-chart-total');
+        if (totalEl && week.total != null) totalEl.textContent = week.total;
+        updateWeekDelta(week.delta);
+        var footWaiting = document.getElementById('lc-home-foot-waiting');
+        var footActive = document.getElementById('lc-home-foot-active');
+        var footClosed = document.getElementById('lc-home-foot-closed');
+        var footUnread = document.getElementById('lc-home-foot-unread');
+        if (footWaiting && week.waiting != null) footWaiting.textContent = week.waiting;
+        if (footActive && week.active != null) footActive.textContent = week.active;
+        if (footClosed && week.closed_today != null) footClosed.textContent = week.closed_today;
+        if (footUnread && week.unread != null) footUnread.textContent = week.unread;
+    }
+
+    function setStatsScope(scope) {
+        statsScope = scope === 'mine' ? 'mine' : 'all';
+        if (weekCard) weekCard.setAttribute('data-stats-scope', statsScope);
+        document.querySelectorAll('.lc-home-week-tab').forEach(function (btn) {
+            var active = btn.getAttribute('data-stats-scope') === statsScope;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        refreshDashboard();
+    }
+
     function updateTeamList(team, onlineCount) {
         var list = document.getElementById('lc-team-list');
         var label = document.getElementById('lc-team-online-label');
@@ -183,7 +229,7 @@
     }
 
     function refreshDashboard() {
-        fetch(base + '/api/dashboard-stats.php', { credentials: 'same-origin' })
+        fetch(base + '/api/dashboard-stats.php?scope=' + encodeURIComponent(statsScope), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
@@ -193,10 +239,8 @@
 
                 var heroActive = document.getElementById('lc-dash-active');
                 var heroStarted = document.getElementById('lc-dash-started');
-                var startedAside = document.getElementById('lc-dash-started-aside');
                 if (heroActive) heroActive.textContent = s.active;
                 if (heroStarted) heroStarted.textContent = s.started_today;
-                if (startedAside) startedAside.textContent = s.started_today;
 
                 var kpiWaiting = document.getElementById('lc-kpi-waiting');
                 var kpiActive = document.getElementById('lc-kpi-active');
@@ -217,6 +261,7 @@
 
                 updateWaitingCta(s.waiting);
                 updateActivityChart(data.activity || []);
+                updateWeekScopeStats(data.week || null);
                 updateTeamList(data.team || [], s.online_agents);
 
                 var waitingItems = data.recent.filter(function (r) { return r.status === 'waiting'; });
@@ -248,6 +293,12 @@
             })
             .catch(function () {});
     }
+
+    document.querySelectorAll('.lc-home-week-tab').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            setStatsScope(btn.getAttribute('data-stats-scope') || 'all');
+        });
+    });
 
     refreshDashboard();
     setInterval(refreshDashboard, pollMs);

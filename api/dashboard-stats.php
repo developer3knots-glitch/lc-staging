@@ -30,20 +30,30 @@ try {
     $accountId = lc_agent_account_id($agent);
     [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
+    $scope = strtolower(trim((string) ($_GET['scope'] ?? 'all')));
+    if ($scope !== 'mine') {
+        $scope = 'all';
+    }
+    $scopeAgentId = $scope === 'mine' ? $agentId : null;
+
     $waiting = lc_waiting_count($agentBrandId, $accountId);
 
     $activeSql = "SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'" . $brandSql;
     $stmt = $db->prepare($activeSql);
     $stmt->execute($brandParams);
-    $active = (int) $stmt->fetchColumn();
+    $activeAll = (int) $stmt->fetchColumn();
 
     $closedSql = "SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE()" . $brandSql;
     $stmt = $db->prepare($closedSql);
     $stmt->execute($brandParams);
-    $closedToday = (int) $stmt->fetchColumn();
+    $closedTodayAll = (int) $stmt->fetchColumn();
 
-    $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
-    $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
+    $startedTodayAll = lc_dashboard_started_today($agentBrandId, $accountId);
+    $scopeCounts = lc_dashboard_scope_counts($agentBrandId, $accountId, $scopeAgentId, $agentId);
+    $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId, $scopeAgentId);
+    $weekTotal = (int) array_sum(array_column($activityChart, 'count'));
+    $weekPreviousTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId, $scopeAgentId, 7);
+    $weekDelta = $weekTotal - $weekPreviousTotal;
     $onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);
     $onlineAgentsList = lc_dashboard_online_agents($agentBrandId, 8, $accountId);
 
@@ -136,12 +146,23 @@ try {
         'success' => true,
         'stats' => [
             'waiting' => $waiting,
-            'active' => $active,
-            'closed_today' => $closedToday,
-            'started_today' => $startedToday,
+            'active' => $activeAll,
+            'closed_today' => $closedTodayAll,
+            'started_today' => $startedTodayAll,
             'online_agents' => $onlineAgents,
             'total_agents' => $totalAgents,
             'unread' => $unread,
+        ],
+        'week' => [
+            'scope' => $scope,
+            'total' => $weekTotal,
+            'previous_total' => $weekPreviousTotal,
+            'delta' => $weekDelta,
+            'waiting' => (int) $scopeCounts['waiting'],
+            'active' => (int) $scopeCounts['active'],
+            'closed_today' => (int) $scopeCounts['closed_today'],
+            'started_today' => (int) $scopeCounts['started_today'],
+            'unread' => (int) $scopeCounts['unread'],
         ],
         'activity' => $activityChart,
         'team' => $teamFormatted,

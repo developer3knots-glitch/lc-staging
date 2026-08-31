@@ -5930,7 +5930,8 @@ a.lc-home-rt-card:hover {
 .lc-home-week-total {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.65rem 0.85rem;
     margin-top: 0.15rem;
 }
 .lc-home-week-total strong {
@@ -5940,23 +5941,54 @@ a.lc-home-rt-card:hover {
     color: #111827;
     line-height: 1;
 }
+.lc-home-week-delta {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    line-height: 1.2;
+}
+.lc-home-week-delta.is-down { color: #dc2626; }
+.lc-home-week-delta.is-up { color: #059669; }
 .lc-home-week-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    background: #ecfdf3;
-    color: #047857;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    display: none;
 }
 .lc-home-week-link {
+    display: inline-block;
+    margin-top: 0.55rem;
     color: #2563eb;
     font-weight: 500;
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     text-decoration: none;
 }
 .lc-home-week-link:hover { text-decoration: underline; }
+.lc-home-week-tabs {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    gap: 2px;
+    flex-shrink: 0;
+}
+.lc-home-week-tab {
+    border: 0;
+    background: transparent;
+    color: #4b5563;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.lc-home-week-tab:hover { color: #111827; }
+.lc-home-week-tab.is-active {
+    background: #f3f4f6;
+    color: #111827;
+    font-weight: 600;
+}
 
 /* LiveChat-style activity chart */
 .lc-home-chart {

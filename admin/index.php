@@ -26,6 +26,7 @@ $closedToday = (int) $stmt->fetchColumn();
 
 $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
 $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
+$weekPreviousTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId, null, 7);
 $chartCounts = array_column($activityChart, 'count');
 $chartMax = $chartCounts !== [] ? max(1, ...(array_map('intval', $chartCounts))) : 1;
 $chartY = lc_dashboard_chart_y_scale($chartMax);
@@ -131,6 +132,7 @@ if (lc_avatar_is_upload($agent['avatar'] ?? null)) {
     }
 }
 $weekTotal = (int) array_sum(array_column($activityChart, 'count'));
+$weekDelta = $weekTotal - (int) $weekPreviousTotal;
 $agentFirst = trim(explode(' ', (string) ($agent['name'] ?? 'there'))[0]);
 require __DIR__ . '/includes/header.php';
 ?>
@@ -258,16 +260,26 @@ require __DIR__ . '/includes/header.php';
 
     <section class="lc-home-section">
         <h3 class="lc-home-section-title">Last 7 days</h3>
-        <div class="lc-home-week">
+        <div class="lc-home-week" id="lc-home-week" data-stats-scope="all">
             <div class="lc-home-week-head">
                 <div>
                     <p class="lc-home-week-kicker">Total chats</p>
                     <div class="lc-home-week-total">
                         <strong id="lc-chart-total"><?= $weekTotal ?></strong>
-                        <span class="lc-home-week-chip"><span id="lc-dash-started-aside"><?= (int) $startedToday ?></span> today</span>
+                        <span class="lc-home-week-delta<?= $weekDelta < 0 ? ' is-down' : ($weekDelta > 0 ? ' is-up' : '') ?>" id="lc-chart-delta">
+                            <?php if ($weekDelta === 0): ?>
+                                0 from previous 7 days
+                            <?php else: ?>
+                                <?= $weekDelta > 0 ? '+' : '' ?><?= (int) $weekDelta ?> from previous 7 days
+                            <?php endif; ?>
+                        </span>
                     </div>
+                    <a href="<?= lc_admin_url('history') ?>" class="lc-home-week-link">View history</a>
                 </div>
-                <a href="<?= lc_admin_url('history') ?>" class="lc-home-week-link">View history</a>
+                <div class="lc-home-week-tabs" role="tablist" aria-label="Stats scope">
+                    <button type="button" class="lc-home-week-tab" role="tab" aria-selected="false" data-stats-scope="mine">My stats</button>
+                    <button type="button" class="lc-home-week-tab is-active" role="tab" aria-selected="true" data-stats-scope="all">All agents</button>
+                </div>
             </div>
             <div class="lc-home-chart" id="lc-activity-chart" data-chart-top="<?= $chartTop ?>">
                 <div class="lc-home-chart-y" aria-hidden="true">
@@ -298,8 +310,8 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-home-week-foot">
                 <div><span>Waiting now</span><strong id="lc-home-foot-waiting"><?= (int) $waiting ?></strong></div>
                 <div><span>Active now</span><strong id="lc-home-foot-active"><?= (int) $active ?></strong></div>
-                <div><span>Closed today</span><strong><?= (int) $closedToday ?></strong></div>
-                <div><span>Unread</span><strong><?= (int) $unread ?></strong></div>
+                <div><span>Closed today</span><strong id="lc-home-foot-closed"><?= (int) $closedToday ?></strong></div>
+                <div><span>Unread</span><strong id="lc-home-foot-unread"><?= (int) $unread ?></strong></div>
             </div>
         </div>
     </section>
