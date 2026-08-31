@@ -227,10 +227,10 @@ require __DIR__ . '/includes/header.php';
     </section>
 
     <section class="lc-home-section">
+        <h3 class="lc-home-section-title">Last 7 days</h3>
         <div class="lc-home-week">
             <div class="lc-home-week-head">
                 <div>
-                    <h3>Last 7 days</h3>
                     <p class="lc-home-week-kicker">Total chats</p>
                     <div class="lc-home-week-total">
                         <strong id="lc-chart-total"><?= $weekTotal ?></strong>

@@ -5391,35 +5391,38 @@ body.lc-page-dashboard .lc-main {
 }
 body.lc-page-dashboard .lc-topbar {
     background: #fff;
-    border-bottom: 1px solid #eef2f6;
+    border-bottom: 1px solid #e5e7eb;
     box-shadow: none;
+    padding: 1rem 2rem;
 }
 body.lc-page-dashboard .lc-topbar-title h2 {
-    font-size: 1rem;
+    font-size: 1.0625rem;
     font-weight: 600;
     color: #111827;
 }
 body.lc-page-dashboard .lc-topbar-sub { display: none; }
 body.lc-page-dashboard .lc-content {
     background: #fff;
-    padding: 1.5rem 2rem 2.75rem;
+    padding: 1.75rem 2.5rem 3rem;
+    max-width: none;
 }
 
 .lc-home {
-    max-width: 980px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     font-family: inherit;
 }
 .lc-home-hello {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    margin: 0 0 1.5rem;
+    gap: 0.875rem;
+    margin: 0 0 1.75rem;
     flex-wrap: wrap;
 }
 .lc-home-hello-av {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     background: #374151;
     color: #fff;
@@ -5427,25 +5430,25 @@ body.lc-page-dashboard .lc-content {
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     flex-shrink: 0;
-    margin-top: 0.15rem;
+    margin-top: 0.1rem;
 }
 .lc-home-hello-text h1 {
     margin: 0;
-    font-size: 1.375rem;
+    font-size: 1.625rem;
     font-weight: 700;
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
     color: #111827;
-    line-height: 1.25;
+    line-height: 1.2;
 }
 .lc-home-hello-link {
     display: inline-block;
-    margin-top: 0.35rem;
-    color: #64748b;
-    font-size: 0.8125rem;
+    margin-top: 0.4rem;
+    color: #6b7280;
+    font-size: 0.875rem;
     font-weight: 400;
-    line-height: 1.4;
+    line-height: 1.45;
     text-decoration: none;
 }
 .lc-home-hello-link:hover {
@@ -5472,12 +5475,12 @@ body.lc-page-dashboard .lc-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 2rem;
-    margin: 0 0 2rem;
-    padding: 1.5rem 2rem 1.55rem;
+    gap: 2.5rem;
+    margin: 0 0 2.25rem;
+    padding: 1.75rem 2rem 1.8rem 2.25rem;
     min-height: 0;
     border-radius: 8px;
-    background: #eaf4ff;
+    background: #e6f4ff;
     border: none;
     overflow: hidden;
     box-shadow: none;
@@ -5505,26 +5508,27 @@ body.lc-page-dashboard .lc-content {
     color: #475569;
 }
 .lc-home-banner-copy {
-    max-width: 31rem;
+    flex: 1 1 auto;
+    max-width: none;
     position: relative;
     z-index: 1;
-    padding-right: 0.5rem;
+    padding-right: 1rem;
 }
 .lc-home-banner h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.125rem;
+    margin: 0 0 0.55rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     color: #111827;
     line-height: 1.3;
 }
 .lc-home-banner p {
-    margin: 0 0 1.25rem;
+    margin: 0 0 1.35rem;
     color: #111827;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     line-height: 1.55;
     font-weight: 400;
-    max-width: 27rem;
+    max-width: 42rem;
 }
 .lc-home-banner-actions {
     display: flex;
@@ -5536,13 +5540,13 @@ body.lc-page-dashboard .lc-content {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 36px;
-    padding: 0.4375rem 1rem;
+    min-height: 38px;
+    padding: 0.5rem 1.125rem;
     border-radius: 6px;
     background: #000;
     color: #fff;
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 500;
     border: 1px solid #000;
     box-shadow: none;
@@ -5556,37 +5560,37 @@ body.lc-page-dashboard .lc-content {
 .lc-home-banner-link {
     color: #2563eb;
     font-weight: 400;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     text-decoration: underline;
     text-underline-offset: 2px;
     line-height: 1.2;
 }
 .lc-home-banner-link:hover { color: #1d4ed8; }
 .lc-home-banner-art {
-    width: 148px;
-    min-width: 120px;
-    height: 96px;
+    width: 180px;
+    min-width: 160px;
+    height: 110px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    margin-right: 0.25rem;
+    margin-right: 0.5rem;
     position: relative;
     z-index: 1;
 }
 .lc-home-banner-mail {
-    width: 132px;
+    width: 156px;
     height: auto;
     display: block;
     filter: none;
 }
 
-.lc-home-section { margin: 0 0 1.75rem; }
+.lc-home-section { margin: 0 0 2rem; }
 .lc-home-section-title {
-    margin: 0 0 0.85rem;
+    margin: 0 0 1rem;
     font-size: 1rem;
     font-weight: 600;
-    color: #111827;
+    color: #374151;
     letter-spacing: -0.01em;
 }
 .lc-home-rt {
@@ -5598,40 +5602,40 @@ body.lc-page-dashboard .lc-content {
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .lc-home-rt-card {
-    background: #f3f4f6;
-    border: none;
-    border-radius: 10px;
-    padding: 1.2rem 1.35rem 1.3rem;
+    background: #f5f6f8;
+    border: 1px solid #eceef2;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem 1.35rem;
     text-decoration: none;
     color: inherit;
-    min-height: 124px;
+    min-height: 132px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     justify-content: flex-start;
     box-shadow: none;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 a.lc-home-rt-card:hover {
-    background: #eceef1;
-    border: none;
+    background: #eef0f3;
+    border-color: #e2e5ea;
     box-shadow: none;
 }
 .lc-home-rt-label {
-    font-size: 0.9rem;
-    color: #0f172a;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    line-height: 1.25;
+    font-size: 0.9375rem;
+    color: #6b7280;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.35;
 }
 .lc-home-rt-value {
-    font-size: 2.55rem;
-    font-weight: 800;
-    letter-spacing: -0.045em;
-    color: #0f172a;
+    font-size: 3.5rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: #111827;
     line-height: 1;
     margin-top: auto;
-    padding-top: 1.15rem;
+    padding-top: 1rem;
 }
 .lc-home-rt-value-sm {
     font-size: 1.55rem;
@@ -5655,16 +5659,16 @@ a.lc-home-rt-card:hover {
     justify-content: center;
     align-self: flex-start;
     min-height: 38px;
-    padding: 0.45rem 0.95rem;
-    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
     background: #ffffff;
     border: 1px solid #d1d5db;
-    color: #0f172a !important;
+    color: #111827 !important;
     text-decoration: none;
-    font-weight: 700;
-    font-size: 0.875rem;
+    font-weight: 500;
+    font-size: 0.9375rem;
     box-shadow: none;
-    margin-top: 0.15rem;
+    margin-top: 0.35rem;
 }
 .lc-home-invite:hover {
     background: #fff;
@@ -5673,64 +5677,59 @@ a.lc-home-rt-card:hover {
 
 .lc-home-week {
     background: #fff;
-    border: 1px solid #e6ebf2;
-    border-radius: 16px;
-    padding: 1.2rem 1.25rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem 1.25rem;
 }
 .lc-home-week-head {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 1rem;
-    margin-bottom: 0.75rem;
-}
-.lc-home-week-head h3 {
-    margin: 0 0 0.35rem;
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: #152033;
+    margin-bottom: 1rem;
 }
 .lc-home-week-kicker {
-    margin: 0;
-    font-size: 0.85rem;
-    color: #6b7a90;
-    font-weight: 600;
+    margin: 0 0 0.35rem;
+    font-size: 0.9375rem;
+    color: #6b7280;
+    font-weight: 500;
 }
 .lc-home-week-total {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
-    margin-top: 0.25rem;
+    gap: 0.75rem;
+    margin-top: 0.15rem;
 }
 .lc-home-week-total strong {
-    font-size: 2.1rem;
-    font-weight: 800;
+    font-size: 3rem;
+    font-weight: 700;
     letter-spacing: -0.04em;
-    color: #152033;
+    color: #111827;
+    line-height: 1;
 }
 .lc-home-week-chip {
     display: inline-flex;
     align-items: center;
-    padding: 0.2rem 0.55rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
-    background: #e8f8ef;
-    color: #0f7a45;
-    font-size: 0.78rem;
-    font-weight: 700;
+    background: #ecfdf3;
+    color: #047857;
+    font-size: 0.8125rem;
+    font-weight: 600;
 }
 .lc-home-week-link {
-    color: #2f6fed;
-    font-weight: 700;
-    font-size: 0.88rem;
+    color: #2563eb;
+    font-weight: 500;
+    font-size: 0.9375rem;
     text-decoration: none;
 }
 .lc-home-week-link:hover { text-decoration: underline; }
 .lc-home-chart {
     display: flex;
     align-items: flex-end;
-    gap: 0.55rem;
-    min-height: 160px;
-    padding: 0.5rem 0.25rem 0.25rem;
+    gap: 0.65rem;
+    min-height: 200px;
+    padding: 0.75rem 0.35rem 0.35rem;
 }
 .lc-home-chart .lc-activity-bar-wrap {
     flex: 1;
@@ -5738,62 +5737,62 @@ a.lc-home-rt-card:hover {
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.35rem;
+    gap: 0.45rem;
     min-width: 0;
-    height: 150px;
+    height: 190px;
 }
 .lc-home-chart .lc-activity-bar {
     width: 100%;
-    max-width: 36px;
+    max-width: 42px;
     min-height: 4px;
-    border-radius: 8px 8px 4px 4px;
-    background: linear-gradient(180deg, #5b9bff 0%, #2f6fed 100%);
+    border-radius: 6px 6px 2px 2px;
+    background: #007aff;
 }
 .lc-home-chart .lc-activity-label {
-    font-size: 0.72rem;
-    color: #7a879c;
-    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #6b7280;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
 }
 .lc-home-chart .lc-activity-val {
-    font-size: 0.72rem;
-    color: #95a1b3;
-    font-weight: 600;
+    display: none;
 }
 .lc-home-week-foot {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-    margin-top: 1rem;
-    padding-top: 0.9rem;
-    border-top: 1px solid #eef2f7;
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid #eef2f6;
 }
 .lc-home-week-foot div {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 0.25rem;
 }
 .lc-home-week-foot span {
-    font-size: 0.8rem;
-    color: #6b7a90;
-    font-weight: 600;
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 500;
 }
 .lc-home-week-foot strong {
-    font-size: 1.05rem;
-    color: #152033;
-    font-weight: 800;
+    font-size: 1.125rem;
+    color: #111827;
+    font-weight: 700;
 }
 
 .lc-home-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
-    gap: 1rem;
+    grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr);
+    gap: 1.25rem;
     align-items: start;
 }
 .lc-home-panel {
     background: #fff;
-    border: 1px solid #e6ebf2;
-    border-radius: 14px;
-    margin-bottom: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
     overflow: hidden;
 }
 .lc-home-panel-head {
@@ -5801,23 +5800,23 @@ a.lc-home-rt-card:hover {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.95rem 1.1rem;
-    border-bottom: 1px solid #eef2f7;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #eef2f6;
 }
 .lc-home-panel-head h3 {
     margin: 0;
-    font-size: 0.98rem;
-    font-weight: 800;
-    color: #152033;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
 }
 .lc-home-panel-head a,
 .lc-home-panel-head span {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #2f6fed;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #2563eb;
     text-decoration: none;
 }
 .lc-home-count {
@@ -5835,10 +5834,34 @@ a.lc-home-rt-card:hover {
 .lc-home-panel .lc-conv-feed,
 .lc-home-panel .lc-team-list,
 .lc-home-panel .lc-brand-stack {
-    padding: 0.35rem 0.4rem 0.55rem;
+    padding: 0.35rem 0.5rem 0.65rem;
+}
+body.lc-page-dashboard .lc-conv-item-top strong {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #111827;
+}
+body.lc-page-dashboard .lc-conv-item-msg {
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+body.lc-page-dashboard .lc-conv-item-meta {
+    font-size: 0.8125rem;
+    color: #9ca3af;
+}
+body.lc-page-dashboard .lc-team-meta strong {
+    font-size: 0.9375rem;
+    font-weight: 600;
+}
+body.lc-page-dashboard .lc-team-status {
+    font-size: 0.8125rem;
+    color: #6b7280;
 }
 
 @media (max-width: 960px) {
+    body.lc-page-dashboard .lc-content {
+        padding: 1.25rem 1rem 2rem;
+    }
     .lc-home-rt { grid-template-columns: 1fr; }
     .lc-home-rt-4 { grid-template-columns: 1fr 1fr; }
     .lc-home-grid { grid-template-columns: 1fr; }
