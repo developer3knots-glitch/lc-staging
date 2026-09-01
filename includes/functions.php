@@ -898,15 +898,58 @@ function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 }
 
 /**
+ * @return array{top: int, ticks: array<int, int>}
+ */
+function lc_dashboard_chart_y_scale(int $maxValue): array
+{
+    $maxValue = max(1, $maxValue);
+    $rawStep = $maxValue / 4;
+    $mag = 10 ** (int) floor(log10(max($rawStep, 1)));
+    $norm = $rawStep / $mag;
+    if ($norm <= 1) {
+        $step = 1 * $mag;
+    } elseif ($norm <= 2) {
+        $step = 2 * $mag;
+    } elseif ($norm <= 5) {
+        $step = 5 * $mag;
+    } else {
+        $step = 10 * $mag;
+    }
+    $step = max(1, (int) round($step));
+    $top = (int) (ceil($maxValue / $step) * $step);
+    if ($top < $maxValue) {
+        $top += $step;
+    }
+    if ($top === $maxValue) {
+        $top += $step;
+    }
+
+    $ticks = [];
+    for ($v = $top; $v >= 0; $v -= $step) {
+        $ticks[] = (int) $v;
+    }
+    if ($ticks === [] || end($ticks) !== 0) {
+        $ticks[] = 0;
+    }
+
+    return ['top' => $top, 'ticks' => $ticks];
+}
+
+/**
  * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
  */
-function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null): array
+function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): array
 {
     lc_ensure_brands_schema();
     $days = max(2, min(14, $days));
-    $start = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . ($days - 1) . ' days');
+    $endOffsetDays = max(0, min(60, $endOffsetDays));
+    $end = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . $endOffsetDays . ' days');
+    $start = $end->modify('-' . ($days - 1) . ' days');
 
-    $params = [$start->format('Y-m-d') . ' 00:00:00'];
+    $params = [
+        $start->format('Y-m-d') . ' 00:00:00',
+        $end->format('Y-m-d') . ' 23:59:59',
+    ];
     $brandFilter = '';
     if ($brandId !== null) {
         $brandFilter = ' AND c.brand_id = ?';
@@ -915,11 +958,16 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
         $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
         $params[] = $accountId;
     }
+    $agentFilter = '';
+    if ($agentId !== null && $agentId > 0) {
+        $agentFilter = ' AND c.agent_id = ?';
+        $params[] = $agentId;
+    }
 
     $stmt = lc_db()->prepare("
         SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
         FROM conversations c
-        WHERE c.started_at >= ? {$brandFilter}
+        WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
         GROUP BY DATE(c.started_at)
     ");
     $stmt->execute($params);
@@ -942,6 +990,56 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
     }
 
     return $chart;
+}
+
+function lc_dashboard_activity_total(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): int
+{
+    $chart = lc_dashboard_activity_chart($brandId, $days, $accountId, $agentId, $endOffsetDays);
+    return (int) array_sum(array_column($chart, 'count'));
+}
+
+/**
+ * @return array{waiting: int, active: int, closed_today: int, started_today: int, unread: int}
+ */
+function lc_dashboard_scope_counts(?int $brandId, ?int $accountId, ?int $agentId, int $viewerAgentId): array
+{
+    $db = lc_db();
+    $params = [];
+    $brandFilter = '';
+    if ($brandId !== null) {
+        $brandFilter = ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
+    }
+    $agentFilter = '';
+    $agentParams = [];
+    if ($agentId !== null && $agentId > 0) {
+        $agentFilter = ' AND c.agent_id = ?';
+        $agentParams[] = $agentId;
+    }
+
+    $waiting = lc_waiting_count($brandId, $accountId);
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'{$brandFilter}{$agentFilter}");
+    $stmt->execute(array_merge($params, $agentParams));
+    $active = (int) $stmt->fetchColumn();
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE(){$brandFilter}{$agentFilter}");
+    $stmt->execute(array_merge($params, $agentParams));
+    $closedToday = (int) $stmt->fetchColumn();
+
+    $startedToday = lc_dashboard_started_today($brandId, $accountId, $agentId);
+    $unread = lc_unread_count_for_agent($viewerAgentId);
+
+    return [
+        'waiting' => $waiting,
+        'active' => $active,
+        'closed_today' => $closedToday,
+        'started_today' => $startedToday,
+        'unread' => $unread,
+    ];
 }
 
 /**
@@ -989,20 +1087,28 @@ function lc_dashboard_online_agents(?int $brandId, int $limit = 8, ?int $account
     return $stmt->fetchAll();
 }
 
-function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
+function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int $agentId = null): int
 {
     lc_ensure_brands_schema();
+    $params = [];
+    $sql = 'SELECT COUNT(*) FROM conversations c WHERE DATE(c.started_at) = CURDATE()';
     if ($brandId !== null) {
-        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id = ?');
-        $stmt->execute([$brandId]);
-        return (int) $stmt->fetchColumn();
+        $sql .= ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $sql .= ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
     }
-    if ($accountId !== null && $accountId > 0) {
-        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id IN (SELECT id FROM brands WHERE account_id = ?)');
-        $stmt->execute([$accountId]);
-        return (int) $stmt->fetchColumn();
+    if ($agentId !== null && $agentId > 0) {
+        $sql .= ' AND c.agent_id = ?';
+        $params[] = $agentId;
     }
-    return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
+    if ($params === []) {
+        return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
+    }
+    $stmt = lc_db()->prepare($sql);
+    $stmt->execute($params);
+    return (int) $stmt->fetchColumn();
 }
 
 /**
