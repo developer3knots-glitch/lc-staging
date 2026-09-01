@@ -1,0 +1,13 @@
+<?php
+/**
+ * Local XAMPP WebSocket overrides.
+ * Copy to config.realtime.local.php (same folder). Gitignored — safe for local secrets.
+ *
+ * Requires Node realtime server: tools/start-realtime-local.ps1
+ * See realtime/README-LOCAL.md
+ */
+
+define('LC_REALTIME_MODE', 'ws');
+define('LC_REALTIME_WS_URL', 'ws://127.0.0.1:6001');
+define('LC_REALTIME_PUBLISH_URL', 'http://127.0.0.1:6001/publish');
+define('LC_REALTIME_SECRET', 'local-dev-realtime-secret');

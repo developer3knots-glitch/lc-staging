@@ -5,9 +5,6 @@
 (function () {
     'use strict';
 
-    // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 50;
-
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
     if (!siteUrl) {
@@ -32,12 +29,9 @@
     var conversationId = null;
     var lastMsgId = 0;
     var pollTimer = null;
+    var realtimeClient = null;
+    var realtimeConfig = { mode: 'poll', wsUrl: '', backupPollMs: 15000 };
     var pollMs = 1500;
-    var visitorSoundsEnabled = true;
-    var transcriptSentConvId = null;
-    var transcriptDeferredConvId = null;
-    var transcriptEmailForClose = '';
-    var fullHistoryMode = false;
     var isOpen = false;
     var chatClosed = false;
     var chatToken = '';
@@ -49,19 +43,15 @@
     var RELOAD_FLAG_KEY = 'lc_reload_' + brandKey;
     var SITE_NAV_FLAG_KEY = 'lc_site_nav_' + brandKey;
     var leaveCloseSent = false;
-    var resumeGraceUntil = 0;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
     var agentsOnline = 0;
     var isWaitingForAgent = false;
-    var ticketResumeAwaitingAgent = false;
     var lastDateLabel = '';
     var teaserTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
     var visitorUploadBusy = false;
-    var pendingAttachments = [];
-    var pendingAttachSeq = 0;
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
     var prechatFormEnabled = false; // default: direct chat (matches server)
@@ -70,7 +60,6 @@
     var ownTypingActive = false;
     var typingHeartbeatTimer = null;
     var typingIdleTimer = null;
-    var lastTypingDraft = '';
     var lastTypingPostAt = 0;
 
     // Remove legacy localStorage keys (older widget stored chat in localStorage)
@@ -248,21 +237,12 @@
             } else if (document.visibilityState === 'visible') {
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
-                // Tab focused again — restore Browsing presence immediately
-                lastSentUrl = '';
-                recordView();
             }
         });
 
         window.addEventListener('pagehide', function () {
             sendLeave(lastSentUrl, true);
         });
-
-        // Keep Traffic "Browsing" fresh while the tab stays open
-        setInterval(function () {
-            if (document.visibilityState !== 'visible' || !lastSentUrl) return;
-            postPageEvent({ event: 'ping', page_url: lastSentUrl }, false);
-        }, 25000);
     }
 
     function setupReloadDetection() {
@@ -301,12 +281,12 @@
         if (document.getElementById('lc-widget-styles')) return;
         var font = document.createElement('link');
         font.rel = 'stylesheet';
-        font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+        font.href = 'https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap';
         document.head.appendChild(font);
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=51';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=18';
         document.head.appendChild(link);
     }
 
@@ -324,18 +304,11 @@
             return;
         }
         var script = document.createElement('script');
-        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=3';
+        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=2';
         script.onload = callback;
         script.onerror = callback;
         document.head.appendChild(script);
     }
-    var ICON_TICKET = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h16v12H4z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
-    var ICON_MAIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
-    var ICON_SOUND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
-    var ICON_MENU = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
-    var ICON_PLUS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
-    var ICON_EMOJI = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
-    var ICON_SEND_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
     var ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
     function buildWidget() {
@@ -352,56 +325,24 @@
                 '<span id="lc-bubble-icon">' + ICON_CHAT + '</span>' +
                 '<span id="lc-bubble-badge" style="display:none">1</span>' +
             '</button>' +
-            '<div id="lc-panel" class="lcw-panel lcw-theme-dark" style="display:none">' +
+            '<div id="lc-panel" class="lcw-panel" style="display:none">' +
                 '<div id="lc-panel-toolbar" class="lcw-toolbar">' +
                     '<span class="lcw-toolbar-brand" id="lc-toolbar-brand">LiveChat</span>' +
                     '<div class="lcw-toolbar-actions">' +
-                        '<div class="lcw-toolbar-menu-wrap" id="lc-toolbar-menu-wrap">' +
-                            '<button type="button" id="lc-toolbar-menu" class="lcw-icon-btn" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">' + ICON_MENU + '</button>' +
-                            '<div id="lc-toolbar-menu-pop" class="lcw-head-menu-pop lcw-toolbar-menu-pop" hidden role="menu">' +
-                                '<button type="button" id="lc-toolbar-menu-resume-ticket" class="lcw-head-menu-item" role="menuitem">' +
-                                    '<span class="lcw-head-menu-icon">' + ICON_TICKET + '</span>' +
-                                    '<span class="lcw-head-menu-label">Continue with ticket</span>' +
-                                '</button>' +
-                            '</div>' +
-                        '</div>' +
                         '<button type="button" id="lc-toolbar-minimize" class="lcw-icon-btn" title="Minimize chat" aria-label="Minimize chat">' +
                             ICON_MINIMIZE +
                         '</button>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-panel-head" class="lcw-chat-head lcw-head-pro">' +
-                    '<div class="lcw-head-menu-wrap" id="lc-head-menu-wrap">' +
-                        '<button type="button" id="lc-head-menu" class="lcw-head-icon-btn" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">' + ICON_MENU + '</button>' +
-                        '<div id="lc-head-menu-pop" class="lcw-head-menu-pop" hidden role="menu">' +
-                            '<button type="button" id="lc-menu-resume-ticket" class="lcw-head-menu-item" role="menuitem">' +
-                                '<span class="lcw-head-menu-icon">' + ICON_TICKET + '</span>' +
-                                '<span class="lcw-head-menu-label">Resume with ticket</span>' +
-                            '</button>' +
-                            '<button type="button" id="lc-menu-send-transcript" class="lcw-head-menu-item" role="menuitem">' +
-                                '<span class="lcw-head-menu-icon">' + ICON_MAIL + '</span>' +
-                                '<span class="lcw-head-menu-label">Send transcript</span>' +
-                            '</button>' +
-                            '<div class="lcw-head-menu-item lcw-head-menu-sounds" role="none">' +
-                                '<span class="lcw-head-menu-icon">' + ICON_SOUND + '</span>' +
-                                '<span class="lcw-head-menu-label">Sounds</span>' +
-                                '<label class="lcw-sound-toggle" aria-label="Notification sounds">' +
-                                    '<input type="checkbox" id="lc-sound-toggle" checked>' +
-                                    '<span class="lcw-sound-toggle-track"><span class="lcw-sound-toggle-thumb"></span></span>' +
-                                '</label>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +                    '<div class="lcw-head-agent-pill" id="lc-head-agent-pill">' +
+                '<div id="lc-panel-head" class="lcw-chat-head">' +
+                    '<div class="lcw-head-main">' +
                         '<div id="lc-head-agent-avatar" class="lcw-head-avatar-wrap" style="display:none"></div>' +
-                        '<div class="lcw-head-agent-fallback" id="lc-head-agent-fallback"><span class="lcw-online-dot"></span></div>' +
-                        '<div class="lcw-head-agent-copy">' +
-                            '<strong id="lc-panel-agent-name">Connecting...</strong>' +
-                            '<span id="lc-panel-agent-role" class="lcw-head-agent-role">Support</span>' +
+                        '<div>' +
+                            '<strong id="lc-panel-title">LiveChat</strong>' +
+                            '<small id="lc-panel-status"><span class="lcw-online-dot"></span>Connecting...</small>' +
+                            '<span id="lc-panel-ref" class="lcw-ref-badge" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
                         '</div>' +
                     '</div>' +
-                    '<span id="lc-panel-ref" class="lcw-ref-badge lcw-ref-hidden" hidden>Ticket <code id="lc-panel-ref-code"></code></span>' +
-                    '<small id="lc-panel-status" class="lcw-sr-only"><span class="lcw-online-dot"></span>Connecting...</small>' +
-                    '<strong id="lc-panel-title" class="lcw-sr-only">LiveChat</strong>' +
                     '<div class="lcw-head-actions">' +
                         '<button type="button" id="lc-minimize-chat" class="lcw-head-btn" title="Minimize chat" aria-label="Minimize chat">' +
                             ICON_MINIMIZE +
@@ -413,17 +354,10 @@
                 '</div>' +
                 '<div id="lc-waiting-bar" class="lcw-waiting-bar">' +
                     '<span class="lcw-typing-dots"><span></span><span></span><span></span></span>' +
-                    '<span id="lc-waiting-text">Connecting to live agent...</span>' +
-                '</div>' +
-                '<div id="lc-connecting-card" class="lcw-connecting-card" hidden>' +
-                    '<div class="lcw-connecting-spinner" aria-hidden="true"></div>' +
-                    '<div class="lcw-connecting-copy">' +
-                        '<strong>Connecting to live agent</strong>' +
-                        '<span>Please wait a moment...</span>' +
-                    '</div>' +
+                    '<span id="lc-waiting-text">Connecting you with a team member...</span>' +
                 '</div>' +
                 '<div id="lc-panel-prechat" class="lcw-prechat" style="display:none">' +
-                    '<div id="lc-prechat-status" class="lcw-status-card" style="display:none" hidden>' +
+                    '<div id="lc-prechat-status" class="lcw-status-card">' +
                         '<div class="lcw-status-icon" id="lc-prechat-status-icon">' +
                             '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>' +
                         '</div>' +
@@ -450,7 +384,7 @@
                                 '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
                                 '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or request..."></textarea>' +
                             '</div>' +
-                            '<input type="text" id="lc-prechat-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
+                            '<input type="text" name="website_url" id="lc-prechat-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                             '<div id="lc-prechat-error" class="lcw-prechat-error" style="display:none"></div>' +
                             '<button type="submit" class="lcw-prechat-btn" id="lc-prechat-submit">' +
                                 '<span class="lcw-btn-spinner"></span>' +
@@ -459,6 +393,7 @@
                         '</form>' +
                     '</div>' +
                     '<div class="lcw-ticket-resume-wrap" id="lc-ticket-resume-wrap">' +
+                        '<button type="button" class="lcw-ticket-resume-toggle" id="lc-show-ticket-resume">Already have a ticket? Continue your conversation</button>' +
                         '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
                             '<div class="lcw-form-card lcw-ticket-resume-card">' +
                                 '<div class="lcw-form-card-head">' +
@@ -474,7 +409,7 @@
                                         '<label for="lc-ticket-email">Email <span>*</span></label>' +
                                         '<input type="email" id="lc-ticket-email" required placeholder="you@company.com" autocomplete="email">' +
                                     '</div>' +
-                                    '<input type="text" id="lc-ticket-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
+                                    '<input type="text" name="website_url" id="lc-ticket-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
                                     '<div id="lc-ticket-resume-error" class="lcw-prechat-error" style="display:none"></div>' +
                                     '<button type="submit" class="lcw-prechat-btn" id="lc-ticket-resume-submit">' +
                                         '<span class="lcw-btn-spinner"></span>' +
@@ -485,21 +420,9 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
-                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential</div>' +
+                    '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential | <strong id="lc-powered-name">LiveChat</strong></div>' +
                 '</div>' +
                 '<div id="lc-panel-messages" class="lcw-messages"></div>' +
-                '<div id="lc-idle-intro" class="lcw-idle-intro" hidden>' +
-                    '<div class="lcw-idle-agent-card">' +
-                        '<div class="lcw-idle-avatars" id="lc-idle-avatars" aria-hidden="true"></div>' +
-                        '<strong id="lc-idle-agent-name">Support</strong>' +
-                        '<span id="lc-idle-agent-role" class="lcw-idle-role">We\'re here to help</span>' +
-                    '</div>' +
-                    '<div class="lcw-idle-msg">' +
-                        '<div id="lc-idle-msg-avatar" class="lcw-idle-msg-avatar" aria-hidden="true"></div>' +
-                        '<div class="lcw-idle-bubble" id="lc-idle-bubble-text">Hi! How can we help you today?</div>' +
-                    '</div>' +
-                    '<button type="button" id="lc-lets-chat" class="lcw-lets-chat">Let\'s chat</button>' +
-                '</div>' +
                 '<div id="lc-typing-indicator" class="lcw-typing-indicator" hidden aria-live="polite">' +
                     '<div class="lcw-typing-row">' +
                         '<div class="lcw-typing-bubble" aria-hidden="true"><span></span><span></span><span></span></div>' +
@@ -507,96 +430,37 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-ended" class="lcw-ended" style="display:none">' +
-                    '<div class="lcw-ended-hero">' +
-                        '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
-                            '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
-                        '</div>' +
-                        '<p class="lcw-ended-title">Thanks for chatting!</p>' +
-                        '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
-                        '<p class="lcw-ended-note">This conversation has been closed.</p>' +
-                        '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code"> - </code></p>' +
+                    '<div class="lcw-ended-icon lcw-ended-wave" aria-hidden="true">' +
+                        '<span class="lcw-wave-icon">' + ICON_WAVE + '</span>' +
                     '</div>' +
-                    '<div class="lcw-ended-actions">' +
-                        '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Resume this chat</button>' +
-                        '<div class="lcw-email-export" id="lc-email-export">' +
-                            '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
-                            '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
-                                '<label class="lcw-email-export-label" for="lc-email-transcript-input">Send this chat to</label>' +
-                                '<input type="email" id="lc-email-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
-                                '<button type="button" id="lc-email-transcript-send" class="lcw-prechat-btn lcw-email-export-send">Send to email</button>' +
-                                '<p id="lc-email-transcript-status" class="lcw-email-export-status" hidden></p>' +
-                            '</div>' +
-                        '</div>' +
-                        '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
+                    '<p class="lcw-ended-title">Thanks for chatting!</p>' +
+                    '<p class="lcw-ended-text">It was great talking with you.<br>We\'re here whenever you need us again.</p>' +
+                    '<p class="lcw-ended-note">This conversation has been closed.</p>' +
+                    '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code">-</code></p>' +
+                    '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Continue with ticket</button>' +
+                    '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
+                '</div>' +
+                '<div id="lc-panel-compose" class="lcw-compose">' +
+                    '<div class="lcw-trust-bar">' + ICON_LOCK + ' Your conversation is private and secure</div>' +
+                    '<input type="text" name="website_url" id="lc-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+                    '<div class="lcw-compose-inner">' +
+                        '<button type="button" id="lc-attach-file" class="lcw-attach-btn" title="Attach image or PDF" aria-label="Attach file">' + ICON_CLIP + '</button>' +
+                        '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
+                        '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND + '</button>' +
+                        '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
                     '</div>' +
                 '</div>' +
-                '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
-                    '<input type="text" id="lc-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
-                    '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
-                    '<div class="lcw-compose-row">' +
-                        '<div class="lcw-compose-inner lcw-compose-pill">' +
-                            '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
-                            '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
-                            '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" aria-hidden="true" tabindex="-1">' + ICON_EMOJI + '</button>' +
-                        '</div>' +
-                        '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND_UP + '</button>' +
-                    '</div>' +
-                    '<input type="file" id="lc-file-input" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.pdf,application/pdf" hidden>' +
-                '</div>' +
-                '<div id="lc-transcript-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-confirm-text">' +
-                    '<div class="lcw-sheet lcw-sheet-dark lcw-transcript-confirm">' +
-                        '<button type="button" class="lcw-sheet-x" id="lc-transcript-confirm-close" aria-label="Close">&times;</button>' +
-                        '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
-                        '<p class="lcw-sheet-title lcw-transcript-confirm-text" id="lc-transcript-confirm-text"></p>' +
-                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-light" id="lc-transcript-confirm-gotit">Got it</button>' +
-                    '</div>' +
-                '</div>' +                '<div id="lc-transcript-sheet" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-transcript-sheet-title">' +
-                    '<div class="lcw-sheet lcw-sheet-dark lcw-sheet-wide lcw-transcript-sheet">' +
-                        '<button type="button" class="lcw-sheet-x" id="lc-transcript-sheet-close" aria-label="Close">&times;</button>' +
-                        '<div class="lcw-sheet-icon" aria-hidden="true">' + ICON_MAIL + '</div>' +
-                        '<p class="lcw-sheet-title lcw-sheet-title-lg" id="lc-transcript-sheet-title">Send transcript</p>' +
-                        '<p class="lcw-sheet-text">We will email a copy of this chat when the conversation ends.</p>' +
-                        '<label class="lcw-email-export-label" for="lc-menu-transcript-input">Email address</label>' +
-                        '<input type="email" id="lc-menu-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
-                        '<button type="button" id="lc-menu-transcript-send" class="lcw-sheet-btn lcw-sheet-btn-light">Request transcript</button>' +
-                        '<p id="lc-menu-transcript-status" class="lcw-email-export-status" hidden></p>' +
-                    '</div>' +
-                '</div>' +                '<div id="lc-close-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-close-confirm-title">' +
-                    '<div class="lcw-sheet lcw-sheet-dark">' +
-                        '<button type="button" class="lcw-sheet-x" id="lc-close-confirm-dismiss" aria-label="Keep chatting">&times;</button>' +
-                        '<div class="lcw-sheet-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>' +
-                        '<p class="lcw-sheet-title" id="lc-close-confirm-title">Do you really want to close the chat?</p>' +
-                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-close" id="lc-close-confirm-yes">Close the chat</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div id="lc-minimize-confirm" class="lcw-sheet-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="lc-minimize-confirm-title">' +
-                    '<div class="lcw-sheet lcw-sheet-dark lcw-sheet-wide">' +
-                        '<button type="button" class="lcw-sheet-x" id="lc-minimize-confirm-x" aria-label="Close dialog">&times;</button>' +
-                        '<p class="lcw-sheet-title lcw-sheet-title-lg" id="lc-minimize-confirm-title">Keep chatting in this window?</p>' +
-                        '<p class="lcw-sheet-text" id="lc-minimize-confirm-text">Your conversation stays open while you switch tabs or browse the site.</p>' +
-                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-light" id="lc-minimize-confirm-keep">Keep chatting here</button>' +
-                        '<button type="button" class="lcw-sheet-btn lcw-sheet-btn-dark" id="lc-minimize-confirm-close">Close window</button>' +
-                    '</div>' +
-                '</div>' +            '</div>';
+            '</div>';
         document.body.appendChild(root);
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
-        document.getElementById('lc-toolbar-minimize').addEventListener('click', showMinimizeConfirm);
-        document.getElementById('lc-minimize-chat').addEventListener('click', showMinimizeConfirm);
-        document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
-        bindConfirmSheets();
-        bindHeadMenu();
-        bindToolbarMenu();
-        bindTranscriptEmailInputs();
-        var letsChatBtn = document.getElementById('lc-lets-chat');
-        if (letsChatBtn) letsChatBtn.addEventListener('click', beginChatFromIdle);
+        document.getElementById('lc-toolbar-minimize').addEventListener('click', minimizePanel);
+        document.getElementById('lc-minimize-chat').addEventListener('click', minimizePanel);
+        document.getElementById('lc-close-chat').addEventListener('click', endChat);
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
-        document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
-        var emailToggle = document.getElementById('lc-email-transcript-toggle');
-        var emailSendBtn = document.getElementById('lc-email-transcript-send');
-        if (emailToggle) emailToggle.addEventListener('click', function () { toggleEmailTranscriptPanel('ended'); });
-        if (emailSendBtn) emailSendBtn.addEventListener('click', function () { sendChatTranscriptEmail(null, 'ended'); });
-        document.getElementById('lc-ticket-resume-back').addEventListener('click', function () { hideTicketResumePanel(true); });
+        document.getElementById('lc-resume-ticket').addEventListener('click', openTicketResumeFromEnded);
+        document.getElementById('lc-show-ticket-resume').addEventListener('click', showTicketResumePanel);
+        document.getElementById('lc-ticket-resume-back').addEventListener('click', hideTicketResumePanel);
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
@@ -621,7 +485,7 @@
                     var pasted = items[i].getAsFile();
                     if (pasted) {
                         e.preventDefault();
-                        queueVisitorFile(pasted);
+                        uploadVisitorFile(pasted);
                     }
                     break;
                 }
@@ -637,19 +501,16 @@
                         showPrechatForm();
                         showPrechatError('Please start a conversation before sending files.');
                     } else {
-                        showIdleChatReady();
-                        appendMessage({ sender_type: 'system', message: 'Write a message first to start the chat, then you can attach files.' });
+                        startDirectChat();
                     }
                     return;
                 }
                 fileInput.click();
             });
             fileInput.addEventListener('change', function () {
-                var batch = fileInput.files && fileInput.files.length
-                    ? Array.prototype.slice.call(fileInput.files)
-                    : [];
+                var file = fileInput.files && fileInput.files[0];
                 fileInput.value = '';
-                if (batch.length) queueVisitorFiles(batch);
+                uploadVisitorFile(file);
             });
             if (window.LCChatFiles) {
                 window.LCChatFiles.applyFileInput(fileInput);
@@ -667,16 +528,7 @@
         });
 
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && isOpen) {
-                if (isConfirmOpen()) {
-                    hideCloseConfirm();
-                    hideMinimizeConfirm();
-                } else if (conversationId && !chatClosed) {
-                    showMinimizeConfirm();
-                } else {
-                    minimizePanel();
-                }
-            }
+            if (e.key === 'Escape' && isOpen) minimizePanel();
         });
 
         scheduleTeaser();
@@ -770,19 +622,6 @@
         }
     }
 
-    function readHoneypotField(id) {
-        var el = document.getElementById(id);
-        if (!el) return '';
-        return (el.value || '').trim();
-    }
-
-    function clearHoneypotFields() {
-        ['lc-prechat-honeypot', 'lc-ticket-honeypot', 'lc-honeypot'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-    }
-
     function showTicketResumeError(msg) {
         var el = document.getElementById('lc-ticket-resume-error');
         if (!el) return;
@@ -799,17 +638,12 @@
         if (!ticketResumeEnabled) {
             return;
         }
-        clearHoneypotFields();
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
+        var toggle = document.getElementById('lc-show-ticket-resume');
         if (startPanel) startPanel.style.display = 'none';
         if (ticketPanel) ticketPanel.hidden = false;
-        var directStart = document.getElementById('lc-direct-chat-start');
-        if (directStart) directStart.style.display = 'none';
-        var refEl = document.getElementById('lc-ticket-ref');
-        if (refEl) {
-            setTimeout(function () { refEl.focus(); }, 30);
-        }
+        if (toggle) toggle.style.display = 'none';
         var emailEl = document.getElementById('lc-ticket-email');
         if (emailEl) {
             emailEl.value = localStorage.getItem('lc_visitor_email') || emailEl.value || '';
@@ -817,126 +651,26 @@
         showTicketResumeError('');
     }
 
-    function hideTicketResumePanel(cancelOnly) {
+    function hideTicketResumePanel() {
         var startPanel = document.getElementById('lc-prechat-start-panel');
         var ticketPanel = document.getElementById('lc-ticket-resume-panel');
-        var prechat = document.getElementById('lc-panel-prechat');
-        if (ticketPanel) ticketPanel.hidden = true;
-        showTicketResumeError('');
-        if (!prechatFormEnabled) {
-            if (cancelOnly) {
-                if (prechat) prechat.style.display = 'none';
-                showIdleChatReady();
-            }
-            return;
-        }
+        var toggle = document.getElementById('lc-show-ticket-resume');
         if (startPanel) startPanel.style.display = '';
+        if (ticketPanel) ticketPanel.hidden = true;
+        if (toggle) toggle.style.display = '';
+        showTicketResumeError('');
     }
 
-    function openTicketResumeEntry() {
-        if (!ticketResumeEnabled) {
-            return;
-        }
-        hideHeadMenu();
-        hideToolbarMenu();
-        hideIdleIntro();
-        showPrechatForm(true, true);
-        if (!prechatFormEnabled) {
-            var startPanel = document.getElementById('lc-prechat-start-panel');
-            if (startPanel) startPanel.style.display = 'none';
-            var directStart = document.getElementById('lc-direct-chat-start');
-            if (directStart) directStart.style.display = 'none';
-            var statusCard = document.getElementById('lc-prechat-status');
-            if (statusCard) {
-                statusCard.hidden = true;
-                statusCard.style.display = 'none';
-            }
-        }
-        showTicketResumePanel();
-    }
-
-    function updateEndedResumeButton() {
-        var resumeBtn = document.getElementById('lc-resume-ticket');
-        if (!resumeBtn) return;
-        if (conversationId) {
-            resumeBtn.textContent = 'Resume this chat';
-            resumeBtn.hidden = false;
-            resumeBtn.disabled = false;
-        } else if (ticketResumeEnabled) {
-            resumeBtn.textContent = 'Continue with ticket';
-            resumeBtn.hidden = false;
-            resumeBtn.disabled = false;
-        } else {
-            resumeBtn.hidden = true;
-        }
-    }
-
-    function resumeFromEnded() {
-        if (conversationId) {
-            resumeSameChat();
-            return;
-        }
-        openTicketResumeFromEnded();
-    }
-
-    function resumeSameChat() {
-        if (!conversationId) {
-            openTicketResumeFromEnded();
-            return;
-        }
-        var resumeBtn = document.getElementById('lc-resume-ticket');
-        if (resumeBtn) {
-            resumeBtn.disabled = true;
-            resumeBtn.classList.add('is-loading');
-        }
-        fetch(siteUrl + '/api/visitor-resume.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                visitor_uid: visitorUid,
-                brand_key: brandKey,
-                conversation_id: conversationId,
-                chat_token: chatToken || '',
-                page_url: window.location.href,
-                website_url: ''
-            })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (resumeBtn) {
-                resumeBtn.disabled = false;
-                resumeBtn.classList.remove('is-loading');
-            }
-            if (!data.success) {
-                // Fall back to ticket form when one-click resume is not possible
-                if (ticketResumeEnabled) {
-                    openTicketResumeFromEnded();
-                } else {
-                    alert(data.error || 'Unable to resume this chat. Please start a new conversation.');
-                }
-                return;
-            }
-            leaveCloseSent = false;
-            resumeGraceUntil = Date.now() + 45000;
-            handleChatStarted(data, { keepMessages: false });
-        })
-        .catch(function () {
-            if (resumeBtn) {
-                resumeBtn.disabled = false;
-                resumeBtn.classList.remove('is-loading');
-            }
-            alert('Unable to resume this chat. Please try again.');
-        });
-    }
     function openTicketResumeFromEnded() {
         if (!ticketResumeEnabled) {
             return;
         }
         hideEndedState();
-        openTicketResumeEntry();
+        showPrechatForm();
+        showTicketResumePanel();
         var refCode = document.getElementById('lc-ended-ref-code');
         var refInput = document.getElementById('lc-ticket-ref');
-        if (refCode && refInput && refCode.textContent && refCode.textContent !== ' - ') {
+        if (refCode && refInput && refCode.textContent && refCode.textContent !== '-') {
             refInput.value = refCode.textContent.trim();
         }
     }
@@ -956,7 +690,6 @@
         }
 
         showTicketResumeError('');
-        clearHoneypotFields();
         if (submitBtn) submitBtn.classList.add('is-loading');
 
         fetch(siteUrl + '/api/visitor-resume-ticket.php', {
@@ -968,7 +701,7 @@
                 ticket_reference: ticketRef,
                 email: email,
                 page_url: window.location.href,
-                lc_hp: readHoneypotField('lc-ticket-honeypot')
+                website_url: (document.getElementById('lc-ticket-honeypot') || {}).value || ''
             })
         })
         .then(function (r) { return r.json(); })
@@ -979,8 +712,8 @@
                 return;
             }
             localStorage.setItem('lc_visitor_email', email);
-            fullHistoryMode = false;
-            handleChatStarted(data, { keepMessages: false, resumedByTicket: true });
+            hideTicketResumePanel();
+            handleChatStarted(data, { keepMessages: false });
         })
         .catch(function () {
             if (submitBtn) submitBtn.classList.remove('is-loading');
@@ -988,8 +721,7 @@
         });
     }
 
-    function showPrechatForm(skipSettingsFetch, skipTicketReset) {
-        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
+    function showPrechatForm(skipSettingsFetch) {
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
         document.getElementById('lc-panel-messages').style.display = 'none';
@@ -999,107 +731,22 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
         document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
-        if (!skipTicketReset) {
-            hideTicketResumePanel(true);
-        }
-        syncPrechatGateUi();
-        // Do not re-fetch settings here when already routing - avoids stealing form ΓåÆ active chat
+        hideTicketResumePanel();
+        // Do not re-fetch settings here when already routing - avoids stealing form -> active chat
         if (!skipSettingsFetch) {
             loadWidgetSettings();
         }
     }
 
     function showChatView() {
-        document.getElementById('lc-panel').classList.add('lcw-chat-active');
-        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat', 'lcw-mode-idle');
+        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat');
         document.getElementById('lc-panel-prechat').style.display = 'none';
         document.getElementById('lc-panel-messages').style.display = 'flex';
         document.getElementById('lc-panel-compose').style.display = 'block';
         document.getElementById('lc-panel-head').style.display = 'flex';
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         document.getElementById('lc-panel-ended').style.display = 'none';
-        hideIdleIntro();
         setComposeEnabled(!chatClosed);
-        var closeBtn = document.getElementById('lc-close-chat');
-        if (closeBtn) closeBtn.style.display = '';
-    }
-
-    function hideIdleIntro() {
-        var intro = document.getElementById('lc-idle-intro');
-        if (intro) intro.hidden = true;
-        var panel = document.getElementById('lc-panel');
-        if (panel) panel.classList.remove('lcw-mode-idle');
-    }
-
-    function showIdleIntro() {
-        var panel = document.getElementById('lc-panel');
-        var intro = document.getElementById('lc-idle-intro');
-        if (!intro || !panel) return;
-        panel.classList.add('lcw-chat-active', 'lcw-mode-idle');
-        panel.classList.remove('lcw-mode-prechat');
-        document.getElementById('lc-panel-prechat').style.display = 'none';
-        document.getElementById('lc-panel-messages').style.display = 'none';
-        document.getElementById('lc-panel-compose').style.display = 'none';
-        document.getElementById('lc-panel-ended').style.display = 'none';
-        document.getElementById('lc-panel-head').style.display = 'flex';
-        document.getElementById('lc-panel-toolbar').style.display = 'none';
-        var closeBtn = document.getElementById('lc-close-chat');
-        if (closeBtn) closeBtn.style.display = 'none';
-        setWaitingState(false);
-        setComposeEnabled(false);
-
-        var team = (settings && settings.site_name) ? settings.site_name : 'Support';
-        var color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
-        var role = agentsOnline > 0 ? 'Online now' : 'Leave a message';
-        var welcome = idleWelcomeText();
-
-        var nameEl = document.getElementById('lc-idle-agent-name');
-        var roleEl = document.getElementById('lc-idle-agent-role');
-        var bubbleEl = document.getElementById('lc-idle-bubble-text');
-        if (nameEl) nameEl.textContent = team;
-        if (roleEl) roleEl.textContent = role;
-        if (bubbleEl) bubbleEl.textContent = welcome;
-
-        var avatars = document.getElementById('lc-idle-avatars');
-        if (avatars) {
-            var initials = team.replace(/[^A-Za-z0-9]/g, ' ').trim().split(/\s+/).slice(0, 2).map(function (w) {
-                return w.charAt(0).toUpperCase();
-            }).join('') || 'S';
-            avatars.innerHTML =
-                '<span class="lcw-idle-avatar lcw-idle-avatar-brand" style="background:' + esc(color) + '">' + esc(initials.charAt(0) || 'S') + '</span>' +
-                '<span class="lcw-idle-avatar lcw-idle-avatar-support">' + ICON_CHAT.replace('width="26"', 'width="14"').replace('height="26"', 'height="14"') + '</span>';
-        }
-        var msgAv = document.getElementById('lc-idle-msg-avatar');
-        if (msgAv) {
-            var one = team.replace(/[^A-Za-z0-9]/g, ' ').trim().charAt(0).toUpperCase() || 'S';
-            msgAv.innerHTML = '<span class="lcw-idle-avatar-sm" style="background:' + esc(color) + '">' + esc(one) + '</span>';
-        }
-
-        updateHeaderAgent(null);
-        var headRole = document.getElementById('lc-panel-agent-role');
-        if (headRole) {
-            headRole.textContent = role;
-            headRole.hidden = false;
-        }
-        intro.hidden = false;
-    }
-
-    function beginChatFromIdle() {
-        hideIdleIntro();
-        showChatView();
-        var box = document.getElementById('lc-panel-messages');
-        if (box) box.innerHTML = '';
-        lastDateLabel = '';
-        showIdleWelcomePreview();
-        setComposeEnabled(true);
-        var input = document.getElementById('lc-input');
-        if (input) {
-            input.placeholder = 'Write a message...';
-            setTimeout(function () { input.focus(); }, 40);
-        }
-        updateStatus(agentsOnline > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
-        var headRole = document.getElementById('lc-panel-agent-role');
-        if (headRole) headRole.hidden = true;
     }
 
     function updatePrechatStatus(count) {
@@ -1168,10 +815,6 @@
         var endedRef = document.getElementById('lc-ended-ref');
         if (resumeWrap) resumeWrap.style.display = ticketResumeEnabled ? '' : 'none';
         if (endedBtn) endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
-        var menuResume = document.getElementById('lc-menu-resume-ticket');
-        if (menuResume) menuResume.style.display = ticketResumeEnabled ? '' : 'none';
-        var toolbarMenuWrap = document.getElementById('lc-toolbar-menu-wrap');
-        if (toolbarMenuWrap) toolbarMenuWrap.style.display = ticketResumeEnabled ? '' : 'none';
         if (!ticketDisplayEnabled) {
             if (refWrap) refWrap.hidden = true;
             if (endedRef) endedRef.hidden = true;
@@ -1181,15 +824,70 @@
         syncTicketMessagesVisibility();
     }
 
-    function applyWidgetTheme() {
-        var panel = document.getElementById('lc-panel');
-        if (!panel) return;
-        var theme = (settings && settings.widget_theme) ? String(settings.widget_theme).toLowerCase() : 'dark';
-        if (theme !== 'light') theme = 'dark';
-        panel.classList.remove('lcw-theme-dark', 'lcw-theme-light');
-        panel.classList.add(theme === 'light' ? 'lcw-theme-light' : 'lcw-theme-dark');
+
+    function resetVisitorPollTimers(wsActive) {
+        var interval = wsActive ? (parseInt(realtimeConfig.backupPollMs, 10) || Math.max(pollMs * 10, 15000)) : pollMs;
+        if (pollTimer) clearInterval(pollTimer);
+        if (conversationId) {
+            pollTimer = setInterval(pollMessages, interval);
+        }
     }
 
+    function initVisitorRealtime() {
+        if (!conversationId || realtimeConfig.mode !== 'ws' || !realtimeConfig.wsUrl) return;
+        if (!window.LCRealtime) return;
+
+        fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
+            '&conversation_id=' + encodeURIComponent(conversationId), { credentials: 'omit' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success || !data.token) return;
+                if (realtimeClient && realtimeClient.disconnect) realtimeClient.disconnect();
+                realtimeClient = window.LCRealtime.create({
+                    mode: 'ws',
+                    wsUrl: realtimeConfig.wsUrl,
+                    token: data.token,
+                    fallbackPoll: function () { pollMessages(false); }
+                });
+                realtimeClient.on('connected', function () { resetVisitorPollTimers(true); });
+                realtimeClient.on('disconnected', function () { resetVisitorPollTimers(false); });
+                realtimeClient.on('message.new', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (cid === conversationId) pollMessages(false);
+                });
+                realtimeClient.on('typing', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (cid !== conversationId) return;
+                    if ((payload.role || '') === 'agent') {
+                        setPeerTypingVisible(!!payload.typing, payload.name || '', payload.preview || '');
+                    }
+                });
+                realtimeClient.on('conversation.updated', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (cid === conversationId) pollMessages(false);
+                });
+                realtimeClient.connect();
+            })
+            .catch(function () { /* poll stays */ });
+    }
+
+    function loadRealtimeScript(done) {
+        if (window.LCRealtime) {
+            if (done) done();
+            return;
+        }
+        var existing = document.querySelector('script[data-lc-realtime]');
+        if (existing) {
+            existing.addEventListener('load', function () { if (done) done(); });
+            return;
+        }
+        var s = document.createElement('script');
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=1';
+        s.async = true;
+        s.setAttribute('data-lc-realtime', '1');
+        s.onload = function () { if (done) done(); };
+        document.head.appendChild(s);
+    }
     function applyWidgetSettings(data) {
         if (!data || !data.settings) return;
         settings = data.settings;
@@ -1197,24 +895,19 @@
             var pf = settings.prechat_form_enabled;
             prechatFormEnabled = pf === true || pf === 1 || pf === '1';
         }
-        // Form off = do not keep old name/email from previous form sessions
-        if (!prechatFormEnabled) {
-            try {
-                localStorage.removeItem('lc_visitor_name');
-                localStorage.removeItem('lc_visitor_email');
-            } catch (e) {}
-        }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
-        syncPrechatGateUi();
+        if (data.realtime) {
+            realtimeConfig = data.realtime;
+        }
+        loadRealtimeScript(function () {
+            if (conversationId) initVisitorRealtime();
+        });
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;
-        var agentName = document.getElementById('lc-panel-agent-name');
-        if (agentName && !(currentAgent && currentAgent.name)) agentName.textContent = name;
-        var brandColor = settings.widget_color || '#6FD943';
-        document.documentElement.style.setProperty('--lcw-primary', brandColor);
-        document.documentElement.style.setProperty('--lcw-agent-accent', brandColor);
-        applyWidgetTheme();
+        var powered = document.getElementById('lc-powered-name');
+        if (powered) powered.textContent = name;
+        document.documentElement.style.setProperty('--lcw-primary', settings.widget_color || '#6FD943');
         if (settings.poll_interval_ms) {
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
             if (pollTimer) {
@@ -1263,33 +956,18 @@
 
     /**
      * Entry rules (enterprise):
-     * - No auto-resume of old chats by IP / past device / localStorage
-     * - Same-tab continue: sessionStorage conversation id (survives refresh, dies with tab)
-     * - Widget never shows combined IP history - that is admin/agent only
+     * - No auto-resume of old chats by IP / past device
+     * - Session continue: sessionStorage conversation id only
      * - Ticket resume: separate form when setting ON (visitor + agent share history)
-     * - Form ON → gate identity; Form OFF → direct chat
+     * - Form ON -> gate identity; Form OFF -> direct chat
      */
     function routeVisitorEntry(data) {
         if (!data || !data.success) return;
         applyWidgetSettings(data);
 
         var identityOk = !!data.visitor_identity_complete;
-        // sessionStorage already clears when the tab closes — always resume if present.
-        // Do NOT wipe on "non-reload" navigations; that was dropping chats on refresh.
+        // Session-only reconnect - never use server has_active_chat for silent resume
         var resumeId = getStoredConversationId() || pendingResumeConvId || null;
-        // Same visitor_uid still has waiting/active on server (sessionStorage lost) → reconnect
-        // so dashboard Active and widget stay in sync. Never IP-based.
-        if (!resumeId && data.has_active_chat && data.conversation_id) {
-            resumeId = parseInt(data.conversation_id, 10) || null;
-        }
-        if (resumeId) {
-            // Keep token for reconnect; widget-init will re-issue if needed
-            try {
-                if (!getStoredChatToken()) {
-                    /* ok - server issues a fresh token on resume */
-                }
-            } catch (eTok) {}
-        }
 
         if (prechatFormEnabled) {
             if (resumeId && identityOk) {
@@ -1316,7 +994,7 @@
             scheduleAutoOpenOnLoad();
             return;
         }
-        showIdleChatReady();
+        startDirectChat();
         scheduleAutoOpenOnLoad();
     }
 
@@ -1329,84 +1007,10 @@
         });
     }
 
-    function idleWelcomeText() {
-        var welcome = String((settings && settings.welcome_message) || '').trim();
-        var offline = String((settings && settings.offline_message) || '').trim();
-        if (agentsOnline > 0) {
-            return welcome || 'Hi! How can we help you today?';
-        }
-        return offline || welcome || 'We\'re away right now. Leave a message and we\'ll get back to you.';
-    }
-
-    function showIdleWelcomePreview() {
-        var text = idleWelcomeText();
-        if (!text) return;
-        // Preview only - no conversation / ticket until visitor sends a message
-        appendMessage({
-            sender_type: 'system',
-            message: text,
-            created_at: new Date().toISOString(),
-            _idlePreview: true
-        });
-    }
-
-    function syncPrechatGateUi() {
-        var statusCard = document.getElementById('lc-prechat-status');
-        if (statusCard) {
-            // Online status card only with prechat form — never as a standalone gate.
-            var showStatus = !!prechatFormEnabled;
-            statusCard.hidden = !showStatus;
-            statusCard.style.display = showStatus ? '' : 'none';
-        }
-        var directStart = document.getElementById('lc-direct-chat-start');
-        if (directStart && directStart.parentNode) {
-            directStart.parentNode.removeChild(directStart);
-        }
-    }
-
-    function showDirectEntryWithTicketOption() {
-        // Direct chat: skip status card / start button — go straight to idle compose.
-        // Ticket resume stays in the 3-dot head menu.
-        syncPrechatGateUi();
-        showIdleChatReady();
-    }
-
-    function ensureDirectChatStartButton() {
-        syncPrechatGateUi();
-    }
-
-    function showIdleChatReady() {
-        chatClosed = false;
-        leaveCloseSent = false;
-        conversationId = null;
-        chatToken = '';
-        lastMsgId = 0;
-        lastDateLabel = '';
-        currentReference = '';
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-        }
-        persistConversationId(null);
-        persistChatToken('');
-        try { chatStore().removeItem(LAST_MSG_KEY); } catch (e) {}
-        var box = document.getElementById('lc-panel-messages');
-        if (box) box.innerHTML = '';
-        var refWrap = document.getElementById('lc-panel-ref');
-        if (refWrap) refWrap.hidden = true;
-        setWaitingState(false);
-        showIdleIntro();
-    }
-
     function startDirectChat(options) {
         options = options || {};
         if (prechatFormEnabled) {
             showPrechatForm(true);
-            return;
-        }
-        // No silent start - wait for first visitor message (or explicit resume)
-        if (!options.initialMessage && !options.resumeConversationId) {
-            showIdleChatReady();
             return;
         }
         showChatView();
@@ -1415,8 +1019,8 @@
         var payload = {
             visitor_uid: visitorUid,
             brand_key: brandKey,
-            name: prechatFormEnabled ? (localStorage.getItem('lc_visitor_name') || '') : '',
-            email: prechatFormEnabled ? (localStorage.getItem('lc_visitor_email') || '') : '',
+            name: localStorage.getItem('lc_visitor_name') || '',
+            email: localStorage.getItem('lc_visitor_email') || '',
             page_url: window.location.href,
             website_url: ''
         };
@@ -1460,7 +1064,7 @@
         var name = document.getElementById('lc-prechat-name').value.trim();
         var email = document.getElementById('lc-prechat-email').value.trim();
         var message = document.getElementById('lc-prechat-message').value.trim();
-        var honeypot = readHoneypotField('lc-prechat-honeypot');
+        var honeypot = (document.getElementById('lc-prechat-honeypot') || {}).value || '';
 
         showPrechatError('');
         if (!name || !email || !message) {
@@ -1486,7 +1090,7 @@
                 email: email,
                 initial_message: message,
                 page_url: window.location.href,
-                lc_hp: honeypot,
+                website_url: honeypot,
                 resume_conversation_id: pendingResumeConvId || 0
             })
         })
@@ -1512,116 +1116,13 @@
         });
     }
 
-
-    function widgetSiteLabel() {
-        return (settings && settings.site_name) ? settings.site_name : 'this site';
-    }
-
-    function isConfirmOpen() {
-        var closeEl = document.getElementById('lc-close-confirm');
-        var minEl = document.getElementById('lc-minimize-confirm');
-        return (closeEl && !closeEl.hidden) || (minEl && !minEl.hidden);
-    }
-
-    function hideCloseConfirm() {
-        hideHeadMenu();
-        var el = document.getElementById('lc-close-confirm');
-        if (el) {
-            el.hidden = true;
-        }
-    }
-
-    function hideMinimizeConfirm() {
-        var el = document.getElementById('lc-minimize-confirm');
-        if (el) {
-            el.hidden = true;
-        }
-    }
-
-    function showCloseConfirm() {
-        if (chatClosed || !conversationId) {
-            minimizePanel();
-            return;
-        }
-        hideMinimizeConfirm();
-        var el = document.getElementById('lc-close-confirm');
-        if (el) {
-            el.hidden = false;
-        }
-    }
-
-    function showMinimizeConfirm() {
-        if (!isOpen) {
-            return;
-        }
-        if (!conversationId || chatClosed) {
-            minimizePanel();
-            return;
-        }
-        hideCloseConfirm();
-        var textEl = document.getElementById('lc-minimize-confirm-text');
-        if (textEl) {
-            textEl.textContent = 'Your conversation on ' + widgetSiteLabel() + ' stays open while you switch tabs or apps.';
-        }
-        var el = document.getElementById('lc-minimize-confirm');
-        if (el) {
-            el.hidden = false;
-        }
-    }
-
-    function bindConfirmSheets() {
-        var closeYes = document.getElementById('lc-close-confirm-yes');
-        var closeDismiss = document.getElementById('lc-close-confirm-dismiss');
-        var minKeep = document.getElementById('lc-minimize-confirm-keep');
-        var minClose = document.getElementById('lc-minimize-confirm-close');
-        var minX = document.getElementById('lc-minimize-confirm-x');
-
-        if (closeYes) {
-            closeYes.addEventListener('click', function () {
-                hideCloseConfirm();
-                endChat();
-            });
-        }
-        if (closeDismiss) {
-            closeDismiss.addEventListener('click', hideCloseConfirm);
-        }
-        if (minKeep) {
-            minKeep.addEventListener('click', hideMinimizeConfirm);
-        }
-        if (minClose) {
-            minClose.addEventListener('click', function () {
-                hideMinimizeConfirm();
-                minimizePanel();
-            });
-        }
-        if (minX) {
-            minX.addEventListener('click', hideMinimizeConfirm);
-        }
-
-        ['lc-close-confirm', 'lc-minimize-confirm'].forEach(function (id) {
-            var overlay = document.getElementById(id);
-            if (!overlay) {
-                return;
-            }
-            overlay.addEventListener('click', function (e) {
-                if (e.target === overlay) {
-                    overlay.hidden = true;
-                }
-            });
-        });
-    }
     function minimizePanel() {
         if (!isOpen) return;
         isOpen = false;
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
-        var root = document.getElementById('lc-widget-root');
         panel.style.display = 'none';
         if (bubble) bubble.classList.remove('lcw-open');
-        if (root) root.classList.remove('lcw-panel-open');
-        hideHeadMenu();
-        hideTranscriptSheet();
-        hideTranscriptConfirm();
         persistPanelOpen(false);
     }
 
@@ -1638,15 +1139,10 @@
             return;
         }
         isOpen = true;
-        if (conversationId) {
-            requestBrowserGeo();
-        }
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
-        var root = document.getElementById('lc-widget-root');
         if (panel) panel.style.display = 'flex';
         if (bubble) bubble.classList.add('lcw-open');
-        if (root) root.classList.add('lcw-panel-open');
         persistPanelOpen(true);
         hideTeaser(false);
         if (!options.silenceFlow) {
@@ -1709,11 +1205,7 @@
     }
 
     function showEndedState() {
-        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
-        if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
-        if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
-        clearPendingAttachment();
         stopOwnTyping();
         setPeerTypingVisible(false);
         leaveCloseSent = true;
@@ -1722,10 +1214,9 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
-        // Keep conversationId/chatToken in memory so visitor can email this ended chat.
-        // Clear storage only - reload should not silently resume a closed session.
         persistConversationId(null);
         persistChatToken('');
+        conversationId = null;
         lastMsgId = 0;
         setComposeEnabled(false);
         document.getElementById('lc-panel-prechat').style.display = 'none';
@@ -1735,490 +1226,10 @@
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
         document.getElementById('lc-panel-ended').style.display = 'flex';
         document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
-        var emailInput = document.getElementById('lc-email-transcript-input');
-        if (emailInput && !emailInput.value) {
-            emailInput.value = localStorage.getItem('lc_visitor_email') || '';
-        }
-        var emailPanel = document.getElementById('lc-email-transcript-panel');
-        if (emailPanel) emailPanel.hidden = true;
-        var endedEl = document.getElementById('lc-panel-ended');
-        if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
-        setEmailTranscriptStatus('', false, 'ended');
         if (currentReference) {
             updateWidgetReference(currentReference);
         }
         syncTicketFeatureUi();
-        syncTranscriptSentUi('ended');
-        syncTranscriptEndedUi();
-    }
-
-    function loadVisitorSoundPref() {
-        try {
-            visitorSoundsEnabled = localStorage.getItem('lc_visitor_sounds') !== '0';
-        } catch (e) {
-            visitorSoundsEnabled = true;
-        }
-    }
-
-    function saveVisitorSoundPref(on) {
-        visitorSoundsEnabled = !!on;
-        try {
-            localStorage.setItem('lc_visitor_sounds', on ? '1' : '0');
-        } catch (e) {}
-    }
-
-    function syncSoundToggleUi() {
-        var cb = document.getElementById('lc-sound-toggle');
-        if (cb) cb.checked = visitorSoundsEnabled;
-    }
-
-    function toggleHeadMenu(forceOpen) {
-        var pop = document.getElementById('lc-head-menu-pop');
-        var btn = document.getElementById('lc-head-menu');
-        if (!pop) return;
-        var open = typeof forceOpen === 'boolean' ? forceOpen : pop.hidden;
-        pop.hidden = !open;
-        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        if (open) syncSoundToggleUi();
-    }
-
-    function hideHeadMenu() {
-        toggleHeadMenu(false);
-    }
-
-    function toggleToolbarMenu(forceOpen) {
-        var pop = document.getElementById('lc-toolbar-menu-pop');
-        var btn = document.getElementById('lc-toolbar-menu');
-        if (!pop) return;
-        var open = typeof forceOpen === 'boolean' ? forceOpen : pop.hidden;
-        pop.hidden = !open;
-        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    }
-
-    function hideToolbarMenu() {
-        toggleToolbarMenu(false);
-    }
-
-    function showTranscriptSheet() {
-        hideHeadMenu();
-        var sheet = document.getElementById('lc-transcript-sheet');
-        if (!sheet) return;
-        if (!conversationId) {
-            appendMessage({ sender_type: 'system', message: 'Start a conversation before sending a transcript.' });
-            return;
-        }
-        var input = document.getElementById('lc-menu-transcript-input');
-        if (input && !input.value) {
-            input.value = localStorage.getItem('lc_visitor_email') || '';
-        }
-        setEmailTranscriptStatus('', false, 'menu');
-        syncTranscriptSentUi('menu');
-        sheet.hidden = false;
-        setTimeout(function () {
-            if (input) input.focus();
-        }, 40);
-    }
-
-    function hideTranscriptSheet() {
-        var sheet = document.getElementById('lc-transcript-sheet');
-        if (sheet) sheet.hidden = true;
-    }
-
-    function showTranscriptConfirm(email, opts) {
-        opts = opts || {};
-        hideHeadMenu();
-        hideTranscriptSheet();
-        var sheet = document.getElementById('lc-transcript-confirm');
-        var textEl = document.getElementById('lc-transcript-confirm-text');
-        if (!sheet || !textEl) return;
-        var addr = String(email || '').trim();
-        if (opts.deferred) {
-            textEl.innerHTML = 'When this chat ends, we will email the transcript to <strong>' + esc(addr) + '</strong>.';
-        } else {
-            textEl.innerHTML = 'Chat transcript sent to <strong>' + esc(addr) + '</strong>.';
-        }
-        sheet.hidden = false;
-    }
-
-    function hideTranscriptConfirm() {
-        var sheet = document.getElementById('lc-transcript-confirm');
-        if (sheet) sheet.hidden = true;
-    }
-
-    function bindHeadMenu() {
-        loadVisitorSoundPref();
-        syncSoundToggleUi();
-
-        var headMenuBtn = document.getElementById('lc-head-menu');
-        if (headMenuBtn) {
-            headMenuBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var pop = document.getElementById('lc-head-menu-pop');
-                toggleHeadMenu(pop && pop.hidden);
-            });
-        }
-
-        var menuPop = document.getElementById('lc-head-menu-pop');
-        if (menuPop) {
-            menuPop.addEventListener('click', function (e) {
-                e.stopPropagation();
-            });
-        }
-
-        document.addEventListener('click', function (e) {
-            var wrap = document.getElementById('lc-head-menu-wrap');
-            if (wrap && !wrap.contains(e.target)) {
-                hideHeadMenu();
-            }
-            var toolbarWrap = document.getElementById('lc-toolbar-menu-wrap');
-            if (toolbarWrap && !toolbarWrap.contains(e.target)) {
-                hideToolbarMenu();
-            }
-        });
-
-        var menuResumeTicket = document.getElementById('lc-menu-resume-ticket');
-        if (menuResumeTicket) {
-            menuResumeTicket.addEventListener('click', function () {
-                openTicketResumeEntry();
-            });
-        }
-
-        var menuTranscript = document.getElementById('lc-menu-send-transcript');
-        if (menuTranscript) {
-            menuTranscript.addEventListener('click', function () {
-                showTranscriptSheet();
-            });
-        }
-
-        var soundToggle = document.getElementById('lc-sound-toggle');
-        if (soundToggle) {
-            soundToggle.addEventListener('change', function () {
-                saveVisitorSoundPref(soundToggle.checked);
-                if (soundToggle.checked) {
-                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                        window.LCNotifySound.play({ force: true });
-                    } else {
-                        playNotifySound(true);
-                    }
-                }
-            });
-        }
-
-        var transcriptSend = document.getElementById('lc-menu-transcript-send');
-        if (transcriptSend) {
-            transcriptSend.addEventListener('click', function () {
-                sendChatTranscriptEmail(null, 'menu');
-            });
-        }
-        var transcriptClose = document.getElementById('lc-transcript-sheet-close');
-        if (transcriptClose) {
-            transcriptClose.addEventListener('click', hideTranscriptSheet);
-        }
-        var transcriptSheet = document.getElementById('lc-transcript-sheet');
-        if (transcriptSheet) {
-            transcriptSheet.addEventListener('click', function (e) {
-                if (e.target === transcriptSheet) hideTranscriptSheet();
-            });
-        }
-        var transcriptConfirmGotIt = document.getElementById('lc-transcript-confirm-gotit');
-        if (transcriptConfirmGotIt) {
-            transcriptConfirmGotIt.addEventListener('click', hideTranscriptConfirm);
-        }
-        var transcriptConfirmClose = document.getElementById('lc-transcript-confirm-close');
-        if (transcriptConfirmClose) {
-            transcriptConfirmClose.addEventListener('click', hideTranscriptConfirm);
-        }
-        var transcriptConfirm = document.getElementById('lc-transcript-confirm');
-        if (transcriptConfirm) {
-            transcriptConfirm.addEventListener('click', function (e) {
-                if (e.target === transcriptConfirm) hideTranscriptConfirm();
-            });
-        }
-    }
-
-    function bindToolbarMenu() {
-        var toolbarMenuBtn = document.getElementById('lc-toolbar-menu');
-        if (toolbarMenuBtn) {
-            toolbarMenuBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var pop = document.getElementById('lc-toolbar-menu-pop');
-                toggleToolbarMenu(pop && pop.hidden);
-            });
-        }
-
-        var toolbarMenuPop = document.getElementById('lc-toolbar-menu-pop');
-        if (toolbarMenuPop) {
-            toolbarMenuPop.addEventListener('click', function (e) {
-                e.stopPropagation();
-            });
-        }
-
-        var toolbarResume = document.getElementById('lc-toolbar-menu-resume-ticket');
-        if (toolbarResume) {
-            toolbarResume.addEventListener('click', function () {
-                openTicketResumeEntry();
-            });
-        }
-    }
-
-    function emailExportIds(which) {
-        if (which === 'menu') {
-            return {
-                panel: 'lc-transcript-sheet',
-                input: 'lc-menu-transcript-input',
-                send: 'lc-menu-transcript-send',
-                status: 'lc-menu-transcript-status',
-                sendLabel: 'Request transcript'
-            };
-        }
-        return {
-            panel: 'lc-email-transcript-panel',
-            input: 'lc-email-transcript-input',
-            send: 'lc-email-transcript-send',
-            status: 'lc-email-transcript-status',
-            sendLabel: 'Send to email'
-        };
-    }
-
-    function setEmailTranscriptStatus(msg, isError, which) {
-        var ids = emailExportIds(which);
-        var el = document.getElementById(ids.status);
-        if (!el) return;
-        if (!msg) {
-            el.hidden = true;
-            el.textContent = '';
-            el.classList.remove('is-error', 'is-ok');
-            return;
-        }
-        el.hidden = false;
-        el.textContent = msg;
-        el.classList.toggle('is-error', !!isError);
-        el.classList.toggle('is-ok', !isError);
-    }
-
-    function toggleEmailTranscriptPanel(which) {
-        var ids = emailExportIds(which);
-        var panel = document.getElementById(ids.panel);
-        if (!panel) return;
-        var open = panel.hidden;
-        panel.hidden = !open;
-        var ended = document.getElementById('lc-panel-ended');
-        if (ended) ended.classList.toggle('lcw-ended-email-open', open);
-        if (open) {
-            var input = document.getElementById(ids.input);
-            if (input && !input.value) {
-                input.value = localStorage.getItem('lc_visitor_email') || '';
-            }
-            setEmailTranscriptStatus('', false, which);
-            setTimeout(function () {
-                if (panel.scrollIntoView) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                var actions = document.querySelector('.lcw-ended-actions');
-                if (actions && actions.scrollIntoView) actions.scrollIntoView({ block: 'end', behavior: 'smooth' });
-                if (input) input.focus();
-            }, 40);
-        }
-    }
-
-    function isValidTranscriptEmail(email) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
-    }
-
-    function syncTranscriptEmailFromInputs() {
-        var ids = ['lc-menu-transcript-input', 'lc-email-transcript-input'];
-        for (var i = 0; i < ids.length; i++) {
-            var el = document.getElementById(ids[i]);
-            if (!el) continue;
-            var v = (el.value || '').trim();
-            if (isValidTranscriptEmail(v)) {
-                transcriptEmailForClose = v.toLowerCase();
-                try { localStorage.setItem('lc_visitor_email', transcriptEmailForClose); } catch (e) {}
-                return;
-            }
-        }
-    }
-
-    function bindTranscriptEmailInputs() {
-        ['lc-menu-transcript-input', 'lc-email-transcript-input'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            el.addEventListener('input', syncTranscriptEmailFromInputs);
-            el.addEventListener('change', syncTranscriptEmailFromInputs);
-        });
-    }
-
-    function syncTranscriptEndedUi() {
-        var endedInput = document.getElementById('lc-email-transcript-input');
-        if (endedInput && transcriptEmailForClose && !endedInput.value) {
-            endedInput.value = transcriptEmailForClose;
-        }
-        if (isTranscriptDeferredThisSession()) {
-            setTranscriptControlsDisabled(true, 'scheduled');
-            setEmailTranscriptStatus('Transcript will be emailed to ' + transcriptEmailForClose + '.', false, 'ended');
-            return;
-        }
-        if (isTranscriptSentThisSession()) {
-            setTranscriptControlsDisabled(true, 'sent');
-            setEmailTranscriptStatus('Transcript sent to ' + transcriptEmailForClose + '.', false, 'ended');
-        }
-    }
-
-    function isTranscriptSentThisSession() {
-        return !!(transcriptSentConvId && conversationId && transcriptSentConvId === conversationId);
-    }
-
-    function isTranscriptDeferredThisSession() {
-        return !!(transcriptDeferredConvId && conversationId && transcriptDeferredConvId === conversationId);
-    }
-
-    function setTranscriptControlsDisabled(disabled, mode) {
-        mode = mode || (disabled ? 'sent' : '');
-        var endedSend = document.getElementById('lc-email-transcript-send');
-        var menuSend = document.getElementById('lc-menu-transcript-send');
-        var menuItem = document.getElementById('lc-menu-send-transcript');
-        [endedSend, menuSend].forEach(function (btn) {
-            if (!btn) return;
-            btn.disabled = !!disabled;
-            btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-            if (!disabled) {
-                btn.textContent = btn.id === 'lc-email-transcript-send' ? 'Send to email' : 'Request transcript';
-            } else if (mode === 'scheduled') {
-                btn.textContent = 'Scheduled';
-            } else {
-                btn.textContent = 'Sent to email';
-            }
-        });
-        if (menuItem) {
-            menuItem.disabled = !!disabled;
-            menuItem.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-        }
-    }
-
-    function markTranscriptSent() {
-        transcriptSentConvId = conversationId;
-        transcriptDeferredConvId = null;
-        setTranscriptControlsDisabled(true, 'sent');
-    }
-
-    function markTranscriptDeferred(email) {
-        transcriptDeferredConvId = conversationId;
-        transcriptSentConvId = null;
-        transcriptEmailForClose = (email || transcriptEmailForClose || '').toLowerCase();
-        setTranscriptControlsDisabled(true, 'scheduled');
-    }
-
-    function resetTranscriptSentState() {
-        transcriptSentConvId = null;
-        transcriptDeferredConvId = null;
-        transcriptEmailForClose = '';
-        setTranscriptControlsDisabled(false);
-    }
-
-    function syncTranscriptSentUi(which) {
-        if (isTranscriptDeferredThisSession()) {
-            setTranscriptControlsDisabled(true, 'scheduled');
-            if (which) {
-                setEmailTranscriptStatus('Transcript will be emailed when this chat ends.', false, which);
-            }
-            return;
-        }
-        if (!isTranscriptSentThisSession()) {
-            return;
-        }
-        setTranscriptControlsDisabled(true, 'sent');
-        if (which) {
-            setEmailTranscriptStatus('Transcript already sent for this chat.', false, which);
-        }
-    }
-
-    function applyTranscriptPollState(data) {
-        if (!data || !conversationId) return;
-        if (data.transcript_sent && data.transcript_email) {
-            transcriptEmailForClose = String(data.transcript_email).toLowerCase();
-            markTranscriptSent();
-            return;
-        }
-        if (data.transcript_requested && data.transcript_email) {
-            transcriptEmailForClose = String(data.transcript_email).toLowerCase();
-            markTranscriptDeferred(transcriptEmailForClose);
-            return;
-        }
-        if ((data.status === 'active' || data.status === 'waiting') && (isTranscriptDeferredThisSession() || isTranscriptSentThisSession())) {
-            resetTranscriptSentState();
-        }
-    }
-
-    function sendChatTranscriptEmail(forcedEmail, which, opts) {
-        opts = opts || {};
-        which = which || 'ended';
-        var ids = emailExportIds(which);
-        if (isTranscriptSentThisSession()) {
-            syncTranscriptSentUi(which);
-            return;
-        }
-        if (!conversationId) {
-            setEmailTranscriptStatus('This chat is no longer available to export. Start a new conversation first.', true, which);
-            return;
-        }
-        var input = document.getElementById(ids.input);
-        var email = (typeof forcedEmail === 'string' && forcedEmail) ? forcedEmail.trim() : ((input && input.value) || '').trim();
-        if (!email) {
-            setEmailTranscriptStatus('Please enter your email address.', true, which);
-            if (input) input.focus();
-            return;
-        }
-        var sendBtn = document.getElementById(ids.send);
-        if (sendBtn) {
-            sendBtn.disabled = true;
-            sendBtn.setAttribute('aria-disabled', 'true');
-            sendBtn.textContent = 'Sending...';
-        }
-        setEmailTranscriptStatus(which === 'menu' ? 'Saving transcript request...' : 'Sending this chat...', false, which);
-
-        fetch(siteUrl + '/api/visitor-email-transcript.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                conversation_id: conversationId,
-                visitor_uid: visitorUid,
-                chat_token: chatToken,
-                widget_loaded_at: widgetLoadedAt || Date.now(),
-                lc_hp: readHoneypotField('lc-honeypot'),
-                email: email,
-                brand_key: brandKey
-            })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data && data.success) {
-                try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
-                transcriptEmailForClose = (data.email || email || '').toLowerCase();
-                if (input) input.value = data.email || email;
-                if (data.deferred) {
-                    markTranscriptDeferred(transcriptEmailForClose);
-                    setEmailTranscriptStatus('Transcript will be emailed when this chat ends.', false, which);
-                    showTranscriptConfirm(data.email || email, { deferred: true });
-                } else {
-                    markTranscriptSent();
-                    setEmailTranscriptStatus('Transcript sent to your email.', false, which);
-                    showTranscriptConfirm(data.email || email, { deferred: false });
-                }
-                return;
-            }
-            if (sendBtn) {
-                sendBtn.disabled = false;
-                sendBtn.setAttribute('aria-disabled', 'false');
-                sendBtn.textContent = ids.sendLabel;
-            }
-            setEmailTranscriptStatus((data && data.error) || 'Could not send email.', true, which);
-        })
-        .catch(function () {
-            if (sendBtn) {
-                sendBtn.disabled = false;
-                sendBtn.setAttribute('aria-disabled', 'false');
-                sendBtn.textContent = ids.sendLabel;
-            }
-            setEmailTranscriptStatus('Connection error. Please try again.', true, which);
-        });
     }
 
     function hideEndedState() {
@@ -2265,10 +1276,6 @@
 
     function startNewChat() {
         hideEndedState();
-        conversationId = null;
-        chatToken = '';
-        persistConversationId(null);
-        persistChatToken('');
         currentAgent = { name: '', avatar: null };
         currentReference = '';
         updateHeaderAgent(null);
@@ -2276,10 +1283,7 @@
         var endedRef = document.getElementById('lc-ended-ref');
         if (refWrap) refWrap.hidden = true;
         if (endedRef) endedRef.hidden = true;
-        hideTicketResumePanel(true);
-        fullHistoryMode = false;
-        ticketResumeAwaitingAgent = false;
-        resetTranscriptSentState();
+        hideTicketResumePanel();
         conversationId = null;
         lastMsgId = 0;
         lastDateLabel = '';
@@ -2292,65 +1296,14 @@
         beginNewConversationFlow();
     }
 
-
-    var GEO_SENT_KEY = 'lc_browser_geo_' + brandKey;
-
-    function requestBrowserGeo() {
-        if (!navigator.geolocation || !visitorUid) {
-            return;
-        }
-        try {
-            if (sessionStorage.getItem(GEO_SENT_KEY) === '1') {
-                return;
-            }
-        } catch (ignore) {}
-
-        navigator.geolocation.getCurrentPosition(
-            function (pos) {
-                var lat = pos.coords && pos.coords.latitude;
-                var lon = pos.coords && pos.coords.longitude;
-                if (typeof lat !== 'number' || typeof lon !== 'number') {
-                    return;
-                }
-                fetch(siteUrl + '/api/visitor-geo.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        visitor_uid: visitorUid,
-                        brand_key: brandKey,
-                        lat: lat,
-                        lon: lon
-                    })
-                })
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data && data.success) {
-                        try {
-                            sessionStorage.setItem(GEO_SENT_KEY, '1');
-                        } catch (ignore2) {}
-                    }
-                })
-                .catch(function () {});
-            },
-            function () {},
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 }
-        );
-    }
-
     function handleChatStarted(data, options) {
         options = options || {};
-        if (transcriptSentConvId && transcriptSentConvId !== data.conversation_id) {
-            resetTranscriptSentState();
-        }
         conversationId = data.conversation_id;
         chatToken = data.chat_token || getStoredChatToken() || '';
         widgetLoadedAt = Date.now();
         persistConversationId(conversationId);
         persistChatToken(chatToken);
         chatClosed = data.status === 'closed';
-        if (!chatClosed) {
-            resetTranscriptSentState();
-        }
         applyWidgetSettings(data);
         if (data.attachments && window.LCChatFiles) {
             window.LCChatFiles.setLimits(data.attachments);
@@ -2360,42 +1313,32 @@
             updateWidgetReference(data.reference);
         }
         if (chatClosed) {
-            if (Date.now() < resumeGraceUntil) {
-                chatClosed = false;
-            } else {
-                showEndedState();
-                return;
-            }
+            showEndedState();
+            return;
         }
         hideEndedState();
         showChatView();
-        var inputEl = document.getElementById('lc-input');
-        if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
-        if (options.resumedByTicket || data.resumed_by_ticket) {
-            fullHistoryMode = false;
-            ticketResumeAwaitingAgent = data.status !== 'active';
+        updateHeaderAgent(data.agent || null);
+        var hasAgent = data.agent && data.agent.name;
+        if (hasAgent) {
+            setWaitingState(false);
+            updateStatus('Chatting with ' + data.agent.name, true);
+        } else if (data.status === 'waiting') {
+            setWaitingState(true);
+            updateStatus('Waiting for an agent...', agentsOnline > 0);
+        } else {
+            setWaitingState(false);
+            updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
         }
         if (!options.keepMessages) {
             lastMsgId = 0;
             lastDateLabel = '';
             document.getElementById('lc-panel-messages').innerHTML = '';
         }
-        if (ticketResumeAwaitingAgent || data.status === 'waiting') {
-            updateHeaderAgent(null);
-            setWaitingState(true);
-            updateStatus('Connecting to live agent...', (data.agents_online || 0) > 0);
-        } else {
-            updateHeaderAgent(data.agent || null);
-            applyAgentConnectionState(data);
-            if (!data.agent && !data.agent_name && data.status !== 'waiting' && !(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0)) {
-                updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
-            }
-        }
         pollMessages(true);
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(pollMessages, pollMs);
-        requestBrowserGeo();
+        resetVisitorPollTimers(false);
+        loadRealtimeScript(function () { initVisitorRealtime(); });
     }
 
     function initChat(options) {
@@ -2411,8 +1354,8 @@
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
-                name: prechatFormEnabled ? (localStorage.getItem('lc_visitor_name') || '') : '',
-                email: prechatFormEnabled ? (localStorage.getItem('lc_visitor_email') || '') : '',
+                name: localStorage.getItem('lc_visitor_name') || '',
+                email: localStorage.getItem('lc_visitor_email') || '',
                 page_url: window.location.href,
                 website_url: '',
                 resume_conversation_id: resumeConvId
@@ -2439,9 +1382,8 @@
 
     function autoResizeTextarea(el) {
         if (!el) return;
-        el.style.height = '34px';
-        var next = Math.min(Math.max(el.scrollHeight, 34), 88);
-        el.style.height = next + 'px';
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 100) + 'px';
     }
 
     function formatMsgTime(ts) {
@@ -2508,71 +1450,10 @@
         if (bubble) bubble.classList.toggle('lcw-bubble-online', !!online);
     }
 
-
-    function isAgentJoinMessage(m) {
-        if (!m) return false;
-        if (m.event === 'agent_join') return true;
-        if (m.sender_type !== 'system') return false;
-        return /joined the chat\.?$/i.test(String(m.message || '').trim());
-    }
-
-    function applyAgentConnectionState(data) {
-        if (!data) return;
-        if (ticketResumeAwaitingAgent) {
-            if (data.status === 'active' && (parseInt(data.agent_id, 10) || 0) > 0 && (data.is_assigned || (data.agent && data.agent.name))) {
-                ticketResumeAwaitingAgent = false;
-            } else {
-                setWaitingState(true);
-                updateHeaderAgent(null);
-                updateStatus('Connecting to live agent...', agentsOnline > 0);
-                return;
-            }
-        }
-        var assigned = !!(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0);
-        var agentObj = data.agent && data.agent.name ? data.agent : null;
-        var agentName = agentObj ? agentObj.name : (data.agent_name || '');
-
-        if (assigned || agentName || data.status === 'active') {
-            setWaitingState(false);
-            if (agentObj) {
-                updateHeaderAgent(agentObj);
-                updateStatus('Chatting with ' + agentObj.name, true);
-            } else if (agentName) {
-                updateHeaderAgent({ name: agentName, avatar: currentAgent.avatar });
-                updateStatus('Chatting with ' + agentName, true);
-            } else if (data.status === 'active') {
-                updateStatus('Chatting with an agent', true);
-            }
-            return;
-        }
-
-        if (data.status === 'waiting') {
-            setWaitingState(true);
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
-        } else if (agentsOnline > 0) {
-            updateStatus('Team online', true);
-        }
-    }
-
     function setWaitingState(waiting) {
         isWaitingForAgent = waiting;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
-        var card = document.getElementById('lc-connecting-card');
-        var text = document.getElementById('lc-waiting-text');
-        if (text) {
-            text.textContent = waiting ? 'Connecting to live agent...' : text.textContent;
-        }
-        if (card) {
-            if (waiting && !chatClosed) {
-                card.hidden = false;
-            } else {
-                card.hidden = true;
-            }
-        }
-        if (waiting && !chatClosed) {
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
-        }
     }
 
     function setPeerTypingVisible(show, name) {
@@ -2592,21 +1473,11 @@
 
     function postOwnTyping(isTyping) {
         if (!conversationId || chatClosed) return;
-        var input = document.getElementById('lc-input');
-        var draft = '';
-        if (isTyping && input) {
-            draft = String(input.value || '');
-            if (draft.length > 280) draft = draft.slice(0, 280);
-        }
         var now = Date.now();
-        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 1800) {
-            return;
-        }
-        if (isTyping && draft !== lastTypingDraft && now - lastTypingPostAt < 350) {
+        if (isTyping && now - lastTypingPostAt < 1800) {
             return;
         }
         lastTypingPostAt = now;
-        lastTypingDraft = draft;
         ownTypingActive = !!isTyping;
         fetch(siteUrl + '/api/typing.php', {
             method: 'POST',
@@ -2614,8 +1485,7 @@
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
-                typing: !!isTyping,
-                draft: draft
+                typing: !!isTyping
             })
         }).catch(function () {});
     }
@@ -2632,15 +1502,13 @@
         if (ownTypingActive && conversationId) {
             ownTypingActive = false;
             lastTypingPostAt = 0;
-            lastTypingDraft = '';
             fetch(siteUrl + '/api/typing.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversation_id: conversationId,
                     visitor_uid: visitorUid,
-                    typing: false,
-                    draft: ''
+                    typing: false
                 })
             }).catch(function () {});
         } else {
@@ -2675,10 +1543,9 @@
         }, 2500);
     }
 
-    function playNotifySound(force) {
-        if (!force && !visitorSoundsEnabled) return;
+    function playNotifySound() {
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-            window.LCNotifySound.play(force ? { force: true } : undefined);
+            window.LCNotifySound.play();
             return;
         }
         // Fallback soft chime if shared script not loaded yet
@@ -2744,41 +1611,17 @@
         return '<span class="' + className + ' lcw-avatar-initials" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
     }
 
-        function updateHeaderAgent(agent) {
+    function updateHeaderAgent(agent) {
         var wrap = document.getElementById('lc-head-agent-avatar');
-        var nameEl = document.getElementById('lc-panel-agent-name');
-        var roleEl = document.getElementById('lc-panel-agent-role');
-        var fallback = document.getElementById('lc-head-agent-fallback');
-        var pill = document.getElementById('lc-head-agent-pill');
-        var titleEl = document.getElementById('lc-panel-title');
-        if (!wrap || !nameEl) return;
+        if (!wrap) return;
         if (!agent || !agent.name) {
             wrap.style.display = 'none';
             wrap.innerHTML = '';
-            if (fallback) fallback.style.display = 'flex';
-            if (pill) pill.classList.remove('is-live');
-            var team = (settings && settings.site_name) ? settings.site_name : 'LiveChat';
-            nameEl.textContent = team;
-            if (roleEl) {
-                roleEl.textContent = agentsOnline > 0 ? 'Online now' : 'Support';
-                roleEl.hidden = false;
-            }
-            if (titleEl) titleEl.textContent = team;
             return;
         }
         currentAgent = agent;
-        if (fallback) fallback.style.display = 'none';
-        if (pill) pill.classList.add('is-live');
         wrap.style.display = 'flex';
-        var av = agent.avatar ? Object.assign({}, agent.avatar) : {};
-        if (!av.color) av.color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
-        wrap.innerHTML = renderAvatar(av, agent.name, 'lcw-head-avatar');
-        nameEl.textContent = agent.name;
-        if (roleEl) {
-            roleEl.textContent = agent.role || 'Agent';
-            roleEl.hidden = false;
-        }
-        if (titleEl) titleEl.textContent = agent.name;
+        wrap.innerHTML = renderAvatar(agent.avatar, agent.name, 'lcw-head-avatar');
     }
 
     function updateStatus(text, online) {
@@ -2823,35 +1666,27 @@
         var box = document.getElementById('lc-panel-messages');
         var timeHtml = msgTimeHtml(m.created_at);
 
-        if (isAgentJoinMessage(m)) {
-            if (!options.suppressAgentState) {
-                setWaitingState(false);
-                var joinName = m.agent_name || 'Agent';
-                var joinAvatar = m.agent_avatar || null;
-                updateHeaderAgent({ name: joinName, avatar: joinAvatar });
-                updateStatus('Chatting with ' + joinName, true);
-            }
+        if (m.sender_type === 'system' && m.event === 'agent_join') {
+            setWaitingState(false);
             var div = document.createElement('div');
             div.className = 'lcw-join-event';
             if (msgKey) div.setAttribute('data-msg-id', msgKey);
             var joinName = m.agent_name || 'Agent';
             var joinAvatar = m.agent_avatar || null;
+            updateHeaderAgent({ name: joinName, avatar: joinAvatar });
+            updateStatus('Chatting with ' + joinName, true);
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> joined the conversation</div>';
             box.appendChild(div);
         } else if (m.sender_type === 'agent') {
-            if (!options.suppressAgentState) {
-                setWaitingState(false);
-                var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
-                var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
-                updateHeaderAgent({ name: agentName, avatar: agentAvatar });
-                updateStatus('Chatting with ' + agentName, true);
-            }
+            setWaitingState(false);
             var row = document.createElement('div');
             row.className = 'lcw-msg-row lcw-agent-row';
             if (msgKey) row.setAttribute('data-msg-id', msgKey);
             var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
             var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
+            updateHeaderAgent({ name: agentName, avatar: agentAvatar });
+            updateStatus('Chatting with ' + agentName, true);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
@@ -2868,9 +1703,8 @@
             wrap.innerHTML =
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
-                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div>' +
-                '<div class="lcw-msg-status-out">' + ticks + '</div>';
+                '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span>' + ticks + '</div>' +
+                '</div>';
             box.appendChild(wrap);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
@@ -2909,7 +1743,7 @@
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
         if (status === 'read') {
-            return '<span class="lcw-msg-read-label" title="Read" aria-label="Read">Read</span>';
+            return '<span class="lcw-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
             return '<span class="lcw-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
@@ -2920,36 +1754,17 @@
     function updateVisitorTicks(msgKey, status) {
         var root = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]');
         if (!root) return;
-        var html = msgTicksHtml(status);
-        var slot = root.querySelector('.lcw-msg-status-out');
-        if (slot) {
-            slot.innerHTML = html;
+        var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read');
+        if (!existing) {
+            var foot = root.querySelector('.lcw-msg-foot') || root.querySelector('.lcw-msg-meta');
+            if (foot) foot.insertAdjacentHTML('beforeend', msgTicksHtml(status));
             return;
         }
-        var foot = root.querySelector('.lcw-msg-foot') || root.querySelector('.lcw-msg-meta');
-        if (foot) {
-            foot.querySelectorAll('.lcw-msg-ticks, .lcw-msg-read-label, .lcw-msg-read').forEach(function (el) {
-                el.remove();
-            });
-        }
-        var existing = root.querySelector('.lcw-msg-ticks, .lcw-msg-read-label, .lcw-msg-read');
-        if (existing) {
-            var wrap = document.createElement('div');
-            wrap.innerHTML = html;
-            if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
-            return;
-        }
-        if (foot) foot.insertAdjacentHTML('beforeend', html);
+        var wrap = document.createElement('div');
+        wrap.innerHTML = msgTicksHtml(status);
+        if (wrap.firstChild) existing.replaceWith(wrap.firstChild);
     }
 
-    function isAdminOnlySystemMessage(m) {
-        if (!m || m.sender_type !== 'system') return false;
-        var t = String(m.message || '');
-        return /Merged\s+\d+\s+earlier chat/i.test(t)
-            || /from the same visitor into this thread/i.test(t)
-            || /Visitor returned\. Previous conversation is open again/i.test(t)
-            || /Agent reopened this chat to follow up/i.test(t);
-    }
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length) return;
         receipts.forEach(function (r) {
@@ -2963,7 +1778,7 @@
         if (isDocumentReload()) {
             clearReloadNavigation();
         }
-        // Conversation routing: buildWidget ΓåÆ loadWidgetSettings ΓåÆ routeVisitorEntry
+        // Conversation routing: buildWidget -> loadWidgetSettings -> routeVisitorEntry
         // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
         // (Do not start a second chat flow here - that created duplicate conversations.)
         lastMsgId = getStoredLastMsgId() || 0;
@@ -2972,16 +1787,14 @@
     function pollMessages(isHistoryLoad) {
         if (!conversationId) return;
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        // viewing=1 only when panel open ΓåÆ agent ticks switch to "seen"
+        // viewing=1 only when panel open -> agent ticks switch to "seen"
         var viewing = (isOpen && document.getElementById('lc-panel') &&
             document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
             '&last_id=' + fetchLastId +
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
             '&chat_token=' + encodeURIComponent(chatToken || '') +
-            '&viewing=' + viewing +
-            (fullHistoryMode ? '&full_history=1' : '') +
-            (currentReference ? '&ticket_ref=' + encodeURIComponent(currentReference) : ''))
+            '&viewing=' + viewing)
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
@@ -2994,12 +1807,7 @@
                     updateWidgetReference(data.reference);
                 }
 
-                applyTranscriptPollState(data);
-
                 if (data.status === 'closed') {
-                    if (Date.now() < resumeGraceUntil) {
-                        return;
-                    }
                     showEndedState();
                     return;
                 }
@@ -3009,7 +1817,20 @@
                     setBubbleOnline(agentsOnline > 0);
                 }
 
-                applyAgentConnectionState(data);
+                if (data.agent && data.agent.name) {
+                    setWaitingState(false);
+                    updateHeaderAgent(data.agent);
+                    updateStatus('Chatting with ' + data.agent.name, true);
+                } else if (data.agent_name) {
+                    setWaitingState(false);
+                    updateHeaderAgent({ name: data.agent_name, avatar: currentAgent.avatar });
+                    updateStatus('Chatting with ' + data.agent_name, true);
+                } else if (data.status === 'waiting') {
+                    setWaitingState(true);
+                    updateStatus('Waiting for an agent...', agentsOnline > 0);
+                } else if (agentsOnline > 0) {
+                    updateStatus('Team online', true);
+                }
 
                 if (data.receipts && data.receipts.length) {
                     applyReceipts(data.receipts);
@@ -3025,14 +1846,9 @@
                 }
 
                 data.messages.forEach(function (m) {
-                    if (isAdminOnlySystemMessage(m)) {
-                        if (m.id > lastMsgId) lastMsgId = m.id;
-                        return;
-                    }
                     if (isHistoryLoad || m.id > lastMsgId) {
                         var isNewIncoming = !isHistoryLoad && m.id > lastMsgId && m.sender_type !== 'visitor';
-                        var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
-                        appendMessage(m, { suppressAgentState: suppressAgentState });
+                        appendMessage(m);
                         if (m.id > lastMsgId) lastMsgId = m.id;
                         persistLastMsgId(lastMsgId);
                         if (isNewIncoming) {
@@ -3066,214 +1882,61 @@
         return esc(m.message);
     }
 
-
-    function getMaxPendingAttachments() {
-        return window.LCChatFiles && window.LCChatFiles.getMaxFilesPerBatch
-            ? window.LCChatFiles.getMaxFilesPerBatch()
-            : 5;
-    }
-
-    function revokePendingPreview(item) {
-        if (item && item.previewUrl) {
-            try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
-        }
-    }
-
-    function clearPendingAttachment() {
-        pendingAttachments.forEach(revokePendingPreview);
-        pendingAttachments = [];
-        var box = document.getElementById('lc-attach-preview');
-        if (box) {
-            box.hidden = true;
-            box.innerHTML = '';
-        }
-    }
-
-    function removePendingAttachment(id) {
-        pendingAttachments = pendingAttachments.filter(function (item) {
-            if (item.id === id) {
-                revokePendingPreview(item);
-                return false;
-            }
-            return true;
-        });
-        renderPendingAttachment();
-    }
-
-    function renderPendingAttachment() {
-        var box = document.getElementById('lc-attach-preview');
-        if (!box) return;
-        if (!pendingAttachments.length) {
-            box.hidden = true;
-            box.innerHTML = '';
-            return;
-        }
-        var countHtml = '<div class="lcw-attach-preview-count">' + pendingAttachments.length + ' file' + (pendingAttachments.length === 1 ? '' : 's') + ' ready</div>';
-        var cards = pendingAttachments.map(function (item) {
-            var file = item.file;
-            var name = esc(file.name || 'Attachment');
-            var size = window.LCChatFiles ? window.LCChatFiles.formatSize(file.size || 0) : '';
-            var label = item.label || (window.LCChatFiles ? window.LCChatFiles.getFileLabel(file) : 'FILE');
-            var thumb = item.isImage && item.previewUrl
-                ? '<img class="lcw-attach-preview-thumb" src="' + esc(item.previewUrl) + '" alt="">'
-                : '<span class="lcw-attach-preview-pdf">' + esc(label) + '</span>';
-            return '<div class="lcw-attach-preview-card">' +
-                thumb +
-                '<div class="lcw-attach-preview-meta">' +
-                    '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + ' · ' + esc(label) + '</span>' +
-                '</div>' +
-                '<button type="button" class="lcw-attach-preview-clear" data-remove-attach="' + item.id + '" aria-label="Remove ' + name + '">' + ICON_CLOSE + '</button>' +
-            '</div>';
-        }).join('');
-        box.innerHTML = '<div class="lcw-attach-preview-list">' + countHtml + cards + '<span class="lcw-attach-preview-hint">Press send to upload all</span></div>';
-        box.hidden = false;
-        box.querySelectorAll('[data-remove-attach]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var rid = parseInt(btn.getAttribute('data-remove-attach'), 10);
-                if (!isNaN(rid)) removePendingAttachment(rid);
-            });
-        });
-    }
-
-    function queueVisitorFile(file) {
-        if (!file) return;
-        queueVisitorFiles([file]);
-    }
-
-    function queueVisitorFiles(files) {
-        if (!files || !files.length || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
-            return;
-        }
-        var attachBtn = document.getElementById('lc-attach-file');
-        var max = getMaxPendingAttachments();
-        var slots = max - pendingAttachments.length;
-        if (slots <= 0) {
-            appendMessage({ sender_type: 'system', message: 'Maximum ' + max + ' files per send. Remove one or send current files first.' });
-            return;
-        }
-        var batch = Array.prototype.slice.call(files, 0, slots);
-        if (files.length > slots) {
-            appendMessage({ sender_type: 'system', message: 'Only ' + slots + ' more file(s) added (max ' + max + ' per send).' });
-        }
-        if (attachBtn) attachBtn.classList.add('is-busy');
-        var chain = Promise.resolve();
-        batch.forEach(function (file) {
-            chain = chain.then(function () {
-                return window.LCChatFiles.prepareFile(file).then(function (prepared) {
-                    if (!prepared.ok) {
-                        appendMessage({ sender_type: 'system', message: prepared.error || 'Invalid file' });
-                        return;
-                    }
-                    var ready = prepared.file;
-                    var isImage = !!(ready.type && ready.type.indexOf('image/') === 0);
-                    pendingAttachments.push({
-                        id: ++pendingAttachSeq,
-                        file: ready,
-                        isImage: isImage,
-                        previewUrl: isImage ? URL.createObjectURL(ready) : '',
-                        label: window.LCChatFiles.getFileLabel(ready)
-                    });
-                    renderPendingAttachment();
-                });
-            });
-        });
-        chain.then(function () {
-            renderPendingAttachment();
-            var input = document.getElementById('lc-input');
-            if (input) input.focus();
-        }).catch(function () {
-            appendMessage({ sender_type: 'system', message: 'Unable to prepare file. Please try again.' });
-        }).finally(function () {
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-        });
-    }
-
-    function sendPendingAttachment() {
-        if (!pendingAttachments.length || !conversationId || visitorUploadBusy || chatClosed) {
+    function uploadVisitorFile(file) {
+        if (!file || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
             return;
         }
         stopOwnTyping();
-        var input = document.getElementById('lc-input');
-        var caption = input ? input.value.trim() : '';
-        sendNextPendingAttachment(caption, true);
-    }
-
-    function sendNextPendingAttachment(caption, isFirst) {
-        if (!pendingAttachments.length || !conversationId || chatClosed) {
-            visitorUploadBusy = false;
-            var attachBtn = document.getElementById('lc-attach-file');
-            var sendBtn = document.getElementById('lc-send');
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-            if (sendBtn) sendBtn.classList.remove('is-sending');
-            renderPendingAttachment();
-            return;
-        }
         visitorUploadBusy = true;
         var attachBtn = document.getElementById('lc-attach-file');
-        var sendBtn = document.getElementById('lc-send');
         if (attachBtn) attachBtn.classList.add('is-busy');
-        if (sendBtn) sendBtn.classList.add('is-sending');
-        var item = pendingAttachments[0];
-        var input = document.getElementById('lc-input');
-        var useCaption = isFirst ? caption : '';
 
-        window.LCChatFiles.upload({
-            role: 'visitor',
-            baseUrl: siteUrl,
-            conversationId: conversationId,
-            file: item.file,
-            caption: useCaption,
-            visitorUid: visitorUid,
-            chatToken: chatToken,
-            websiteUrl: readHoneypotField('lc-honeypot'),
-            widgetLoadedAt: widgetLoadedAt
+        var caption = '';
+        var input = document.getElementById('lc-input');
+        if (input) {
+            caption = input.value.trim();
+        }
+
+        window.LCChatFiles.prepareFile(file).then(function (prepared) {
+            if (!prepared.ok) {
+                appendMessage({ sender_type: 'system', message: prepared.error || 'Invalid file' });
+                visitorUploadBusy = false;
+                if (attachBtn) attachBtn.classList.remove('is-busy');
+                return null;
+            }
+            return window.LCChatFiles.upload({
+                role: 'visitor',
+                baseUrl: siteUrl,
+                conversationId: conversationId,
+                file: prepared.file,
+                caption: caption,
+                visitorUid: visitorUid,
+                chatToken: chatToken,
+                websiteUrl: (document.getElementById('lc-honeypot') || {}).value || '',
+                widgetLoadedAt: widgetLoadedAt
+            });
         }).then(function (data) {
-            if (data && data.success) {
-                revokePendingPreview(item);
-                pendingAttachments.shift();
-                if (isFirst && input) {
+            visitorUploadBusy = false;
+            if (attachBtn) attachBtn.classList.remove('is-busy');
+            if (!data) return;
+            if (data.success) {
+                if (input) {
                     input.value = '';
                     autoResizeTextarea(input);
                 }
                 pollMessages(true);
-                if (pendingAttachments.length) {
-                    sendNextPendingAttachment('', false);
-                    return;
-                }
-                visitorUploadBusy = false;
-                if (attachBtn) attachBtn.classList.remove('is-busy');
-                if (sendBtn) sendBtn.classList.remove('is-sending');
-                renderPendingAttachment();
                 return;
             }
-            visitorUploadBusy = false;
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-            if (sendBtn) sendBtn.classList.remove('is-sending');
-            appendMessage({ sender_type: 'system', message: (data && data.error) || 'Upload failed' });
+            appendMessage({ sender_type: 'system', message: data.error || 'Upload failed' });
         }).catch(function () {
             visitorUploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
-            if (sendBtn) sendBtn.classList.remove('is-sending');
             appendMessage({ sender_type: 'system', message: 'Upload failed. Please try again.' });
         });
     }
 
     function sendMessage() {
         if (chatClosed) return;
-        if (pendingAttachments.length) {
-            if (!conversationId) {
-                if (prechatFormEnabled) {
-                    showPrechatForm();
-                    showPrechatError('Please complete the form to start chatting.');
-                    return;
-                }
-                appendMessage({ sender_type: 'system', message: 'Please start the chat before sending a file.' });
-                return;
-            }
-            sendPendingAttachment();
-            return;
-        }
         var input = document.getElementById('lc-input');
         var msg = input.value.trim();
         if (!msg) return;
@@ -3315,7 +1978,7 @@
                 visitor_uid: visitorUid,
                 chat_token: chatToken,
                 widget_loaded_at: widgetLoadedAt,
-                lc_hp: readHoneypotField('lc-honeypot'),
+                website_url: (document.getElementById('lc-honeypot') || {}).value || '',
                 message: msg
             })
         })

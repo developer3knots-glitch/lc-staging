@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
@@ -45,11 +46,6 @@ try {
 
     $brandAccountId = (int) ($brand['account_id'] ?? 0);
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
-    // Pre-chat off: never accept browser-stale name/email (shows as "test" after form disabled)
-    if (!$prechatRequired) {
-        $name = '';
-        $email = '';
-    }
 
     if (!$visitor && $settingsOnly) {
         lc_json([
@@ -59,6 +55,7 @@ try {
             'conversation_id' => null,
             'visitor_identity_complete' => false,
             'agents_online' => $onlineCount,
+            'realtime' => lc_realtime_client_config($brandId),
         ]);
     }
 
@@ -75,9 +72,6 @@ try {
             $country,
         ]);
         $visitorId = (int) $db->lastInsertId();
-        if (function_exists('lc_refresh_visitor_geo')) {
-            lc_refresh_visitor_geo($visitorId, $ip);
-        }
         $visitorName = $name;
         $visitorEmail = $email;
     } else {
@@ -96,56 +90,36 @@ try {
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
     if ($settingsOnly) {
-        // Same visitor_uid live waiting/active → reconnect (fixes idle widget vs dashboard Active).
-        // Never IP / other visitors — admin keeps combined history separately.
-        $liveForSettings = function_exists('lc_live_widget_conversation')
-            ? lc_live_widget_conversation($visitorId, $brandId, false)
-            : null;
+        // Never auto-resume old chats for visitors (same IP / same device).
+        // Session continue uses explicit resume_conversation_id from the client only.
+        // Ticket resume is a separate API when ticket_resume_enabled.
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => $liveForSettings !== null,
-            'conversation_id' => $liveForSettings ? (int) $liveForSettings['id'] : null,
-            'conversation_status' => $liveForSettings['status'] ?? null,
+            'has_active_chat' => false,
+            'conversation_id' => null,
             'visitor_identity_complete' => $identityComplete,
             'agents_online' => $onlineCount,
+            'realtime' => lc_realtime_client_config($brandId),
         ]);
     }
 
     $conv = null;
-    // Widget: resume only for a short live session (page refresh). Older threads stay for admin history only.
-    $resumeMaxIdleSeconds = function_exists('lc_widget_resume_max_idle_seconds')
-        ? lc_widget_resume_max_idle_seconds()
-        : (90 * 60);
+    // Explicit session / reconnect only - not IP and not silent find_resumable
     if ($resumeConvId > 0) {
-        $stmt = $db->prepare("
-            SELECT id, status, agent_id, visitor_id, last_message_at, started_at
-            FROM conversations
-            WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active')
-            LIMIT 1
-        ");
+        $stmt = $db->prepare("SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND status IN ('waiting','active') LIMIT 1");
         $stmt->execute([$resumeConvId, $visitorId, $brandId]);
-        $conv = $stmt->fetch() ?: null;
+        $conv = $stmt->fetch();
         if (!$conv) {
             $reopened = lc_reopen_recent_visitor_close($resumeConvId, $visitorId);
             if ($reopened) {
                 $conv = $reopened;
             }
         }
-        if ($conv && function_exists('lc_conversation_fresh_for_widget') && !lc_conversation_fresh_for_widget($conv, $resumeMaxIdleSeconds)) {
-            $conv = null; // force brand-new widget chat
-        }
     }
-
-    // Agent follow-up: same visitor may rejoin a fresh active thread only.
-    // Never attach by IP (that reloads other people/history into the widget).
-    if (!$conv && function_exists('lc_live_widget_conversation')) {
-        $conv = lc_live_widget_conversation($visitorId, $brandId, true, $resumeMaxIdleSeconds);
-    }
-
-    // Otherwise visitor starts a fresh chat thread. Agent UI still keeps history/merge.
 
     if (!$conv) {
+        // Form required: name + email + first message (LiveChat-style gate)
         if ($prechatRequired) {
             if ($initialMessage === '') {
                 lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
@@ -156,14 +130,9 @@ try {
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
             }
-        } else {
-            // Direct mode: chat starts only when visitor sends the first message
-            if ($initialMessage === '') {
-                lc_json(['success' => false, 'error' => 'Send a message to start the chat'], 400);
-            }
-            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $email = '';
-            }
+        } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            // Optional email from storage - ignore invalid, do not block chat
+            $email = '';
         }
 
         $ins = $db->prepare("INSERT INTO conversations (visitor_id, brand_id, status, page_url, last_message_at) VALUES (?, ?, 'waiting', ?, NOW())");
@@ -182,44 +151,12 @@ try {
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
         }
         lc_touch_conversation($convId);
-        // Chats stay unassigned until an agent clicks Assign to me.
-
-
-        // Flag + agent-only note when this IP/email has prior chats (days-later return).
-        try {
-            if (function_exists('lc_ensure_returning_visitor_schema')) {
-                lc_ensure_returning_visitor_schema();
-            }
-            if (function_exists('lc_detect_returning_visitor')) {
-                $returnInfo = lc_detect_returning_visitor($ip, (string) $visitorEmail, $brandId, $convId);
-                if (!empty($returnInfo['is_returning'])) {
-                    if (function_exists('lc_mark_conversation_returning')) {
-                        lc_mark_conversation_returning($convId, (int) $returnInfo['prior_count'], (string) ($returnInfo['match_by'] ?? ''));
-                    }
-                    $via = (($returnInfo['match_by'] ?? '') === 'email') ? 'email' : 'IP';
-                    $n = max(1, (int) ($returnInfo['prior_count'] ?? 1));
-                    lc_add_system_message(
-                        $convId,
-                        'Returning visitor - ' . $n . ' prior chat' . ($n === 1 ? '' : 's') . ' found for this ' . $via . '. History is available for agents in this thread.'
-                    );
-                }
-            }
-        } catch (Throwable $returnErr) {
-        }
-
-        // Close only other waiting queues; keep active follow-up threads intact for agent reach-back
-        try {
-            $db->prepare("
-                UPDATE conversations
-                SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
-                WHERE visitor_id = ? AND brand_id = ? AND id <> ? AND status = 'waiting'
-            ")->execute([$visitorId, $brandId, $convId]);
-        } catch (Throwable $e) {
-        }
+        lc_assign_agent($convId);
         $status = 'waiting';
     } else {
         $convId = (int) $conv['id'];
         $status = $conv['status'];
+        // Form re-entry after identity was missing: attach first message to open chat
         if ($initialMessage !== '') {
             $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
@@ -267,6 +204,7 @@ try {
         'visitor_country' => $visitorInfo['country'] ?? '',
         'ticket_display_enabled' => lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null),
         'ticket_resume_enabled' => lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null),
+        'realtime' => lc_realtime_client_config($brandId),
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

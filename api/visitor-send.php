@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
@@ -42,7 +43,7 @@ try {
     lc_touch_conversation($conversationId);
 
     if ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() === 'waiting') {
-        // manual assign only
+        lc_assign_agent($conversationId);
     }
 
     lc_json(['success' => true, 'message_id' => $messageId]);

@@ -1,0 +1,8 @@
+services:
+  livechat-realtime:
+    build: ./server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    ports:
+      - "127.0.0.1:6001:6001"

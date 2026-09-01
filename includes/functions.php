@@ -12,10 +12,7 @@ require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
-require_once __DIR__ . '/mail.php';
-require_once __DIR__ . '/transcript.php';
-require_once __DIR__ . '/ip-resume.php';
-require_once __DIR__ . '/inactivity.php';
+require_once __DIR__ . '/realtime.php';
 
 function lc_cors_headers(): void
 {
@@ -44,31 +41,43 @@ function lc_input(string $key, $default = null)
     return $_POST[$key] ?? $_GET[$key] ?? $default;
 }
 
-
-/**
- * Normalize fancy/mojibake punctuation so admin UI never shows garbled dashes.
- */
-function lc_plain_text(?string $text): string
-{
-    $text = (string) $text;
-    if ($text === '') {
-        return '';
-    }
-    $map = [
-        "\xE2\x80\x94" => ' - ',
-        "\xE2\x80\x93" => '-',
-        "\xE2\x80\xA6" => '...',
-        "\xCE\x93\xC3\x87\xC3\xB6" => ' - ',
-        "\xCE\x93\xC3\x87\xC3\xB4" => '-',
-        "\xCE\x93\xC3\x87\xC2\xAA" => '...',
-        "\xC3\x8F\xC3\x87\xC3\xB4" => ' - ',
-    ];
-    $text = strtr($text, $map);
-    return preg_replace('/\s{2,}/', ' ', $text) ?? $text;
-}
 function lc_sanitize(?string $value): string
 {
-    return htmlspecialchars(trim((string) $value), ENT_QUOTES, 'UTF-8');
+    $value = trim(lc_plain_text((string) $value));
+    return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+}
+
+function lc_plain_text(?string $text): string
+{
+    return strtr((string) $text, [
+        "\u{2014}" => '-',
+        "\u{2013}" => '-',
+        "\u{2012}" => '-',
+        "\u{2026}" => '...',
+        "\u{00A0}" => ' ',
+        "\u{2018}" => "'",
+        "\u{2019}" => "'",
+        "\u{201C}" => '"',
+        "\u{201D}" => '"',
+        "\u{00B7}" => '|',
+        "\u{2192}" => '->',
+        "\u{FFFD}" => '',
+    ]);
+}
+
+function lc_preview(?string $text, int $width = 72): string
+{
+    $text = trim(lc_plain_text($text));
+    if ($text === '') {
+        return '-';
+    }
+    if (function_exists('mb_strimwidth')) {
+        return mb_strimwidth($text, 0, $width, '...', 'UTF-8');
+    }
+    if (strlen($text) > $width) {
+        return rtrim(substr($text, 0, max(0, $width - 3))) . '...';
+    }
+    return $text;
 }
 
 /**
@@ -241,60 +250,53 @@ function lc_get_online_agents_count(?int $brandId = null, ?int $accountId = null
 
 function lc_assign_agent(int $conversationId): ?int
 {
-    // Every chat stays Unassigned until an agent clicks "Assign to me".
+    lc_ensure_brands_schema();
+    if (function_exists('lc_ensure_accounts_schema')) {
+        lc_ensure_accounts_schema();
+    }
+    $conv = lc_db()->prepare('SELECT c.brand_id, b.account_id FROM conversations c LEFT JOIN brands b ON b.id = c.brand_id WHERE c.id = ?');
+    $conv->execute([$conversationId]);
+    $row = $conv->fetch();
+    $brandId = $row ? ($row['brand_id'] !== null ? (int) $row['brand_id'] : null) : null;
+    $accountId = $row && $row['account_id'] !== null ? (int) $row['account_id'] : 0;
+
+    $autoAssign = $accountId > 0
+        ? lc_account_setting($accountId, 'auto_assign', '1')
+        : lc_setting('auto_assign', '1');
+    if ($autoAssign !== '1') {
+        return null;
+    }
+
+    if ($brandId) {
+        $sql = "SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
+        $params = [(int) $brandId];
+        if ($accountId > 0) {
+            $sql .= ' AND account_id = ?';
+            $params[] = $accountId;
+        }
+        $sql .= ' ORDER BY id ASC LIMIT 1';
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+    } elseif ($accountId > 0) {
+        $stmt = lc_db()->prepare("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND account_id = ? ORDER BY id ASC LIMIT 1");
+        $stmt->execute([$accountId]);
+    } else {
+        $stmt = lc_db()->query("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 ORDER BY id ASC LIMIT 1");
+    }
+    $agent = $stmt->fetch();
+    if (!$agent) {
+        return null;
+    }
+    $agentId = (int) $agent['id'];
+    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting'");
+    $upd->execute([$agentId, $conversationId]);
+    if ($upd->rowCount()) {
+        lc_add_agent_join_message($conversationId, $agentId);
+        return $agentId;
+    }
     return null;
 }
 
-/** Seconds to wait before auto-assigning an agent (visitor sees "Connecting..."). */
-function lc_agent_connect_delay_seconds(?int $accountId = null): int
-{
-    $raw = $accountId && $accountId > 0
-        ? lc_account_setting($accountId, 'agent_connect_delay_seconds', '4')
-        : lc_setting('agent_connect_delay_seconds', '4');
-    return max(2, min(30, (int) $raw));
-}
-
-/**
- * Assign agent only after a short connect delay so the widget can show a loader.
- */
-function lc_try_assign_agent_after_delay(int $conversationId): ?int
-{
-    if ($conversationId < 1) {
-        return null;
-    }
-    try {
-        $stmt = lc_db()->prepare('
-            SELECT c.id, c.status, c.agent_id, c.started_at, c.last_message_at, c.brand_id, b.account_id
-            FROM conversations c
-            LEFT JOIN brands b ON b.id = c.brand_id
-            WHERE c.id = ?
-            LIMIT 1
-        ');
-        $stmt->execute([$conversationId]);
-        $row = $stmt->fetch();
-        if (!$row) {
-            return null;
-        }
-        if ((string) ($row['status'] ?? '') !== 'waiting') {
-            return null;
-        }
-        if (!empty($row['agent_id'])) {
-            return (int) $row['agent_id'];
-        }
-
-        $accountId = isset($row['account_id']) ? (int) $row['account_id'] : 0;
-        $delay = lc_agent_connect_delay_seconds($accountId > 0 ? $accountId : null);
-        $anchor = $row['last_message_at'] ?? $row['started_at'] ?? null;
-        $ts = $anchor ? strtotime((string) $anchor) : false;
-        if ($ts === false || (time() - $ts) < $delay) {
-            return null;
-        }
-
-        return lc_assign_agent($conversationId);
-    } catch (Throwable $e) {
-        return null;
-    }
-}
 function lc_add_agent_join_message(int $conversationId, int $agentId): void
 {
     $stmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
@@ -307,129 +309,6 @@ function lc_add_agent_join_message(int $conversationId, int $agentId): void
     $msg = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $msg->execute([$conversationId, 'system', $agentId, $name . ' joined the chat.']);
     lc_touch_conversation($conversationId);
-}
-
-/**
- * Internal/admin system notes that must never appear in the visitor widget.
- */
-function lc_message_hidden_from_visitor(string $message): bool
-{
-    $message = trim($message);
-    if ($message === '') {
-        return false;
-    }
-    $needles = [
-        'Merged ',
-        'earlier chat',
-        'from the same visitor into this thread',
-        'Visitor returned. Previous conversation is open again.',
-        'Chat history (agent only)',
-        'Agent reopened',
-        'Returning visitor',
-    ];
-    foreach ($needles as $n) {
-        if (stripos($message, $n) !== false) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * Lowest message id the visitor widget may show for this live thread.
- * After IP-merge, older ticket segments can sit in the same conversation_id - * cut the timeline at the current ticket's intro so the widget stays "fresh".
- */
-function lc_visitor_has_ticket_resume_history(int $conversationId): bool
-{
-    if ($conversationId < 1) {
-        return false;
-    }
-    static $cache = [];
-    if (array_key_exists($conversationId, $cache)) {
-        return $cache[$conversationId];
-    }
-    try {
-        $stmt = lc_db()->prepare("
-            SELECT 1 FROM messages
-            WHERE conversation_id = ?
-              AND sender_type = 'system'
-              AND message LIKE 'Visitor resumed this conversation using ticket%'
-            LIMIT 1
-        ");
-        $stmt->execute([$conversationId]);
-        $cache[$conversationId] = (bool) $stmt->fetchColumn();
-    } catch (Throwable $e) {
-        $cache[$conversationId] = false;
-    }
-    return $cache[$conversationId];
-}
-
-function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
-{
-    if ($conversationId < 1) {
-        return 0;
-    }
-    $db = lc_db();
-    $ticketId = 0;
-    $reference = trim($reference);
-    if ($reference !== '') {
-        try {
-            $stmt = $db->prepare("
-                SELECT id FROM messages
-                WHERE conversation_id = ?
-                  AND sender_type = 'system'
-                  AND message LIKE 'Your support ticket reference is %'
-                  AND message LIKE ?
-                ORDER BY id ASC
-                LIMIT 1
-            ");
-            $stmt->execute([$conversationId, '%' . $reference . '%']);
-            $ticketId = (int) $stmt->fetchColumn();
-        } catch (Throwable $e) {
-            $ticketId = 0;
-        }
-    }
-    if ($ticketId < 1) {
-        return 0;
-    }
-    try {
-        $stmt = $db->prepare("
-            SELECT id FROM messages
-            WHERE conversation_id = ? AND id <= ?
-            ORDER BY id DESC
-            LIMIT 4
-        ");
-        $stmt->execute([$conversationId, $ticketId]);
-        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-        return $ids ? min($ids) : $ticketId;
-    } catch (Throwable $e) {
-        return $ticketId;
-    }
-}
-function lc_conversation_awaiting_manual_accept(int $conversationId): bool
-{
-    if ($conversationId < 1) {
-        return false;
-    }
-    try {
-        $stmt = lc_db()->prepare('SELECT status, agent_id FROM conversations WHERE id = ? LIMIT 1');
-        $stmt->execute([$conversationId]);
-        $conv = $stmt->fetch();
-        if (!$conv || (string) ($conv['status'] ?? '') !== 'waiting' || (int) ($conv['agent_id'] ?? 0) > 0) {
-            return false;
-        }
-        $msg = lc_db()->prepare("
-            SELECT 1 FROM messages
-            WHERE conversation_id = ?
-              AND sender_type = 'system'
-              AND message LIKE 'Visitor resumed this conversation using ticket%'
-            LIMIT 1
-        ");
-        $msg->execute([$conversationId]);
-        return (bool) $msg->fetchColumn();
-    } catch (Throwable $e) {
-        return false;
-    }
 }
 
 function lc_add_system_message(int $conversationId, string $message): void
@@ -484,85 +363,34 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return true;
     }
 
-    // Archived chats shown in inbox (assigned to this agent or unassigned).
-    if ($status === 'closed' && ($assignedId === $agentId || $assignedId === 0)) {
-        return true;
-    }
-
     // Active chat owned by another agent - live access only for the assignee.
     return false;
 }
 
 function lc_agent_can_handle_conversation(array $agent, array $conv): bool
 {
+    if (($conv['status'] ?? '') === 'closed') {
+        return false;
+    }
+
     $agentId = (int) $agent['id'];
     $assignedId = (int) ($conv['agent_id'] ?? 0);
-    $status = (string) ($conv['status'] ?? '');
-
-    // Closed chats stay closed - no compose / reopen via messaging.
-    if ($status === 'closed') {
-        return false;
-    }
-
-    // Waiting/unassigned chats stay in queue until an agent clicks "Assign to me".
-    if ($status === 'waiting' && $assignedId === 0) {
-        return false;
-    }
 
     if ($assignedId === $agentId) {
         return true;
     }
 
+    if (($conv['status'] ?? '') === 'waiting' && $assignedId === 0) {
+        return lc_agent_can_access_conversation($agent, $conv);
+    }
+
     return false;
 }
 
-function lc_agent_can_claim_conversation(array $agent, array $conv): bool
-{
-    $assignedId = (int) ($conv['agent_id'] ?? 0);
-    $status = (string) ($conv['status'] ?? '');
-    if ($status !== 'waiting' || $assignedId !== 0) {
-        return false;
-    }
-    return lc_agent_can_access_conversation($agent, $conv);
-}
-
-
-/**
- * Reopen a closed conversation so the agent can follow up with the visitor.
- */
-function lc_agent_reopen_conversation(int $conversationId, int $agentId): bool
-{
-    if ($conversationId < 1 || $agentId < 1) {
-        return false;
-    }
-    try {
-        $stmt = lc_db()->prepare("
-            UPDATE conversations
-            SET status = 'active',
-                closed_at = NULL,
-                agent_id = COALESCE(agent_id, ?),
-                accepted_at = COALESCE(accepted_at, NOW()),
-                last_message_at = NOW()
-            WHERE id = ? AND status = 'closed'
-        ");
-        $stmt->execute([$agentId, $conversationId]);
-        if ($stmt->rowCount() > 0) {
-            lc_add_system_message($conversationId, 'Agent reopened this chat to follow up with the visitor.');
-            return true;
-        }
-    } catch (Throwable $e) {
-    }
-    return false;
-}
 function lc_agent_can_close_conversation(array $agent, array $conv): bool
 {
     if (($conv['status'] ?? '') === 'closed') {
         return false;
-    }
-
-    // Agents can archive waiting chats from the unassigned bar.
-    if (lc_agent_can_claim_conversation($agent, $conv)) {
-        return true;
     }
 
     return lc_agent_can_handle_conversation($agent, $conv);
@@ -599,10 +427,8 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         return [
-            "(({$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'))"
-            . " OR ({$a}.status = 'closed' AND {$a}.closed_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)"
-            . " AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL))){$accountFilter}",
-            array_merge([$agentId, $agentId], $accountParams),
+            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'){$accountFilter}",
+            array_merge([$agentId], $accountParams),
         ];
     }
 
@@ -625,10 +451,8 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     return [
-        "(({$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)))"
-        . " OR ({$a}.status = 'closed' AND {$a}.closed_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)"
-        . " AND {$a}.brand_id = ? AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL))){$extra}",
-        array_merge([$agentId, $brandId, $brandId, $agentId], $extraParams),
+        "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
+        array_merge([$agentId, $brandId], $extraParams),
     ];
 }
 
@@ -792,11 +616,8 @@ function lc_reopen_if_visitor_returning(int $conversationId, int $visitorId): bo
         return false;
     }
 
-    lc_db()->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?")
+    lc_db()->prepare("UPDATE conversations SET status = 'active', closed_at = NULL WHERE id = ?")
         ->execute([$conversationId]);
-    if (function_exists('lc_clear_transcript_request')) {
-        lc_clear_transcript_request($conversationId);
-    }
 
     return true;
 }
@@ -806,76 +627,9 @@ function lc_reopen_recent_visitor_close(int $conversationId, int $visitorId): ?a
     if (!lc_reopen_if_visitor_returning($conversationId, $visitorId)) {
         return null;
     }
-    return ['id' => $conversationId, 'status' => 'waiting'];
+    return ['id' => $conversationId, 'status' => 'active'];
 }
 
-
-/**
- * Visitor one-click resume of a closed chat (same visitor + brand), up to $maxDays.
- *
- * @return array{ok:bool,conversation_id?:int,status?:string,error?:string}
- */
-function lc_visitor_resume_closed_conversation(int $conversationId, int $visitorId, int $brandId, int $maxDays = 14): array
-{
-    if ($conversationId < 1 || $visitorId < 1 || $brandId < 1) {
-        return ['ok' => false, 'error' => 'Invalid conversation'];
-    }
-    $maxDays = max(1, min(90, $maxDays));
-    $db = lc_db();
-    $stmt = $db->prepare('
-        SELECT id, status, agent_id, brand_id, visitor_id, closed_at
-        FROM conversations
-        WHERE id = ? AND visitor_id = ? AND brand_id = ?
-        LIMIT 1
-    ');
-    $stmt->execute([$conversationId, $visitorId, $brandId]);
-    $conv = $stmt->fetch();
-    if (!$conv) {
-        return ['ok' => false, 'error' => 'Conversation not found'];
-    }
-
-    $status = (string) ($conv['status'] ?? '');
-    if ($status === 'waiting' || $status === 'active') {
-        return [
-            'ok' => true,
-            'conversation_id' => (int) $conv['id'],
-            'status' => $status,
-        ];
-    }
-    if ($status !== 'closed') {
-        return ['ok' => false, 'error' => 'This chat cannot be resumed'];
-    }
-
-    if (!empty($conv['closed_at'])) {
-        $closedTs = strtotime((string) $conv['closed_at']);
-        if ($closedTs !== false && (time() - $closedTs) > ($maxDays * 86400)) {
-            return ['ok' => false, 'error' => 'This chat is too old to resume. Please start a new conversation.'];
-        }
-    }
-
-    $newStatus = 'waiting';
-    $db->prepare("UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
-        ->execute([$newStatus, $conversationId]);
-    if (function_exists('lc_clear_transcript_request')) {
-        lc_clear_transcript_request($conversationId);
-    }
-    lc_add_system_message($conversationId, 'Visitor resumed this conversation.');
-    // Ensure idle clock restarts even if something else touched timestamps.
-    $db->prepare('UPDATE conversations SET last_message_at = NOW(), closed_at = NULL WHERE id = ?')
-        ->execute([$conversationId]);
-    if (function_exists('lc_clear_typing')) {
-        try {
-            lc_clear_typing($conversationId);
-        } catch (Throwable $e) {
-        }
-    }
-
-    return [
-        'ok' => true,
-        'conversation_id' => $conversationId,
-        'status' => $newStatus,
-    ];
-}
 function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
 {
     $stmt = lc_db()->prepare("
@@ -901,67 +655,6 @@ function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
         return ['id' => (int) $closed['id'], 'status' => 'active'];
     }
 
-    return null;
-}
-
-/** Max age for widget to treat a waiting/active thread as the same live session. */
-function lc_widget_resume_max_idle_seconds(): int
-{
-    return 90 * 60;
-}
-
-/**
- * Freshness gate shared by widget resume / live reconnect (not IP-based).
- */
-function lc_conversation_fresh_for_widget(array $conv, ?int $maxIdleSeconds = null): bool
-{
-    $maxIdleSeconds = $maxIdleSeconds ?? lc_widget_resume_max_idle_seconds();
-    $anchor = $conv['last_message_at'] ?? $conv['started_at'] ?? null;
-    $ts = $anchor ? strtotime((string) $anchor) : false;
-    if ($ts === false || (time() - $ts) > $maxIdleSeconds) {
-        return false;
-    }
-    try {
-        $oldestStmt = lc_db()->prepare('SELECT MIN(created_at) FROM messages WHERE conversation_id = ?');
-        $oldestStmt->execute([(int) ($conv['id'] ?? 0)]);
-        $oldest = $oldestStmt->fetchColumn();
-        $oldestTs = $oldest ? strtotime((string) $oldest) : false;
-        if ($oldestTs !== false && (time() - $oldestTs) > $maxIdleSeconds) {
-            return false;
-        }
-    } catch (Throwable $e) {
-    }
-    return true;
-}
-
-/**
- * Live waiting/active thread for this visitor+brand (widget reconnect).
- * Same visitor_uid only — never IP / other devices.
- *
- * @return array{id:int|string,status:string,agent_id?:mixed,visitor_id?:mixed,last_message_at?:mixed,started_at?:mixed}|null
- */
-function lc_live_widget_conversation(int $visitorId, int $brandId, bool $activeOnly = false, ?int $maxIdleSeconds = null): ?array
-{
-    if ($visitorId < 1 || $brandId < 1) {
-        return null;
-    }
-    $maxIdleSeconds = $maxIdleSeconds ?? lc_widget_resume_max_idle_seconds();
-    $statusSql = $activeOnly ? "status = 'active'" : "status IN ('waiting','active')";
-    try {
-        $stmt = lc_db()->prepare("
-            SELECT id, status, agent_id, visitor_id, last_message_at, started_at
-            FROM conversations
-            WHERE visitor_id = ? AND brand_id = ? AND {$statusSql}
-            ORDER BY COALESCE(last_message_at, started_at) DESC, id DESC
-            LIMIT 1
-        ");
-        $stmt->execute([$visitorId, $brandId]);
-        $row = $stmt->fetch() ?: null;
-        if ($row && lc_conversation_fresh_for_widget($row, $maxIdleSeconds)) {
-            return $row;
-        }
-    } catch (Throwable $e) {
-    }
     return null;
 }
 
@@ -1043,12 +736,7 @@ function lc_conversations_related_by_ip(
                 continue;
             }
             $seen[$id] = true;
-            $preview = trim((string) ($row['last_message'] ?? ''));
-            if (function_exists('mb_substr') && mb_strlen($preview) > 80) {
-                $preview = mb_substr($preview, 0, 80) . '...';
-            } elseif (strlen($preview) > 80) {
-                $preview = substr($preview, 0, 80) . '...';
-            }
+            $preview = lc_preview($row['last_message'] ?? '', 80);
             $ref = '';
             if (function_exists('lc_conversation_reference')) {
                 $ref = lc_conversation_reference($id, $row['started_at'] ?? null);
@@ -1085,7 +773,7 @@ function lc_agent_prior_threads_with_messages(
     int $excludeConversationId,
     ?array $agent = null,
     int $visitorId = 0,
-    int $threadLimit = 4
+    int $threadLimit = 8
 ): array {
     $metas = lc_conversations_related_by_ip($ip, $excludeConversationId, $agent, $threadLimit, $visitorId);
     if (!$metas) {
@@ -1125,7 +813,7 @@ function lc_agent_prior_threads_with_messages(
             $grouped[$id] = [];
         }
         // Cap total prior messages so poll stays light (last N per thread if over cap)
-        $maxTotal = 100;
+        $maxTotal = 250;
         $rows = $stmt->fetchAll();
         if (count($rows) > $maxTotal) {
             $rows = array_slice($rows, -$maxTotal);
@@ -1165,12 +853,8 @@ function lc_touch_conversation(int $conversationId): void
 function lc_get_conversation(int $id): ?array
 {
     $stmt = lc_db()->prepare('
-        SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
+        SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
-               v.last_seen AS visitor_last_seen,
-               v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
-               v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon,
-               v.geo_source AS visitor_geo_source,
                v.user_agent AS visitor_user_agent,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
@@ -1184,305 +868,6 @@ function lc_get_conversation(int $id): ?array
     return $row ?: null;
 }
 
-
-/**
- * Visitor stats for agent details rail.
- * @return array{visit_count:int,chat_count:int,entry_referrer:string}
- */
-function lc_visitor_detail_stats(int $visitorId, int $brandId): array
-{
-    $visitCount = 0;
-    $referrer = '';
-    $chatCount = 0;
-
-    if ($visitorId < 1) {
-        return ['visit_count' => 0, 'chat_count' => 0, 'entry_referrer' => ''];
-    }
-
-    $db = lc_db();
-    if (function_exists('lc_ensure_page_views_schema')) {
-        lc_ensure_page_views_schema();
-        $stmt = $db->prepare('SELECT COUNT(*) FROM visitor_page_views WHERE visitor_id = ? AND brand_id = ?');
-        $stmt->execute([$visitorId, $brandId]);
-        $visitCount = (int) $stmt->fetchColumn();
-
-        $refStmt = $db->prepare('
-            SELECT referrer FROM visitor_page_views
-            WHERE visitor_id = ? AND brand_id = ?
-              AND referrer IS NOT NULL AND referrer != ""
-            ORDER BY id ASC LIMIT 1
-        ');
-        $refStmt->execute([$visitorId, $brandId]);
-        $referrer = (string) ($refStmt->fetchColumn() ?: '');
-    }
-
-    $chatStmt = $db->prepare('SELECT COUNT(*) FROM conversations WHERE visitor_id = ?');
-    $chatStmt->execute([$visitorId]);
-    $chatCount = (int) $chatStmt->fetchColumn();
-
-    return [
-        'visit_count' => $visitCount,
-        'chat_count' => max(1, $chatCount),
-        'entry_referrer' => $referrer,
-    ];
-}
-
-function lc_ensure_visitor_geo_schema(): void
-{
-    static $done = false;
-    if ($done) {
-        return;
-    }
-    $done = true;
-    $pdo = lc_db();
-    $cols = [
-        'geo_city VARCHAR(100) NULL',
-        'geo_region VARCHAR(100) NULL',
-        'geo_lat DECIMAL(10,7) NULL',
-        'geo_lon DECIMAL(10,7) NULL',
-        'geo_source VARCHAR(16) NULL',
-    ];
-    foreach ($cols as $def) {
-        try {
-            $pdo->exec('ALTER TABLE visitors ADD COLUMN ' . $def);
-        } catch (Throwable $e) {
-        }
-    }
-}
-
-
-function lc_geo_text_is_english(string $text): bool
-{
-    if ($text === '') {
-        return true;
-    }
-    return !preg_match('/[^\x20-\x7E]/', $text);
-}
-
-/**
- * Reverse geocode GPS coordinates to English city/region label.
- * @return array{city:string,region:string,country:string,label:string}
- */
-function lc_reverse_geocode(float $lat, float $lon): array
-{
-    $empty = ['city' => '', 'region' => '', 'country' => '', 'label' => ''];
-    if (!function_exists('lc_http_get_json')) {
-        return $empty;
-    }
-
-    $bdcUrl = 'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' . rawurlencode((string) $lat)
-        . '&longitude=' . rawurlencode((string) $lon)
-        . '&localityLanguage=en';
-    $data = lc_http_get_json($bdcUrl, 4.0);
-    if ($data && !empty($data['countryName'])) {
-        $city = trim((string) ($data['city'] ?? $data['locality'] ?? ''));
-        $region = trim((string) ($data['principalSubdivision'] ?? ''));
-        $country = trim((string) ($data['countryName'] ?? ''));
-        $parts = array_values(array_unique(array_filter([$city, $region, $country])));
-        $label = $parts ? implode(', ', $parts) : $country;
-
-        return [
-            'city' => $city,
-            'region' => $region,
-            'country' => $country,
-            'label' => $label,
-        ];
-    }
-
-    $nomUrl = 'https://nominatim.openstreetmap.org/reverse?lat=' . rawurlencode((string) $lat)
-        . '&lon=' . rawurlencode((string) $lon)
-        . '&format=json&addressdetails=1&zoom=16&accept-language=en';
-    $data = lc_http_get_json($nomUrl, 4.0, ['Accept-Language' => 'en']);
-    if (!$data || empty($data['address']) || !is_array($data['address'])) {
-        return $empty;
-    }
-
-    $a = $data['address'];
-    $area = trim((string) ($a['suburb'] ?? $a['neighbourhood'] ?? $a['city_district'] ?? $a['quarter'] ?? ''));
-    $city = trim((string) ($a['city'] ?? $a['town'] ?? $a['village'] ?? $a['municipality'] ?? ''));
-    $region = trim((string) ($a['state'] ?? $a['region'] ?? ''));
-    $country = trim((string) ($a['country'] ?? ''));
-    $parts = array_values(array_unique(array_filter([$area, $city, $region, $country])));
-    $label = $parts ? implode(', ', $parts) : trim((string) ($data['display_name'] ?? ''));
-
-    if (!lc_geo_text_is_english($label)) {
-        $englishParts = [];
-        foreach ($parts as $part) {
-            if (lc_geo_text_is_english($part)) {
-                $englishParts[] = $part;
-            }
-        }
-        $label = $englishParts ? implode(', ', $englishParts) : $country;
-        if (!lc_geo_text_is_english($city)) {
-            $city = lc_geo_text_is_english($area) ? $area : '';
-        }
-        if (!lc_geo_text_is_english($region)) {
-            $region = '';
-        }
-    }
-
-    return [
-        'city' => $city !== '' ? $city : (lc_geo_text_is_english($area) ? $area : ''),
-        'region' => $region,
-        'country' => $country,
-        'label' => $label,
-    ];
-}
-
-/**
- * Store precise browser GPS location (overrides IP geolocation).
- * @return array{label:string,city:string,region:string,country:string,lat:float,lon:float,source:string}
- */
-function lc_save_visitor_browser_geo(int $visitorId, float $lat, float $lon): array
-{
-    lc_ensure_visitor_geo_schema();
-    $rev = lc_reverse_geocode($lat, $lon);
-    $city = $rev['city'];
-    $region = $rev['region'];
-    $country = $rev['country'];
-    $label = $rev['label'] !== '' ? $rev['label'] : (round($lat, 5) . ', ' . round($lon, 5));
-
-    $upd = lc_db()->prepare('
-        UPDATE visitors
-        SET geo_lat = ?, geo_lon = ?, geo_city = ?, geo_region = ?, geo_source = ?
-        WHERE id = ?
-    ');
-    $upd->execute([
-        $lat,
-        $lon,
-        $city !== '' ? $city : null,
-        $region !== '' ? $region : null,
-        'browser',
-        $visitorId,
-    ]);
-
-    return [
-        'label' => $label,
-        'city' => $city,
-        'region' => $region,
-        'country' => $country,
-        'lat' => $lat,
-        'lon' => $lon,
-        'source' => 'browser',
-    ];
-}
-/**
- * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float,source:string}
- */
-function lc_visitor_geo_payload(array $row): array
-{
-    $city = trim((string) ($row['visitor_geo_city'] ?? $row['geo_city'] ?? ''));
-    $region = trim((string) ($row['visitor_geo_region'] ?? $row['geo_region'] ?? ''));
-    $country = trim((string) ($row['visitor_country'] ?? $row['country'] ?? ''));
-    $country = preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', $country) ?: $country;
-    $lat = isset($row['visitor_geo_lat']) ? $row['visitor_geo_lat'] : ($row['geo_lat'] ?? null);
-    $lon = isset($row['visitor_geo_lon']) ? $row['visitor_geo_lon'] : ($row['geo_lon'] ?? null);
-    $lat = ($lat !== null && $lat !== '') ? (float) $lat : null;
-    $lon = ($lon !== null && $lon !== '') ? (float) $lon : null;
-    $source = trim((string) ($row['visitor_geo_source'] ?? $row['geo_source'] ?? 'ip'));
-    if ($source === '') {
-        $source = 'ip';
-    }
-    $parts = array_values(array_filter([$city, $region, $country]));
-    $label = $parts ? implode(', ', $parts) : ($country !== '' ? $country : 'Unknown');
-
-    return [
-        'label' => $label,
-        'city' => $city,
-        'region' => $region,
-        'country' => $country,
-        'lat' => $lat,
-        'lon' => $lon,
-        'source' => $source,
-    ];
-}
-
-/**
- * Resolve visitor geo once, store on visitor row, return API payload.
- * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float}
- */
-function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null): array
-{
-    lc_ensure_visitor_geo_schema();
-    if ($visitorId < 1) {
-        return lc_visitor_geo_payload($row ?? []);
-    }
-
-    if ($row === null) {
-        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source FROM visitors WHERE id = ? LIMIT 1');
-        $stmt->execute([$visitorId]);
-        $row = $stmt->fetch() ?: [];
-    }
-
-    $geoSource = trim((string) ($row['geo_source'] ?? ''));
-
-    $payload = lc_visitor_geo_payload([
-        'visitor_country' => $row['country'] ?? '',
-        'visitor_geo_city' => $row['geo_city'] ?? '',
-        'visitor_geo_region' => $row['geo_region'] ?? '',
-        'visitor_geo_lat' => $row['geo_lat'] ?? null,
-        'visitor_geo_lon' => $row['geo_lon'] ?? null,
-        'geo_source' => $geoSource,
-    ]);
-
-    if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
-        if (function_exists('lc_geo_text_is_english') && !lc_geo_text_is_english($payload['label'])) {
-            return lc_save_visitor_browser_geo($visitorId, $payload['lat'], $payload['lon']);
-        }
-        return $payload;
-    }
-
-    $hasCoords = $payload['lat'] !== null && $payload['lon'] !== null;
-    $hasCity = $payload['city'] !== '';
-    if ($hasCoords && $hasCity) {
-        return $payload;
-    }
-
-    $ip = trim($ip);
-    if ($ip === '' && !empty($row['ip_address'])) {
-        $ip = trim((string) $row['ip_address']);
-    }
-    if ($ip === '' || !function_exists('lc_resolve_geo_full')) {
-        return $payload;
-    }
-
-    $geo = lc_resolve_geo_full($ip);
-    $gotData = ($geo['lat'] !== null && $geo['lon'] !== null) || $geo['city'] !== '';
-    if (!$gotData) {
-        return $payload;
-    }
-
-    $countryStore = $geo['country'];
-    if (!empty($geo['country_code'])) {
-        $countryStore .= ' (' . $geo['country_code'] . ')';
-    }
-
-    $upd = lc_db()->prepare('
-        UPDATE visitors
-        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = COALESCE(geo_source, ?),
-            country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
-        WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')
-    ');
-    $upd->execute([
-        $geo['city'] !== '' ? $geo['city'] : null,
-        $geo['region'] !== '' ? $geo['region'] : null,
-        $geo['lat'],
-        $geo['lon'],
-        'ip',
-        $countryStore,
-        $visitorId,
-    ]);
-
-    return [
-        'label' => $geo['label'],
-        'city' => $geo['city'],
-        'region' => $geo['region'],
-        'country' => $geo['country'],
-        'lat' => $geo['lat'],
-        'lon' => $geo['lon'],
-        'source' => 'ip',
-    ];
-}
 function lc_unread_count_for_agent(int $agentId): int
 {
     $stmt = lc_db()->prepare("
@@ -1513,60 +898,15 @@ function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 }
 
 /**
- * Nice Y-axis scale for the home activity chart (LiveChat-style ticks).
- *
- * @return array{top: int, ticks: list<int>}
- */
-function lc_dashboard_chart_y_scale(int $maxValue): array
-{
-    $maxValue = max(1, $maxValue);
-    $rawStep = $maxValue / 4;
-    $mag = 10 ** (int) floor(log10(max($rawStep, 1)));
-    $norm = $rawStep / $mag;
-    if ($norm <= 1) {
-        $step = 1 * $mag;
-    } elseif ($norm <= 2) {
-        $step = 2 * $mag;
-    } elseif ($norm <= 5) {
-        $step = 5 * $mag;
-    } else {
-        $step = 10 * $mag;
-    }
-    $step = max(1, (int) round($step));
-    $top = (int) (ceil($maxValue / $step) * $step);
-    if ($top < $maxValue) {
-        $top += $step;
-    }
-    if ($top === $maxValue) {
-        $top += $step;
-    }
-
-    $ticks = [];
-    for ($v = $top; $v >= 0; $v -= $step) {
-        $ticks[] = (int) $v;
-    }
-    if ($ticks === [] || end($ticks) !== 0) {
-        $ticks[] = 0;
-    }
-
-    return ['top' => $top, 'ticks' => $ticks];
-}
-
-/**
  * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
  */
-function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): array
+function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null): array
 {
     lc_ensure_brands_schema();
     $days = max(2, min(14, $days));
-    $endOffsetDays = max(0, min(60, $endOffsetDays));
-    $end = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . $endOffsetDays . ' days');
-    $start = $end->modify('-' . ($days - 1) . ' days');
+    $start = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . ($days - 1) . ' days');
 
-    $params = [
-        $start->format('Y-m-d') . ' 00:00:00',
-        $end->format('Y-m-d') . ' 23:59:59',
-    ];
+    $params = [$start->format('Y-m-d') . ' 00:00:00'];
     $brandFilter = '';
     if ($brandId !== null) {
         $brandFilter = ' AND c.brand_id = ?';
@@ -1575,16 +915,11 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
         $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
         $params[] = $accountId;
     }
-    $agentFilter = '';
-    if ($agentId !== null && $agentId > 0) {
-        $agentFilter = ' AND c.agent_id = ?';
-        $params[] = $agentId;
-    }
 
     $stmt = lc_db()->prepare("
         SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
         FROM conversations c
-        WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
+        WHERE c.started_at >= ? {$brandFilter}
         GROUP BY DATE(c.started_at)
     ");
     $stmt->execute($params);
@@ -1607,56 +942,6 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
     }
 
     return $chart;
-}
-
-function lc_dashboard_activity_total(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): int
-{
-    $chart = lc_dashboard_activity_chart($brandId, $days, $accountId, $agentId, $endOffsetDays);
-    return (int) array_sum(array_column($chart, 'count'));
-}
-
-/**
- * @return array{waiting: int, active: int, closed_today: int, started_today: int, unread: int}
- */
-function lc_dashboard_scope_counts(?int $brandId, ?int $accountId, ?int $agentId, int $viewerAgentId): array
-{
-    $db = lc_db();
-    $params = [];
-    $brandFilter = '';
-    if ($brandId !== null) {
-        $brandFilter = ' AND c.brand_id = ?';
-        $params[] = $brandId;
-    } elseif ($accountId !== null && $accountId > 0) {
-        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
-        $params[] = $accountId;
-    }
-    $agentFilter = '';
-    $agentParams = [];
-    if ($agentId !== null && $agentId > 0) {
-        $agentFilter = ' AND c.agent_id = ?';
-        $agentParams[] = $agentId;
-    }
-
-    $waiting = lc_waiting_count($brandId, $accountId);
-
-    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'{$brandFilter}{$agentFilter}");
-    $stmt->execute(array_merge($params, $agentParams));
-    $active = (int) $stmt->fetchColumn();
-
-    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE(){$brandFilter}{$agentFilter}");
-    $stmt->execute(array_merge($params, $agentParams));
-    $closedToday = (int) $stmt->fetchColumn();
-
-    $startedToday = lc_dashboard_started_today($brandId, $accountId, $agentId);
-    $unread = lc_unread_count_for_agent($viewerAgentId);
-
-    return [
-        'waiting' => $waiting,
-        'active' => $active,
-        'closed_today' => $closedToday,
-        'started_today' => $startedToday,
-        'unread' => $unread,
-    ];
 }
 
 /**
@@ -1704,33 +989,24 @@ function lc_dashboard_online_agents(?int $brandId, int $limit = 8, ?int $account
     return $stmt->fetchAll();
 }
 
-function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int $agentId = null): int
+function lc_dashboard_started_today(?int $brandId, ?int $accountId = null): int
 {
     lc_ensure_brands_schema();
-    $params = [];
-    $sql = 'SELECT COUNT(*) FROM conversations c WHERE DATE(c.started_at) = CURDATE()';
     if ($brandId !== null) {
-        $sql .= ' AND c.brand_id = ?';
-        $params[] = $brandId;
-    } elseif ($accountId !== null && $accountId > 0) {
-        $sql .= ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
-        $params[] = $accountId;
+        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id = ?');
+        $stmt->execute([$brandId]);
+        return (int) $stmt->fetchColumn();
     }
-    if ($agentId !== null && $agentId > 0) {
-        $sql .= ' AND c.agent_id = ?';
-        $params[] = $agentId;
+    if ($accountId !== null && $accountId > 0) {
+        $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE() AND brand_id IN (SELECT id FROM brands WHERE account_id = ?)');
+        $stmt->execute([$accountId]);
+        return (int) $stmt->fetchColumn();
     }
-    if ($params === []) {
-        return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
-    }
-    $stmt = lc_db()->prepare($sql);
-    $stmt->execute($params);
-    return (int) $stmt->fetchColumn();
+    return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
 }
 
 /**
- * Message delivery ticks (WhatsApp-style): sent → delivered → read
- * Runs migration at most once (settings flag). Never ALTER/backfill on every poll.
+ * Message delivery ticks (WhatsApp-style): sent -> delivered -> read
  */
 function lc_ensure_message_receipts_schema(): void
 {
@@ -1739,50 +1015,19 @@ function lc_ensure_message_receipts_schema(): void
         return;
     }
     $done = true;
-
-    if (lc_setting('schema_message_receipts_v1', '') === '1') {
-        return;
-    }
-
     $pdo = lc_db();
-    $hasDelivered = false;
-    $hasReadAt = false;
     try {
-        $hasDelivered = (bool) $pdo->query("SHOW COLUMNS FROM messages LIKE 'delivered_at'")->fetch();
-        $hasReadAt = (bool) $pdo->query("SHOW COLUMNS FROM messages LIKE 'read_at'")->fetch();
+        $pdo->exec('ALTER TABLE messages ADD COLUMN delivered_at DATETIME NULL DEFAULT NULL AFTER is_read');
     } catch (Throwable $e) {
     }
-
-    $needBackfill = false;
-    if (!$hasDelivered) {
-        try {
-            $pdo->exec('ALTER TABLE messages ADD COLUMN delivered_at DATETIME NULL DEFAULT NULL AFTER is_read');
-            $needBackfill = true;
-            $hasDelivered = true;
-        } catch (Throwable $e) {
-        }
+    try {
+        $pdo->exec('ALTER TABLE messages ADD COLUMN read_at DATETIME NULL DEFAULT NULL AFTER delivered_at');
+    } catch (Throwable $e) {
     }
-    if (!$hasReadAt) {
-        try {
-            $pdo->exec('ALTER TABLE messages ADD COLUMN read_at DATETIME NULL DEFAULT NULL AFTER delivered_at');
-            $needBackfill = true;
-            $hasReadAt = true;
-        } catch (Throwable $e) {
-        }
-    }
-
-    if ($needBackfill && $hasDelivered && $hasReadAt) {
-        try {
-            $pdo->exec('UPDATE messages SET delivered_at = COALESCE(delivered_at, created_at), read_at = COALESCE(read_at, created_at) WHERE is_read = 1 AND (delivered_at IS NULL OR read_at IS NULL)');
-        } catch (Throwable $e) {
-        }
-    }
-
-    if ($hasDelivered && $hasReadAt) {
-        try {
-            lc_set_setting('schema_message_receipts_v1', '1');
-        } catch (Throwable $e) {
-        }
+    try {
+        // Backfill older read messages
+        $pdo->exec('UPDATE messages SET delivered_at = COALESCE(delivered_at, created_at), read_at = COALESCE(read_at, created_at) WHERE is_read = 1 AND (delivered_at IS NULL OR read_at IS NULL)');
+    } catch (Throwable $e) {
     }
 }
 
@@ -1903,66 +1148,4 @@ function lc_mark_inbox_messages_delivered(array $conversationIds): void
         ")->execute($ids);
     } catch (Throwable $e) {
     }
-}
-
-function lc_ensure_conversation_tags_schema(): void
-{
-    static $done = false;
-    if ($done) {
-        return;
-    }
-    $done = true;
-    try {
-        lc_db()->exec("CREATE TABLE IF NOT EXISTS `conversation_tags` (
-            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            `conversation_id` INT UNSIGNED NOT NULL,
-            `tag` VARCHAR(40) NOT NULL,
-            `created_by` INT UNSIGNED NULL,
-            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `idx_conv_tag` (`conversation_id`, `tag`),
-            KEY `idx_conv_tags_conversation` (`conversation_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    } catch (Throwable $e) {
-    }
-}
-
-/** @return list<array{id:int,tag:string}> */
-function lc_conversation_tags(int $conversationId): array
-{
-    lc_ensure_conversation_tags_schema();
-    if ($conversationId < 1) {
-        return [];
-    }
-    try {
-        $stmt = lc_db()->prepare('SELECT id, tag FROM conversation_tags WHERE conversation_id = ? ORDER BY id ASC');
-        $stmt->execute([$conversationId]);
-        $rows = $stmt->fetchAll() ?: [];
-        $out = [];
-        foreach ($rows as $row) {
-            $out[] = ['id' => (int) $row['id'], 'tag' => (string) $row['tag']];
-        }
-        return $out;
-    } catch (Throwable $e) {
-        return [];
-    }
-}
-
-function lc_add_conversation_tag(int $conversationId, string $tag, int $agentId): array
-{
-    lc_ensure_conversation_tags_schema();
-    $tag = trim($tag);
-    $ins = lc_db()->prepare('INSERT IGNORE INTO conversation_tags (conversation_id, tag, created_by) VALUES (?, ?, ?)');
-    $ins->execute([$conversationId, $tag, $agentId > 0 ? $agentId : null]);
-    $stmt = lc_db()->prepare('SELECT id, tag FROM conversation_tags WHERE conversation_id = ? AND tag = ? LIMIT 1');
-    $stmt->execute([$conversationId, $tag]);
-    $row = $stmt->fetch();
-    return ['id' => (int) ($row['id'] ?? 0), 'tag' => (string) ($row['tag'] ?? $tag)];
-}
-
-function lc_delete_conversation_tag(int $conversationId, int $tagId): void
-{
-    lc_ensure_conversation_tags_schema();
-    $del = lc_db()->prepare('DELETE FROM conversation_tags WHERE id = ? AND conversation_id = ?');
-    $del->execute([$tagId, $conversationId]);
 }

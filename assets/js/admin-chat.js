@@ -10,46 +10,14 @@
     var currentTab = 'all';
     var lastMsgId = 0;
     var needsFullHistory = false;
-    var priorHistoryLoadingId = 0;
-
-    function prependPriorThreads(threads, conversation) {
-        if (!messagesEl || !threads || !threads.length) return;
-        var html = buildPriorThreadsHtml(threads, conversation || null);
-        if (!html) return;
-        var keepBottom = stickToBottom;
-        var prevHeight = messagesEl.scrollHeight;
-        messagesEl.insertAdjacentHTML('afterbegin', html);
-        if (window.LCTime) window.LCTime.scan(messagesEl);
-        if (keepBottom) {
-            scrollMessagesToBottom(true);
-        } else {
-            messagesEl.scrollTop = Math.max(0, messagesEl.scrollHeight - prevHeight + messagesEl.scrollTop);
-        }
-    }
-
-    function loadPriorThreads(conversationId) {
-        if (!conversationId) return;
-        priorHistoryLoadingId = conversationId;
-        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=0&prior=1', { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (selectedId !== conversationId || priorHistoryLoadingId !== conversationId) return;
-                if (!data || !data.success) return;
-                prependPriorThreads(data.prior_threads || [], data.conversation || null);
-            })
-            .catch(function () {});
-    }
     var stickToBottom = true;
     var pollTimer = null;
     var listTimer = null;
+    var realtimeClient = null;
     var cannedLoaded = false;
-    var lastDetailsMapKey = '';
-    var lastDetailsMapConvId = 0;
     var lastJourneyId = 0;
 
     var listEl = document.getElementById('lc-conversation-list');
-    var inboxClickLock = false;
-    var inboxClickLockTimer = null;
     var messagesEl = document.getElementById('lc-messages');
     var emptyEl = document.getElementById('lc-chat-empty');
     var activeEl = document.getElementById('lc-chat-active');
@@ -61,16 +29,6 @@
     var journeyListEl = document.getElementById('lc-page-journey-list');
     var journeyCountEl = document.getElementById('lc-journey-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
-    var assignToMeBtn = document.getElementById('lc-assign-to-me');
-    var archiveChatBtn = document.getElementById('lc-archive-chat');
-    var unassignedBar = document.getElementById('lc-unassigned-bar');
-    var composeBox = document.getElementById('lc-chat-compose') || document.querySelector('.lc-chat-compose');
-    var chatTagsEl = document.getElementById('lc-chat-tags');
-    var addTagBtn = document.getElementById('lc-add-tag-btn');
-    var addTagForm = document.getElementById('lc-add-tag-form');
-    var addTagInput = document.getElementById('lc-add-tag-input');
-    var addTagCancel = document.getElementById('lc-add-tag-cancel');
-    var currentTags = [];
     var cannedSelect = document.getElementById('lc-canned-select');
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
@@ -96,9 +54,6 @@
     var lastConversations = [];
     var inboxSearch = '';
     var currentReference = '';
-    var currentVisitorEmail = '';
-    var currentVisitorPhone = '';
-    var contactFieldsDirty = false;
     var chatRefEl = document.getElementById('lc-chat-ref');
     var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
@@ -118,34 +73,18 @@
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             window.LCNotifySound.play();
         }
-        if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
-            window.LCTabNotify.pulse();
-        }
     }
 
-    function setPeerTypingVisible(show, name, preview) {
+    function setPeerTypingVisible(show, name) {
         if (!typingEl) return;
         if (show) {
             typingEl.hidden = false;
             if (typingLabelEl) {
                 var who = (name || 'Visitor').trim() || 'Visitor';
-                var draft = (preview || '').trim();
-                if (draft) {
-                    typingLabelEl.classList.add('has-preview');
-                    typingLabelEl.textContent = draft;
-                    typingLabelEl.title = who + ': ' + draft;
-                } else {
-                    typingLabelEl.classList.remove('has-preview');
-                    typingLabelEl.textContent = who + ' is typing\u2026';
-                    typingLabelEl.removeAttribute('title');
-                }
+                typingLabelEl.textContent = who + ' is typing...';
             }
         } else {
             typingEl.hidden = true;
-            if (typingLabelEl) {
-                typingLabelEl.classList.remove('has-preview');
-                typingLabelEl.removeAttribute('title');
-            }
         }
     }
 
@@ -267,7 +206,7 @@
         if (extraSuffix) {
             parts.push('<span class="lc-chat-context-extra">' + esc(extraSuffix) + '</span>');
         }
-        return parts.join('<span class="lc-meta-sep" aria-hidden="true"></span>');
+        return parts.join('<span class="lc-chat-context-sep" aria-hidden="true">|</span>');
     }
 
     function visitorInitials(name) {
@@ -313,225 +252,10 @@
     function setText(id, text) {
         var el = document.getElementById(id);
         if (el) {
-            el.textContent = text || ' - ';
+            el.textContent = text || '-';
         }
     }
 
-
-    function isReturningVisitor(c) {
-        if (!c) return false;
-        if (c.visitor_kind === 'returning') return true;
-        return !!(c.is_returning === true || c.is_returning === 1 || c.is_returning === '1');
-    }
-
-    function visitorKindLabel(c) {
-        if (isReturningVisitor(c)) {
-            var n = parseInt(c.prior_chat_count, 10) || 0;
-            return n > 1 ? ('Returning visitor - ' + n + ' prior chats') : 'Returning visitor';
-        }
-        return 'New chat';
-    }
-
-    function setVisitorKindBadge(c) {
-        var el = document.getElementById('lc-chat-visitor-kind');
-        if (!el) return;
-        if (!c) {
-            el.hidden = true;
-            el.textContent = '';
-            el.className = 'lc-visitor-kind-badge';
-            return;
-        }
-        var ret = isReturningVisitor(c);
-        el.hidden = false;
-        el.textContent = ret ? 'Return' : 'New';
-        el.className = 'lc-visitor-kind-badge ' + (ret ? 'is-returning' : 'is-new');
-        el.title = visitorKindLabel(c);
-    }
-
-    var lastReturningWaiting = 0;
-
-    function showReturningVisitorToast(name) {
-        var el = document.getElementById('lc-return-toast');
-        if (!el) {
-            el = document.createElement('div');
-            el.id = 'lc-return-toast';
-            el.className = 'lc-return-toast';
-            el.setAttribute('role', 'status');
-            document.body.appendChild(el);
-        }
-        el.innerHTML = '<i class="ti ti-user-check" aria-hidden="true"></i><div><strong>Returning visitor</strong><span>' +
-            esc(name || 'Someone') + ' started a chat again</span></div>';
-        el.classList.add('is-visible');
-        clearTimeout(showReturningVisitorToast._t);
-        showReturningVisitorToast._t = setTimeout(function () {
-            el.classList.remove('is-visible');
-        }, 6500);
-        if (window.Notification && Notification.permission === 'granted') {
-            try {
-                new Notification('Returning visitor', {
-                    body: (name || 'Visitor') + ' started a chat again',
-                    tag: 'lc-return-visitor'
-                });
-            } catch (e) { /* ignore */ }
-        }
-    }
-
-    function hostFromUrl(url) {
-        if (!url) return '';
-        try {
-            var u = new URL(url, window.location.origin);
-            return (u.hostname || '').replace(/^www\./i, '');
-        } catch (e) {
-            return String(url).replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
-        }
-    }
-
-    function formatDurationSeconds(total) {
-        total = Math.max(0, parseInt(total, 10) || 0);
-        if (total < 60) return total + 's';
-        if (total < 3600) {
-            return Math.floor(total / 60) + 'm ' + (total % 60) + 's';
-        }
-        return Math.floor(total / 3600) + 'h ' + Math.floor((total % 3600) / 60) + 'm';
-    }
-
-    function formatChatDuration(c) {
-        if (!c || !c.started_at) return '-';
-        var start = window.LCTime && window.LCTime.parseTimestamp
-            ? window.LCTime.parseTimestamp(c.started_at)
-            : new Date(c.started_at);
-        var endRaw = c.closed_at || c.last_message_at || new Date().toISOString();
-        var end = window.LCTime && window.LCTime.parseTimestamp
-            ? window.LCTime.parseTimestamp(endRaw)
-            : new Date(endRaw);
-        if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return '-';
-        var secs = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
-        return formatDurationSeconds(secs);
-    }
-
-    function setHtmlTime(id, ts) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        if (!ts) {
-            el.textContent = '-';
-            return;
-        }
-        el.innerHTML = timeHtml(ts);
-        if (window.LCTime) window.LCTime.scan(el);
-    }
-
-    function updateDetailsMap(geo) {
-        var wrap = document.getElementById('lc-details-map-wrap');
-        var iframe = document.getElementById('lc-details-map');
-        if (!wrap || !iframe) return;
-
-        geo = geo || {};
-        var lat = geo.lat;
-        var lon = geo.lon;
-        var label = (geo.label || geo.country || '').trim();
-        var key = (lat && lon) ? (String(lat) + ',' + String(lon)) : label;
-        if (!key) {
-            if (lastDetailsMapKey !== '') {
-                lastDetailsMapKey = '';
-                iframe.removeAttribute('src');
-            }
-            wrap.hidden = true;
-            return;
-        }
-        wrap.hidden = false;
-        if (key === lastDetailsMapKey) {
-            return;
-        }
-        lastDetailsMapKey = key;
-        if (lat && lon) {
-            var zoom = (geo.source === 'browser') ? 15 : 11;
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=' + zoom + '&output=embed';
-        } else {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=6&output=embed';
-        }
-    }
-
-    function journeyPageHref(view) {
-        var url = String((view && view.page_url) || '').trim();
-        if (url && /^https?:\/\//i.test(url)) {
-            return url;
-        }
-        var path = String((view && view.page_path) || url || '').trim();
-        if (path && /^https?:\/\//i.test(path)) {
-            return path;
-        }
-        return '';
-    }
-
-    function journeyPageLinkText(view) {
-        var url = String((view && view.page_url) || '').trim();
-        if (url) {
-            return url;
-        }
-        return String((view && view.page_path) || '').trim();
-    }
-
-    function paintDetailsPagesList() {
-        var list = document.getElementById('lc-details-pages-list');
-        var empty = document.getElementById('lc-details-pages-empty');
-        if (!list) return;
-
-        var steps = consolidateJourney(journeyViewsRaw);
-        if (!steps.length) {
-            list.innerHTML = '';
-            if (empty) empty.hidden = false;
-            return;
-        }
-        if (empty) empty.hidden = true;
-
-        var html = '';
-        for (var i = steps.length - 1; i >= 0; i--) {
-            var step = steps[i];
-            var view = step.last_view || {};
-            var label = journeyStepLabel(step);
-            var pageLink = journeyPageLinkText(view);
-            var pageHref = journeyPageHref(view);
-            var dur = view.duration_label || '';
-            if (!dur && view.duration_seconds) {
-                dur = formatDurationSeconds(view.duration_seconds);
-            }
-            html += '<li class="lc-details-page-item' + (i === steps.length - 1 ? ' is-current' : '') + '">';
-            html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
-            html += '<div class="lc-details-page-body">';
-            html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
-            if (pageLink && pageLink.toLowerCase() !== String(label || '').toLowerCase()) {
-                if (pageHref) {
-                    html += '<a class="lc-details-page-link" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink) + '">' + esc(pageLink) + '</a>';
-                } else {
-                    html += '<span class="lc-details-page-link is-text" title="' + esc(pageLink) + '">' + esc(pageLink) + '</span>';
-                }
-            }
-            var when = step.last_visited_at || view.visited_at;
-            if (when) {
-                html += '<span class="lc-details-page-time">' + timeHtml(when) + '</span>';
-            } else if (dur) {
-                html += '<span class="lc-details-page-time">' + esc(dur) + '</span>';
-            }
-            html += '</div></li>';
-        }
-        list.innerHTML = html;
-        if (window.LCTime) {
-            window.LCTime.scan(list);
-        }
-    }
-
-    function bindDetailsAccordions() {
-        document.querySelectorAll('.lc-details-acc-head').forEach(function (btn) {
-            if (btn.dataset.bound) return;
-            btn.dataset.bound = '1';
-            btn.addEventListener('click', function () {
-                var acc = btn.closest('.lc-details-acc');
-                if (!acc) return;
-                var open = acc.classList.toggle('is-open');
-                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-            });
-        });
-    }
     function showDetailsPanel(show) {
         var empty = document.getElementById('lc-chat-details-empty');
         var body = document.getElementById('lc-chat-details-body');
@@ -543,64 +267,40 @@
         }
     }
 
-        function renderDetailsRail(c, extraNote) {
+    function renderDetailsRail(c, extraNote) {
         if (!c) {
             showDetailsPanel(false);
             return;
         }
         showDetailsPanel(true);
-        var name = (c.visitor_name || '').trim();
-        var displayName = name || 'Unnamed customer';
-        setText('lc-details-name', displayName);
-        if (!isContactFieldActive()) {
-            currentVisitorEmail = (c.visitor_email || '').trim();
-            currentVisitorPhone = (c.visitor_phone || '').trim();
-            populateContactFields(true);
-        }
-        setVisitorKindBadge(c);
-
-        var geo = c.visitor_geo || {};
-        var location = (geo.label || (c.visitor_country || '').trim() || '-');
-        setText('lc-details-location', location);
-        setText('lc-details-local-time', c.visitor_ip ? ('IP ' + c.visitor_ip) : '');
-
-        var stats = c.visitor_stats || {};
-        var visitCount = parseInt(stats.visit_count, 10);
-        if (!visitCount && journeyViewsRaw.length) {
-            visitCount = journeyViewsRaw.length;
-        }
-        var chatCount = parseInt(stats.chat_count, 10) || (parseInt(c.prior_chat_count, 10) || 0) + 1;
-        var returningLine = isReturningVisitor(c)
-            ? (Math.max(visitCount, 1) + ' visits, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'))
-            : ('New visitor, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'));
-        setText('lc-details-returning', returningLine);
-
-        setHtmlTime('lc-details-last-seen', c.visitor_last_seen || c.last_message_at || '');
-
-        var page = c.visitor_page || c.page_url || '';
-        var ref = stats.entry_referrer || '';
-        if (!ref && journeyViewsRaw.length && journeyViewsRaw[0].referrer) {
-            ref = journeyViewsRaw[0].referrer;
-        }
-        var cameFrom = ref ? hostFromUrl(ref) : (page ? hostFromUrl(page) : '-');
-        setText('lc-details-came-from', cameFrom || '-');
-
-        setText('lc-details-chat-duration', formatChatDuration(c));
-
-        var groupsEl = document.getElementById('lc-details-groups');
-        if (groupsEl) {
-            var brand = c.brand_name || 'General';
-            var initial = brand.charAt(0).toUpperCase();
-            groupsEl.innerHTML = '<span class="lc-details-group-pill"><span class="lc-details-group-icon">' + esc(initial) + '</span><span>' + esc(brand) + '</span></span>';
-        }
-
+        var name = c.visitor_name || 'Visitor';
+        setText('lc-details-name', name);
+        setText('lc-details-email', c.visitor_email || 'No email');
         setText('lc-details-ip', c.visitor_ip || currentVisitorIp || '-');
+        setText('lc-details-country', c.visitor_country || '-');
+        setText('lc-details-brand', c.brand_name || '-');
         setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
         setText('lc-details-ticket', c.reference || currentReference || '-');
 
-        updateDetailsMap(geo);
-        updateHeaderAvatar(displayName);
-        paintDetailsPagesList();
+        var pageEl = document.getElementById('lc-details-page');
+        var page = c.visitor_page || c.page_url || '';
+        if (pageEl) {
+            if (page) {
+                pageEl.textContent = page;
+                pageEl.title = page;
+                if (/^https?:\/\//i.test(page)) {
+                    pageEl.href = page;
+                    pageEl.removeAttribute('aria-disabled');
+                } else {
+                    pageEl.removeAttribute('href');
+                    pageEl.setAttribute('aria-disabled', 'true');
+                }
+            } else {
+                pageEl.textContent = '-';
+                pageEl.removeAttribute('href');
+            }
+        }
+        updateHeaderAvatar(name);
     }
 
     function updateChatReference(ref) {
@@ -644,9 +344,6 @@
         return list.filter(function (c) {
             var hay = [
                 c.visitor_name || '',
-                c.visitor_email || '',
-                c.visitor_phone || '',
-                c.visitor_ip || '',
                 c.last_message || '',
                 c.brand_name || '',
                 c.agent_name || '',
@@ -661,8 +358,7 @@
         var name = c.visitor_name || 'Visitor';
         var status = c.status;
         var waitingCls = status === 'waiting' ? ' is-waiting' : '';
-        var sig = conversationItemSignature(c);
-        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '" data-sig="' + esc(sig) + '">';
+        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '">';
         html += '<div class="lc-chat-item-av" style="background:' + avatarColor(name) + '">' + esc(visitorInitials(name)) + '</div>';
         html += '<div class="lc-chat-item-body">';
         html += '<div class="lc-chat-item-top">';
@@ -676,14 +372,9 @@
         if (c.brand_name) {
             html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
         }
-        html += esc(c.last_message || ' - ');
+        html += esc(c.last_message || '-');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
-        if (isReturningVisitor(c)) {
-            html += '<span class="lc-badge lc-badge-returning" title="' + esc(visitorKindLabel(c)) + '">Return</span>';
-        } else if (status === 'waiting' || status === 'active') {
-            html += '<span class="lc-badge lc-badge-newchat">New</span>';
-        }
         if (c.unread > 0) {
             html += '<span class="lc-badge lc-badge-unread">' + c.unread + ' new</span>';
         } else {
@@ -700,214 +391,12 @@
         return html;
     }
 
-    function inboxIdentityKey(row) {
-        var ip = String((row && row.visitor_ip) || '').trim();
-        var email = String((row && row.visitor_email) || '').trim().toLowerCase();
-        var vid = parseInt((row && row.visitor_id) || 0, 10) || 0;
-        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') return 'ip:' + ip;
-        if (email) return 'em:' + email;
-        if (vid > 0) return 'vid:' + vid;
-        return 'id:' + (parseInt((row && row.id) || 0, 10) || 0);
-    }
-
-    function inboxRowRank(row) {
-        var status = String((row && row.status) || '');
-        var statusRank = status === 'waiting' ? 0 : (status === 'active' ? 1 : 2);
-        var ts = Date.parse(String((row && (row.last_message_at || row.started_at)) || '')) || 0;
-        var id = parseInt((row && row.id) || 0, 10) || 0;
-        return [statusRank, -ts, -id];
-    }
-
-    function rankBetter(a, b) {
-        var ra = inboxRowRank(a);
-        var rb = inboxRowRank(b);
-        for (var i = 0; i < ra.length; i++) {
-            if (ra[i] < rb[i]) return true;
-            if (ra[i] > rb[i]) return false;
-        }
-        return false;
-    }
-
-    function collapseInboxConversations(list) {
-        var best = {};
-        (list || []).forEach(function (row) {
-            if (!row) return;
-            var key = inboxIdentityKey(row);
-            if (!best[key] || rankBetter(row, best[key])) {
-                best[key] = row;
-            }
-        });
-        return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) {
-            return rankBetter(a, b) ? -1 : (rankBetter(b, a) ? 1 : 0);
-        });
-    }
-
-    function syncConversationListStatus(c) {
-        if (!c || !c.id) return;
-        var id = parseInt(c.id, 10);
-        if (!id) return;
-        var status = String(c.status || '');
-        if (!status) return;
-        var found = false;
-        lastConversations = (lastConversations || []).map(function (row) {
-            if (parseInt(row.id, 10) !== id) return row;
-            found = true;
-            var next = Object.assign({}, row, { status: status });
-            if (c.agent_name) next.agent_name = c.agent_name;
-            if (c.agent_id !== undefined && c.agent_id !== null) next.agent_id = c.agent_id;
-            if (c.visitor_ip) next.visitor_ip = c.visitor_ip;
-            if (c.visitor_email !== undefined) next.visitor_email = c.visitor_email;
-            if (c.visitor_phone !== undefined) next.visitor_phone = c.visitor_phone;
-            if (c.visitor_id) next.visitor_id = c.visitor_id;
-            if (c.last_message) next.last_message = c.last_message;
-            if (c.last_message_at) next.last_message_at = c.last_message_at;
-            return next;
-        });
-        if (!found) {
-            // Keep open chat visible, but collapse same visitor so closed+live don't blink.
-            lastConversations = [Object.assign({}, c)].concat(lastConversations || []);
-        }
-        lastConversations = collapseInboxConversations(lastConversations);
-        paintConversationList(filterConversations(lastConversations));
-    }
-
-        function conversationItemSignature(c) {
-        return [
-            c.id,
-            c.status || '',
-            c.unread || 0,
-            (c.last_message || '').slice(0, 160),
-            c.visitor_name || '',
-            c.agent_name || '',
-            c.agent_id || 0,
-            c.reference || '',
-            c.brand_name || '',
-            c.visitor_email || '',
-            c.visitor_phone || '',
-            isReturningVisitor(c) ? '1' : '0'
-        ].join('\u001f');
-    }
-
-    function inboxOrderKey(conversations) {
-        var unassigned = [];
-        var mine = [];
-        var other = [];
-        conversations.forEach(function (c) {
-            if (c.status === 'waiting') {
-                unassigned.push(c.id);
-            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
-                mine.push(c.id);
-            } else {
-                other.push(c.id);
-            }
-        });
-        if (currentTab === 'waiting') {
-            return 'w:' + unassigned.join(',');
-        }
-        if (currentTab === 'active') {
-            return 'a:' + mine.concat(other).join(',');
-        }
-        return 'all:' + unassigned.join(',') + '|' + mine.join(',') + '|' + other.join(',');
-    }
-
-    function buildInboxHtml(conversations) {
-        var unassigned = [];
-        var mine = [];
-        var other = [];
-        conversations.forEach(function (c) {
-            if (c.status === 'waiting') {
-                unassigned.push(c);
-            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
-                mine.push(c);
-            } else {
-                other.push(c);
-            }
-        });
-
-        function section(label, items, meta) {
-            if (!items.length) {
-                return '';
-            }
-            var html = '<div class="lc-inbox-group">';
-            html += '<div class="lc-inbox-group-head"><span class="lc-inbox-group-label"><i class="ti ti-chevron-down"></i> '
-                + esc(label) + ' (' + items.length + ')</span>';
-            if (meta) {
-                html += '<span class="lc-inbox-group-meta">' + esc(meta) + '</span>';
-            }
-            html += '</div>';
-            items.forEach(function (c) {
-                html += renderConversationItem(c);
-            });
-            html += '</div>';
-            return html;
-        }
-
-        var html = '';
-        if (currentTab === 'waiting') {
-            html = section('Unassigned', unassigned, 'Newest');
-        } else if (currentTab === 'active') {
-            html = section('My chats', mine.concat(other), 'Newest');
-        } else {
-            html += section('Unassigned', unassigned, 'Newest');
-            html += section('My chats', mine, '');
-            html += section('Other', other, '');
-        }
-        if (!html) {
-            conversations.forEach(function (c) {
-                html += renderConversationItem(c);
-            });
-        }
-        return html;
-    }
-
-    function syncConversationItemEl(el, c) {
-        var active = c.id == selectedId;
-        el.classList.toggle('active', active);
-        el.classList.toggle('is-waiting', c.status === 'waiting');
-        el.dataset.status = c.status;
-
-        var name = c.visitor_name || 'Visitor';
-        var strong = el.querySelector('.lc-chat-item-top strong');
-        if (strong) {
-            strong.textContent = name;
-        }
-        var av = el.querySelector('.lc-chat-item-av');
-        if (av) {
-            av.textContent = visitorInitials(name);
-            av.style.background = avatarColor(name);
-        }
-
-        var preview = el.querySelector('.lc-chat-item-preview');
-        if (preview) {
-            preview.textContent = c.last_message || ' - ';
-        }
-
-        var rel = relativeTime(c.last_message_at || c.started_at);
-        var timeEl = el.querySelector('.lc-chat-item-time');
-        if (rel) {
-            if (timeEl) {
-                timeEl.textContent = rel;
-            } else {
-                var top = el.querySelector('.lc-chat-item-top');
-                if (top) {
-                    top.insertAdjacentHTML('beforeend', '<span class="lc-chat-item-time">' + esc(rel) + '</span>');
-                }
-            }
-        } else if (timeEl) {
-            timeEl.remove();
-        }
-    }
-
     function paintConversationList(conversations) {
-        if (inboxClickLock) {
-            return;
-        }
         var loadingEl = document.getElementById('lc-list-loading');
         if (loadingEl) {
             loadingEl.remove();
         }
         if (!conversations.length) {
-            listEl.dataset.inboxOrder = '';
             if (inboxSearch) {
                 listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-search-off"></i><p>No matches</p><span>Try another search term</span></div>';
             } else {
@@ -915,31 +404,11 @@
             }
             return;
         }
-
-        var orderKey = currentTab + ':' + inboxOrderKey(conversations);
-        if (listEl.dataset.inboxOrder === orderKey && listEl.querySelector('.lc-chat-item[data-id]')) {
-            conversations.forEach(function (c) {
-                var el = listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
-                if (!el) {
-                    return;
-                }
-                var sig = conversationItemSignature(c);
-                if (el.dataset.sig === sig) {
-                    syncConversationItemEl(el, c);
-                    return;
-                }
-                var wrap = document.createElement('div');
-                wrap.innerHTML = renderConversationItem(c);
-                var next = wrap.firstElementChild;
-                if (next) {
-                    el.replaceWith(next);
-                }
-            });
-            return;
-        }
-
-        listEl.innerHTML = buildInboxHtml(conversations);
-        listEl.dataset.inboxOrder = orderKey;
+        var html = '';
+        conversations.forEach(function (c) {
+            html += renderConversationItem(c);
+        });
+        listEl.innerHTML = html;
     }
 
     function esc(s) {
@@ -959,29 +428,28 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(window.LCTime.formatRelative(iso)) + '</span>';
     }
 
-    /** Official dual-check SVGs - read uses hardcoded #53bdeb fill (CSS cannot wash to white). */
-    function tickSvg(double, fillColor) {
-        var fill = fillColor || 'currentColor';
+    /** Official dual-check SVGs (same as widget visitor ticks). */
+    function tickSvg(double) {
         if (double) {
             return '<svg class="lc-tick-svg" viewBox="0 0 16 11" width="16" height="11" aria-hidden="true" focusable="false">' +
-                '<path fill="' + fill + '" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
-                '<path fill="' + fill + '" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
+                '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+                '<path fill="currentColor" d="M14.571.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027l-.55-.53 1.06-1.2.04.04 4.92-5.59A.75.75 0 0 1 14.57.653z"/>' +
                 '</svg>';
         }
         return '<svg class="lc-tick-svg" viewBox="0 0 12 11" width="12" height="11" aria-hidden="true" focusable="false">' +
-            '<path fill="' + fill + '" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
+            '<path fill="currentColor" d="M11.071.653a.75.75 0 0 1 .076 1.057l-5.5 6.25a.75.75 0 0 1-1.106.027L1.4 4.95a.75.75 0 1 1 1.1-1.02l2.48 2.67L10.013.73A.75.75 0 0 1 11.07.653z"/>' +
             '</svg>';
     }
 
     function msgTicksHtml(status) {
         status = status || 'sent';
         if (status === 'read') {
-            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen" style="color:#53bdeb!important">' + tickSvg(true, '#53bdeb') + '</span>';
+            return '<span class="lc-msg-ticks is-read" title="Seen" aria-label="Seen">' + tickSvg(true) + '</span>';
         }
         if (status === 'delivered') {
-            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(true, 'rgba(255,255,255,0.55)') + '</span>';
+            return '<span class="lc-msg-ticks is-delivered" title="Delivered" aria-label="Delivered">' + tickSvg(true) + '</span>';
         }
-        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(false, 'rgba(255,255,255,0.55)') + '</span>';
+        return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent">' + tickSvg(false) + '</span>';
     }
 
     function applyReceipts(receipts) {
@@ -1044,7 +512,7 @@
         html += '<span class="lc-msg-time">';
         html += timeHtml(m.created_at);
         if (label && sender !== 'system' && sender !== 'agent') {
-            html += '<span class="lc-meta-sep" aria-hidden="true"></span>' + esc(label);
+            html += ' | ' + esc(label);
         }
         html += '</span>';
         if (sender === 'agent' && !opts.history) {
@@ -1069,55 +537,38 @@
         }
     }
 
-    function metaSep() {
-        return '<span class="lc-meta-sep" aria-hidden="true"></span>';
-    }
-
-    function sessionPart(html) {
-        return '<span class="lc-session-part">' + html + '</span>';
-    }
-
-    function joinSessionParts(parts) {
-        var out = '';
-        parts.forEach(function (p, i) {
-            if (i) out += metaSep();
-            out += p;
-        });
-        return out;
-    }
-
-    /** LiveChat-style session marker - centered plain text */
+    /** LiveChat-style non-clickable session marker between archived / current chats */
     function renderSessionDivider(kind, threadOrConv) {
         threadOrConv = threadOrConv || {};
         var ref = threadOrConv.reference || (threadOrConv.id ? ('#' + threadOrConv.id) : '');
         var status = (threadOrConv.status || '').toLowerCase();
         var when = formatSessionWhen(threadOrConv.ended_at || threadOrConv.last_message_at || threadOrConv.started_at);
-        var parts = [];
+        var text = '';
         var extraClass = kind || '';
 
         if (kind === 'archive-note') {
-            parts.push(sessionPart('Chat history (agent only)'));
+            text = 'Chat history (agent only) - visitor sees a new session';
         } else if (kind === 'start') {
-            parts.push(sessionPart('Previous chat'));
-            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
-            if (when) parts.push(sessionPart(esc(when)));
+            text = 'Previous chat';
+            if (ref) text += ' | <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            if (when) text += ' | ' + esc(when);
         } else if (kind === 'ended') {
             extraClass = 'is-ended';
             var endLabel = status === 'closed' ? 'Chat ended' : (status === 'waiting' ? 'Disconnected' : 'Session ended');
-            parts.push(sessionPart(esc(endLabel)));
-            if (status) parts.push(sessionPart('<span class="lc-session-divider-status">' + esc(status.toUpperCase()) + '</span>'));
-            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
-            if (when) parts.push(sessionPart(esc(when)));
+            text = endLabel;
+            if (status) text += ' | <span class="lc-session-divider-status">' + esc(status) + '</span>';
+            if (ref) text += ' | <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
+            if (when) text += ' | ' + esc(when);
         } else if (kind === 'current') {
             extraClass = 'is-current';
-            parts.push(sessionPart('Current chat'));
-            if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
+            text = 'Current chat';
+            if (ref) text += ' | <span class="lc-session-divider-ref">' + esc(ref) + '</span>';
         } else {
-            parts.push(sessionPart(esc(String(kind || 'Session'))));
+            text = esc(String(kind || 'Session'));
         }
 
         return '<div class="lc-session-divider ' + extraClass + '" role="separator">' +
-            '<div class="lc-session-divider-inner">' + joinSessionParts(parts) + '</div></div>';
+            '<div class="lc-session-divider-inner">' + text + '</div></div>';
     }
 
     /**
@@ -1249,7 +700,7 @@
         var html = '';
         steps.forEach(function (step, idx) {
             if (idx > 0) {
-                html += '<span class="lc-journey-sep" aria-hidden="true">&gt;</span>';
+                html += '<span class="lc-journey-sep" aria-hidden="true">></span>';
             }
             html += renderJourneyStep(step, idx === steps.length - 1);
         });
@@ -1261,7 +712,7 @@
             if (uniqueCount === totalVisits) {
                 journeyCountEl.textContent = uniqueCount + (uniqueCount === 1 ? ' page' : ' pages');
             } else {
-                journeyCountEl.textContent = uniqueCount + ' pages  |  ' + totalVisits + ' visits';
+                journeyCountEl.textContent = uniqueCount + ' pages | ' + totalVisits + ' visits';
             }
         }
         updateJourneySummary();
@@ -1269,7 +720,6 @@
         if (window.LCTime) {
             window.LCTime.scan(journeyListEl);
         }
-        paintDetailsPagesList();
     }
 
     function updateJourneySummary() {
@@ -1286,8 +736,8 @@
         var label = journeyStepLabel(current);
         var timeEl = journeyListEl.querySelector('.lc-journey-step.is-current .lc-journey-step-time');
         var timeText = timeEl ? timeEl.textContent.trim() : '';
-        var repeat = current.visit_count > 1 ? '  |  x' + current.visit_count : '';
-        summaryEl.textContent = label + repeat + (timeText ? '  |  ' + timeText : '');
+        var repeat = current.visit_count > 1 ? ' | x' + current.visit_count : '';
+        summaryEl.textContent = label + repeat + (timeText ? ' | ' + timeText : '');
     }
 
     function scrollJourneyToEnd() {
@@ -1344,24 +794,13 @@
                 }
 
                 var unreadTotal = 0;
-                var returningWaiting = 0;
-                var returningName = '';
                 (data.conversations || []).forEach(function (c) {
                     unreadTotal += parseInt(c.unread, 10) || 0;
-                    if (isReturningVisitor(c) && c.status === 'waiting') {
-                        returningWaiting += 1;
-                        if (!returningName) {
-                            returningName = c.visitor_name || 'Visitor';
-                        }
-                    }
                 });
                 var waiting = parseInt(data.waiting_count, 10) || 0;
-                // New queue / returning visitor / unread (not first paint)
+                // New queue activity or unread visitor msgs (not first paint)
                 if (inboxSoundReady) {
-                    if (returningWaiting > lastReturningWaiting) {
-                        playIncomingSound();
-                        showReturningVisitorToast(returningName);
-                    } else if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
+                    if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
                         playIncomingSound();
                     }
                 } else {
@@ -1369,18 +808,28 @@
                 }
                 lastInboxWaiting = waiting;
                 lastInboxUnread = unreadTotal;
-                lastReturningWaiting = returningWaiting;
 
                 if (!data.conversations.length) {
                     lastConversations = [];
                     paintConversationList([]);
                     return;
                 }
-                lastConversations = collapseInboxConversations(data.conversations || []);
+                lastConversations = data.conversations;
                 paintConversationList(filterConversations(lastConversations));
 
-                // Keep the open chat mounted even if inbox hides IP duplicates.
-                // Tearing it down here made the panel vanish after email/list refresh.
+                if (selectedId) {
+                    var stillVisible = data.conversations.some(function (c) {
+                        return parseInt(c.id, 10) === selectedId;
+                    });
+                    if (!stillVisible) {
+                        selectedId = 0;
+                        lastMsgId = 0;
+                        activeEl.style.display = 'none';
+                        emptyEl.style.display = 'flex';
+                        messagesEl.innerHTML = '';
+                        chatTransferredAway = false;
+                    }
+                }
             });
     }
 
@@ -1400,7 +849,6 @@
 
     function openTransferPanel() {
         if (!transferPanel || !selectedId) return;
-        if (typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         transferPanel.hidden = false;
         if (transferBtn) transferBtn.setAttribute('aria-expanded', 'true');
         loadTransferAgents();
@@ -1415,7 +863,7 @@
         html += '<span class="lc-transfer-agent-avatar" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
         html += '<span class="lc-transfer-agent-body">';
         html += '<strong>' + esc(agent.name) + '</strong>';
-        html += '<span>' + esc(statusLabel) + '  |  ' + esc(brandLabel) + '</span>';
+        html += '<span>' + esc(statusLabel) + ' | ' + esc(brandLabel) + '</span>';
         html += '</span>';
         html += '<i class="ti ti-circle-check lc-transfer-agent-check"></i>';
         html += '</button>';
@@ -1496,12 +944,11 @@
     }
 
     function canComposeChat(c, serverFlag) {
-        if (!c) return false;
-        if (c.status === 'closed') return false;
         if (typeof serverFlag === 'boolean') {
             return serverFlag;
         }
-        if (c.status === 'waiting') return false;
+        if (!c || c.status === 'closed') return false;
+        if (c.status === 'waiting') return true;
         if (!c.agent_id) return false;
         return parseInt(c.agent_id, 10) === myAgentId;
     }
@@ -1511,71 +958,16 @@
         return parseInt(c.agent_id || 0, 10) === myAgentId;
     }
 
-    function setUnassignedMode(on) {
-        if (unassignedBar) {
-            if (on) {
-                unassignedBar.hidden = false;
-                unassignedBar.classList.add('is-on');
-            } else {
-                unassignedBar.hidden = true;
-                unassignedBar.classList.remove('is-on');
-            }
-        }
-        if (composeBox) {
-            if (on) composeBox.classList.add('is-hidden-for-unassigned');
-            else composeBox.classList.remove('is-hidden-for-unassigned');
-        }
-        document.body.classList.toggle('lc-chat-is-unassigned', !!on);
-    }
-
-    function renderChatTags(tags) {
-        currentTags = Array.isArray(tags) ? tags : [];
-        if (!chatTagsEl) return;
-        if (!currentTags.length) {
-            chatTagsEl.innerHTML = '';
-            return;
-        }
-        chatTagsEl.innerHTML = currentTags.map(function (t) {
-            return '<span class="lc-chat-tag-chip" data-id="' + t.id + '">' + esc(t.tag) +
-                ' <button type="button" data-remove-tag="' + t.id + '" aria-label="Remove tag">&times;</button></span>';
-        }).join('');
-    }
-
-    function loadChatTags(conversationId) {
-        if (!conversationId) {
-            renderChatTags([]);
-            return;
-        }
-        fetch(base + '/api/agent-tags.php?conversation_id=' + encodeURIComponent(conversationId), { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data && data.success) renderChatTags(data.tags || []);
-            })
-            .catch(function () {});
-    }
-
     function updateChatActions(c, canCompose) {
         canCompose = canComposeChat(c, canCompose);
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
-        var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !parseInt(c.agent_id || 0, 10));
-        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
         replyInput.disabled = !canCompose;
         document.getElementById('lc-send-reply').disabled = !canCompose;
-        // Always sync placeholder with live status (reopen must clear "Chat closed...")
-        if (c.status === 'closed') {
-            replyInput.placeholder = 'Chat closed - visitor ended this conversation';
-        } else if (chatTransferredAway) {
-            replyInput.placeholder = 'Transferred - view only';
-        } else if (!canCompose) {
-            replyInput.placeholder = 'Assign to yourself to reply';
-        } else {
-            replyInput.placeholder = 'Type a message...';
-        }
-        if (acceptBtn) acceptBtn.style.display = 'none';
-        setUnassignedMode(isUnassigned);
+        acceptBtn.style.display = c.status === 'waiting' ? 'inline-flex' : 'none';
         if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
+        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
     }
 
     function loadCanned() {
@@ -1595,10 +987,6 @@
     }
 
     function openConversation(id) {
-        lastDetailsMapKey = '';
-        lastDetailsMapConvId = parseInt(id, 10) || 0;
-        clearPendingAttachment();
-        if (id !== selectedId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
@@ -1613,11 +1001,6 @@
         closeTransferPanel();
         closeMoreMenu();
         transferAgentsLoaded = false;
-        if (replyInput) {
-            replyInput.value = '';
-            replyInput.placeholder = 'Type a message...';
-            replyInput.disabled = false;
-        }
         currentReference = '';
         currentVisitorIp = '';
         currentIpBlocked = false;
@@ -1627,17 +1010,12 @@
         if (visitorDetailsEl) visitorDetailsEl.innerHTML = '';
         showDetailsPanel(true);
         setText('lc-details-name', 'Loading...');
-        currentVisitorEmail = '';
-        currentVisitorPhone = '';
-        contactFieldsDirty = false;
-        populateContactFields(true);
-        setText('lc-details-visitor-kind', '-');
-        setVisitorKindBadge(null);
-        setText('lc-details-ip', ' - ');
-        setText('lc-details-country', ' - ');
-        setText('lc-details-brand', ' - ');
-        setText('lc-details-agent', ' - ');
-        setText('lc-details-ticket', ' - ');
+        setText('lc-details-email', '-');
+        setText('lc-details-ip', '-');
+        setText('lc-details-country', '-');
+        setText('lc-details-brand', '-');
+        setText('lc-details-agent', '-');
+        setText('lc-details-ticket', '-');
         updateBlockIpMenu();
         if (journeyEl) journeyEl.style.display = 'none';
         if (journeyListEl) journeyListEl.innerHTML = '';
@@ -1853,15 +1231,10 @@
 
     function pollMessages() {
         if (!selectedId) return;
-        var conversationId = selectedId;
-        var isFirstLoadReq = needsFullHistory;
-        var full = isFirstLoadReq ? 1 : 0;
-        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
+        var full = needsFullHistory ? 1 : 0;
+        fetch(base + '/api/agent-poll.php?conversation_id=' + selectedId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (selectedId !== conversationId) {
-                    return;
-                }
                 if (!data.success) {
                     if (data.error === 'Forbidden') {
                         selectedId = 0;
@@ -1877,10 +1250,7 @@
                     return;
                 }
                 var c = data.conversation;
-                var isFirstLoad = isFirstLoadReq;
-                if (c) {
-                    syncConversationListStatus(c);
-                }
+                var isFirstLoad = full === 1;
 
                 function paintFirstLoadFrame() {
                     var html = '';
@@ -1895,7 +1265,6 @@
                     });
                     messagesEl.innerHTML = html;
                     needsFullHistory = false;
-                    loadPriorThreads(selectedId);
                     if (typeof data.message_cursor === 'number' && data.message_cursor > lastMsgId) {
                         lastMsgId = data.message_cursor;
                     }
@@ -1914,7 +1283,7 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
-                            // Incoming only - not the agent's own replies echoing back
+                            // Incoming only - not agent's own replies echoing back
                             if (m.sender_type === 'visitor' || m.sender_type === 'system') {
                                 if (m.sender_type === 'visitor') {
                                     playSound = true;
@@ -1934,13 +1303,6 @@
                     }
                 }
 
-                if (!c) {
-                    if (isFirstLoad) {
-                        paintFirstLoadFrame();
-                    }
-                    return;
-                }
-
                 if (c.status === 'closed') {
                     if (isFirstLoad) {
                         paintFirstLoadFrame();
@@ -1949,11 +1311,7 @@
                     }
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
-                    replyInput.value = '';
-                    replyInput.placeholder = 'Chat closed - visitor ended this conversation';
-                    if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
-                    if (acceptBtn) acceptBtn.style.display = 'none';
-                    setUnassignedMode(false);
+                    acceptBtn.style.display = 'none';
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
                     closeMoreMenu();
@@ -1966,12 +1324,12 @@
                     }
                     setVisitorMeta(formatVisitorMeta(c, 'Chat closed'), true);
                     setPeerTypingVisible(false);
+                    loadConversations();
                     return;
                 }
 
                 replyInput.disabled = false;
                 document.getElementById('lc-send-reply').disabled = false;
-                replyInput.placeholder = 'Type a message...';
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
                 currentConversationMeta = {
@@ -1985,7 +1343,6 @@
                 }
                 setVisitorMeta(formatVisitorMeta(c), true);
                 updateChatActions(c, data.can_compose);
-                loadChatTags(selectedId);
 
                 if (isFirstLoad) {
                     paintFirstLoadFrame();
@@ -1993,15 +1350,11 @@
                     paintIncremental();
                 }
                 loadPageJourney(false);
-                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
+                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name));
             });
     }
 
     function sendReply() {
-        if (pendingAttachments.length) {
-            sendPendingAttachment();
-            return;
-        }
         var msg = replyInput.value.trim();
         if (!msg || !selectedId) return;
         stopOwnTyping();
@@ -2030,29 +1383,9 @@
         });
     });
 
-    listEl.addEventListener('mousedown', function (e) {
-        if (!e.target.closest('.lc-chat-item')) {
-            return;
-        }
-        inboxClickLock = true;
-        if (inboxClickLockTimer) {
-            clearTimeout(inboxClickLockTimer);
-        }
-        inboxClickLockTimer = setTimeout(function () {
-            inboxClickLock = false;
-        }, 450);
-    });
-
     listEl.addEventListener('click', function (e) {
         var item = e.target.closest('.lc-chat-item');
-        if (item) {
-            inboxClickLock = false;
-            if (inboxClickLockTimer) {
-                clearTimeout(inboxClickLockTimer);
-                inboxClickLockTimer = null;
-            }
-            openConversation(parseInt(item.dataset.id, 10));
-        }
+        if (item) openConversation(parseInt(item.dataset.id, 10));
     });
 
     document.getElementById('lc-send-reply').addEventListener('click', sendReply);
@@ -2064,301 +1397,14 @@
         setTimeout(onAgentComposeActivity, 0);
     });
 
-    function assignChatToMe() {
-        if (!selectedId) return;
+    acceptBtn.addEventListener('click', function () {
         fetch(base + '/api/agent-accept.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data && data.success === false) {
-                alert(data.error || 'Could not assign chat');
-                return;
-            }
-            pollMessages();
-            loadConversations();
-        }).catch(function () { alert('Could not assign chat'); });
-    }
-
-    function archiveSelectedChat() {
-        if (!selectedId) return;
-        if (!confirm('Close & archive this chat?')) return;
-        fetch(base + '/api/agent-close.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data && data.success === false) {
-                alert(data.error || 'Could not archive chat');
-                return;
-            }
-            pollMessages();
-            loadConversations();
-        }).catch(function () { alert('Could not archive chat'); });
-    }
-
-    if (acceptBtn) acceptBtn.addEventListener('click', assignChatToMe);
-    if (assignToMeBtn) assignToMeBtn.addEventListener('click', assignChatToMe);
-    if (archiveChatBtn) archiveChatBtn.addEventListener('click', archiveSelectedChat);
-
-    if (addTagBtn && addTagForm) {
-        addTagBtn.addEventListener('click', function () {
-            addTagForm.hidden = false;
-            addTagBtn.hidden = true;
-            if (addTagInput) {
-                addTagInput.value = '';
-                addTagInput.focus();
-            }
-        });
-    }
-    if (addTagCancel && addTagForm && addTagBtn) {
-        addTagCancel.addEventListener('click', function () {
-            addTagForm.hidden = true;
-            addTagBtn.hidden = false;
-        });
-    }
-    if (addTagForm) {
-        addTagForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            if (!selectedId || !addTagInput) return;
-            var tag = (addTagInput.value || '').trim();
-            if (!tag) return;
-            fetch(base + '/api/agent-tags.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ conversation_id: selectedId, tag: tag })
-            }).then(function (r) { return r.json(); }).then(function (data) {
-                if (!data || !data.success) {
-                    alert((data && data.error) || 'Could not add tag');
-                    return;
-                }
-                renderChatTags(data.tags || []);
-                addTagForm.hidden = true;
-                if (addTagBtn) addTagBtn.hidden = false;
-                addTagInput.value = '';
-            });
-        });
-    }
-    if (chatTagsEl) {
-        chatTagsEl.addEventListener('click', function (e) {
-            var btn = e.target.closest('[data-remove-tag]');
-            if (!btn || !selectedId) return;
-            var tagId = parseInt(btn.getAttribute('data-remove-tag'), 10);
-            if (!tagId) return;
-            fetch(base + '/api/agent-tags.php', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ conversation_id: selectedId, tag_id: tagId })
-            }).then(function (r) { return r.json(); }).then(function (data) {
-                if (data && data.success) renderChatTags(data.tags || []);
-            });
-        });
-    }
-
-    var emailPanel = document.getElementById('lc-email-panel');
-    var emailPanelClose = document.getElementById('lc-email-panel-close');
-    var emailTranscriptBtn = document.getElementById('lc-email-transcript-btn');
-    var emailTranscriptSend = document.getElementById('lc-email-transcript-send');
-    var emailTranscriptTo = document.getElementById('lc-email-transcript-to');
-    var emailPanelStatus = document.getElementById('lc-email-panel-status');
-    var detailsEmailInput = document.getElementById('lc-details-email-input');
-    var detailsPhoneInput = document.getElementById('lc-details-phone-input');
-    var detailsContactSaveBtn = document.getElementById('lc-details-contact-save');
-    var detailsContactStatus = document.getElementById('lc-details-contact-status');
-
-    function isContactFieldActive() {
-        if (contactFieldsDirty) return true;
-        var active = document.activeElement;
-        return active === detailsEmailInput || active === detailsPhoneInput;
-    }
-
-    function populateContactFields(force) {
-        if (!force && isContactFieldActive()) return;
-        if (detailsEmailInput) detailsEmailInput.value = currentVisitorEmail || '';
-        if (detailsPhoneInput) detailsPhoneInput.value = currentVisitorPhone || '';
-        if (force) contactFieldsDirty = false;
-    }
-
-    function setContactStatus(msg, isError) {
-        if (!detailsContactStatus) return;
-        detailsContactStatus.textContent = msg || '';
-        detailsContactStatus.classList.toggle('is-error', !!isError);
-        detailsContactStatus.classList.toggle('is-ok', !!msg && !isError);
-    }
-
-    function applySavedContactToList(email, phone) {
-        if (!selectedId) return;
-        lastConversations = (lastConversations || []).map(function (row) {
-            if (parseInt(row.id, 10) !== selectedId) return row;
-            return Object.assign({}, row, {
-                visitor_email: email,
-                visitor_phone: phone
-            });
-        });
-        paintConversationList(filterConversations(lastConversations));
-    }
-
-    function saveVisitorContact() {
-        if (!selectedId) return;
-        var email = detailsEmailInput ? detailsEmailInput.value.trim() : '';
-        var phone = detailsPhoneInput ? detailsPhoneInput.value.trim() : '';
-        if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = true;
-        setContactStatus('Saving...', false);
-        fetch(base + '/api/agent-update-visitor.php', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                conversation_id: selectedId,
-                email: email,
-                phone: phone
-            })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = false;
-            if (!data || !data.success) {
-                setContactStatus((data && data.error) || 'Unable to save', true);
-                return;
-            }
-            currentVisitorEmail = (data.email || '').trim();
-            currentVisitorPhone = (data.phone || '').trim();
-            contactFieldsDirty = false;
-            populateContactFields(true);
-            applySavedContactToList(currentVisitorEmail, currentVisitorPhone);
-            if (emailTranscriptTo && currentVisitorEmail) {
-                emailTranscriptTo.value = currentVisitorEmail;
-            }
-            setContactStatus('Saved', false);
-            setTimeout(function () {
-                if (detailsContactStatus && detailsContactStatus.textContent === 'Saved') {
-                    setContactStatus('', false);
-                }
-            }, 2200);
-        }).catch(function () {
-            if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = false;
-            setContactStatus('Connection error', true);
-        });
-    }
-
-    var detailsEmailChatBtn = document.getElementById('lc-details-email-chat');
-
-    function closeEmailPanel() {
-        if (emailPanel) emailPanel.hidden = true;
-        if (emailPanelStatus) {
-            emailPanelStatus.hidden = true;
-            emailPanelStatus.textContent = '';
-            emailPanelStatus.classList.remove('is-error', 'is-ok');
-        }
-    }
-
-    function setEmailPanelStatus(msg, isError) {
-        if (!emailPanelStatus) return;
-        if (!msg) {
-            emailPanelStatus.hidden = true;
-            emailPanelStatus.textContent = '';
-            return;
-        }
-        emailPanelStatus.hidden = false;
-        emailPanelStatus.textContent = msg;
-        emailPanelStatus.classList.toggle('is-error', !!isError);
-        emailPanelStatus.classList.toggle('is-ok', !isError);
-    }
-
-    function openEmailPanel() {
-        if (!selectedId) return;
-        if (transferPanel) transferPanel.hidden = true;
-        if (transferBtn) transferBtn.setAttribute('aria-expanded', 'false');
-        closeMoreMenu();
-        if (emailTranscriptTo) {
-            emailTranscriptTo.value = currentVisitorEmail || '';
-        }
-        var scopeCurrent = document.getElementById('lc-email-scope-current');
-        if (scopeCurrent) scopeCurrent.checked = true;
-        setEmailPanelStatus('');
-        if (emailPanel) {
-            emailPanel.hidden = false;
-            if (emailTranscriptTo) emailTranscriptTo.focus();
-        }
-    }
-
-    function sendChatTranscriptEmail() {
-        var convId = selectedId;
-        if (!convId) return;
-        var email = (emailTranscriptTo && emailTranscriptTo.value || '').trim();
-        if (!email) {
-            setEmailPanelStatus('Enter the customer email address.', true);
-            if (emailTranscriptTo) emailTranscriptTo.focus();
-            return;
-        }
-        if (emailTranscriptSend) {
-            emailTranscriptSend.disabled = true;
-        }
-        var scopeEl = document.querySelector('input[name="lc-email-scope"]:checked');
-        var scope = (scopeEl && scopeEl.value === 'overall') ? 'overall' : 'current';
-        setEmailPanelStatus(scope === 'overall' ? 'Sending overall history...' : 'Sending this chat...', false);
-        fetch(base + '/api/agent-email-transcript.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: convId, email: email, scope: scope })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (emailTranscriptSend) emailTranscriptSend.disabled = false;
-            if (data && data.success) {
-                currentVisitorEmail = data.email || email;
-                contactFieldsDirty = false;
-                populateContactFields(true);
-                var extra = (data.scope === 'overall' && data.chat_count > 1)
-                    ? (' (' + data.chat_count + ' chats)')
-                    : '';
-                var hint = (data.hint || '').trim();
-                setEmailPanelStatus('Sent to ' + currentVisitorEmail + extra + (hint ? (' - ' + hint) : ''), false);
-                return;
-            }
-            setEmailPanelStatus((data && data.error) || 'Failed to send email.', true);
-        }).catch(function () {
-            if (emailTranscriptSend) emailTranscriptSend.disabled = false;
-            setEmailPanelStatus('Connection error. Please try again.', true);
-        });
-    }
-
-    if (emailTranscriptBtn) emailTranscriptBtn.addEventListener('click', openEmailPanel);
-    if (detailsEmailChatBtn) detailsEmailChatBtn.addEventListener('click', openEmailPanel);
-    if (detailsContactSaveBtn) detailsContactSaveBtn.addEventListener('click', saveVisitorContact);
-    [detailsEmailInput, detailsPhoneInput].forEach(function (el) {
-        if (!el) return;
-        el.addEventListener('input', function () {
-            contactFieldsDirty = true;
-        });
-        el.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                saveVisitorContact();
-            }
-        });
+        }).then(function () { pollMessages(); loadConversations(); });
     });
-    if (emailPanelClose) emailPanelClose.addEventListener('click', closeEmailPanel);
-    if (emailTranscriptSend) {
-        emailTranscriptSend.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            sendChatTranscriptEmail();
-        });
-    }
-    if (emailTranscriptTo) {
-        emailTranscriptTo.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                sendChatTranscriptEmail();
-            }
-        });
-    }
-    if (emailPanel) {
-        emailPanel.addEventListener('click', function (e) { e.stopPropagation(); });
-    }
 
     document.getElementById('lc-close-chat').addEventListener('click', function () {
         if (!selectedId || !confirm('Close this chat?')) return;
@@ -2452,9 +1498,6 @@
             if (transferPanel && !transferPanel.hidden) {
                 closeTransferPanel();
             }
-            if (emailPanel && !emailPanel.hidden) {
-                closeEmailPanel();
-            }
         }
     });
 
@@ -2511,10 +1554,7 @@
 
     var attachBtn = document.getElementById('lc-attach-file');
     var fileInput = document.getElementById('lc-file-input');
-    var attachPreviewEl = document.getElementById('lc-attach-preview');
     var uploadBusy = false;
-    var pendingAttachments = [];
-    var pendingAttachSeq = 0;
 
     if (window.LCChatFiles && window.LC_ATTACHMENT_LIMITS) {
         window.LCChatFiles.setLimits(window.LC_ATTACHMENT_LIMITS);
@@ -2527,174 +1567,38 @@
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-
-    function getMaxPendingAttachments() {
-        return window.LCChatFiles && window.LCChatFiles.getMaxFilesPerBatch
-            ? window.LCChatFiles.getMaxFilesPerBatch()
-            : 5;
-    }
-
-    function revokePendingPreview(item) {
-        if (item && item.previewUrl) {
-            try { URL.revokeObjectURL(item.previewUrl); } catch (e) {}
-        }
-    }
-
-    function clearPendingAttachment() {
-        pendingAttachments.forEach(revokePendingPreview);
-        pendingAttachments = [];
-        if (attachPreviewEl) {
-            attachPreviewEl.hidden = true;
-            attachPreviewEl.innerHTML = '';
-        }
-    }
-
-    function removePendingAttachment(id) {
-        pendingAttachments = pendingAttachments.filter(function (item) {
-            if (item.id === id) {
-                revokePendingPreview(item);
-                return false;
-            }
-            return true;
-        });
-        renderPendingAttachment();
-    }
-
-    function renderPendingAttachment() {
-        if (!attachPreviewEl) return;
-        if (!pendingAttachments.length) {
-            attachPreviewEl.hidden = true;
-            attachPreviewEl.innerHTML = '';
-            return;
-        }
-        var countHtml = '<div class="lc-attach-preview-count">' + pendingAttachments.length + ' file' + (pendingAttachments.length === 1 ? '' : 's') + ' ready</div>';
-        var cards = pendingAttachments.map(function (item) {
-            var file = item.file;
-            var name = esc(file.name || 'Attachment');
-            var size = window.LCChatFiles ? window.LCChatFiles.formatSize(file.size || 0) : '';
-            var label = item.label || (window.LCChatFiles ? window.LCChatFiles.getFileLabel(file) : 'FILE');
-            var thumb = item.isImage && item.previewUrl
-                ? '<img class="lc-attach-preview-thumb" src="' + esc(item.previewUrl) + '" alt="">'
-                : '<span class="lc-attach-preview-pdf">' + esc(label) + '</span>';
-            return '<div class="lc-attach-preview-card">' +
-                thumb +
-                '<div class="lc-attach-preview-meta">' +
-                    '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + ' | ' + esc(label) + '</span>' +
-                '</div>' +
-                '<button type="button" class="lc-attach-preview-clear" data-remove-attach="' + item.id + '" aria-label="Remove ' + name + '"><i class="ti ti-x"></i></button>' +
-            '</div>';
-        }).join('');
-        attachPreviewEl.innerHTML = '<div class="lc-attach-preview-list">' + countHtml + cards + '<span class="lc-attach-preview-hint">Press send to upload all</span></div>';
-        attachPreviewEl.hidden = false;
-        attachPreviewEl.querySelectorAll('[data-remove-attach]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var rid = parseInt(btn.getAttribute('data-remove-attach'), 10);
-                if (!isNaN(rid)) removePendingAttachment(rid);
-            });
-        });
-    }
-
-    function queueAgentFile(file) {
-        if (!file) return;
-        queueAgentFiles([file]);
-    }
-
-    function queueAgentFiles(files) {
-        if (!files || !files.length || !selectedId || uploadBusy || !window.LCChatFiles) return;
+    function uploadAgentFile(file) {
+        if (!file || !selectedId || uploadBusy || !window.LCChatFiles) return;
         if (replyInput.disabled) {
             showUploadError('You cannot send files in this chat right now.');
-            return;
-        }
-        var max = getMaxPendingAttachments();
-        var slots = max - pendingAttachments.length;
-        if (slots <= 0) {
-            showUploadError('Maximum ' + max + ' files per send. Remove one or send current files first.');
-            return;
-        }
-        var batch = Array.prototype.slice.call(files, 0, slots);
-        if (files.length > slots) {
-            showUploadError('Only ' + slots + ' more file(s) added (max ' + max + ' per send).');
-        }
-        if (attachBtn) attachBtn.classList.add('is-busy');
-        var chain = Promise.resolve();
-        batch.forEach(function (file) {
-            chain = chain.then(function () {
-                return window.LCChatFiles.prepareFile(file).then(function (prepared) {
-                    if (!prepared.ok) {
-                        showUploadError(prepared.error || 'Invalid file');
-                        return;
-                    }
-                    var ready = prepared.file;
-                    var isImage = !!(ready.type && ready.type.indexOf('image/') === 0);
-                    pendingAttachments.push({
-                        id: ++pendingAttachSeq,
-                        file: ready,
-                        isImage: isImage,
-                        previewUrl: isImage ? URL.createObjectURL(ready) : '',
-                        label: window.LCChatFiles.getFileLabel(ready)
-                    });
-                    renderPendingAttachment();
-                });
-            });
-        });
-        chain.then(function () {
-            renderPendingAttachment();
-            if (replyInput) replyInput.focus();
-        }).catch(function () {
-            showUploadError('Unable to prepare file. Please try again.');
-        }).finally(function () {
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-        });
-    }
-
-    function sendPendingAttachment() {
-        if (!pendingAttachments.length || !selectedId || uploadBusy || !window.LCChatFiles) return;
-        if (replyInput.disabled) {
-            showUploadError('You cannot send files in this chat right now.');
-            return;
-        }
-        stopOwnTyping();
-        sendNextPendingAttachment(replyInput.value.trim(), true);
-    }
-
-    function sendNextPendingAttachment(caption, isFirst) {
-        if (!pendingAttachments.length || !selectedId) {
-            uploadBusy = false;
-            if (attachBtn) attachBtn.classList.remove('is-busy');
-            renderPendingAttachment();
             return;
         }
         uploadBusy = true;
         if (attachBtn) attachBtn.classList.add('is-busy');
-        var item = pendingAttachments[0];
-        var useCaption = isFirst ? caption : '';
-
-        window.LCChatFiles.upload({
-            role: 'agent',
-            baseUrl: base,
-            conversationId: selectedId,
-            file: item.file,
-            caption: useCaption
-        }).then(function (data) {
-            if (data && data.success) {
-                revokePendingPreview(item);
-                pendingAttachments.shift();
-                if (isFirst) replyInput.value = '';
-                stickToBottom = true;
-                pollMessages();
-                if (pendingAttachments.length) {
-                    sendNextPendingAttachment('', false);
-                    return;
-                }
+        window.LCChatFiles.prepareFile(file).then(function (prepared) {
+            if (!prepared.ok) {
+                showUploadError(prepared.error || 'Invalid file');
                 uploadBusy = false;
                 if (attachBtn) attachBtn.classList.remove('is-busy');
-                renderPendingAttachment();
-                return;
+                return null;
             }
+            return window.LCChatFiles.upload({
+                role: 'agent',
+                baseUrl: base,
+                conversationId: selectedId,
+                file: prepared.file,
+                caption: replyInput.value.trim()
+            });
+        }).then(function (data) {
             uploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
-            showUploadError((data && data.error) || 'Upload failed');
+            if (!data) return;
+            if (data.success) {
+                replyInput.value = '';
+                pollMessages();
+                return;
+            }
+            showUploadError(data.error || 'Upload failed');
         }).catch(function () {
             uploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
@@ -2702,18 +1606,15 @@
         });
     }
 
-
     if (attachBtn && fileInput) {
         attachBtn.addEventListener('click', function () {
             if (!selectedId) return;
             fileInput.click();
         });
         fileInput.addEventListener('change', function () {
-            var batch = fileInput.files && fileInput.files.length
-                ? Array.prototype.slice.call(fileInput.files)
-                : [];
+            var file = fileInput.files && fileInput.files[0];
             fileInput.value = '';
-            if (batch.length) queueAgentFiles(batch);
+            uploadAgentFile(file);
         });
     }
 
@@ -2726,7 +1627,7 @@
                     var pasted = items[i].getAsFile();
                     if (pasted) {
                         e.preventDefault();
-                        queueAgentFile(pasted);
+                        uploadAgentFile(pasted);
                     }
                     break;
                 }
@@ -2734,17 +1635,73 @@
         });
     }
 
-    if (window.Notification && Notification.permission === 'default') {
-        document.addEventListener('click', function lcAskNotifyOnce() {
-            document.removeEventListener('click', lcAskNotifyOnce, true);
-            try { Notification.requestPermission(); } catch (e) { /* ignore */ }
-        }, true);
+function resetPollTimers(wsActive) {
+        var cfg = window.LC_REALTIME || {};
+        var interval = wsActive ? (parseInt(cfg.backupPollMs, 10) || Math.max(pollMs * 10, 15000)) : pollMs;
+        if (pollTimer) clearInterval(pollTimer);
+        if (listTimer) clearInterval(listTimer);
+        pollTimer = setInterval(pollMessages, interval);
+        listTimer = setInterval(loadConversations, interval);
     }
 
-    bindDetailsAccordions();
+    function initAgentRealtime() {
+        var cfg = window.LC_REALTIME || {};
+        if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) return;
+
+        fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success || !data.token) return;
+                if (realtimeClient && realtimeClient.disconnect) {
+                    realtimeClient.disconnect();
+                }
+                realtimeClient = window.LCRealtime.create({
+                    mode: 'ws',
+                    wsUrl: cfg.wsUrl,
+                    token: data.token,
+                    fallbackPoll: function () {
+                        pollMessages();
+                        loadConversations();
+                    }
+                });
+                realtimeClient.on('connected', function () {
+                    resetPollTimers(true);
+                });
+                realtimeClient.on('disconnected', function () {
+                    resetPollTimers(false);
+                });
+                realtimeClient.on('message.new', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (selectedId && cid === selectedId) {
+                        pollMessages();
+                    }
+                    loadConversations();
+                });
+                realtimeClient.on('inbox.changed', function () {
+                    loadConversations();
+                });
+                realtimeClient.on('typing', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (!selectedId || cid !== selectedId) return;
+                    if ((payload.role || '') === 'visitor') {
+                        setPeerTypingVisible(!!payload.typing, '', payload.preview || '');
+                    }
+                });
+                realtimeClient.on('conversation.updated', function (payload) {
+                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                    if (selectedId && cid === selectedId) {
+                        pollMessages();
+                    }
+                    loadConversations();
+                });
+                realtimeClient.connect();
+            })
+            .catch(function () { /* poll fallback stays active */ });
+    }
+
     loadConversations();
-    listTimer = setInterval(loadConversations, pollMs);
-    pollTimer = setInterval(pollMessages, pollMs);
+    resetPollTimers(false);
+    initAgentRealtime();
 
     if (messagesEl) {
         messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });

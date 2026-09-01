@@ -1,11 +1,41 @@
 <?php
 /**
- * Realtime bus (Option A): PHP writes to MySQL, publishes events to VPS WebSocket server.
- * Default mode is poll; set LC_REALTIME_MODE=ws when the socket server is live.
+ * Realtime bus (Option A): PHP writes to MySQL, publishes events to WebSocket server.
+ * Default mode is poll; set LC_REALTIME_MODE=ws or includes/config.realtime.local.php for local.
  */
+
+/** @return array<string, string>|null */
+function lc_realtime_local_config(): ?array
+{
+    static $cache = null;
+    static $loaded = false;
+    if ($loaded) {
+        return $cache;
+    }
+    $loaded = true;
+    $path = __DIR__ . '/config.realtime.local.php';
+    if (!is_file($path)) {
+        $cache = null;
+
+        return null;
+    }
+    $data = include $path;
+    if (!is_array($data)) {
+        $cache = null;
+
+        return null;
+    }
+    $cache = $data;
+
+    return $cache;
+}
 
 function lc_realtime_secret(): string
 {
+    $local = lc_realtime_local_config();
+    if (!empty($local['secret'])) {
+        return (string) $local['secret'];
+    }
     if (defined('LC_REALTIME_SECRET') && LC_REALTIME_SECRET !== '') {
         return (string) LC_REALTIME_SECRET;
     }
@@ -15,6 +45,12 @@ function lc_realtime_secret(): string
 
 function lc_realtime_mode(): string
 {
+    $local = lc_realtime_local_config();
+    if (!empty($local['mode'])) {
+        $mode = strtolower((string) $local['mode']);
+
+        return $mode === 'ws' ? 'ws' : 'poll';
+    }
     $mode = defined('LC_REALTIME_MODE') ? strtolower((string) LC_REALTIME_MODE) : 'poll';
 
     return $mode === 'ws' ? 'ws' : 'poll';
@@ -22,11 +58,21 @@ function lc_realtime_mode(): string
 
 function lc_realtime_ws_url(): string
 {
+    $local = lc_realtime_local_config();
+    if (!empty($local['ws_url'])) {
+        return rtrim((string) $local['ws_url'], '/');
+    }
+
     return defined('LC_REALTIME_WS_URL') ? rtrim((string) LC_REALTIME_WS_URL, '/') : '';
 }
 
 function lc_realtime_publish_url(): string
 {
+    $local = lc_realtime_local_config();
+    if (!empty($local['publish_url'])) {
+        return rtrim((string) $local['publish_url'], '/');
+    }
+
     return defined('LC_REALTIME_PUBLISH_URL') ? rtrim((string) LC_REALTIME_PUBLISH_URL, '/') : '';
 }
 

@@ -4,6 +4,7 @@
  * POST JSON: conversation_id, typing (bool), + visitor_uid (visitor) | session (agent)
  */
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -19,10 +20,6 @@ $isTyping = !empty($input['typing']) && (
     || $input['typing'] === 'true'
 );
 $visitorUid = trim((string) ($input['visitor_uid'] ?? ''));
-$draft = '';
-if (function_exists('lc_sanitize_typing_preview')) {
-    $draft = lc_sanitize_typing_preview((string) ($input['draft'] ?? $input['preview'] ?? ''));
-}
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid conversation'], 400);
@@ -51,7 +48,7 @@ try {
         }
 
         // Light rate limit: skip spam; still update every valid heartbeat
-        lc_set_typing($conversationId, 'visitor', $isTyping, $isTyping ? $draft : '');
+        lc_set_typing($conversationId, 'visitor', $isTyping);
         lc_json(['success' => true, 'typing' => $isTyping]);
     }
 
