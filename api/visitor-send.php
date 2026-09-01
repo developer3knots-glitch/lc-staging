@@ -46,6 +46,8 @@ try {
         lc_assign_agent($conversationId);
     }
 
+    lc_realtime_publish_message($conversationId, $messageId);
+
     lc_json(['success' => true, 'message_id' => $messageId]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

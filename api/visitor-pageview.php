@@ -2,10 +2,14 @@
 require_once __DIR__ . '/../includes/functions.php';
 lc_cors_headers();
 
-$input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+$raw = file_get_contents('php://input');
+$input = json_decode($raw, true);
+if (!is_array($input) || !$input) {
+    $input = $_POST ?: [];
+}
 $visitorUid = trim($input['visitor_uid'] ?? '');
 $brandKey = trim($input['brand_key'] ?? 'default');
-$event = trim($input['event'] ?? 'view');
+$event = strtolower(trim($input['event'] ?? 'view'));
 $pageUrl = trim($input['page_url'] ?? '');
 $pageTitle = trim($input['page_title'] ?? '');
 $referrer = trim($input['referrer'] ?? '');
@@ -46,36 +50,62 @@ try {
     $visitor = $stmt->fetch();
     if (!$visitor) {
         $country = lc_resolve_country($ip);
-        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, NOW())');
+        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())');
         $ins->execute([$visitorUid, $ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]);
         $visitorId = (int) $db->lastInsertId();
     } else {
         $visitorId = (int) $visitor['id'];
     }
 
+    // Page duration only (SPA / in-site navigation). Does not mark visitor as left.
     if ($event === 'leave') {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
-        // Do not refresh last_seen to NOW — that kept Traffic as "Browsing" for minutes.
-        // Backdate past the online window so status becomes Left on the next poll.
-        $left = $db->prepare('
-            UPDATE visitors
-            SET ip_address = ?,
-                user_agent = ?,
-                page_url = COALESCE(?, page_url),
-                last_seen = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE)
-            WHERE id = ?
-        ');
-        $left->execute([$ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         lc_json(['success' => true, 'event' => 'leave']);
     }
 
+    // Tab/window closed — mark Left website and push Traffic over WebSocket.
+    if ($event === 'unload' || $event === 'site_leave') {
+        lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
+        $db->prepare('
+            UPDATE visitors
+            SET ip_address = ?,
+                user_agent = ?,
+                page_url = COALESCE(?, page_url)
+            WHERE id = ?
+        ')->execute([$ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
+        lc_mark_visitor_left_site($visitorId);
+        if (function_exists('lc_realtime_publish_traffic')) {
+            lc_realtime_publish_traffic($brandId, 'left', [
+                'visitor_id' => $visitorId,
+                'visitor_uid' => $visitorUid,
+            ]);
+        }
+        lc_json(['success' => true, 'event' => 'unload']);
+    }
+
     // view / ping — presence heartbeat
+    $wasLeft = false;
+    try {
+        $leftStmt = $db->prepare('SELECT left_site_at FROM visitors WHERE id = ? LIMIT 1');
+        $leftStmt->execute([$visitorId]);
+        $leftRow = $leftStmt->fetch();
+        $wasLeft = $leftRow && !empty($leftRow['left_site_at']);
+    } catch (Throwable $e) {
+    }
     if ($event !== 'ping') {
         lc_record_visitor_page_view($visitorId, $brandId, $pageUrl, $pageTitle, $referrer);
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
+    lc_mark_visitor_on_site($visitorId);
+    if (function_exists('lc_realtime_publish_traffic') && ($event !== 'ping' || $wasLeft)) {
+        lc_realtime_publish_traffic($brandId, 'browsing', [
+            'visitor_id' => $visitorId,
+            'visitor_uid' => $visitorUid,
+        ]);
+    }
 
     lc_json(['success' => true, 'event' => $event === 'ping' ? 'ping' : 'view']);
 } catch (Throwable $e) {
+    error_log('visitor-pageview: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

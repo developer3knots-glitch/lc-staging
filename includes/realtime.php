@@ -56,14 +56,43 @@ function lc_realtime_mode(): string
     return $mode === 'ws' ? 'ws' : 'poll';
 }
 
+function lc_realtime_auto_ws_url(): string
+{
+    $fwdHost = trim((string) ($_SERVER['HTTP_X_FORWARDED_HOST'] ?? ''));
+    if ($fwdHost !== '') {
+        $fwdHost = trim(explode(',', $fwdHost)[0]);
+    }
+    $host = $fwdHost !== '' ? $fwdHost : (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    $fwd = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0]));
+    if ($fwd === 'https' || $fwd === 'wss') {
+        $https = true;
+    }
+
+    if ($host === '' || preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/i', $host)) {
+        return 'ws://127.0.0.1:6001';
+    }
+
+    return ($https ? 'wss' : 'ws') . '://' . $host . '/lc-realtime';
+}
+
 function lc_realtime_ws_url(): string
 {
     $local = lc_realtime_local_config();
     if (!empty($local['ws_url'])) {
-        return rtrim((string) $local['ws_url'], '/');
+        $url = rtrim((string) $local['ws_url'], '/');
+        if ($url === 'auto') {
+            return lc_realtime_auto_ws_url();
+        }
+
+        return $url;
     }
 
-    return defined('LC_REALTIME_WS_URL') ? rtrim((string) LC_REALTIME_WS_URL, '/') : '';
+    if (defined('LC_REALTIME_WS_URL') && LC_REALTIME_WS_URL !== '' && LC_REALTIME_WS_URL !== 'auto') {
+        return rtrim((string) LC_REALTIME_WS_URL, '/');
+    }
+
+    return lc_realtime_auto_ws_url();
 }
 
 function lc_realtime_publish_url(): string
@@ -169,6 +198,18 @@ function lc_realtime_agent_token(array $agent): string
     $channels = [lc_realtime_channel_agent($agentId)];
     if ($brandId !== null && $brandId > 0) {
         $channels[] = lc_realtime_channel_brand_inbox($brandId);
+    } else {
+        $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
+        if ($accountId > 0) {
+            try {
+                $stmt = lc_db()->prepare('SELECT id FROM brands WHERE account_id = ? AND is_active = 1');
+                $stmt->execute([$accountId]);
+                foreach ($stmt->fetchAll() as $row) {
+                    $channels[] = lc_realtime_channel_brand_inbox((int) $row['id']);
+                }
+            } catch (Throwable $e) {
+            }
+        }
     }
 
     return lc_realtime_issue_token([
@@ -302,5 +343,16 @@ function lc_realtime_publish_typing(int $conversationId, string $role, bool $typ
     lc_realtime_publish_conversation_event($conversationId, 'typing', array_merge([
         'role' => $role,
         'typing' => $typing,
+    ], $extra));
+}
+
+function lc_realtime_publish_traffic(int $brandId, string $presence, array $extra = []): void
+{
+    if ($brandId < 1) {
+        return;
+    }
+    lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'traffic.changed', array_merge([
+        'brand_id' => $brandId,
+        'presence' => $presence,
     ], $extra));
 }

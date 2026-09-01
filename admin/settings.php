@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $flashMessage = '';
     $flashError = '';
+    $redirectHash = '';
 
     try {
         if ($action === 'save_system') {
@@ -57,13 +58,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_set_account_setting($accountId, 'admin_timezone', $tz);
             $flashMessage = 'System settings saved successfully.';
         } elseif ($action === 'save_email') {
-            lc_set_account_setting($accountId, 'mail_from', trim((string) ($_POST['mail_from'] ?? '')));
-            lc_set_account_setting($accountId, 'mail_from_name', trim((string) ($_POST['mail_from_name'] ?? '')));
-            lc_set_account_setting($accountId, 'smtp_enabled', isset($_POST['smtp_enabled']) ? '1' : '0');
-            lc_set_account_setting($accountId, 'smtp_host', trim((string) ($_POST['smtp_host'] ?? '')));
+            $from = trim((string) ($_POST['mail_from'] ?? ''));
+            $fromName = trim((string) ($_POST['mail_from_name'] ?? ''));
+            $host = trim((string) ($_POST['smtp_host'] ?? ''));
+            $user = trim((string) ($_POST['smtp_user'] ?? ''));
+            $enabled = isset($_POST['smtp_enabled']);
+            if (!$enabled && $host !== '' && $user !== '') {
+                $enabled = true;
+            }
+            lc_set_account_setting($accountId, 'mail_from', $from);
+            lc_set_account_setting($accountId, 'mail_from_name', $fromName);
+            lc_set_account_setting($accountId, 'smtp_enabled', $enabled ? '1' : '0');
+            lc_set_account_setting($accountId, 'smtp_host', $host);
             $port = (int) ($_POST['smtp_port'] ?? 587);
             lc_set_account_setting($accountId, 'smtp_port', (string) max(1, min(65535, $port)));
-            lc_set_account_setting($accountId, 'smtp_user', trim((string) ($_POST['smtp_user'] ?? '')));
+            lc_set_account_setting($accountId, 'smtp_user', $user);
             $newPass = (string) ($_POST['smtp_pass'] ?? '');
             if (trim($newPass) !== '') {
                 lc_set_account_setting($accountId, 'smtp_pass', $newPass);
@@ -73,7 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $enc = 'tls';
             }
             lc_set_account_setting($accountId, 'smtp_encryption', $enc);
-            $flashMessage = 'Email / SMTP settings saved.';
+            $flashMessage = $enabled
+                ? 'Email / SMTP settings saved. SMTP is on.'
+                : 'Email settings saved. Turn on “Use SMTP” to send via your mailbox.';
+            $redirectHash = '#lc-settings-email';
         } elseif ($action === 'test_smtp') {
             $override = [
                 'smtp_host' => trim((string) ($_POST['smtp_host'] ?? '')),
@@ -92,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $flashError = $result['error'] ?? 'SMTP connection test failed.';
             }
+            $redirectHash = '#lc-settings-email';
         } elseif ($action === 'test_email') {
             $testTo = strtolower(trim((string) ($_POST['test_email_to'] ?? '')));
             if ($testTo === '' || !filter_var($testTo, FILTER_VALIDATE_EMAIL)) {
@@ -111,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $flashError = $sent['error'] ?? 'Test email failed.';
                 }
             }
+            $redirectHash = '#lc-settings-email';
         } elseif ($action === 'save_tickets') {
             $displayOn = isset($_POST['ticket_display_enabled']) ? '1' : '0';
             $resumeOn = isset($_POST['ticket_resume_enabled']) ? '1' : '0';
@@ -157,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'message' => $flashMessage,
         'error' => $flashError,
     ];
-    header('Location: ' . lc_admin_url('settings'));
+    header('Location: ' . lc_admin_url('settings') . $redirectHash);
     exit;
 }
 
@@ -234,6 +248,7 @@ require __DIR__ . '/includes/header.php';
 
     <nav class="lc-settings-nav" aria-label="Settings sections">
         <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
+        <a href="#lc-settings-email" class="lc-settings-nav-link"><i class="ti ti-mail"></i> Email</a>
         <a href="#lc-settings-tickets" class="lc-settings-nav-link"><i class="ti ti-ticket"></i> Tickets</a>
         <a href="#lc-settings-geo" class="lc-settings-nav-link"><i class="ti ti-world-off"></i> Countries</a>
         <a href="#lc-settings-security" class="lc-settings-nav-link"><i class="ti ti-ban"></i> IP Block</a>
@@ -339,7 +354,7 @@ require __DIR__ . '/includes/header.php';
                         <input type="hidden" name="action" value="save_email">
                         <div class="lc-form-row">
                             <label for="lc-mail-from">From email</label>
-                            <input type="email" id="lc-mail-from" name="mail_from" value="<?= lc_sanitize($mailFrom) ?>" placeholder="noreply@yourdomain.com">
+                            <input type="email" id="lc-mail-from" name="mail_from" value="<?= lc_sanitize($mailFrom) ?>" placeholder="noreply@yourdomain.com" autocomplete="off">
                         </div>
                         <div class="lc-form-row">
                             <label for="lc-mail-from-name">From name (fallback)</label>

@@ -89,6 +89,10 @@ try {
         && $visitorEmail !== ''
         && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
 
+    if (!$settingsOnly && function_exists('lc_mark_visitor_on_site')) {
+        lc_mark_visitor_on_site($visitorId);
+    }
+
     if ($settingsOnly) {
         // Never auto-resume old chats for visitors (same IP / same device).
         // Session continue uses explicit resume_conversation_id from the client only.
@@ -116,6 +120,26 @@ try {
                 $conv = $reopened;
             }
         }
+    }
+
+    if (!$conv) {
+        $stmt = $db->prepare("
+            SELECT id, status FROM conversations
+            WHERE visitor_id = ? AND brand_id = ? AND status IN ('waiting','active')
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$visitorId, $brandId]);
+        $conv = $stmt->fetch() ?: null;
+    }
+
+    if ($conv) {
+        $keepId = (int) $conv['id'];
+        $db->prepare("
+            UPDATE conversations
+            SET status = 'closed', closed_at = NOW()
+            WHERE visitor_id = ? AND brand_id = ? AND status = 'waiting' AND id != ?
+        ")->execute([$visitorId, $brandId, $keepId]);
     }
 
     if (!$conv) {
@@ -184,6 +208,11 @@ try {
     if ($agentRow && !empty($agentRow['name'])) {
         $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
     }
+
+    lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
+        'status' => $status,
+        'agent' => $agentInfo,
+    ]);
 
     lc_json([
         'success' => true,

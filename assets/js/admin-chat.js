@@ -267,6 +267,33 @@
         }
     }
 
+    function setInputValue(id, value) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.value = value || '';
+        }
+    }
+
+    function formatChatDuration(startedAt) {
+        if (!startedAt) {
+            return '-';
+        }
+        var start = Date.parse(startedAt);
+        if (!start) {
+            return '-';
+        }
+        var sec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+        if (sec < 60) {
+            return sec + 's';
+        }
+        if (sec < 3600) {
+            return Math.floor(sec / 60) + ' min';
+        }
+        var h = Math.floor(sec / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        return h + 'h ' + m + 'm';
+    }
+
     function renderDetailsRail(c, extraNote) {
         if (!c) {
             showDetailsPanel(false);
@@ -274,13 +301,23 @@
         }
         showDetailsPanel(true);
         var name = c.visitor_name || 'Visitor';
+        var stats = c.visitor_stats || {};
+        var geo = c.visitor_geo || {};
+        var location = c.visitor_country || geo.country || geo.geo_city || '';
         setText('lc-details-name', name);
-        setText('lc-details-email', c.visitor_email || 'No email');
+        setText('lc-details-location', location || '-');
+        setInputValue('lc-details-email-input', c.visitor_email || '');
+        setInputValue('lc-details-phone-input', c.visitor_phone || '');
         setText('lc-details-ip', c.visitor_ip || currentVisitorIp || '-');
-        setText('lc-details-country', c.visitor_country || '-');
+        setText('lc-details-country', location || '-');
         setText('lc-details-brand', c.brand_name || '-');
         setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
         setText('lc-details-ticket', c.reference || currentReference || '-');
+        setText('lc-details-returning', (c.is_returning || c.visitor_kind === 'returning') ? 'Yes' : 'No');
+        setText('lc-details-last-seen', relativeTime(c.visitor_last_seen) || relativeTime(c.last_message_at) || '-');
+        setText('lc-details-came-from', c.visitor_page || c.page_url || stats.referrer || '-');
+        setText('lc-details-chat-duration', formatChatDuration(c.started_at || c.accepted_at));
+        setText('lc-details-groups', '-');
 
         var pageEl = document.getElementById('lc-details-page');
         var page = c.visitor_page || c.page_url || '';
@@ -694,6 +731,7 @@
                 journeyCountEl.textContent = '0 pages';
             }
             updateJourneySummary();
+            paintDetailsPagesList([]);
             return;
         }
 
@@ -716,10 +754,31 @@
             }
         }
         updateJourneySummary();
+        paintDetailsPagesList(steps);
         scrollJourneyToEnd();
         if (window.LCTime) {
             window.LCTime.scan(journeyListEl);
         }
+    }
+
+    function paintDetailsPagesList(steps) {
+        var list = document.getElementById('lc-details-pages-list');
+        var empty = document.getElementById('lc-details-pages-empty');
+        if (!list) {
+            return;
+        }
+        steps = steps || consolidateJourney(journeyViewsRaw);
+        if (!steps.length) {
+            list.innerHTML = '';
+            if (empty) empty.style.display = '';
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+        list.innerHTML = steps.map(function (step) {
+            var url = esc(step.page_url || step.page_path || '');
+            var label = esc(journeyStepLabel(step));
+            return '<li><a href="' + url + '" target="_blank" rel="noopener">' + label + '</a></li>';
+        }).join('');
     }
 
     function updateJourneySummary() {
@@ -830,6 +889,9 @@
                         chatTransferredAway = false;
                     }
                 }
+            })
+            .catch(function () {
+                paintConversationList([]);
             });
     }
 
@@ -1699,9 +1761,53 @@ function resetPollTimers(wsActive) {
             .catch(function () { /* poll fallback stays active */ });
     }
 
+    function bindContactSave() {
+        var saveBtn = document.getElementById('lc-details-contact-save');
+        var statusEl = document.getElementById('lc-details-contact-status');
+        if (!saveBtn) {
+            return;
+        }
+        saveBtn.addEventListener('click', function () {
+            if (!selectedId) {
+                return;
+            }
+            var emailEl = document.getElementById('lc-details-email-input');
+            var phoneEl = document.getElementById('lc-details-phone-input');
+            saveBtn.disabled = true;
+            if (statusEl) statusEl.textContent = 'Saving...';
+            fetch(base + '/api/agent-update-visitor.php', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conversation_id: selectedId,
+                    email: emailEl ? emailEl.value : '',
+                    phone: phoneEl ? phoneEl.value : ''
+                })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                saveBtn.disabled = false;
+                if (!data.success) {
+                    if (statusEl) statusEl.textContent = data.error || 'Could not save';
+                    return;
+                }
+                if (statusEl) statusEl.textContent = 'Saved';
+                setTimeout(function () {
+                    if (statusEl) statusEl.textContent = '';
+                }, 1600);
+            })
+            .catch(function () {
+                saveBtn.disabled = false;
+                if (statusEl) statusEl.textContent = 'Could not save';
+            });
+        });
+    }
+
     loadConversations();
     resetPollTimers(false);
     initAgentRealtime();
+    bindContactSave();
 
     if (messagesEl) {
         messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });

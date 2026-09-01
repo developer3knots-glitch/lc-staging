@@ -13,6 +13,14 @@
     }
     siteUrl = siteUrl.replace(/\/$/, '');
 
+    function apiHeaders(extra) {
+        var headers = extra ? Object.assign({}, extra) : {};
+        if (siteUrl.indexOf('ngrok') !== -1) {
+            headers['ngrok-skip-browser-warning'] = '1';
+        }
+        return headers;
+    }
+
     var brandKey = (script && script.getAttribute('data-brand')) || 'default';
     // Default ON: panel opens with the page; also re-opens on agent/system messages
     var autoOpenOnLoad = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase() !== 'false';
@@ -27,6 +35,7 @@
     }
 
     var conversationId = null;
+    var chatInitInFlight = false;
     var lastMsgId = 0;
     var pollTimer = null;
     var realtimeClient = null;
@@ -74,6 +83,7 @@
     setupSiteNavigationDetection();
     initPageTracker();
     loadNotifySoundScript();
+    loadTimeScript();
 
     function setupSiteNavigationDetection() {
         function markIfInternalLink(e) {
@@ -154,6 +164,8 @@
         var lastSentUrl = '';
         var currentEnteredAt = Date.now();
         var leaveSentForUrl = '';
+        var siteLeaveSent = false;
+        var presenceTimer = null;
 
         function buildPayload(extra) {
             var data = {
@@ -177,13 +189,25 @@
         function postPageEvent(extra, useBeacon) {
             var endpoint = siteUrl + '/api/visitor-pageview.php';
             var body = JSON.stringify(buildPayload(extra));
-            if (useBeacon && navigator.sendBeacon) {
-                navigator.sendBeacon(endpoint, new Blob([body], { type: 'application/json' }));
+            if (useBeacon) {
+                try {
+                    fetch(endpoint, {
+                        method: 'POST',
+                        headers: apiHeaders({ 'Content-Type': 'application/json' }),
+                        body: body,
+                        keepalive: true
+                    }).catch(function () {});
+                } catch (err) {}
+                if (navigator.sendBeacon) {
+                    try {
+                        navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
+                    } catch (err2) {}
+                }
                 return;
             }
             fetch(endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: apiHeaders({ 'Content-Type': 'application/json' }),
                 body: body,
                 keepalive: true
             }).catch(function () {});
@@ -200,6 +224,18 @@
             }, useBeacon);
         }
 
+        function sendSiteLeave() {
+            if (siteLeaveSent) return;
+            siteLeaveSent = true;
+            var url = lastSentUrl || window.location.href;
+            var duration = Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
+            postPageEvent({
+                event: 'unload',
+                page_url: url,
+                duration_seconds: duration
+            }, true);
+        }
+
         function recordView() {
             var url = window.location.href;
             if (url === lastSentUrl) return;
@@ -210,6 +246,7 @@
 
             lastSentUrl = url;
             leaveSentForUrl = '';
+            siteLeaveSent = false;
             currentEnteredAt = Date.now();
             postPageEvent({ event: 'view' }, false);
         }
@@ -230,19 +267,23 @@
 
         recordView();
         hookHistory();
+        if (presenceTimer) clearInterval(presenceTimer);
+        presenceTimer = setInterval(function () {
+            if (document.visibilityState !== 'visible') return;
+            postPageEvent({ event: 'ping' }, false);
+        }, 15000);
 
         document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'hidden') {
-                sendLeave(lastSentUrl, true);
-            } else if (document.visibilityState === 'visible') {
+            if (document.visibilityState === 'visible') {
+                siteLeaveSent = false;
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
+                postPageEvent({ event: 'ping' }, false);
             }
         });
 
-        window.addEventListener('pagehide', function () {
-            sendLeave(lastSentUrl, true);
-        });
+        window.addEventListener('pagehide', sendSiteLeave);
+        window.addEventListener('beforeunload', sendSiteLeave);
     }
 
     function setupReloadDetection() {
@@ -286,7 +327,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=18';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=19';
         document.head.appendChild(link);
     }
 
@@ -694,7 +735,7 @@
 
         fetch(siteUrl + '/api/visitor-resume-ticket.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -838,7 +879,10 @@
         if (!window.LCRealtime) return;
 
         fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
-            '&conversation_id=' + encodeURIComponent(conversationId), { credentials: 'omit' })
+            '&conversation_id=' + encodeURIComponent(conversationId), {
+                credentials: 'omit',
+                headers: apiHeaders()
+            })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.success || !data.token) return;
@@ -847,13 +891,13 @@
                     mode: 'ws',
                     wsUrl: realtimeConfig.wsUrl,
                     token: data.token,
-                    fallbackPoll: function () { pollMessages(false); }
+                    fallbackPoll: function () { pollMessages(messagesNeedHistoryReload()); }
                 });
                 realtimeClient.on('connected', function () { resetVisitorPollTimers(true); });
                 realtimeClient.on('disconnected', function () { resetVisitorPollTimers(false); });
                 realtimeClient.on('message.new', function (payload) {
                     var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (cid === conversationId) pollMessages(false);
+                    if (cid === conversationId) pollMessages(messagesNeedHistoryReload());
                 });
                 realtimeClient.on('typing', function (payload) {
                     var cid = parseInt(payload && payload.conversation_id, 10) || 0;
@@ -864,7 +908,13 @@
                 });
                 realtimeClient.on('conversation.updated', function (payload) {
                     var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (cid === conversationId) pollMessages(false);
+                    if (cid !== conversationId) return;
+                    if (payload && payload.status === 'active' && payload.agent && payload.agent.name) {
+                        setWaitingState(false);
+                        updateHeaderAgent(payload.agent);
+                        updateStatus('Chatting with ' + payload.agent.name, true);
+                    }
+                    pollMessages(true);
                 });
                 realtimeClient.connect();
             })
@@ -923,7 +973,7 @@
     function fetchWidgetSettings(done) {
         return fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -1013,6 +1063,10 @@
             showPrechatForm(true);
             return;
         }
+        if (chatInitInFlight || conversationId) {
+            return;
+        }
+        chatInitInFlight = true;
         showChatView();
         updateStatus('Connecting...', agentsOnline > 0);
         setWaitingState(false);
@@ -1032,11 +1086,12 @@
         }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            chatInitInFlight = false;
             if (!data.success) {
                 if (data.error === 'Pre-chat form required') {
                     prechatFormEnabled = true;
@@ -1050,6 +1105,7 @@
             handleChatStarted(data, { keepMessages: false });
         })
         .catch(function () {
+            chatInitInFlight = false;
             handleInitFailure('Connection error. Please try again.');
         });
     }
@@ -1082,7 +1138,7 @@
 
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -1151,8 +1207,8 @@
                     showChatView();
                     if (!pollTimer) {
                         pollTimer = setInterval(pollMessages, pollMs);
-                        pollMessages(true);
                     }
+                    pollMessages(true);
                 } else {
                     beginNewConversationFlow();
                 }
@@ -1165,8 +1221,8 @@
             showChatView();
             if (!pollTimer) {
                 pollTimer = setInterval(pollMessages, pollMs);
-                pollMessages(false);
             }
+            pollMessages(true);
         }
         var badge = document.getElementById('lc-bubble-badge');
         if (badge) badge.style.display = 'none';
@@ -1254,7 +1310,7 @@
 
         fetch(siteUrl + '/api/visitor-close.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
@@ -1343,6 +1399,10 @@
 
     function initChat(options) {
         options = options || {};
+        if (chatInitInFlight) {
+            return;
+        }
+        chatInitInFlight = true;
         var resumeConvId = options.resumeConversationId || null;
         if (resumeConvId) {
             showChatView();
@@ -1350,7 +1410,7 @@
         }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -1363,6 +1423,7 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            chatInitInFlight = false;
             if (!data.success) {
                 handleInitFailure(data.error || 'Could not connect');
                 return;
@@ -1370,6 +1431,7 @@
             handleChatStarted(data, options);
         })
         .catch(function () {
+            chatInitInFlight = false;
             handleInitFailure('Connection error. Please try again.');
         });
     }
@@ -1481,7 +1543,7 @@
         ownTypingActive = !!isTyping;
         fetch(siteUrl + '/api/typing.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
@@ -1504,7 +1566,7 @@
             lastTypingPostAt = 0;
             fetch(siteUrl + '/api/typing.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: apiHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     conversation_id: conversationId,
                     visitor_uid: visitorUid,
@@ -1595,6 +1657,21 @@
         document.head.appendChild(s);
     }
 
+    function loadTimeScript() {
+        if (window.LCTime) {
+            return;
+        }
+        var existing = document.querySelector('script[data-lc-time]');
+        if (existing) {
+            return;
+        }
+        var s = document.createElement('script');
+        s.src = siteUrl + '/assets/js/lc-time.js?v=2';
+        s.async = true;
+        s.setAttribute('data-lc-time', '1');
+        document.head.appendChild(s);
+    }
+
     function statusWithDot(text, online) {
         return online
             ? '<span class="lcw-online-dot"></span>' + esc(text)
@@ -1661,9 +1738,13 @@
             }
             return;
         }
+        if (m.sender_type === 'system' && !ticketDisplayEnabled && isTicketReferenceMessage(m)) {
+            return;
+        }
         if (m.created_at) maybeAppendDateDivider(m.created_at);
 
         var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
         var timeHtml = msgTimeHtml(m.created_at);
 
         if (m.sender_type === 'system' && m.event === 'agent_join') {
@@ -1707,9 +1788,6 @@
                 '</div>';
             box.appendChild(wrap);
         } else {
-            if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
-                return;
-            }
             var sys = document.createElement('div');
             sys.className = 'lcw-msg lcw-system';
             if (msgKey) sys.setAttribute('data-msg-id', msgKey);
@@ -1781,23 +1859,40 @@
         // Conversation routing: buildWidget -> loadWidgetSettings -> routeVisitorEntry
         // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
         // (Do not start a second chat flow here - that created duplicate conversations.)
-        lastMsgId = getStoredLastMsgId() || 0;
+        lastMsgId = 0;
+    }
+
+    function messagesNeedHistoryReload() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return true;
+        return !box.querySelector('[data-msg-id]');
     }
 
     function pollMessages(isHistoryLoad) {
         if (!conversationId) return;
+        if (messagesNeedHistoryReload()) {
+            isHistoryLoad = true;
+        }
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
+        var historyQs = isHistoryLoad ? '&full_history=1' : '';
         // viewing=1 only when panel open -> agent ticks switch to "seen"
         var viewing = (isOpen && document.getElementById('lc-panel') &&
             document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
             '&last_id=' + fetchLastId +
+            historyQs +
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
             '&chat_token=' + encodeURIComponent(chatToken || '') +
-            '&viewing=' + viewing)
-            .then(function (r) { return r.json(); })
+            '&viewing=' + viewing, { headers: apiHeaders() })
+            .then(function (r) {
+                return r.json().then(function (data) {
+                    data = data || {};
+                    data._httpOk = r.ok;
+                    return data;
+                });
+            })
             .then(function (data) {
-                if (!data.success) return;
+                if (!data || !data.success) return;
 
                 if (data.ticket_display_enabled !== undefined) {
                     applyTicketFeatureFlags(data.ticket_display_enabled, data.ticket_resume_enabled);
@@ -1845,7 +1940,14 @@
                     appendMessage({ id: lastMsgId, sender_type: 'visitor', is_read: data.last_visitor_read }, { updateRead: true });
                 }
 
-                data.messages.forEach(function (m) {
+                var messages = Array.isArray(data.messages) ? data.messages : [];
+                if (isHistoryLoad) {
+                    lastDateLabel = '';
+                    lastMsgId = 0;
+                    var histBox = document.getElementById('lc-panel-messages');
+                    if (histBox) histBox.innerHTML = '';
+                }
+                messages.forEach(function (m) {
                     if (isHistoryLoad || m.id > lastMsgId) {
                         var isNewIncoming = !isHistoryLoad && m.id > lastMsgId && m.sender_type !== 'visitor';
                         appendMessage(m);
@@ -1872,7 +1974,8 @@
                 } else {
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
-            });
+            })
+            .catch(function () {});
     }
 
     function messageBodyHtml(m) {
@@ -1972,7 +2075,7 @@
 
         fetch(siteUrl + '/api/visitor-send.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
@@ -1988,7 +2091,7 @@
             var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
             if (pending) pending.remove();
             if (data.success) {
-                pollMessages();
+                pollMessages(true);
             } else if (data.error) {
                 appendMessage({ sender_type: 'system', message: data.error });
             }
@@ -2022,7 +2125,7 @@
     function checkWidgetAccess(callback) {
         fetch(siteUrl + '/api/widget-access.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ brand_key: brandKey, visitor_uid: visitorUid })
         })
         .then(function (r) { return r.json(); })

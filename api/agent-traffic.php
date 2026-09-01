@@ -20,7 +20,7 @@ if (!in_array($tab, $allowedTabs, true)) {
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $brandFilter = (int) ($_GET['brand'] ?? 0);
-$onlineSec = 60; // browsing only while recent presence pings (leave marks left immediately)
+$onlineSec = 20; // fallback if unload beacon never arrives
 $leftSec = 86400;
 
 try {
@@ -72,6 +72,7 @@ try {
             v.country AS visitor_country,
             v.page_url,
             v.last_seen,
+            v.left_site_at,
             v.created_at AS visitor_created_at,
             c.id AS conversation_id,
             c.status AS conversation_status,
@@ -180,11 +181,12 @@ try {
     foreach ($rows as $row) {
         $convStatus = (string) ($row['conversation_status'] ?? '');
         $since = (int) ($row['seconds_since_seen'] ?? 999999);
+        $leftSite = !empty($row['left_site_at']);
         if ($convStatus === 'waiting') {
             $status = 'queued';
         } elseif ($convStatus === 'active') {
             $status = 'chatting';
-        } elseif ($since <= $onlineSec) {
+        } elseif (!$leftSite && $since <= $onlineSec) {
             $status = 'browsing';
         } else {
             $status = 'left';

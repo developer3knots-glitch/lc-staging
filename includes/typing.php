@@ -98,6 +98,9 @@ function lc_set_typing(int $conversationId, string $role, bool $isTyping, string
                 $db->prepare('UPDATE conversations SET visitor_typing_at = NULL WHERE id = ?')->execute([$conversationId]);
             }
         }
+        if (function_exists('lc_realtime_publish_typing')) {
+            lc_realtime_publish_typing($conversationId, 'visitor', $isTyping, $preview !== '' ? ['preview' => $preview] : []);
+        }
         return;
     }
 
@@ -107,6 +110,9 @@ function lc_set_typing(int $conversationId, string $role, bool $isTyping, string
             ->execute([$conversationId]);
     } else {
         $db->prepare("UPDATE conversations SET {$col} = NULL WHERE id = ?")->execute([$conversationId]);
+    }
+    if (function_exists('lc_realtime_publish_typing')) {
+        lc_realtime_publish_typing($conversationId, 'agent', $isTyping);
     }
 }
 

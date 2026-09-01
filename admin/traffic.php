@@ -19,7 +19,7 @@ $extraScripts = ['admin-traffic.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-traffic" id="lc-traffic" data-poll-ms="5000">
+<div class="lc-traffic" id="lc-traffic" data-poll-ms="3000">
     <div class="lc-traffic-head">
         <div>
             <h3 class="lc-traffic-title">Traffic</h3>

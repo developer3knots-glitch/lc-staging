@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/realtime.php';
 $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
@@ -28,6 +29,13 @@ try {
     $upd->execute([(int) $agent['id'], $conversationId]);
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, (int) $agent['id']);
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+            'status' => 'active',
+            'agent' => [
+                'name' => (string) ($agent['name'] ?? 'Agent'),
+                'avatar' => $agent['avatar'] ?? null,
+            ],
+        ]);
     }
     lc_json(['success' => true]);
 } catch (Throwable $e) {

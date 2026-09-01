@@ -258,9 +258,15 @@
             ? options.baseUrl + '/api/agent-upload.php'
             : options.baseUrl + '/api/visitor-upload.php';
 
+        var fetchHeaders = {};
+        if ((options.baseUrl || '').indexOf('ngrok') !== -1) {
+            fetchHeaders['ngrok-skip-browser-warning'] = '1';
+        }
+
         return fetch(url, {
             method: 'POST',
-            credentials: 'same-origin',
+            credentials: options.role === 'agent' ? 'same-origin' : 'omit',
+            headers: fetchHeaders,
             body: form
         }).then(function (r) { return r.json(); });
     }

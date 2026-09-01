@@ -18,8 +18,14 @@ try {
         lc_ensure_transcript_schema();
     }
     $db = lc_db();
+    $convCols = $db->query('SHOW COLUMNS FROM conversations')->fetchAll(PDO::FETCH_COLUMN);
+    $hasTranscriptCols = in_array('transcript_email', $convCols, true)
+        && in_array('transcript_sent_at', $convCols, true);
+    $transcriptSelect = $hasTranscriptCols
+        ? 'c.transcript_email, c.transcript_sent_at'
+        : 'NULL AS transcript_email, NULL AS transcript_sent_at';
     $stmt = $db->prepare('
-        SELECT c.status, c.agent_id, c.visitor_id, c.started_at, c.transcript_email, c.transcript_sent_at,
+        SELECT c.status, c.agent_id, c.visitor_id, c.started_at, ' . $transcriptSelect . ',
                a.name AS agent_name, a.avatar AS agent_avatar
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
@@ -140,5 +146,6 @@ try {
         'transcript_email' => trim((string) ($conv['transcript_email'] ?? '')),
     ]);
 } catch (Throwable $e) {
+    error_log('visitor-poll: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

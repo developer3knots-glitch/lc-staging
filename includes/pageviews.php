@@ -15,9 +15,53 @@ function lc_page_views_table_exists(): bool
 function lc_ensure_page_views_schema(): void
 {
     if (lc_page_views_table_exists()) {
+        lc_ensure_visitor_presence_schema();
         return;
     }
     lc_db()->exec(file_get_contents(__DIR__ . '/../install/upgrade_page_views.sql'));
+    lc_ensure_visitor_presence_schema();
+}
+
+function lc_ensure_visitor_presence_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $cols = lc_db()->query('SHOW COLUMNS FROM visitors')->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('left_site_at', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN left_site_at DATETIME NULL DEFAULT NULL AFTER last_seen');
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_mark_visitor_on_site(int $visitorId): void
+{
+    if ($visitorId < 1) {
+        return;
+    }
+    lc_ensure_visitor_presence_schema();
+    try {
+        lc_db()->prepare('UPDATE visitors SET left_site_at = NULL, last_seen = UTC_TIMESTAMP() WHERE id = ?')
+            ->execute([$visitorId]);
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_mark_visitor_left_site(int $visitorId): void
+{
+    if ($visitorId < 1) {
+        return;
+    }
+    lc_ensure_visitor_presence_schema();
+    try {
+        lc_db()->prepare('UPDATE visitors SET left_site_at = UTC_TIMESTAMP() WHERE id = ? AND left_site_at IS NULL')
+            ->execute([$visitorId]);
+    } catch (Throwable $e) {
+    }
 }
 
 function lc_record_visitor_page_view(int $visitorId, int $brandId, string $pageUrl, ?string $title, ?string $referrer): void

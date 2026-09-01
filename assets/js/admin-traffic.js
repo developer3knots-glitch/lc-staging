@@ -18,6 +18,9 @@
     var searchTimer = null;
     var timer = null;
     var loading = false;
+    var realtimeClient = null;
+    var loadDebounce = null;
+    var pendingLoad = false;
 
     var AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#6366f1'];
 
@@ -129,7 +132,10 @@
     }
 
     function load() {
-        if (loading) return;
+        if (loading) {
+            pendingLoad = true;
+            return;
+        }
         loading = true;
         if (refreshBtn) refreshBtn.classList.add('is-spinning');
         fetch(buildUrl(), { credentials: 'same-origin' })
@@ -147,12 +153,56 @@
             .finally(function () {
                 loading = false;
                 if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+                if (pendingLoad) {
+                    pendingLoad = false;
+                    load();
+                }
             });
     }
 
-    function schedule() {
+    function loadSoon() {
+        if (loadDebounce) clearTimeout(loadDebounce);
+        loadDebounce = setTimeout(function () {
+            loadDebounce = null;
+            load();
+        }, 80);
+    }
+
+    function schedule(intervalMs) {
         if (timer) clearInterval(timer);
-        timer = setInterval(load, pollMs);
+        timer = setInterval(load, Math.max(2000, intervalMs || pollMs));
+    }
+
+    function initTrafficRealtime() {
+        var cfg = window.LC_REALTIME || {};
+        if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) {
+            return;
+        }
+        fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success || !data.token) return;
+                if (realtimeClient && realtimeClient.disconnect) {
+                    realtimeClient.disconnect();
+                }
+                realtimeClient = window.LCRealtime.create({
+                    mode: 'ws',
+                    wsUrl: cfg.wsUrl,
+                    token: data.token,
+                    fallbackPoll: function () { load(); }
+                });
+                realtimeClient.on('connected', function () {
+                    schedule(parseInt(cfg.backupPollMs, 10) || 15000);
+                });
+                realtimeClient.on('disconnected', function () {
+                    schedule(pollMs);
+                });
+                realtimeClient.on('traffic.changed', function () {
+                    loadSoon();
+                });
+                realtimeClient.connect();
+            })
+            .catch(function () {});
     }
 
     tabs.forEach(function (btn) {
@@ -186,5 +236,6 @@
 
     setTab('all');
     load();
-    schedule();
+    schedule(pollMs);
+    initTrafficRealtime();
 })();

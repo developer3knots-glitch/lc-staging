@@ -13,12 +13,13 @@ require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/typing.php';
 require_once __DIR__ . '/realtime.php';
+require_once __DIR__ . '/transcript.php';
+require_once __DIR__ . '/mail.php';
 
 function lc_cors_headers(): void
 {
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
+    // CORS is set in api/.htaccess (Header always set). Do not send them again here —
+    // duplicate Access-Control-Allow-Origin: *,* is rejected by browsers.
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
         http_response_code(204);
         exit;
@@ -29,9 +30,6 @@ function lc_json(array $data, int $code = 200): void
 {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
     echo json_encode($data);
     exit;
 }
@@ -309,6 +307,10 @@ function lc_add_agent_join_message(int $conversationId, int $agentId): void
     $msg = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $msg->execute([$conversationId, 'system', $agentId, $name . ' joined the chat.']);
     lc_touch_conversation($conversationId);
+    $messageId = (int) lc_db()->lastInsertId();
+    if ($messageId > 0 && function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, $messageId);
+    }
 }
 
 function lc_add_system_message(int $conversationId, string $message): void
@@ -855,7 +857,8 @@ function lc_get_conversation(int $id): ?array
     $stmt = lc_db()->prepare('
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
-               v.user_agent AS visitor_user_agent,
+               v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
+               v.phone AS visitor_phone,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
@@ -866,6 +869,57 @@ function lc_get_conversation(int $id): ?array
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     return $row ?: null;
+}
+
+/**
+ * Extra fields for the admin customer-details rail.
+ *
+ * @return array{chat_count:int,page_count:int,referrer:string}
+ */
+function lc_visitor_detail_stats(int $visitorId, int $brandId = 0): array
+{
+    $db = lc_db();
+    $chatSql = 'SELECT COUNT(*) FROM conversations WHERE visitor_id = ?';
+    $chatParams = [$visitorId];
+    if ($brandId > 0) {
+        $chatSql .= ' AND brand_id = ?';
+        $chatParams[] = $brandId;
+    }
+    $stmt = $db->prepare($chatSql);
+    $stmt->execute($chatParams);
+    $chatCount = (int) $stmt->fetchColumn();
+
+    $pageCount = 0;
+    $referrer = '';
+    try {
+        $pageSql = 'SELECT COUNT(*) FROM visitor_page_views WHERE visitor_id = ?';
+        $pageParams = [$visitorId];
+        if ($brandId > 0) {
+            $pageSql .= ' AND brand_id = ?';
+            $pageParams[] = $brandId;
+        }
+        $stmt = $db->prepare($pageSql);
+        $stmt->execute($pageParams);
+        $pageCount = (int) $stmt->fetchColumn();
+
+        $refSql = 'SELECT referrer FROM visitor_page_views WHERE visitor_id = ? AND referrer IS NOT NULL AND referrer != \'\'';
+        $refParams = [$visitorId];
+        if ($brandId > 0) {
+            $refSql .= ' AND brand_id = ?';
+            $refParams[] = $brandId;
+        }
+        $refSql .= ' ORDER BY id ASC LIMIT 1';
+        $stmt = $db->prepare($refSql);
+        $stmt->execute($refParams);
+        $referrer = trim((string) $stmt->fetchColumn());
+    } catch (Throwable $e) {
+    }
+
+    return [
+        'chat_count' => $chatCount,
+        'page_count' => $pageCount,
+        'referrer' => $referrer,
+    ];
 }
 
 function lc_unread_count_for_agent(int $agentId): int
