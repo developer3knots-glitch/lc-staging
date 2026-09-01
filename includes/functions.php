@@ -92,8 +92,14 @@ function lc_base_url(): string
         return $resolved;
     }
 
+    if (defined('LC_BASE_URL') && LC_BASE_URL !== '') {
+        $resolved = rtrim((string) LC_BASE_URL, '/');
+
+        return $resolved;
+    }
+
     if (PHP_SAPI === 'cli') {
-        $resolved = defined('LC_BASE_URL') ? rtrim((string) LC_BASE_URL, '/') : '';
+        $resolved = '';
         return $resolved;
     }
 

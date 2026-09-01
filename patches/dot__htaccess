@@ -1,0 +1,34 @@
+AddDefaultCharset UTF-8
+<IfModule mod_mime.c>
+    AddCharset UTF-8 .html .css .js .json .php
+</IfModule>
+
+# LiveChat - Apache rewrite (local XAMPP + cPanel)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^admin/?$ admin/index.php [L]
+    RewriteRule ^superadmin/?$ superadmin/index.php [L]
+
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # install/ folder vs install.php -> use PHP
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^(.+?)/?$ $1.php [L]
+
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^(.+?)/?$ $1.php [L]
+
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+</IfModule>
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "^(config\.php|db\.php|\.env)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+Options -Indexes
