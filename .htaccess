@@ -3,28 +3,40 @@ AddDefaultCharset UTF-8
     AddCharset UTF-8 .html .css .js .json .php
 </IfModule>
 
-# LiveChat - Apache rewrite (local XAMPP + cPanel)
+# LiveChat - shared hosting (cPanel / Apache)
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Clean URLs: redirect visible .php paths (GET only; keep POST on .php)
+    RewriteCond %{ENV:REDIRECT_STATUS} ^$
+    RewriteCond %{REQUEST_METHOD} =GET
+    RewriteCond %{THE_REQUEST} \s/+(.+?)\.php[\s?] [NC]
+    RewriteCond %1 !^api/ [NC]
+    RewriteCond %1 !^widget/ [NC]
+    RewriteRule ^ %1 [R=301,L,NE]
+
+    # /admin -> dashboard
     RewriteRule ^admin/?$ admin/index.php [L]
+
+    # /superadmin -> users
     RewriteRule ^superadmin/?$ superadmin/index.php [L]
 
+    # Existing files (assets, uploads, etc.)
     RewriteCond %{REQUEST_FILENAME} -f
     RewriteRule ^ - [L]
 
-    # install/ folder vs install.php -> use PHP
-    RewriteCond %{REQUEST_FILENAME} -d
-    RewriteCond %{REQUEST_FILENAME}.php -f
-    RewriteRule ^(.+?)/?$ $1.php [L]
-
-    RewriteCond %{REQUEST_FILENAME}.php -f
-    RewriteRule ^(.+?)/?$ $1.php [L]
-
+    # Existing directories
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
+
+    # Extensionless path -> matching .php file
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^(.+?)/?$ $1.php [L]
 </IfModule>
 
+# PHP limits: set in cPanel -> MultiPHP INI Editor (php_value here can cause 403 on some hosts)
+
+# Block direct access to sensitive folders (install still works via /install)
 <IfModule mod_authz_core.c>
     <FilesMatch "^(config\.php|db\.php|\.env)$">
         Require all denied
