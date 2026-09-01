@@ -183,7 +183,7 @@ function lc_resolve_geo_full(string $ip): array
     $encoded = urlencode($ip);
     $result = null;
 
-    $ipApi = lc_http_get_json('https://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon');
+    $ipApi = lc_http_get_json('http://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon');
     if ($ipApi) {
         $result = lc_geo_payload_from_ip_api($ipApi);
     }

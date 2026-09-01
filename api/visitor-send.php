@@ -12,7 +12,7 @@ if ($conversationId < 1 || $message === '' || $visitorUid === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
 
-$ip = lc_client_ip();
+$ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
 $security = lc_widget_security_check($input, $ip, $userAgent, true);

@@ -21,19 +21,73 @@ function lc_ensure_security_schema(): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
+function lc_valid_public_ipv4(?string $ip): ?string
+{
+    $ip = trim((string) $ip);
+    if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        return null;
+    }
+
+    return $ip;
+}
+
+function lc_ipv4_from_any(string $ip): ?string
+{
+    $ip = trim($ip);
+    $public = lc_valid_public_ipv4($ip);
+    if ($public !== null) {
+        return $public;
+    }
+    if (stripos($ip, ':') !== false && preg_match('/(?:\:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i', $ip, $m)) {
+        return lc_valid_public_ipv4($m[1]);
+    }
+
+    return null;
+}
+
 function lc_client_ip(): string
 {
-    $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
-    foreach ($headers as $h) {
+    $candidates = [];
+    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
         if (empty($_SERVER[$h])) {
             continue;
         }
-        $ip = trim(explode(',', (string) $_SERVER[$h])[0]);
-        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+        foreach (explode(',', (string) $_SERVER[$h]) as $part) {
+            $ip = trim($part);
+            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+                $candidates[] = $ip;
+            }
+        }
+    }
+
+    foreach ($candidates as $ip) {
+        $v4 = lc_ipv4_from_any($ip);
+        if ($v4 !== null) {
+            return $v4;
+        }
+    }
+    foreach ($candidates as $ip) {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             return $ip;
         }
     }
-    return '0.0.0.0';
+    foreach ($candidates as $ip) {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && $ip !== '::1') {
+            return $ip;
+        }
+    }
+
+    return $candidates[0] ?? '0.0.0.0';
+}
+
+function lc_resolve_visitor_ip(array $input = []): string
+{
+    $reported = lc_valid_public_ipv4($input['public_ipv4'] ?? '');
+    if ($reported !== null) {
+        return $reported;
+    }
+
+    return lc_client_ip();
 }
 
 function lc_is_local_ip(string $ip): bool

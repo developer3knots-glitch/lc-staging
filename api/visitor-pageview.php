@@ -19,7 +19,7 @@ if ($visitorUid === '' || $pageUrl === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
 
-$ip = lc_client_ip();
+$ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
 if (lc_is_bot_user_agent($userAgent)) {

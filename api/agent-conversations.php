@@ -33,9 +33,9 @@ try {
         LEFT JOIN brands b ON b.id = c.brand_id
         WHERE {$where}
         ORDER BY
-            CASE c.status WHEN 'waiting' THEN 0 ELSE 1 END,
+            CASE c.status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
             COALESCE(c.last_message_at, c.started_at) DESC
-        LIMIT 50
+        LIMIT 200
     ";
     $stmt = $db->prepare($sql);
     $stmt->execute(array_merge([$agentId], $params));

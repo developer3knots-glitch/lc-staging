@@ -361,11 +361,15 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return true;
     }
 
-    if ($status === 'active' && $assignedId === 0) {
+    if ($status === 'active') {
         return true;
     }
 
-    // Active chat owned by another agent - live access only for the assignee.
+    // Closed chats in this workspace are read-only history (assigned or unassigned).
+    if ($status === 'closed') {
+        return true;
+    }
+
     return false;
 }
 
@@ -429,8 +433,8 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         return [
-            "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL OR {$a}.status = 'waiting'){$accountFilter}",
-            array_merge([$agentId], $accountParams),
+            "{$a}.status IN ('waiting','active','closed'){$accountFilter}",
+            $accountParams,
         ];
     }
 
@@ -453,8 +457,8 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     return [
-        "{$a}.status IN ('waiting','active') AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
-        array_merge([$agentId, $brandId], $extraParams),
+        "{$a}.status IN ('waiting','active','closed') AND {$a}.brand_id = ?{$extra}",
+        array_merge([$brandId], $extraParams),
     ];
 }
 
@@ -852,13 +856,233 @@ function lc_touch_conversation(int $conversationId): void
     $stmt->execute([$conversationId]);
 }
 
+function lc_ensure_visitor_geo_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    foreach ([
+        'geo_city VARCHAR(100) NULL',
+        'geo_region VARCHAR(100) NULL',
+        'geo_lat DECIMAL(10,7) NULL',
+        'geo_lon DECIMAL(10,7) NULL',
+        'geo_source VARCHAR(16) NULL',
+    ] as $def) {
+        try {
+            $pdo->exec('ALTER TABLE visitors ADD COLUMN ' . $def);
+        } catch (Throwable $e) {
+        }
+    }
+}
+
+function lc_geo_text_is_english(string $text): bool
+{
+    return $text === '' || !preg_match('/[^\x20-\x7E]/', $text);
+}
+
+/**
+ * @return array{city:string,region:string,country:string,label:string}
+ */
+function lc_reverse_geocode(float $lat, float $lon): array
+{
+    $empty = ['city' => '', 'region' => '', 'country' => '', 'label' => ''];
+    if (!function_exists('lc_http_get_json')) {
+        return $empty;
+    }
+
+    $bdcUrl = 'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' . rawurlencode((string) $lat)
+        . '&longitude=' . rawurlencode((string) $lon)
+        . '&localityLanguage=en';
+    $data = lc_http_get_json($bdcUrl, 4.0);
+    if ($data && !empty($data['countryName'])) {
+        $city = trim((string) ($data['city'] ?? $data['locality'] ?? ''));
+        $region = trim((string) ($data['principalSubdivision'] ?? ''));
+        $country = trim((string) ($data['countryName'] ?? ''));
+        $parts = array_values(array_unique(array_filter([$city, $region, $country])));
+
+        return [
+            'city' => $city,
+            'region' => $region,
+            'country' => $country,
+            'label' => $parts ? implode(', ', $parts) : $country,
+        ];
+    }
+
+    $nomUrl = 'https://nominatim.openstreetmap.org/reverse?lat=' . rawurlencode((string) $lat)
+        . '&lon=' . rawurlencode((string) $lon)
+        . '&format=json&addressdetails=1&zoom=16&accept-language=en';
+    $data = lc_http_get_json($nomUrl, 4.0, ['Accept-Language' => 'en']);
+    if (!$data || empty($data['address']) || !is_array($data['address'])) {
+        return $empty;
+    }
+
+    $a = $data['address'];
+    $area = trim((string) ($a['suburb'] ?? $a['neighbourhood'] ?? $a['city_district'] ?? $a['quarter'] ?? ''));
+    $city = trim((string) ($a['city'] ?? $a['town'] ?? $a['village'] ?? $a['municipality'] ?? ''));
+    $region = trim((string) ($a['state'] ?? $a['region'] ?? ''));
+    $country = trim((string) ($a['country'] ?? ''));
+    $parts = array_values(array_unique(array_filter([$area, $city, $region, $country])));
+    $label = $parts ? implode(', ', $parts) : trim((string) ($data['display_name'] ?? ''));
+
+    return [
+        'city' => $city !== '' ? $city : $area,
+        'region' => $region,
+        'country' => $country,
+        'label' => $label,
+    ];
+}
+
+/**
+ * @return array{label:string,city:string,region:string,country:string,lat:float,lon:float,source:string}
+ */
+function lc_save_visitor_browser_geo(int $visitorId, float $lat, float $lon): array
+{
+    lc_ensure_visitor_geo_schema();
+    $rev = lc_reverse_geocode($lat, $lon);
+    $city = $rev['city'];
+    $region = $rev['region'];
+    $country = $rev['country'];
+    $label = $rev['label'] !== '' ? $rev['label'] : (round($lat, 5) . ', ' . round($lon, 5));
+
+    $upd = lc_db()->prepare('
+        UPDATE visitors
+        SET geo_lat = ?, geo_lon = ?, geo_city = ?, geo_region = ?, geo_source = ?
+        WHERE id = ?
+    ');
+    $upd->execute([$lat, $lon, $city !== '' ? $city : null, $region !== '' ? $region : null, 'browser', $visitorId]);
+
+    return [
+        'label' => $label,
+        'city' => $city,
+        'region' => $region,
+        'country' => $country,
+        'lat' => $lat,
+        'lon' => $lon,
+        'source' => 'browser',
+    ];
+}
+
+/**
+ * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float,source:string}
+ */
+function lc_visitor_geo_payload(array $row): array
+{
+    $city = trim((string) ($row['visitor_geo_city'] ?? $row['geo_city'] ?? ''));
+    $region = trim((string) ($row['visitor_geo_region'] ?? $row['geo_region'] ?? ''));
+    $country = trim((string) ($row['visitor_country'] ?? $row['country'] ?? ''));
+    $country = preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', $country) ?: $country;
+    $lat = $row['visitor_geo_lat'] ?? $row['geo_lat'] ?? null;
+    $lon = $row['visitor_geo_lon'] ?? $row['geo_lon'] ?? null;
+    $lat = ($lat !== null && $lat !== '') ? (float) $lat : null;
+    $lon = ($lon !== null && $lon !== '') ? (float) $lon : null;
+    $source = trim((string) ($row['visitor_geo_source'] ?? $row['geo_source'] ?? 'ip'));
+    $parts = array_values(array_filter([$city, $region, $country]));
+
+    return [
+        'label' => $parts ? implode(', ', $parts) : ($country !== '' ? $country : 'Unknown'),
+        'city' => $city,
+        'region' => $region,
+        'country' => $country,
+        'lat' => $lat,
+        'lon' => $lon,
+        'source' => $source !== '' ? $source : 'ip',
+    ];
+}
+
+/**
+ * @return array{label:string,city:string,region:string,country:string,lat:?float,lon:?float,source:string}
+ */
+function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null): array
+{
+    lc_ensure_visitor_geo_schema();
+    if ($visitorId < 1) {
+        return lc_visitor_geo_payload($row ?? []);
+    }
+
+    if ($row === null) {
+        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source, ip_address FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $row = $stmt->fetch() ?: [];
+    }
+
+    $geoSource = trim((string) ($row['geo_source'] ?? ''));
+    $payload = lc_visitor_geo_payload([
+        'visitor_country' => $row['country'] ?? '',
+        'visitor_geo_city' => $row['geo_city'] ?? $row['visitor_geo_city'] ?? '',
+        'visitor_geo_region' => $row['geo_region'] ?? $row['visitor_geo_region'] ?? '',
+        'visitor_geo_lat' => $row['geo_lat'] ?? $row['visitor_geo_lat'] ?? null,
+        'visitor_geo_lon' => $row['geo_lon'] ?? $row['visitor_geo_lon'] ?? null,
+        'geo_source' => $geoSource,
+    ]);
+
+    if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
+        return $payload;
+    }
+    if ($payload['lat'] !== null && $payload['lon'] !== null && $payload['city'] !== '') {
+        return $payload;
+    }
+
+    $ip = trim($ip);
+    if ($ip === '' && !empty($row['ip_address'])) {
+        $ip = trim((string) $row['ip_address']);
+    }
+    if ($ip === '' && !empty($row['visitor_ip'])) {
+        $ip = trim((string) $row['visitor_ip']);
+    }
+    if ($ip === '' || !function_exists('lc_resolve_geo_full')) {
+        return $payload;
+    }
+
+    $geo = lc_resolve_geo_full($ip);
+    if (($geo['lat'] === null || $geo['lon'] === null) && $geo['city'] === '') {
+        return $payload;
+    }
+
+    $countryStore = $geo['country'];
+    if (!empty($geo['country_code'])) {
+        $countryStore .= ' (' . $geo['country_code'] . ')';
+    }
+
+    $upd = lc_db()->prepare('
+        UPDATE visitors
+        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = COALESCE(geo_source, ?),
+            country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
+        WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')
+    ');
+    $upd->execute([
+        $geo['city'] !== '' ? $geo['city'] : null,
+        $geo['region'] !== '' ? $geo['region'] : null,
+        $geo['lat'],
+        $geo['lon'],
+        'ip',
+        $countryStore,
+        $visitorId,
+    ]);
+
+    return [
+        'label' => $geo['label'],
+        'city' => $geo['city'],
+        'region' => $geo['region'],
+        'country' => $geo['country'],
+        'lat' => $geo['lat'],
+        'lon' => $geo['lon'],
+        'source' => 'ip',
+    ];
+}
+
 function lc_get_conversation(int $id): ?array
 {
+    lc_ensure_visitor_geo_schema();
     $stmt = lc_db()->prepare('
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
                v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
                v.phone AS visitor_phone,
+               v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
+               v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon, v.geo_source AS visitor_geo_source,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id

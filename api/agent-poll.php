@@ -105,6 +105,7 @@ try {
                     (string) ($conv['visitor_ip'] ?? ''),
                     [
                         'country' => $conv['visitor_country'] ?? '',
+                        'ip_address' => $conv['visitor_ip'] ?? '',
                         'geo_city' => $conv['visitor_geo_city'] ?? null,
                         'geo_region' => $conv['visitor_geo_region'] ?? null,
                         'geo_lat' => $conv['visitor_geo_lat'] ?? null,
