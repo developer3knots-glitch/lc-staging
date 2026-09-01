@@ -7,7 +7,9 @@
  * Docs: realtime/README-LOCAL.md
  */
 return [
-    'mode' => 'ws',
+    // Poll while testing widget on a live HTTPS site via ngrok.
+    // Restore mode=ws + local ws_url when testing only on localhost.
+    'mode' => 'poll',
     'ws_url' => 'ws://127.0.0.1:6001',
     'publish_url' => 'http://127.0.0.1:6001/publish',
     'secret' => 'local-dev-realtime-secret',
