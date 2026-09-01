@@ -484,6 +484,11 @@ function lc_agent_can_view_conversation(array $agent, array $conv): bool
         return true;
     }
 
+    // Archived chats shown in inbox (assigned to this agent or unassigned).
+    if ($status === 'closed' && ($assignedId === $agentId || $assignedId === 0)) {
+        return true;
+    }
+
     // Active chat owned by another agent - live access only for the assignee.
     return false;
 }

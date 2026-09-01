@@ -19,8 +19,8 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-time.js?v=136"></script>
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-notify-sound.js?v=136"></script>
 <script src="<?= LC_BASE_URL ?>/assets/js/lc-tab-notify.js?v=136"></script>
-<script src="<?= LC_BASE_URL ?>/assets/js/admin-core.js?v=162"></script>
-<script src="<?= LC_BASE_URL ?>/assets/js/admin-cmdk.js?v=162"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/admin-core.js?v=163"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/admin-cmdk.js?v=163"></script>
 <?php
 $footerScripts = $extraScripts ?? [];
 if (!empty($extraScript)) {
@@ -28,7 +28,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=162"></script>
+<script src="<?= LC_BASE_URL ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=163"></script>
 <?php endforeach; ?>
 </body>
 </html>

@@ -1818,11 +1818,15 @@
 
     function pollMessages() {
         if (!selectedId) return;
+        var conversationId = selectedId;
         var isFirstLoadReq = needsFullHistory;
-        var full = 0;
-        fetch(base + '/api/agent-poll.php?conversation_id=' + selectedId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
+        var full = isFirstLoadReq ? 1 : 0;
+        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (selectedId !== conversationId) {
+                    return;
+                }
                 if (!data.success) {
                     if (data.error === 'Forbidden') {
                         selectedId = 0;
@@ -1893,6 +1897,13 @@
                         playIncomingSound();
                         setPeerTypingVisible(false);
                     }
+                }
+
+                if (!c) {
+                    if (isFirstLoad) {
+                        paintFirstLoadFrame();
+                    }
+                    return;
                 }
 
                 if (c.status === 'closed') {
@@ -2179,7 +2190,8 @@
             }
             currentVisitorEmail = (data.email || '').trim();
             currentVisitorPhone = (data.phone || '').trim();
-            populateContactFields();
+            contactFieldsDirty = false;
+            populateContactFields(true);
             applySavedContactToList(currentVisitorEmail, currentVisitorPhone);
             if (emailTranscriptTo && currentVisitorEmail) {
                 emailTranscriptTo.value = currentVisitorEmail;
@@ -2261,7 +2273,8 @@
             if (emailTranscriptSend) emailTranscriptSend.disabled = false;
             if (data && data.success) {
                 currentVisitorEmail = data.email || email;
-                populateContactFields();
+                contactFieldsDirty = false;
+                populateContactFields(true);
                 var extra = (data.scope === 'overall' && data.chat_count > 1)
                     ? (' (' + data.chat_count + ' chats)')
                     : '';
@@ -2281,6 +2294,9 @@
     if (detailsContactSaveBtn) detailsContactSaveBtn.addEventListener('click', saveVisitorContact);
     [detailsEmailInput, detailsPhoneInput].forEach(function (el) {
         if (!el) return;
+        el.addEventListener('input', function () {
+            contactFieldsDirty = true;
+        });
         el.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
