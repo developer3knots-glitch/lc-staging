@@ -98,6 +98,7 @@
     var currentReference = '';
     var currentVisitorEmail = '';
     var currentVisitorPhone = '';
+    var contactFieldsDirty = false;
     var chatRefEl = document.getElementById('lc-chat-ref');
     var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
     var chatRefCopyBtn = document.getElementById('lc-chat-ref-copy');
@@ -516,9 +517,11 @@
         var name = (c.visitor_name || '').trim();
         var displayName = name || 'Unnamed customer';
         setText('lc-details-name', displayName);
-        currentVisitorEmail = (c.visitor_email || '').trim();
-        currentVisitorPhone = (c.visitor_phone || '').trim();
-        populateContactFields();
+        if (!isContactFieldActive()) {
+            currentVisitorEmail = (c.visitor_email || '').trim();
+            currentVisitorPhone = (c.visitor_phone || '').trim();
+            populateContactFields(true);
+        }
         setVisitorKindBadge(c);
 
         var geo = c.visitor_geo || {};
@@ -1591,7 +1594,8 @@
         setText('lc-details-name', 'Loading...');
         currentVisitorEmail = '';
         currentVisitorPhone = '';
-        populateContactFields();
+        contactFieldsDirty = false;
+        populateContactFields(true);
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
         setText('lc-details-ip', ' - ');
@@ -2120,9 +2124,17 @@
     var detailsContactSaveBtn = document.getElementById('lc-details-contact-save');
     var detailsContactStatus = document.getElementById('lc-details-contact-status');
 
-    function populateContactFields() {
+    function isContactFieldActive() {
+        if (contactFieldsDirty) return true;
+        var active = document.activeElement;
+        return active === detailsEmailInput || active === detailsPhoneInput;
+    }
+
+    function populateContactFields(force) {
+        if (!force && isContactFieldActive()) return;
         if (detailsEmailInput) detailsEmailInput.value = currentVisitorEmail || '';
         if (detailsPhoneInput) detailsPhoneInput.value = currentVisitorPhone || '';
+        if (force) contactFieldsDirty = false;
     }
 
     function setContactStatus(msg, isError) {
