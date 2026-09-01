@@ -471,14 +471,6 @@
         return String((view && view.page_path) || '').trim();
     }
 
-    function truncateLinkText(text, max) {
-        max = max || 64;
-        if (!text || text.length <= max) {
-            return text;
-        }
-        return text.slice(0, max - 1) + '…';
-    }
-
     function paintDetailsPagesList() {
         var list = document.getElementById('lc-details-pages-list');
         var empty = document.getElementById('lc-details-pages-empty');
@@ -507,12 +499,11 @@
             html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
             html += '<div class="lc-details-page-body">';
             html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
-            if (pageLink) {
-                var linkLabel = truncateLinkText(pageLink);
+            if (pageLink && pageLink.toLowerCase() !== String(label || '').toLowerCase()) {
                 if (pageHref) {
-                    html += '<a class="lc-details-page-link" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink) + '">' + esc(linkLabel) + '</a>';
+                    html += '<a class="lc-details-page-link" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink) + '">' + esc(pageLink) + '</a>';
                 } else {
-                    html += '<span class="lc-details-page-link is-text" title="' + esc(pageLink) + '">' + esc(linkLabel) + '</span>';
+                    html += '<span class="lc-details-page-link is-text" title="' + esc(pageLink) + '">' + esc(pageLink) + '</span>';
                 }
             }
             var when = step.last_visited_at || view.visited_at;
@@ -1234,7 +1225,7 @@
         var html = '<div class="lc-journey-step' + (isCurrent ? ' is-current' : '') + '" data-id="' + step.id + '" title="' + esc(fullPath) + '">';
         html += '<span class="lc-journey-step-path">' + esc(journeyStepLabel(step)) + '</span>';
         if (step.visit_count > 1) {
-            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">Γö£├╣' + step.visit_count + '</span>';
+            html += '<span class="lc-journey-step-repeat" title="' + step.visit_count + ' visits on this page">x' + step.visit_count + '</span>';
         }
         html += '<span class="lc-journey-step-time">' + timeHtml(step.last_visited_at) + '</span>';
         html += '</div>';
@@ -1258,7 +1249,7 @@
         var html = '';
         steps.forEach(function (step, idx) {
             if (idx > 0) {
-                html += '<span class="lc-journey-sep" aria-hidden="true">╬ô├çΓòæ</span>';
+                html += '<span class="lc-journey-sep" aria-hidden="true">&gt;</span>';
             }
             html += renderJourneyStep(step, idx === steps.length - 1);
         });
@@ -1295,7 +1286,7 @@
         var label = journeyStepLabel(current);
         var timeEl = journeyListEl.querySelector('.lc-journey-step.is-current .lc-journey-step-time');
         var timeText = timeEl ? timeEl.textContent.trim() : '';
-        var repeat = current.visit_count > 1 ? '  |  Γö£├╣' + current.visit_count : '';
+        var repeat = current.visit_count > 1 ? '  |  x' + current.visit_count : '';
         summaryEl.textContent = label + repeat + (timeText ? '  |  ' + timeText : '');
     }
 
@@ -1923,7 +1914,7 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             lastMsgId = m.id;
                             added += 1;
-                            // Incoming only - not agent╬ô├ç├ûs own replies echoing back
+                            // Incoming only - not the agent's own replies echoing back
                             if (m.sender_type === 'visitor' || m.sender_type === 'system') {
                                 if (m.sender_type === 'visitor') {
                                     playSound = true;
@@ -2589,7 +2580,7 @@
                 thumb +
                 '<div class="lc-attach-preview-meta">' +
                     '<strong>' + name + '</strong>' +
-                    '<span>' + esc(size) + ' · ' + esc(label) + '</span>' +
+                    '<span>' + esc(size) + ' | ' + esc(label) + '</span>' +
                 '</div>' +
                 '<button type="button" class="lc-attach-preview-clear" data-remove-attach="' + item.id + '" aria-label="Remove ' + name + '"><i class="ti ti-x"></i></button>' +
             '</div>';
