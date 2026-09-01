@@ -7914,6 +7914,22 @@ body.lc-page-chats .lc-chat-empty-state p {
     line-height: 1.35;
     word-break: break-word;
 }
+.lc-details-page-link {
+    display: block;
+    margin-top: 0.14rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: #2563eb;
+    line-height: 1.35;
+    text-decoration: none;
+    word-break: break-all;
+}
+.lc-details-page-link:hover {
+    text-decoration: underline;
+}
+.lc-details-page-link.is-text {
+    color: #6b7280;
+}
 .lc-details-page-time {
     display: block;
     margin-top: 0.12rem;

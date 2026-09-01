@@ -451,6 +451,34 @@
         }
     }
 
+    function journeyPageHref(view) {
+        var url = String((view && view.page_url) || '').trim();
+        if (url && /^https?:\/\//i.test(url)) {
+            return url;
+        }
+        var path = String((view && view.page_path) || url || '').trim();
+        if (path && /^https?:\/\//i.test(path)) {
+            return path;
+        }
+        return '';
+    }
+
+    function journeyPageLinkText(view) {
+        var url = String((view && view.page_url) || '').trim();
+        if (url) {
+            return url;
+        }
+        return String((view && view.page_path) || '').trim();
+    }
+
+    function truncateLinkText(text, max) {
+        max = max || 64;
+        if (!text || text.length <= max) {
+            return text;
+        }
+        return text.slice(0, max - 1) + '…';
+    }
+
     function paintDetailsPagesList() {
         var list = document.getElementById('lc-details-pages-list');
         var empty = document.getElementById('lc-details-pages-empty');
@@ -469,6 +497,8 @@
             var step = steps[i];
             var view = step.last_view || {};
             var label = journeyStepLabel(step);
+            var pageLink = journeyPageLinkText(view);
+            var pageHref = journeyPageHref(view);
             var dur = view.duration_label || '';
             if (!dur && view.duration_seconds) {
                 dur = formatDurationSeconds(view.duration_seconds);
@@ -476,13 +506,27 @@
             html += '<li class="lc-details-page-item' + (i === steps.length - 1 ? ' is-current' : '') + '">';
             html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
             html += '<div class="lc-details-page-body">';
-            html += '<span class="lc-details-page-title" title="' + esc(view.page_url || label) + '">' + esc(label) + '</span>';
-            if (dur) {
+            html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
+            if (pageLink) {
+                var linkLabel = truncateLinkText(pageLink);
+                if (pageHref) {
+                    html += '<a class="lc-details-page-link" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink) + '">' + esc(linkLabel) + '</a>';
+                } else {
+                    html += '<span class="lc-details-page-link is-text" title="' + esc(pageLink) + '">' + esc(linkLabel) + '</span>';
+                }
+            }
+            var when = step.last_visited_at || view.visited_at;
+            if (when) {
+                html += '<span class="lc-details-page-time">' + timeHtml(when) + '</span>';
+            } else if (dur) {
                 html += '<span class="lc-details-page-time">' + esc(dur) + '</span>';
             }
             html += '</div></li>';
         }
         list.innerHTML = html;
+        if (window.LCTime) {
+            window.LCTime.scan(list);
+        }
     }
 
     function bindDetailsAccordions() {
