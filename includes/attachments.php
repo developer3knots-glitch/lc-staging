@@ -466,7 +466,7 @@ function lc_attachment_message_select_sql(): string
             m.attachment_path, m.attachment_original_name, m.attachment_mime, m.attachment_size, m.attachment_kind';
 }
 
-function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $agent, bool $isSuperAdmin = false): void
+function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $agent, bool $isSuperAdmin = false, ?string $visitorUid = null): void
 {
     lc_ensure_attachments_schema();
     $stmt = lc_db()->prepare('
@@ -494,6 +494,9 @@ function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $ag
             $allowed = true;
         }
     } elseif ($chatToken !== null && $chatToken !== '' && hash_equals((string) ($row['access_token'] ?? ''), $chatToken)) {
+        $allowed = true;
+    } elseif ($visitorUid !== null && $visitorUid !== '' && hash_equals((string) ($row['visitor_uid'] ?? ''), $visitorUid)) {
+        // Widget <img> requests often omit token; allow owner visitor_uid as fallback
         $allowed = true;
     }
 

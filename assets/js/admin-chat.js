@@ -73,6 +73,11 @@
     var addTagCancel = document.getElementById('lc-add-tag-cancel');
     var currentTags = [];
     var cannedSelect = document.getElementById('lc-canned-select');
+    var cannedToggle = document.getElementById('lc-canned-toggle');
+    var cannedPanel = document.getElementById('lc-canned-panel');
+    var cannedListLive = document.getElementById('lc-canned-list-live');
+    var cannedSearchLive = document.getElementById('lc-canned-search-live');
+    var cannedRepliesCache = [];
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
     var transferPanel = document.getElementById('lc-transfer-panel');
@@ -344,7 +349,7 @@
         }
         var ret = isReturningVisitor(c);
         el.hidden = false;
-        el.textContent = ret ? 'Return' : 'New';
+        el.textContent = ret ? 'Returning' : 'New';
         el.className = 'lc-visitor-kind-badge ' + (ret ? 'is-returning' : 'is-new');
         el.title = visitorKindLabel(c);
     }
@@ -654,11 +659,16 @@
         }
     }
 
+    function digitsOnly(s) {
+        return String(s || '').replace(/\D+/g, '');
+    }
+
     function filterConversations(list) {
         if (!inboxSearch) {
             return list;
         }
         var q = inboxSearch.toLowerCase();
+        var qDigits = digitsOnly(inboxSearch);
         return list.filter(function (c) {
             var hay = [
                 c.visitor_name || '',
@@ -668,9 +678,20 @@
                 c.last_message || '',
                 c.brand_name || '',
                 c.agent_name || '',
-                c.reference || ''
+                c.reference || '',
+                String(c.id || '')
             ].join(' ').toLowerCase();
-            return hay.indexOf(q) !== -1;
+            if (hay.indexOf(q) !== -1) {
+                return true;
+            }
+            // Phone match ignoring spaces / dashes / +92 vs 0…
+            if (qDigits.length >= 3) {
+                var phoneDigits = digitsOnly(c.visitor_phone || '');
+                if (phoneDigits && phoneDigits.indexOf(qDigits) !== -1) {
+                    return true;
+                }
+            }
+            return false;
         });
     }
 
@@ -698,12 +719,16 @@
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
         if (isReturningVisitor(c)) {
-            html += '<span class="lc-badge lc-badge-returning" title="' + esc(visitorKindLabel(c)) + '">Return</span>';
-        } else if (status === 'waiting' || status === 'active') {
+            html += '<span class="lc-badge lc-badge-returning" title="' + esc(visitorKindLabel(c)) + '">Returning</span>';
+        } else if (status === 'waiting') {
+            // "New" only for unassigned queue — hide once chat is active/being viewed
             html += '<span class="lc-badge lc-badge-newchat">New</span>';
         }
-        if (c.unread > 0) {
-            html += '<span class="lc-badge lc-badge-unread">' + c.unread + ' new</span>';
+        var cidNum = parseInt(c.id, 10) || 0;
+        var isViewing = !!(selectedId && cidNum === selectedId);
+        var unreadCount = parseInt(c.unread, 10) || 0;
+        if (!isViewing && unreadCount > 0) {
+            html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
         } else {
             var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
             html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(status) + '</span>';
@@ -720,19 +745,18 @@
 
     function inboxIdentityKeys(row) {
         var keys = [];
+        var ip = String((row && row.visitor_ip) || '').trim();
+        // Same public IP → one inbox row (do NOT merge different IPs via email/name)
+        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') {
+            keys.push('ip:' + ip);
+            return keys;
+        }
         var uid = String((row && row.visitor_uid) || '').trim();
         var email = String((row && row.visitor_email) || '').trim().toLowerCase();
-        var name = String((row && row.visitor_name) || '').trim().toLowerCase();
-        var brand = String((row && (row.brand_key || row.brand_name)) || '').trim().toLowerCase();
-        var ip = String((row && row.visitor_ip) || '').trim();
         var vid = parseInt((row && row.visitor_id) || 0, 10) || 0;
         if (uid) keys.push('uid:' + uid);
         if (vid > 0) keys.push('vid:' + vid);
         if (email && email.indexOf('@') !== -1) keys.push('em:' + email);
-        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') keys.push('ip:' + ip);
-        if (name && name !== 'visitor' && name !== 'unnamed customer' && name.length >= 3) {
-            keys.push('nm:' + name + '|' + brand);
-        }
         if (!keys.length) {
             keys.push('id:' + (parseInt((row && row.id) || 0, 10) || 0));
         }
@@ -802,6 +826,21 @@
         });
     }
 
+    function clearLocalUnread(conversationId) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id) return;
+        var changed = false;
+        lastConversations = (lastConversations || []).map(function (row) {
+            if (parseInt(row.id, 10) !== id) return row;
+            if (!(parseInt(row.unread, 10) > 0)) return row;
+            changed = true;
+            return Object.assign({}, row, { unread: 0 });
+        });
+        if (changed) {
+            paintConversationList(filterConversations(lastConversations));
+        }
+    }
+
     function syncConversationListStatus(c) {
         if (!c || !c.id) return;
         var id = parseInt(c.id, 10);
@@ -821,11 +860,19 @@
             if (c.visitor_id) next.visitor_id = c.visitor_id;
             if (c.last_message) next.last_message = c.last_message;
             if (c.last_message_at) next.last_message_at = c.last_message_at;
+            // Open chat is being viewed — don't keep stale unread badge
+            if (selectedId && id === selectedId) {
+                next.unread = 0;
+            } else if (c.unread !== undefined) {
+                next.unread = c.unread;
+            }
             return next;
         });
         if (!found) {
-            // Keep open chat visible, but collapse same visitor so closed+live don't blink.
-            lastConversations = [Object.assign({}, c)].concat(lastConversations || []);
+            // Keep open chat visible in the list
+            var seeded = Object.assign({}, c);
+            if (selectedId && id === selectedId) seeded.unread = 0;
+            lastConversations = [seeded].concat(lastConversations || []);
         }
         lastConversations = collapseInboxConversations(lastConversations);
         paintConversationList(filterConversations(lastConversations));
@@ -914,9 +961,10 @@
         } else if (currentTab === 'active') {
             html = section('My chats', mine.concat(other), 'Newest');
         } else {
-            html += section('Unassigned', unassigned, 'Newest');
-            html += section('My chats', mine, '');
-            html += section('Assigned', other, '');
+            // All: every status, in clear groups
+            html += section('Unassigned', unassigned, 'Waiting');
+            html += section('My chats', mine, 'Active');
+            html += section('Assigned', other, 'Active');
             html += section('Closed', closed, '');
         }
         if (!html) {
@@ -984,7 +1032,14 @@
         }
 
         var orderKey = currentTab + ':' + inboxOrderKey(conversations);
-        if (listEl.dataset.inboxOrder === orderKey && listEl.querySelector('.lc-chat-item[data-id]')) {
+        var missingRow = conversations.some(function (c) {
+            return !listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
+        });
+        var domCount = listEl.querySelectorAll('.lc-chat-item[data-id]').length;
+        if (listEl.dataset.inboxOrder === orderKey
+            && !missingRow
+            && domCount === conversations.length
+            && listEl.querySelector('.lc-chat-item[data-id]')) {
             conversations.forEach(function (c) {
                 var el = listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
                 if (!el) {
@@ -1398,7 +1453,11 @@
     }
 
     function loadConversations() {
-        fetch(base + '/api/agent-conversations.php?tab=' + currentTab, { credentials: 'same-origin' })
+        var url = base + '/api/agent-conversations.php?tab=' + encodeURIComponent(currentTab);
+        if (inboxSearch.length >= 2) {
+            url += '&q=' + encodeURIComponent(inboxSearch);
+        }
+        fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
@@ -1443,7 +1502,17 @@
                     paintConversationList([]);
                     return;
                 }
-                lastConversations = collapseInboxConversations(data.conversations || []);
+                var rawList = data.conversations || [];
+                // Always one row per IP (even while searching name/phone)
+                lastConversations = collapseInboxConversations(rawList);
+                // Open chat is being viewed — never keep unread/"N new" on that row
+                if (selectedId) {
+                    lastConversations = lastConversations.map(function (row) {
+                        if (parseInt(row.id, 10) !== selectedId) return row;
+                        if (!(parseInt(row.unread, 10) > 0)) return row;
+                        return Object.assign({}, row, { unread: 0 });
+                    });
+                }
                 paintConversationList(filterConversations(lastConversations));
 
                 // Keep the open chat mounted even if inbox hides IP duplicates.
@@ -1645,6 +1714,70 @@
         if (!transfer) closeTransferPanel();
     }
 
+    function applyCannedReply(message) {
+        if (!replyInput || !message) return;
+        replyInput.value = message;
+        try {
+            replyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) {}
+        replyInput.focus();
+        var len = replyInput.value.length;
+        try {
+            replyInput.setSelectionRange(len, len);
+        } catch (e2) {}
+        closeCannedPanel();
+    }
+
+    function closeCannedPanel() {
+        if (cannedPanel) cannedPanel.hidden = true;
+        if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function openCannedPanel() {
+        if (!cannedPanel) return;
+        cannedPanel.hidden = false;
+        if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'true');
+        loadCanned();
+        renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
+        if (cannedSearchLive) {
+            setTimeout(function () { cannedSearchLive.focus(); }, 0);
+        }
+    }
+
+    function toggleCannedPanel() {
+        if (!cannedPanel) return;
+        if (cannedPanel.hidden) openCannedPanel();
+        else closeCannedPanel();
+    }
+
+    function renderCannedListLive(query) {
+        if (!cannedListLive) return;
+        var q = String(query || '').trim().toLowerCase();
+        var html = '';
+        var shown = 0;
+        cannedRepliesCache.forEach(function (r, idx) {
+            if (!r) return;
+            if (q) {
+                var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
+                if (hay.indexOf(q) === -1) return;
+            }
+            shown += 1;
+            var title = esc(r.title || 'Reply');
+            var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 90));
+            html += '<button type="button" class="lc-chat-canned-item" role="option" data-idx="' + idx + '">'
+                + '<strong>' + title + '</strong>'
+                + '<span>' + preview + (String(r.message || '').length > 90 ? '…' : '') + '</span>'
+                + '</button>';
+        });
+        if (!shown) {
+            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">'
+                + (cannedRepliesCache.length ? 'No matching replies' : 'No canned replies yet — add some in Canned Replies')
+                + '</div>';
+            return;
+        }
+        cannedListLive.innerHTML = html;
+    }
+
     function loadCanned() {
         if (cannedLoaded) return;
         fetch(base + '/api/canned-list.php', { credentials: 'same-origin' })
@@ -1652,12 +1785,21 @@
             .then(function (data) {
                 if (!data.success) return;
                 cannedLoaded = true;
-                data.replies.forEach(function (r) {
-                    var opt = document.createElement('option');
-                    opt.value = r.message;
-                    opt.textContent = r.title;
-                    cannedSelect.appendChild(opt);
-                });
+                cannedRepliesCache = data.replies || [];
+                if (cannedSelect) {
+                    while (cannedSelect.options.length > 1) {
+                        cannedSelect.remove(1);
+                    }
+                    cannedRepliesCache.forEach(function (r) {
+                        var opt = document.createElement('option');
+                        opt.value = r.message;
+                        opt.textContent = r.title;
+                        cannedSelect.appendChild(opt);
+                    });
+                }
+                if (cannedPanel && !cannedPanel.hidden) {
+                    renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
+                }
             });
     }
 
@@ -1718,11 +1860,25 @@
         }
         loadCanned();
         loadPageJourney(true);
+        clearLocalUnread(id);
+        // Seed Returning/New from inbox row immediately (before poll returns)
+        if (lastConversations && lastConversations.length) {
+            for (var si = 0; si < lastConversations.length; si++) {
+                if ((parseInt(lastConversations[si].id, 10) || 0) === (parseInt(id, 10) || 0)) {
+                    setVisitorKindBadge(lastConversations[si]);
+                    break;
+                }
+            }
+        }
         pollMessages();
         updateHeaderAvatar(visitorNameEl.textContent);
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
         });
+        // Re-paint list so New / N new badges drop for the open chat
+        if (lastConversations && lastConversations.length) {
+            paintConversationList(filterConversations(lastConversations));
+        }
     }
 
     function updateBlockIpMenu() {
@@ -1947,6 +2103,7 @@
                 var isFirstLoad = isFirstLoadReq;
                 if (c) {
                     syncConversationListStatus(c);
+                    clearLocalUnread(conversationId);
                 }
 
                 function paintFirstLoadFrame() {
@@ -1977,15 +2134,28 @@
                     var added = 0;
                     var playSound = false;
                     (data.messages || []).forEach(function (m) {
-                        if (m.id > lastMsgId) {
-                            messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
-                            lastMsgId = m.id;
-                            added += 1;
-                            // Incoming only - not the agent's own replies echoing back
-                            if (m.sender_type === 'visitor' || m.sender_type === 'system') {
-                                if (m.sender_type === 'visitor') {
-                                    playSound = true;
+                        var mid = parseInt(m.id, 10) || 0;
+                        if (mid < 1) return;
+                        if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
+                            if (mid > lastMsgId) lastMsgId = mid;
+                            return;
+                        }
+                        if (mid > lastMsgId || (m.sender_type === 'agent' && messagesEl.querySelector('.lc-msg[data-id^="temp_"]'))) {
+                            // Reuse optimistic temp for our own agent reply instead of duplicating
+                            if (m.sender_type === 'agent') {
+                                appendLiveMessage(m);
+                            } else {
+                                messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
+                                if (mid > lastMsgId) lastMsgId = mid;
+                                added += 1;
+                                if (m.sender_type === 'visitor' || m.sender_type === 'system') {
+                                    if (m.sender_type === 'visitor') {
+                                        playSound = true;
+                                    }
                                 }
+                            }
+                            if (m.sender_type === 'agent' && mid > lastMsgId) {
+                                lastMsgId = mid;
                             }
                         }
                     });
@@ -2064,7 +2234,10 @@
             });
     }
 
+    var agentSendInFlight = false;
+
     function sendReply() {
+        if (agentSendInFlight) return;
         if (pendingAttachments.length) {
             sendPendingAttachment();
             return;
@@ -2073,19 +2246,81 @@
         if (!msg || !selectedId) return;
         stopOwnTyping();
         replyInput.value = '';
+        autoResizeReplyInput();
+
+        var sendConvId = selectedId;
+        var tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        agentSendInFlight = true;
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (sendBtn) sendBtn.disabled = true;
+
+        // Optimistic paint — don't wait for HTTP/poll
+        if (messagesEl) {
+            messagesEl.insertAdjacentHTML('beforeend', renderMessage({
+                id: tempId,
+                sender_type: 'agent',
+                message: msg,
+                created_at: new Date().toISOString(),
+                delivery_status: 'sent'
+            }));
+            if (window.LCTime) window.LCTime.scan(messagesEl);
+            stickToBottom = true;
+            scrollMessagesToBottom(true);
+        }
+
         fetch(base + '/api/agent-send.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId, message: msg })
+            body: JSON.stringify({ conversation_id: sendConvId, message: msg })
         }).then(function (r) { return r.json(); }).then(function (data) {
+            if (selectedId !== sendConvId) return;
+            var tempEl = messagesEl ? messagesEl.querySelector('[data-id="' + tempId + '"]') : null;
             if (data.success) {
-                stickToBottom = true;
-                pollMessages();
+                var mid = parseInt(data.message_id, 10) || 0;
+                if (mid > 0 && messagesEl) {
+                    // Drop any duplicate bubble already painted by WS with this id
+                    var existing = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
+                    if (existing && tempEl && existing !== tempEl) {
+                        tempEl.remove();
+                        tempEl = null;
+                    }
+                }
+                if (tempEl && mid > 0) {
+                    tempEl.setAttribute('data-id', String(mid));
+                    if (mid > lastMsgId) lastMsgId = mid;
+                } else if (!tempEl && mid > 0) {
+                    if (mid > lastMsgId) lastMsgId = mid;
+                } else if (!tempEl) {
+                    pollMessages();
+                }
+                loadConversations();
                 return;
             }
+            if (tempEl) tempEl.remove();
             alert(data.error || 'Unable to send message');
+        }).catch(function () {
+            var tempEl = messagesEl ? messagesEl.querySelector('[data-id="' + tempId + '"]') : null;
+            if (tempEl) tempEl.remove();
+            alert('Unable to send message');
+        }).finally(function () {
+            agentSendInFlight = false;
+            if (sendBtn && selectedId === sendConvId) {
+                var canCompose = replyInput && !replyInput.disabled;
+                // Re-enable only if chat still accepts replies
+                if (replyInput && !replyInput.disabled) {
+                    sendBtn.disabled = false;
+                }
+            }
         });
+    }
+
+    function autoResizeReplyInput() {
+        if (!replyInput) return;
+        try {
+            replyInput.style.height = 'auto';
+            replyInput.style.height = Math.min(replyInput.scrollHeight, 140) + 'px';
+        } catch (e) {}
     }
 
     document.querySelectorAll('.lc-chat-tab').forEach(function (tab) {
@@ -2122,9 +2357,15 @@
         }
     });
 
-    document.getElementById('lc-send-reply').addEventListener('click', sendReply);
+    document.getElementById('lc-send-reply').addEventListener('click', function (e) {
+        e.preventDefault();
+        sendReply();
+    });
     replyInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        if (e.repeat) return;
+        e.preventDefault();
+        sendReply();
     });
     replyInput.addEventListener('input', onAgentComposeActivity);
     replyInput.addEventListener('paste', function () {
@@ -2447,13 +2688,52 @@
     if (cannedSelect) {
         cannedSelect.addEventListener('change', function () {
             if (cannedSelect.value) {
-                replyInput.value = cannedSelect.value;
+                applyCannedReply(cannedSelect.value);
                 cannedSelect.value = '';
-                closeMoreMenu();
-                replyInput.focus();
             }
         });
     }
+
+    if (cannedToggle) {
+        cannedToggle.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleCannedPanel();
+        });
+    }
+
+    if (cannedSearchLive) {
+        cannedSearchLive.addEventListener('input', function () {
+            renderCannedListLive(cannedSearchLive.value);
+        });
+        cannedSearchLive.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCannedPanel();
+                if (replyInput) replyInput.focus();
+            }
+        });
+    }
+
+    if (cannedListLive) {
+        cannedListLive.addEventListener('click', function (e) {
+            var btn = e.target.closest('.lc-chat-canned-item');
+            if (!btn) return;
+            e.preventDefault();
+            var idx = parseInt(btn.getAttribute('data-idx'), 10);
+            var row = cannedRepliesCache[idx];
+            if (row && row.message) {
+                applyCannedReply(row.message);
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!cannedPanel || cannedPanel.hidden) return;
+        var bar = document.querySelector('.lc-chat-canned-bar');
+        if (bar && bar.contains(e.target)) return;
+        closeCannedPanel();
+    });
 
     if (moreBtn) {
         moreBtn.addEventListener('click', function (e) {
@@ -2526,10 +2806,22 @@
     });
 
     var inboxSearchEl = document.getElementById('lc-inbox-search');
+    var inboxSearchTimer = null;
     if (inboxSearchEl) {
         inboxSearchEl.addEventListener('input', function () {
             inboxSearch = inboxSearchEl.value.trim();
-            paintConversationList(filterConversations(lastConversations));
+            if (inboxSearchTimer) {
+                clearTimeout(inboxSearchTimer);
+            }
+            inboxSearchTimer = setTimeout(function () {
+                // 2+ chars → server search (all statuses, name/email/phone/ticket)
+                // empty → reload normal inbox for current tab
+                if (inboxSearch.length >= 2 || inboxSearch.length === 0) {
+                    loadConversations();
+                } else {
+                    paintConversationList(filterConversations(lastConversations));
+                }
+            }, 280);
         });
     }
 
@@ -2808,95 +3100,197 @@
         }, true);
     }
 
-    function resetPollTimers(wsActive) {
-        var cfg = window.LC_REALTIME || {};
-        var interval = wsActive ? (parseInt(cfg.backupPollMs, 10) || Math.max(pollMs * 10, 15000)) : pollMs;
+    function resetPollTimers() {
+        // No message polling — WebSocket only. Keep a slow inbox refresh so
+        // inactivity warn/close still runs via agent-conversations sweep.
+        // Also refresh receipts for the open chat (backup if WS receipt event is missed).
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
-        pollTimer = setInterval(pollMessages, interval);
-        listTimer = setInterval(loadConversations, interval);
+        pollTimer = null;
+        listTimer = setInterval(function () {
+            loadConversations();
+            if (selectedId) {
+                pollMessages();
+            }
+        }, 30000);
+        // Fast receipt ticks while a chat is open
+        if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
+        window.__lcReceiptTimer = setInterval(function () {
+            if (selectedId) pollMessages();
+        }, 2500);
+    }
+
+    function appendLiveMessage(m) {
+        if (!m || !m.id || !messagesEl) return;
+        var mid = parseInt(m.id, 10) || 0;
+        if (mid < 1) return;
+        if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
+            if (mid > lastMsgId) lastMsgId = mid;
+            return;
+        }
+        // Replace optimistic temp bubble for our own agent reply
+        if (m.sender_type === 'agent' && m.message) {
+            var temps = messagesEl.querySelectorAll('.lc-msg[data-id^="temp_"]');
+            var matched = null;
+            for (var i = 0; i < temps.length; i++) {
+                var body = temps[i].querySelector('.lc-msg-body');
+                var text = body ? (body.textContent || '').trim() : '';
+                if (text === String(m.message).trim()) {
+                    matched = temps[i];
+                    break;
+                }
+            }
+            // If exact text match missing, reuse the newest temp agent bubble
+            if (!matched && temps.length) {
+                matched = temps[temps.length - 1];
+            }
+            if (matched) {
+                matched.setAttribute('data-id', String(mid));
+                if (m.created_at && window.LCTime) {
+                    var timeEl = matched.querySelector('.lc-time[data-timestamp], [data-timestamp]');
+                    if (timeEl) {
+                        window.LCTime.mount(timeEl, m.created_at, 'relative');
+                    }
+                }
+                if (m.delivery_status || m.is_read) {
+                    var ticks = matched.querySelector('.lc-msg-ticks');
+                    if (ticks && typeof msgTicksHtml === 'function') {
+                        var status = m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent'));
+                        var wrap = document.createElement('div');
+                        wrap.innerHTML = msgTicksHtml(status);
+                        if (wrap.firstChild) ticks.replaceWith(wrap.firstChild);
+                    }
+                }
+                if (mid > lastMsgId) lastMsgId = mid;
+                return;
+            }
+        }
+        messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
+        if (mid > lastMsgId) lastMsgId = mid;
+        if (window.LCTime) window.LCTime.scan(messagesEl);
+        scrollMessagesToBottom(false);
+        if (m.sender_type === 'visitor') {
+            playIncomingSound();
+            setPeerTypingVisible(false);
+        }
     }
 
     function initAgentRealtime() {
         var cfg = window.LC_REALTIME || {};
         if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) return;
 
-        fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data || !data.success || !data.token) return;
-                if (realtimeClient && realtimeClient.disconnect) {
-                    realtimeClient.disconnect();
+        function fetchAgentToken() {
+            return fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.realtime) {
+                        window.LC_REALTIME = data.realtime;
+                        cfg = data.realtime;
+                    }
+                    return (data && data.success && data.token) ? data.token : '';
+                })
+                .catch(function () { return ''; });
+        }
+
+        fetchAgentToken().then(function (token) {
+            if (!token) return;
+            if (realtimeClient && realtimeClient.disconnect) {
+                realtimeClient.disconnect();
+            }
+            realtimeClient = window.LCRealtime.create({
+                mode: 'ws',
+                wsUrl: cfg.wsUrl || window.LC_REALTIME.wsUrl,
+                token: token,
+                getToken: fetchAgentToken,
+                fallbackPoll: function () {
+                    if (selectedId) pollMessages();
+                    loadConversations();
                 }
-                realtimeClient = window.LCRealtime.create({
-                    mode: 'ws',
-                    wsUrl: cfg.wsUrl,
-                    token: data.token,
-                    fallbackPoll: function () {
-                        pollMessages();
-                        loadConversations();
-                    }
-                });
-                realtimeClient.on('connected', function () {
-                    resetPollTimers(true);
-                });
-                realtimeClient.on('disconnected', function () {
-                    resetPollTimers(false);
-                });
-                realtimeClient.on('message.new', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (selectedId && cid === selectedId) {
+            });
+            realtimeClient.on('connected', function () {
+                resetPollTimers();
+                if (selectedId) pollMessages();
+                loadConversations();
+            });
+            realtimeClient.on('disconnected', function () {
+                resetPollTimers();
+                if (selectedId) pollMessages();
+            });
+            realtimeClient.on('message.new', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (selectedId && cid === selectedId) {
+                    if (payload && payload.message && payload.message.id) {
+                        appendLiveMessage(payload.message);
+                    } else {
                         pollMessages();
                     }
-                    loadConversations();
-                });
-                realtimeClient.on('inbox.changed', function () {
-                    loadConversations();
-                });
-                realtimeClient.on('typing', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (!selectedId || cid !== selectedId) return;
-                    if ((payload.role || '') === 'visitor') {
-                        setPeerTypingVisible(!!payload.typing, payload.name || 'Visitor', payload.preview || '');
+                }
+                loadConversations();
+            });
+            realtimeClient.on('inbox.changed', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (selectedId && cid === selectedId) {
+                    if (payload && payload.message && payload.message.id) {
+                        appendLiveMessage(payload.message);
+                    } else {
+                        pollMessages();
                     }
-                });
-                realtimeClient.on('conversation.updated', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (selectedId && cid === selectedId) {
-                        if (payload && payload.status === 'closed') {
-                            syncConversationListStatus({ id: cid, status: 'closed' });
-                            if (replyInput) {
-                                replyInput.disabled = true;
-                                replyInput.value = '';
-                                replyInput.placeholder = 'Chat closed - visitor ended this conversation';
-                            }
-                            var sendBtn = document.getElementById('lc-send-reply');
-                            if (sendBtn) sendBtn.disabled = true;
-                            setUnassignedMode(false);
-                            setPeerTypingVisible(false);
-                            stopOwnTyping();
-                        } else if (payload && payload.status === 'waiting') {
-                            syncConversationListStatus({ id: cid, status: 'waiting', agent_id: 0 });
-                            if (replyInput) {
-                                replyInput.disabled = true;
-                                replyInput.placeholder = 'Assign to yourself to reply';
-                            }
-                            var sendWaitingBtn = document.getElementById('lc-send-reply');
-                            if (sendWaitingBtn) sendWaitingBtn.disabled = true;
-                            setUnassignedMode(true);
+                }
+                loadConversations();
+            });
+            realtimeClient.on('typing', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (!selectedId || cid !== selectedId) return;
+                if ((payload.role || '') === 'visitor') {
+                    setPeerTypingVisible(!!payload.typing, payload.name || 'Visitor', payload.preview || '');
+                }
+            });
+            realtimeClient.on('message.receipts', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (!selectedId || cid !== selectedId) return;
+                if (payload && payload.for && payload.for !== 'agent') return;
+                if (payload && payload.receipts) {
+                    applyReceipts(payload.receipts);
+                } else {
+                    pollMessages();
+                }
+            });
+            realtimeClient.on('conversation.updated', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (selectedId && cid === selectedId) {
+                    if (payload && payload.status === 'closed') {
+                        syncConversationListStatus({ id: cid, status: 'closed' });
+                        if (replyInput) {
+                            replyInput.disabled = true;
+                            replyInput.value = '';
+                            replyInput.placeholder = 'Chat closed - visitor ended this conversation';
                         }
-                        pollMessages();
+                        var sendBtn = document.getElementById('lc-send-reply');
+                        if (sendBtn) sendBtn.disabled = true;
+                        setUnassignedMode(false);
+                        setPeerTypingVisible(false);
+                        stopOwnTyping();
+                    } else if (payload && payload.status === 'waiting') {
+                        syncConversationListStatus({ id: cid, status: 'waiting', agent_id: 0 });
+                        if (replyInput) {
+                            replyInput.disabled = true;
+                            replyInput.placeholder = 'Assign to yourself to reply';
+                        }
+                        var sendWaitingBtn = document.getElementById('lc-send-reply');
+                        if (sendWaitingBtn) sendWaitingBtn.disabled = true;
+                        setUnassignedMode(true);
                     }
-                    loadConversations();
-                });
-                realtimeClient.connect();
-            })
-            .catch(function () { /* poll fallback stays active */ });
+                    pollMessages();
+                }
+                loadConversations();
+            });
+            realtimeClient.connect();
+        });
     }
 
     bindDetailsAccordions();
     loadConversations();
-    resetPollTimers(false);
+    resetPollTimers();
     initAgentRealtime();
 
     if (messagesEl) {

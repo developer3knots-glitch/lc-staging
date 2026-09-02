@@ -99,8 +99,11 @@ try {
     }
 
     // Any visitor poll = delivered + read so admin agent ticks turn blue
-    lc_mark_messages_delivered($conversationId, 'agent');
-    lc_mark_messages_read($conversationId, 'agent');
+    $receiptChanged = lc_mark_messages_delivered($conversationId, 'agent')
+        + lc_mark_messages_read($conversationId, 'agent');
+    if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
+        lc_realtime_publish_message_receipts($conversationId, 'agent');
+    }
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');
     $lastVisitorRead = false;
@@ -124,9 +127,14 @@ try {
         $agentName = '';
     }
 
+    $cursorStmt = $db->prepare('SELECT COALESCE(MAX(id), 0) FROM messages WHERE conversation_id = ?');
+    $cursorStmt->execute([$conversationId]);
+    $messageCursor = (int) $cursorStmt->fetchColumn();
+
     lc_json([
         'success' => true,
         'messages' => $messages,
+        'message_cursor' => $messageCursor,
         'receipts' => $receipts,
         'status' => $conv['status'],
         'agent_id' => $agentId,

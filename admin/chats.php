@@ -20,7 +20,7 @@ require __DIR__ . '/includes/header.php';
             </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
-                <input type="search" id="lc-inbox-search" placeholder="Search name, email, phone, ticket..." autocomplete="off" aria-label="Search conversations">
+                <input type="search" id="lc-inbox-search" placeholder="Search name, email, phone, ticket (incl. closed)..." autocomplete="off" aria-label="Search conversations">
             </div>
             <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
                 <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
@@ -66,10 +66,6 @@ require __DIR__ . '/includes/header.php';
                                 <i class="ti ti-dots-vertical"></i>
                             </button>
                             <div class="lc-chat-more-menu" id="lc-chat-more-menu" role="menu" hidden>
-                                <div class="lc-chat-more-canned" role="none">
-                                    <span class="lc-chat-more-canned-label"><i class="ti ti-bolt"></i> Canned reply</span>
-                                    <select id="lc-canned-select" class="lc-status-select lc-canned-select-pro" aria-label="Canned reply"><option value="">Select a reply...</option></select>
-                                </div>
                                 <div class="lc-transfer-wrap" id="lc-transfer-wrap" style="display:none" role="none">
                                     <button type="button" class="lc-chat-more-item" id="lc-transfer-chat" role="menuitem" aria-expanded="false">
                                         <i class="ti ti-arrows-exchange"></i> Transfer
@@ -162,6 +158,21 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
+                    <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
+                        <div class="lc-chat-canned-bar">
+                            <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
+                                <i class="ti ti-bolt"></i>
+                                <span>Canned replies</span>
+                                <i class="ti ti-chevron-up lc-chat-canned-chevron" aria-hidden="true"></i>
+                            </button>
+                            <div class="lc-chat-canned-panel" id="lc-canned-panel" hidden>
+                                <input type="search" class="lc-chat-canned-search" id="lc-canned-search-live" placeholder="Search replies..." autocomplete="off" aria-label="Search canned replies">
+                                <div class="lc-chat-canned-list" id="lc-canned-list-live" role="listbox" aria-label="Canned replies"></div>
+                                <select id="lc-canned-select" class="lc-canned-select-hidden" aria-hidden="true" tabindex="-1"><option value="">Select a reply...</option></select>
+                            </div>
+                        </div>
+                        <a class="lc-chat-canned-manage" href="<?= lc_sanitize(lc_admin_url('canned')) ?>" title="Manage canned replies"><i class="ti ti-settings"></i></a>
+                    </div>
                     <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                     <div class="lc-chat-compose-inner">
                         <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>

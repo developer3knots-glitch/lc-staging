@@ -49,12 +49,14 @@ function lc_add_inactivity_system_message(int $conversationId, string $message):
     if ($conversationId < 1 || $message === '') {
         return;
     }
-    if (function_exists('lc_add_system_message')) {
-        lc_add_system_message($conversationId, $message);
-        return;
-    }
+    // IMPORTANT: do not use lc_add_system_message() — it calls lc_touch_conversation()
+    // and would reset the idle timer forever after each warning.
     lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)')
         ->execute([$conversationId, 'system', $message]);
+    $messageId = (int) lc_db()->lastInsertId();
+    if ($messageId > 0 && function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, $messageId);
+    }
 }
 
 /**
@@ -231,6 +233,12 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
                     $conversationId,
                     'Are you still there? This chat will close soon due to inactivity.'
                 );
+                if (function_exists('lc_realtime_publish_conversation_event')) {
+                    lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                        'status' => $status,
+                        'inactivity_warn' => true,
+                    ]);
+                }
                 return 'warned';
             }
         }

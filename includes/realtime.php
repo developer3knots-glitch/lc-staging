@@ -119,7 +119,8 @@ function lc_realtime_client_config(?int $brandId = null): array
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
         'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
-        'backupPollMs' => max(15000, (defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500) * 10),
+        // WS connected = almost no polling (safety net only). Disconnect resumes fast poll.
+        'backupPollMs' => 60000,
     ];
 }
 
@@ -220,13 +221,23 @@ function lc_realtime_agent_token(array $agent): string
     ]);
 }
 
+function lc_realtime_channel_visitor(string $visitorUid): string
+{
+    return 'visitor:' . substr(preg_replace('/[^a-zA-Z0-9_-]/', '', $visitorUid), 0, 64);
+}
+
 function lc_realtime_visitor_token(string $visitorUid, int $conversationId): string
 {
+    $channels = [lc_realtime_channel_conversation($conversationId)];
+    if ($visitorUid !== '') {
+        $channels[] = lc_realtime_channel_visitor($visitorUid);
+    }
+
     return lc_realtime_issue_token([
         'role' => 'visitor',
         'visitor_uid' => $visitorUid,
         'conversation_id' => $conversationId,
-        'channels' => [lc_realtime_channel_conversation($conversationId)],
+        'channels' => array_values(array_unique($channels)),
     ], 7200);
 }
 
@@ -245,7 +256,21 @@ function lc_realtime_publish(string $channel, string $event, array $data = []): 
         'event' => $event,
         'data' => $data,
         'ts' => time(),
-    ], JSON_UNESCAPED_SLASHES);
+    ], JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0));
+    if ($payload === false) {
+        // Retry without nested message object (avatar/utf8 can break encode)
+        $fallbackData = $data;
+        if (isset($fallbackData['message']) && is_array($fallbackData['message'])) {
+            $fallbackData['message_id'] = (int) ($fallbackData['message']['id'] ?? ($fallbackData['message_id'] ?? 0));
+            unset($fallbackData['message']);
+        }
+        $payload = json_encode([
+            'channel' => $channel,
+            'event' => $event,
+            'data' => $fallbackData,
+            'ts' => time(),
+        ], JSON_UNESCAPED_SLASHES);
+    }
     if ($payload === false) {
         return;
     }
@@ -260,14 +285,21 @@ function lc_realtime_publish(string $channel, string $event, array $data = []): 
         if ($ch === false) {
             return;
         }
-        curl_setopt_array($ch, [
+        $curlOpts = [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $payload,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 2,
-            CURLOPT_CONNECTTIMEOUT => 1,
-        ]);
+            CURLOPT_NOSIGNAL => 1,
+        ];
+        if (defined('CURLOPT_TIMEOUT_MS')) {
+            $curlOpts[CURLOPT_TIMEOUT_MS] = 800;
+            $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = 400;
+        } else {
+            $curlOpts[CURLOPT_TIMEOUT] = 1;
+            $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
+        }
+        curl_setopt_array($ch, $curlOpts);
         curl_exec($ch);
         curl_close($ch);
 
@@ -292,19 +324,49 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         return;
     }
     $payload = array_merge(['conversation_id' => $conversationId], $data);
+    $conv = lc_get_conversation($conversationId);
+
+    // Visitor-critical channels first (widget receive path)
     lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload);
 
-    $conv = lc_get_conversation($conversationId);
+    $brandId = (int) ($conv['brand_id'] ?? 0);
+    $agentId = (int) ($conv['agent_id'] ?? 0);
+    $fanoutEvents = ['message.new', 'typing', 'message.receipts'];
+
+    if ($conv && in_array($event, $fanoutEvents, true)) {
+        $visitorId = (int) ($conv['visitor_id'] ?? 0);
+        if ($visitorId > 0 && $event !== 'message.receipts') {
+            try {
+                $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                $vStmt->execute([$visitorId]);
+                $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+                if ($visitorUid !== '') {
+                    lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload);
+                }
+            } catch (Throwable $e) {
+            }
+        }
+    }
+
     if (!$conv) {
         return;
     }
-    $brandId = (int) ($conv['brand_id'] ?? 0);
+
     if ($brandId > 0) {
-        lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload);
+        if (in_array($event, $fanoutEvents, true)) {
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload);
+        }
+        if ($event !== 'typing' && $event !== 'message.receipts') {
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload);
+        }
     }
-    $agentId = (int) ($conv['agent_id'] ?? 0);
     if ($agentId > 0) {
-        lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload);
+        if (in_array($event, $fanoutEvents, true)) {
+            lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload);
+        }
+        if ($event !== 'typing' && $event !== 'message.receipts') {
+            lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload);
+        }
     }
 }
 

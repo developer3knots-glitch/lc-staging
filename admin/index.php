@@ -15,15 +15,8 @@ if (function_exists('lc_sweep_inactive_conversations')) {
 [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
 $waiting = lc_waiting_count($agentBrandId, $accountId);
-
-$stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'" . $brandSql);
-$stmt->execute($brandParams);
-$active = (int) $stmt->fetchColumn();
-
-$stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE()" . $brandSql);
-$stmt->execute($brandParams);
-$closedToday = (int) $stmt->fetchColumn();
-
+$active = lc_active_count($agentBrandId, $accountId);
+$closedToday = lc_closed_today_count($agentBrandId, $accountId);
 $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
 $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId);
 $weekPreviousTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId, null, 7);
@@ -99,10 +92,9 @@ $stmt = $db->prepare($recentSql);
 $stmt->execute(array_merge([$agentId], $brandParams));
 $recent = $stmt->fetchAll();
 if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
-    $recent = array_slice(lc_dedupe_inbox_conversations_by_ip($recent), 0, 10);
-} else {
-    $recent = array_slice($recent, 0, 10);
+    $recent = lc_dedupe_inbox_conversations_by_ip($recent);
 }
+$recent = array_slice($recent, 0, 20);
 
 $hour = (int) date('G');
 if ($hour < 12) {
@@ -131,7 +123,7 @@ if (lc_avatar_is_upload($agent['avatar'] ?? null)) {
         $agentAvatarUpload = (string) $agent['avatar'];
     }
 }
-$weekTotal = (int) array_sum(array_column($activityChart, 'count'));
+$weekTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId);
 $weekDelta = $weekTotal - (int) $weekPreviousTotal;
 $agentFirst = trim(explode(' ', (string) ($agent['name'] ?? 'there'))[0]);
 require __DIR__ . '/includes/header.php';

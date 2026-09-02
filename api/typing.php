@@ -47,9 +47,12 @@ try {
             lc_json(['success' => true, 'typing' => false]);
         }
 
-        // Light rate limit: skip spam; still update every valid heartbeat
-        lc_set_typing($conversationId, 'visitor', $isTyping);
-        lc_json(['success' => true, 'typing' => $isTyping]);
+        $preview = '';
+        if ($isTyping) {
+            $preview = lc_sanitize_typing_preview((string) ($input['draft'] ?? $input['preview'] ?? ''));
+        }
+        lc_set_typing($conversationId, 'visitor', $isTyping, $preview);
+        lc_json(['success' => true, 'typing' => $isTyping, 'preview' => $preview]);
     }
 
     // Agent path

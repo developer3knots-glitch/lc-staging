@@ -7,12 +7,15 @@
 define('LC_APP_NAME', '3Knots LiveChat');
 define('LC_VERSION', '1.0.0');
 
+/** Canonical public base (no trailing slash). */
+define('LC_PUBLIC_BASE_URL', 'https://erp.3knotsdigital.com/WSlivechat');
+
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$host = $_SERVER['HTTP_HOST'] ?? 'erp.3knotsdigital.com';
 $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
 $basePath = preg_replace('#/(admin|api|widget|install|superadmin)(/.*)?$#', '', $scriptDir);
 $basePath = rtrim($basePath, '/');
-define('LC_BASE_URL', $protocol . '://' . $host . $basePath);
+define('LC_BASE_URL', LC_PUBLIC_BASE_URL);
 define('LC_BASE_PATH', dirname(__DIR__));
 
 define('LC_DB_HOST', 'localhost');
@@ -24,9 +27,9 @@ define('LC_DB_CHARSET', 'utf8mb4');
 define('LC_SESSION_NAME', 'livechat_session');
 define('LC_POLL_INTERVAL', 1500);
 
-// Realtime Option A: poll = HTTP (default). ws = VPS WebSocket server.
+// Realtime: poll (default) or ws via wss://erp.3knotsdigital.com/lc-realtime
 define('LC_REALTIME_MODE', 'poll');
-define('LC_REALTIME_WS_URL', 'wss://realtime.yourdomain.com');
+define('LC_REALTIME_WS_URL', 'wss://erp.3knotsdigital.com/lc-realtime');
 define('LC_REALTIME_PUBLISH_URL', 'http://127.0.0.1:6001/publish');
 define('LC_REALTIME_SECRET', 'change-me-long-random-secret');
 // Super Admin (seeded once when table is empty - change after first login)

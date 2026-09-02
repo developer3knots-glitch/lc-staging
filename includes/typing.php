@@ -99,7 +99,26 @@ function lc_set_typing(int $conversationId, string $role, bool $isTyping, string
             }
         }
         if (function_exists('lc_realtime_publish_typing')) {
-            lc_realtime_publish_typing($conversationId, 'visitor', $isTyping, $preview !== '' ? ['preview' => $preview] : []);
+            $extra = [];
+            if ($preview !== '') {
+                $extra['preview'] = $preview;
+            }
+            // Include visitor display name for agent UI
+            try {
+                $nameStmt = $db->prepare('
+                    SELECT COALESCE(NULLIF(TRIM(v.name), ""), "Visitor") AS visitor_name
+                    FROM conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    WHERE c.id = ?
+                    LIMIT 1
+                ');
+                $nameStmt->execute([$conversationId]);
+                $vname = (string) ($nameStmt->fetchColumn() ?: 'Visitor');
+                $extra['name'] = $vname;
+            } catch (Throwable $e) {
+                $extra['name'] = 'Visitor';
+            }
+            lc_realtime_publish_typing($conversationId, 'visitor', $isTyping, $extra);
         }
         return;
     }

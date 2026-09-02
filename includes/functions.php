@@ -15,6 +15,8 @@ require_once __DIR__ . '/typing.php';
 require_once __DIR__ . '/realtime.php';
 require_once __DIR__ . '/transcript.php';
 require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/inactivity.php';
+require_once __DIR__ . '/ip-resume.php';
 
 function lc_cors_headers(): void
 {
@@ -87,6 +89,12 @@ function lc_base_url(): string
 {
     static $resolved = null;
     if ($resolved !== null) {
+        return $resolved;
+    }
+
+    // Canonical production URL when set (https://erp.3knotsdigital.com/WSlivechat)
+    if (defined('LC_PUBLIC_BASE_URL') && LC_PUBLIC_BASE_URL !== '') {
+        $resolved = rtrim((string) LC_PUBLIC_BASE_URL, '/');
         return $resolved;
     }
 
@@ -640,6 +648,40 @@ function lc_reopen_recent_visitor_close(int $conversationId, int $visitorId): ?a
     return ['id' => $conversationId, 'status' => 'active'];
 }
 
+/**
+ * Visitor sends again after agent/auto close → same thread back to waiting queue.
+ */
+function lc_reopen_closed_for_visitor_continue(int $conversationId, int $visitorId): bool
+{
+    if ($conversationId < 1 || $visitorId < 1) {
+        return false;
+    }
+    try {
+        $db = lc_db();
+        $stmt = $db->prepare('SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
+        $stmt->execute([$conversationId, $visitorId]);
+        $row = $stmt->fetch();
+        if (!$row || ($row['status'] ?? '') !== 'closed') {
+            return false;
+        }
+        $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL WHERE id = ? AND status = 'closed'")
+            ->execute([$conversationId]);
+        if (function_exists('lc_add_system_message')) {
+            lc_add_system_message($conversationId, 'Visitor continued this conversation.');
+        }
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                'status' => 'waiting',
+                'agent_id' => 0,
+                'reopened_by' => 'visitor',
+            ]);
+        }
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
 {
     $stmt = lc_db()->prepare("
@@ -1167,19 +1209,61 @@ function lc_unread_count_for_agent(int $agentId): int
 
 function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 {
+    return lc_dashboard_conversation_count_by_ip('waiting', $brandId, $accountId);
+}
+
+/**
+ * Unique visitor IPs for a conversation status (not raw ticket rows).
+ */
+function lc_dashboard_conversation_count_by_ip(
+    string $status,
+    ?int $brandId = null,
+    ?int $accountId = null,
+    ?int $agentId = null,
+    bool $closedTodayOnly = false
+): int {
     lc_ensure_brands_schema();
+    $status = strtolower(trim($status));
+    if (!in_array($status, ['waiting', 'active', 'closed'], true)) {
+        return 0;
+    }
+
+    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
+    $sql = "SELECT COUNT(DISTINCT {$identity})
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE c.status = ?";
+    $params = [$status];
+
+    if ($closedTodayOnly && $status === 'closed') {
+        $sql .= ' AND DATE(c.closed_at) = CURDATE()';
+    }
     if ($brandId !== null) {
-        $stmt = lc_db()->prepare("SELECT COUNT(*) FROM conversations WHERE status = 'waiting' AND brand_id = ?");
-        $stmt->execute([$brandId]);
-        return (int) $stmt->fetchColumn();
+        $sql .= ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $sql .= ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
     }
-    if ($accountId !== null && $accountId > 0) {
-        $stmt = lc_db()->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'waiting' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)");
-        $stmt->execute([$accountId]);
-        return (int) $stmt->fetchColumn();
+    if ($agentId !== null && $agentId > 0) {
+        $sql .= ' AND c.agent_id = ?';
+        $params[] = $agentId;
     }
-    $stmt = lc_db()->query("SELECT COUNT(*) FROM conversations WHERE status = 'waiting'");
+
+    $stmt = lc_db()->prepare($sql);
+    $stmt->execute($params);
+
     return (int) $stmt->fetchColumn();
+}
+
+function lc_active_count(?int $brandId = null, ?int $accountId = null, ?int $agentId = null): int
+{
+    return lc_dashboard_conversation_count_by_ip('active', $brandId, $accountId, $agentId);
+}
+
+function lc_closed_today_count(?int $brandId = null, ?int $accountId = null, ?int $agentId = null): int
+{
+    return lc_dashboard_conversation_count_by_ip('closed', $brandId, $accountId, $agentId, true);
 }
 
 /**
@@ -1221,6 +1305,24 @@ function lc_dashboard_chart_y_scale(int $maxValue): array
 }
 
 /**
+ * Count unique visitor threads (public IP), not every ticket row.
+ * Loopback / empty IP falls back to visitor_id so local tests still count.
+ */
+function lc_dashboard_visitor_identity_sql(string $visitorAlias = 'v', string $conversationAlias = 'c'): string
+{
+    $v = $visitorAlias;
+    $c = $conversationAlias;
+
+    return "CASE
+        WHEN {$v}.ip_address IS NOT NULL
+         AND TRIM({$v}.ip_address) <> ''
+         AND {$v}.ip_address NOT IN ('0.0.0.0', '127.0.0.1', '::1')
+        THEN CONCAT('ip:', {$v}.ip_address)
+        ELSE CONCAT('vid:', {$c}.visitor_id)
+    END";
+}
+
+/**
  * @return array<int, array{label: string, full_label: string, count: int, iso: string}>
  */
 function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): array
@@ -1249,9 +1351,11 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
         $params[] = $agentId;
     }
 
+    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
     $stmt = lc_db()->prepare("
-        SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
+        SELECT DATE(c.started_at) AS day, COUNT(DISTINCT {$identity}) AS cnt
         FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
         WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
         GROUP BY DATE(c.started_at)
     ");
@@ -1279,17 +1383,16 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
 
 function lc_dashboard_activity_total(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): int
 {
-    $chart = lc_dashboard_activity_chart($brandId, $days, $accountId, $agentId, $endOffsetDays);
-    return (int) array_sum(array_column($chart, 'count'));
-}
+    lc_ensure_brands_schema();
+    $days = max(2, min(14, $days));
+    $endOffsetDays = max(0, min(60, $endOffsetDays));
+    $end = (new DateTimeImmutable('today', new DateTimeZone('UTC')))->modify('-' . $endOffsetDays . ' days');
+    $start = $end->modify('-' . ($days - 1) . ' days');
 
-/**
- * @return array{waiting: int, active: int, closed_today: int, started_today: int, unread: int}
- */
-function lc_dashboard_scope_counts(?int $brandId, ?int $accountId, ?int $agentId, int $viewerAgentId): array
-{
-    $db = lc_db();
-    $params = [];
+    $params = [
+        $start->format('Y-m-d') . ' 00:00:00',
+        $end->format('Y-m-d') . ' 23:59:59',
+    ];
     $brandFilter = '';
     if ($brandId !== null) {
         $brandFilter = ' AND c.brand_id = ?';
@@ -1299,31 +1402,34 @@ function lc_dashboard_scope_counts(?int $brandId, ?int $accountId, ?int $agentId
         $params[] = $accountId;
     }
     $agentFilter = '';
-    $agentParams = [];
     if ($agentId !== null && $agentId > 0) {
         $agentFilter = ' AND c.agent_id = ?';
-        $agentParams[] = $agentId;
+        $params[] = $agentId;
     }
 
-    $waiting = lc_waiting_count($brandId, $accountId);
+    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
+    $stmt = lc_db()->prepare("
+        SELECT COUNT(DISTINCT {$identity})
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
+    ");
+    $stmt->execute($params);
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'{$brandFilter}{$agentFilter}");
-    $stmt->execute(array_merge($params, $agentParams));
-    $active = (int) $stmt->fetchColumn();
+    return (int) $stmt->fetchColumn();
+}
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE(){$brandFilter}{$agentFilter}");
-    $stmt->execute(array_merge($params, $agentParams));
-    $closedToday = (int) $stmt->fetchColumn();
-
-    $startedToday = lc_dashboard_started_today($brandId, $accountId, $agentId);
-    $unread = lc_unread_count_for_agent($viewerAgentId);
-
+/**
+ * @return array{waiting: int, active: int, closed_today: int, started_today: int, unread: int}
+ */
+function lc_dashboard_scope_counts(?int $brandId, ?int $accountId, ?int $agentId, int $viewerAgentId): array
+{
     return [
-        'waiting' => $waiting,
-        'active' => $active,
-        'closed_today' => $closedToday,
-        'started_today' => $startedToday,
-        'unread' => $unread,
+        'waiting' => lc_waiting_count($brandId, $accountId),
+        'active' => lc_active_count($brandId, $accountId, $agentId),
+        'closed_today' => lc_closed_today_count($brandId, $accountId, $agentId),
+        'started_today' => lc_dashboard_started_today($brandId, $accountId, $agentId),
+        'unread' => lc_unread_count_for_agent($viewerAgentId),
     ];
 }
 
@@ -1376,7 +1482,11 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int 
 {
     lc_ensure_brands_schema();
     $params = [];
-    $sql = 'SELECT COUNT(*) FROM conversations c WHERE DATE(c.started_at) = CURDATE()';
+    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
+    $sql = "SELECT COUNT(DISTINCT {$identity})
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE DATE(c.started_at) = CURDATE()";
     if ($brandId !== null) {
         $sql .= ' AND c.brand_id = ?';
         $params[] = $brandId;
@@ -1387,9 +1497,6 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int 
     if ($agentId !== null && $agentId > 0) {
         $sql .= ' AND c.agent_id = ?';
         $params[] = $agentId;
-    }
-    if ($params === []) {
-        return (int) lc_db()->query("SELECT COUNT(*) FROM conversations WHERE DATE(started_at) = CURDATE()")->fetchColumn();
     }
     $stmt = lc_db()->prepare($sql);
     $stmt->execute($params);
@@ -1436,34 +1543,39 @@ function lc_message_delivery_status(array $row): string
 /**
  * Mark peer messages as delivered (recipient received them).
  * $peerSenderType = who sent the messages being marked (visitor|agent)
+ * @return int rows updated
  */
-function lc_mark_messages_delivered(int $conversationId, string $peerSenderType): void
+function lc_mark_messages_delivered(int $conversationId, string $peerSenderType): int
 {
     if ($conversationId < 1 || !in_array($peerSenderType, ['visitor', 'agent'], true)) {
-        return;
+        return 0;
     }
     lc_ensure_message_receipts_schema();
     try {
-        lc_db()->prepare('
+        $stmt = lc_db()->prepare('
             UPDATE messages
             SET delivered_at = COALESCE(delivered_at, NOW())
             WHERE conversation_id = ? AND sender_type = ? AND delivered_at IS NULL
-        ')->execute([$conversationId, $peerSenderType]);
+        ');
+        $stmt->execute([$conversationId, $peerSenderType]);
+        return (int) $stmt->rowCount();
     } catch (Throwable $e) {
+        return 0;
     }
 }
 
 /**
  * Mark peer messages as read (and delivered). Used when conversation is open.
+ * @return int rows updated
  */
-function lc_mark_messages_read(int $conversationId, string $peerSenderType): void
+function lc_mark_messages_read(int $conversationId, string $peerSenderType): int
 {
     if ($conversationId < 1 || !in_array($peerSenderType, ['visitor', 'agent'], true)) {
-        return;
+        return 0;
     }
     lc_ensure_message_receipts_schema();
     try {
-        lc_db()->prepare('
+        $stmt = lc_db()->prepare('
             UPDATE messages
             SET delivered_at = COALESCE(delivered_at, NOW()),
                 read_at = COALESCE(read_at, NOW()),
@@ -1471,14 +1583,39 @@ function lc_mark_messages_read(int $conversationId, string $peerSenderType): voi
             WHERE conversation_id = ?
               AND sender_type = ?
               AND (is_read = 0 OR read_at IS NULL OR delivered_at IS NULL)
-        ')->execute([$conversationId, $peerSenderType]);
+        ');
+        $stmt->execute([$conversationId, $peerSenderType]);
+        return (int) $stmt->rowCount();
     } catch (Throwable $e) {
         try {
-            lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = ? AND is_read = 0')
-                ->execute([$conversationId, $peerSenderType]);
+            $stmt = lc_db()->prepare('UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_type = ? AND is_read = 0');
+            $stmt->execute([$conversationId, $peerSenderType]);
+            return (int) $stmt->rowCount();
         } catch (Throwable $e2) {
+            return 0;
         }
     }
+}
+
+/**
+ * Push delivery/read ticks to the sender UI over realtime (agent or visitor).
+ */
+function lc_realtime_publish_message_receipts(int $conversationId, string $ownSenderType): void
+{
+    if ($conversationId < 1 || !in_array($ownSenderType, ['visitor', 'agent'], true)) {
+        return;
+    }
+    if (!function_exists('lc_realtime_publish_conversation_event')) {
+        return;
+    }
+    $receipts = lc_fetch_message_receipts($conversationId, $ownSenderType, 40);
+    if (!$receipts) {
+        return;
+    }
+    lc_realtime_publish_conversation_event($conversationId, 'message.receipts', [
+        'for' => $ownSenderType,
+        'receipts' => $receipts,
+    ]);
 }
 
 /**
@@ -1540,3 +1677,64 @@ function lc_mark_inbox_messages_delivered(array $conversationIds): void
     } catch (Throwable $e) {
     }
 }
+
+function lc_ensure_conversation_tags_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->exec('
+            CREATE TABLE IF NOT EXISTS conversation_tags (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                conversation_id INT UNSIGNED NOT NULL,
+                tag VARCHAR(40) NOT NULL,
+                agent_id INT UNSIGNED NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_conversation (conversation_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ');
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_conversation_tags(int $conversationId): array
+{
+    if ($conversationId < 1) {
+        return [];
+    }
+    lc_ensure_conversation_tags_schema();
+    try {
+        $stmt = lc_db()->prepare('SELECT id, conversation_id, tag, agent_id, created_at FROM conversation_tags WHERE conversation_id = ? ORDER BY id ASC');
+        $stmt->execute([$conversationId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function lc_add_conversation_tag(int $conversationId, string $tag, int $agentId = 0): array
+{
+    lc_ensure_conversation_tags_schema();
+    $stmt = lc_db()->prepare('INSERT INTO conversation_tags (conversation_id, tag, agent_id) VALUES (?, ?, ?)');
+    $stmt->execute([$conversationId, $tag, $agentId > 0 ? $agentId : null]);
+    $id = (int) lc_db()->lastInsertId();
+
+    return [
+        'id' => $id,
+        'conversation_id' => $conversationId,
+        'tag' => $tag,
+        'agent_id' => $agentId > 0 ? $agentId : null,
+    ];
+}
+
+function lc_delete_conversation_tag(int $conversationId, int $tagId): void
+{
+    lc_ensure_conversation_tags_schema();
+    lc_db()->prepare('DELETE FROM conversation_tags WHERE id = ? AND conversation_id = ?')->execute([$tagId, $conversationId]);
+}
+

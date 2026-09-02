@@ -25,7 +25,10 @@ try {
     $upd = lc_db()->prepare("UPDATE conversations SET status = 'closed', closed_at = UTC_TIMESTAMP() WHERE id = ?");
     $upd->execute([$conversationId]);
     lc_add_system_message($conversationId, 'Chat closed by agent.');
-    lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', ['status' => 'closed']);
+    lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+        'status' => 'closed',
+        'closed_by' => 'agent',
+    ]);
     lc_json(['success' => true]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

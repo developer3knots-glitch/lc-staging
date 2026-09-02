@@ -31,12 +31,22 @@ try {
         SELECT c.id, c.visitor_id, c.status
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
-        WHERE c.id = ? AND v.visitor_uid = ? AND c.status IN ("waiting","active")
+        WHERE c.id = ? AND v.visitor_uid = ?
+          AND c.status IN ("waiting","active","closed")
     ');
     $stmt->execute([$conversationId, $visitorUid]);
     $conv = $stmt->fetch();
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
+    }
+
+    $reopened = false;
+    if (($conv['status'] ?? '') === 'closed') {
+        $reopened = function_exists('lc_reopen_closed_for_visitor_continue')
+            && lc_reopen_closed_for_visitor_continue($conversationId, (int) $conv['visitor_id']);
+        if (!$reopened) {
+            lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
+        }
     }
 
     try {
@@ -58,6 +68,11 @@ try {
 
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
+    $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: 'waiting');
+    if ($status === 'waiting') {
+        lc_assign_agent($conversationId);
+        $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: $status);
+    }
     if (function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, (int) $saved['message_id']);
     }
@@ -68,6 +83,8 @@ try {
         'success' => true,
         'message_id' => (int) $saved['message_id'],
         'message' => $row ? lc_format_message_row($row, $chatToken) : null,
+        'status' => $status,
+        'reopened' => $reopened,
     ]);
 } catch (Throwable $e) {
     error_log('visitor-upload: ' . $e->getMessage());

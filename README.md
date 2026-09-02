@@ -2,32 +2,34 @@
 
 Standalone live chat system (Tawk.to / LiveChat style) — **Core PHP**, separate from ERP portal.
 
+**Production:** https://erp.3knotsdigital.com/WSlivechat/
+
 ## Requirements
 - PHP 8+
 - MySQL (XAMPP)
 - Apache
 
-## Install (XAMPP)
+## Install (XAMPP / ERP server)
 
-1. Project folder: `C:\xampp\htdocs\livechat`
+1. Project folder: `C:\xampp\htdocs\WSlivechat`
 2. Start Apache + MySQL in XAMPP
-3. Open: **http://localhost/livechat/install.php**
+3. Open: **https://erp.3knotsdigital.com/WSlivechat/install.php**
 4. Fill database details (default: root, no password, db: `livechat`)
-5. Login: **http://localhost/livechat/admin/login.php**
+5. Login: **https://erp.3knotsdigital.com/WSlivechat/admin/login.php**
 
 ## URLs
 
 | Page | URL |
 |------|-----|
-| Install | http://localhost/livechat/install.php |
-| Admin Login | http://localhost/livechat/admin/login.php |
-| Live Chats | http://localhost/livechat/admin/chats.php |
-| Widget Demo | http://localhost/livechat/demo.html |
+| Install | https://erp.3knotsdigital.com/WSlivechat/install.php |
+| Admin Login | https://erp.3knotsdigital.com/WSlivechat/admin/login.php |
+| Live Chats | https://erp.3knotsdigital.com/WSlivechat/admin/chats.php |
+| Widget Demo | https://erp.3knotsdigital.com/WSlivechat/demo.html |
 
 ## Widget Embed
 
 ```html
-<script src="http://localhost/livechat/widget/embed.js" data-site="http://localhost/livechat"></script>
+<script src="https://erp.3knotsdigital.com/WSlivechat/widget/embed.js" data-site="https://erp.3knotsdigital.com/WSlivechat"></script>
 ```
 
 ## Features
@@ -44,19 +46,9 @@ Standalone live chat system (Tawk.to / LiveChat style) — **Core PHP**, separat
 
 Full step-by-step guide: **[CPANEL-DEPLOY.md](CPANEL-DEPLOY.md)**
 
-Quick steps:
-1. Upload project to `public_html/livechat` (or subdomain root)
-2. cPanel → MySQL → create database + user
-3. Open `https://yourdomain.com/livechat/install.php`
-4. Login admin → Brands → copy embed code
-5. Delete `install.php` after install
-6. Enable SSL (AutoSSL) — widget `https://` URL use kare
-
-Works on shared hosting — no WebSocket server needed. Adjust `poll_interval_ms` in Settings (min 800ms).
-
 ## Default Admin
 Created during install (you choose email/password).
 
 ## Configuration
 
-Copy `includes/config.example.php` to `includes/config.php` and set your database credentials (this file is not committed to Git).
+`includes/config.php` sets `LC_PUBLIC_BASE_URL` to `https://erp.3knotsdigital.com/WSlivechat`.

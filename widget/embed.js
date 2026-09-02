@@ -1,12 +1,12 @@
 /**
  * LiveChat Widget - embed on any website
- * <script src="http://localhost/livechat/widget/embed.js" data-site="http://localhost/livechat"></script>
+ * <script src="https://erp.3knotsdigital.com/WSlivechat/widget/embed.js" data-site="https://erp.3knotsdigital.com/WSlivechat"></script>
  */
 (function () {
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 59;
+    var LC_WIDGET_BUILD = 80;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -43,6 +43,7 @@
     var lastMsgId = 0;
     var pollTimer = null;
     var realtimeClient = null;
+    var realtimeBoundConvId = 0;
     var realtimeConfig = { mode: 'poll', wsUrl: '', backupPollMs: 15000 };
     var pollMs = 1500;
     var visitorSoundsEnabled = true;
@@ -295,6 +296,12 @@
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
                 postPageEvent({ event: 'ping' }, false);
+                if (conversationId && !chatClosed) {
+                    scheduleCatchupSync();
+                    if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
+                        loadRealtimeScript(function () { initVisitorRealtime(); });
+                    }
+                }
             }
         });
 
@@ -555,9 +562,9 @@
                         '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code"> - </code></p>' +
                     '</div>' +
                     '<div class="lcw-ended-actions">' +
-                        '<button type="button" id="lc-resume-ticket">Resume this chat</button>' +
+                        '<button type="button" id="lc-resume-ticket">Resume chat</button>' +
                         '<div class="lcw-email-export" id="lc-email-export">' +
-                            '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
+                            '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me transcript</button>' +
                             '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
                                 '<label class="lcw-email-export-label" for="lc-email-transcript-input">Send this chat to</label>' +
                                 '<input type="email" id="lc-email-transcript-input" class="lcw-email-export-input" placeholder="you@company.com" autocomplete="email">' +
@@ -565,7 +572,7 @@
                                 '<p id="lc-email-transcript-status" class="lcw-email-export-status" hidden></p>' +
                             '</div>' +
                         '</div>' +
-                        '<button type="button" id="lc-new-chat">Start a new conversation</button>' +
+                        '<button type="button" id="lc-new-chat">Start a new chat</button>' +
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
@@ -758,8 +765,18 @@
     }
 
     function persistLastMsgId(id) {
-        if (id > 0) {
+        id = parseInt(id, 10) || 0;
+        // Guard against bogus WS-only ids (e.g. test payloads) poisoning the cursor
+        if (id > 0 && id < 100000000) {
             chatStore().setItem(LAST_MSG_KEY, String(id));
+        }
+    }
+
+    function advanceLastMsgId(id) {
+        id = parseInt(id, 10) || 0;
+        if (id > 0 && id < 100000000 && id > lastMsgId) {
+            lastMsgId = id;
+            persistLastMsgId(lastMsgId);
         }
     }
 
@@ -899,7 +916,7 @@
         var resumeBtn = document.getElementById('lc-resume-ticket');
         if (!resumeBtn) return;
         if (conversationId) {
-            resumeBtn.textContent = 'Resume this chat';
+            resumeBtn.textContent = 'Resume chat';
             resumeBtn.hidden = false;
             resumeBtn.disabled = false;
         } else if (ticketResumeEnabled) {
@@ -1086,8 +1103,9 @@
         document.getElementById('lc-panel-ended').style.display = 'none';
         hideIdleIntro();
         setComposeEnabled(!chatClosed);
+        setCloseChatVisible(!chatClosed);
         var closeBtn = document.getElementById('lc-close-chat');
-        if (closeBtn) closeBtn.style.display = '';
+        if (closeBtn && !chatClosed) closeBtn.style.display = 'inline-flex';
     }
 
     function hideIdleIntro() {
@@ -1111,6 +1129,7 @@
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn) closeBtn.style.display = 'none';
+        setCloseChatVisible(false);
         setWaitingState(false);
         setComposeEnabled(false);
 
@@ -1233,7 +1252,7 @@
             if (conversationId) {
                 endedBtn.style.display = '';
                 endedBtn.hidden = false;
-                endedBtn.textContent = 'Resume this chat';
+                endedBtn.textContent = 'Resume chat';
             } else {
                 endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
                 if (!ticketResumeEnabled) endedBtn.hidden = true;
@@ -1261,59 +1280,320 @@
         panel.classList.add(theme === 'light' ? 'lcw-theme-light' : 'lcw-theme-dark');
     }
 
-    function resetVisitorPollTimers(wsActive) {
-        var interval = wsActive ? (parseInt(realtimeConfig.backupPollMs, 10) || Math.max(pollMs * 10, 15000)) : pollMs;
+    function resetVisitorPollTimers() {
+        // No HTTP polling — WebSocket only. Timers are always cleared.
         if (pollTimer) clearInterval(pollTimer);
-        if (conversationId) {
-            pollTimer = setInterval(pollMessages, interval);
+        pollTimer = null;
+    }
+
+    function syncCursorFromDom() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        var maxDom = 0;
+        box.querySelectorAll('[data-msg-id]').forEach(function (el) {
+            var id = parseInt(el.getAttribute('data-msg-id'), 10) || 0;
+            if (id > 0 && id < 100000000 && id > maxDom) maxDom = id;
+        });
+        // Cursor ahead of painted bubbles = poisoned; pull back so catch-up can fetch
+        if (maxDom > 0 && lastMsgId > maxDom) {
+            lastMsgId = maxDom;
+            persistLastMsgId(lastMsgId);
         }
     }
 
-    function initVisitorRealtime() {
-        if (!conversationId || realtimeConfig.mode !== 'ws' || !realtimeConfig.wsUrl) return;
-        if (!window.LCRealtime) return;
+    var catchupSyncTimer = null;
+    var catchupInFlight = false;
+    var catchupDirty = false;
+    var safetySyncTimer = null;
+    var liveSyncTimer = null;
 
-        fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
-            '&conversation_id=' + encodeURIComponent(conversationId), {
+    function scheduleCatchupSync() {
+        if (!conversationId) return;
+        catchupDirty = true;
+        if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
+        catchupSyncTimer = setTimeout(function () {
+            catchupSyncTimer = null;
+            runCatchupSync();
+        }, 50);
+    }
+
+    function runCatchupSync() {
+        if (!conversationId) return;
+        if (catchupInFlight) {
+            catchupDirty = true;
+            return;
+        }
+        catchupDirty = false;
+        catchupInFlight = true;
+        syncCursorFromDom();
+        pollMessages(false, function () {
+            catchupInFlight = false;
+            if (catchupDirty) {
+                scheduleCatchupSync();
+            }
+        });
+    }
+
+    /** Guarantees agent msgs appear even if WS is a zombie "connected" socket */
+    function startLiveMessageSync() {
+        stopLiveMessageSync();
+        if (!conversationId || chatClosed) return;
+        liveSyncTimer = setInterval(function () {
+            if (!conversationId || chatClosed) {
+                stopLiveMessageSync();
+                return;
+            }
+            scheduleCatchupSync();
+        }, 2000);
+    }
+
+    function stopLiveMessageSync() {
+        if (liveSyncTimer) {
+            clearInterval(liveSyncTimer);
+            liveSyncTimer = null;
+        }
+    }
+
+    /** Extra catch-up only while WS is down */
+    function startSafetySyncWhileDisconnected() {
+        stopSafetySync();
+        if (!conversationId || chatClosed) return;
+        safetySyncTimer = setInterval(function () {
+            if (!conversationId || chatClosed) {
+                stopSafetySync();
+                return;
+            }
+            if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()) {
+                stopSafetySync();
+                return;
+            }
+            scheduleCatchupSync();
+        }, 1000);
+    }
+
+    function stopSafetySync() {
+        if (safetySyncTimer) {
+            clearInterval(safetySyncTimer);
+            safetySyncTimer = null;
+        }
+    }
+
+    function fetchVisitorRealtimeToken() {
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1 || !visitorUid) {
+            return Promise.resolve('');
+        }
+        return fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
+            '&conversation_id=' + encodeURIComponent(cid), {
                 credentials: 'omit',
                 headers: apiHeaders()
             })
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (!data || !data.success || !data.token) return;
-                if (realtimeClient && realtimeClient.disconnect) realtimeClient.disconnect();
-                realtimeClient = window.LCRealtime.create({
-                    mode: 'ws',
-                    wsUrl: realtimeConfig.wsUrl,
-                    token: data.token,
-                    fallbackPoll: function () { pollMessages(messagesNeedHistoryReload()); }
-                });
-                realtimeClient.on('connected', function () { resetVisitorPollTimers(true); });
-                realtimeClient.on('disconnected', function () { resetVisitorPollTimers(false); });
-                realtimeClient.on('message.new', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (cid === conversationId) pollMessages(messagesNeedHistoryReload());
-                });
-                realtimeClient.on('typing', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (cid !== conversationId) return;
-                    if ((payload.role || '') === 'agent') {
-                        setPeerTypingVisible(!!payload.typing, payload.name || '');
-                    }
-                });
-                realtimeClient.on('conversation.updated', function (payload) {
-                    var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                    if (cid !== conversationId) return;
-                    if (payload && payload.status === 'active' && payload.agent && payload.agent.name) {
-                        setWaitingState(false);
-                        updateHeaderAgent(payload.agent);
-                        updateStatus('Chatting with ' + payload.agent.name, true);
-                    }
-                    pollMessages(true);
-                });
-                realtimeClient.connect();
+                if (data && data.realtime) {
+                    realtimeConfig = data.realtime;
+                }
+                return (data && data.success && data.token) ? data.token : '';
             })
-            .catch(function () { /* poll stays */ });
+            .catch(function () { return ''; });
+    }
+
+    function sameConversation(cid) {
+        return (parseInt(cid, 10) || 0) === (parseInt(conversationId, 10) || 0);
+    }
+
+    function applyRealtimeMessage(payload) {
+        if (!payload) return false;
+        var myCid = parseInt(conversationId, 10) || 0;
+        if (myCid < 1) return false;
+        var cid = parseInt(payload.conversation_id, 10) || 0;
+        if (cid > 0 && cid !== myCid) return false;
+
+        if (payload.message && payload.message.id) {
+            var m = payload.message;
+            var mid = parseInt(m.id, 10) || 0;
+            if (mid < 1 || mid >= 100000000) {
+                return false;
+            }
+            if (isAdminOnlySystemMessage(m)) {
+                advanceLastMsgId(mid);
+                return true;
+            }
+            if (m.sender_type === 'visitor' && m.message) {
+                document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]').forEach(function (el) {
+                    var body = el.querySelector('.lcw-msg-body');
+                    if (body && body.textContent === m.message) {
+                        el.remove();
+                    }
+                });
+            }
+            var exists = !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
+            if (!exists) {
+                var isNewIncoming = m.sender_type !== 'visitor';
+                try {
+                    appendMessage(m);
+                } catch (err) {
+                    return false;
+                }
+                if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
+                    advanceLastMsgId(mid);
+                } else {
+                    return false;
+                }
+                if (isNewIncoming) {
+                    setPeerTypingVisible(false);
+                    if (!isOpen) {
+                        if (autoOpenOnMessage) {
+                            openPanel({ silenceFlow: true });
+                        } else {
+                            var badge = document.getElementById('lc-bubble-badge');
+                            if (badge) badge.style.display = 'flex';
+                        }
+                    }
+                    playNotifySound();
+                }
+            } else {
+                advanceLastMsgId(mid);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    function bindVisitorRealtimeHandlers(client) {
+        client.on('connected', function () {
+            realtimeBoundConvId = parseInt(conversationId, 10) || 0;
+            resetVisitorPollTimers();
+            stopSafetySync();
+            startLiveMessageSync();
+            scheduleCatchupSync();
+        });
+        client.on('disconnected', function () {
+            resetVisitorPollTimers();
+            startSafetySyncWhileDisconnected();
+            startLiveMessageSync();
+            scheduleCatchupSync();
+        });
+        client.on('message.new', function (payload) {
+            try { applyRealtimeMessage(payload); } catch (e) { /* ignore */ }
+            scheduleCatchupSync();
+        });
+        client.on('typing', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            if ((payload.role || '') === 'agent') {
+                setPeerTypingVisible(!!payload.typing, payload.name || '');
+            }
+        });
+        client.on('message.receipts', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            if (payload && payload.for && payload.for !== 'visitor') return;
+            if (payload && payload.receipts) {
+                applyReceipts(payload.receipts);
+            }
+        });
+        client.on('conversation.updated', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            if (payload && payload.status === 'active' && payload.agent && payload.agent.name) {
+                setWaitingState(false);
+                updateHeaderAgent(payload.agent);
+                updateStatus('Chatting with ' + payload.agent.name, true);
+            }
+            if (payload && payload.status === 'closed') {
+                stopLiveMessageSync();
+                stopSafetySync();
+                // Don't overwrite visitor-ended action screen with soft continue
+                if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
+                    showEndedState('visitor');
+                } else {
+                    showEndedState(payload.closed_by || 'remote');
+                }
+                scheduleCatchupSync();
+                return;
+            }
+            if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
+                markChatContinuedFromClosed({ status: 'waiting' });
+            }
+            scheduleCatchupSync();
+        });
+    }
+
+    function connectVisitorRealtimeWithToken(token, wsUrl) {
+        if (!window.LCRealtime) return false;
+        var url = wsUrl || realtimeConfig.wsUrl || '';
+        if (!url) return false;
+        var bindForConv = parseInt(conversationId, 10) || 0;
+        if (bindForConv < 1) return false;
+
+        if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()
+            && realtimeClient.opts && realtimeClient.opts.wsUrl === url
+            && realtimeBoundConvId === bindForConv) {
+            stopSafetySync();
+            startLiveMessageSync();
+            return true;
+        }
+        // Do not kill a reconnecting socket unless URL/conversation changed
+        if (realtimeClient && realtimeClient.opts && realtimeClient.opts.wsUrl === url
+            && realtimeBoundConvId === bindForConv
+            && realtimeClient.shouldRun) {
+            startLiveMessageSync();
+            return true;
+        }
+        if (realtimeClient && realtimeClient.disconnect) realtimeClient.disconnect();
+        realtimeBoundConvId = 0;
+        realtimeClient = window.LCRealtime.create({
+            mode: 'ws',
+            wsUrl: url,
+            token: token || '',
+            getToken: fetchVisitorRealtimeToken,
+            fallbackPoll: function () {
+                scheduleCatchupSync();
+                startSafetySyncWhileDisconnected();
+                startLiveMessageSync();
+            }
+        });
+        bindVisitorRealtimeHandlers(realtimeClient);
+        realtimeClient.connect();
+        startLiveMessageSync();
+        return true;
+    }
+
+    function initVisitorRealtime(seedToken) {
+        if (!window.LCRealtime) return;
+
+        var bindForConv = parseInt(conversationId, 10) || 0;
+        if (bindForConv < 1) return;
+
+        if (realtimeConfig.mode === 'ws' && realtimeConfig.wsUrl
+            && realtimeClient
+            && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
+            && (realtimeBoundConvId === bindForConv || (realtimeClient.shouldRun && realtimeBoundConvId === 0))
+            && (realtimeClient.isConnected && realtimeClient.isConnected() || realtimeClient.shouldRun)) {
+            if (realtimeClient.isConnected && realtimeClient.isConnected()) {
+                realtimeBoundConvId = bindForConv;
+                stopSafetySync();
+            }
+            startLiveMessageSync();
+            return;
+        }
+
+        if (seedToken && realtimeConfig.wsUrl) {
+            connectVisitorRealtimeWithToken(seedToken, realtimeConfig.wsUrl);
+            return;
+        }
+
+        fetchVisitorRealtimeToken().then(function (token) {
+            if ((parseInt(conversationId, 10) || 0) !== bindForConv) return;
+            if (!token || realtimeConfig.mode !== 'ws' || !realtimeConfig.wsUrl) {
+                startSafetySyncWhileDisconnected();
+                startLiveMessageSync();
+                return;
+            }
+            connectVisitorRealtimeWithToken(token, realtimeConfig.wsUrl);
+        });
+    }
+
+    function loadChatMessages(isHistoryLoad) {
+        pollMessages(!!isHistoryLoad);
     }
 
     function loadRealtimeScript(done) {
@@ -1327,7 +1607,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=2';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=5';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -1347,14 +1627,46 @@
                 localStorage.removeItem('lc_visitor_name');
                 localStorage.removeItem('lc_visitor_email');
             } catch (e) {}
+        } else {
+            // Same IP already known on server → skip form next time (seed local cache)
+            var seedName = String(data.visitor_name || '').trim();
+            var seedEmail = String(data.visitor_email || '').trim();
+            if (seedName && seedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(seedEmail)) {
+                try {
+                    if (!(localStorage.getItem('lc_visitor_name') || '').trim()) {
+                        localStorage.setItem('lc_visitor_name', seedName);
+                    }
+                    if (!(localStorage.getItem('lc_visitor_email') || '').trim()) {
+                        localStorage.setItem('lc_visitor_email', seedEmail);
+                    }
+                } catch (eSeed) {}
+            }
         }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
+        var realtimeChanged = false;
         if (data.realtime) {
+            var nextMode = data.realtime.mode || 'poll';
+            var nextUrl = data.realtime.wsUrl || '';
+            realtimeChanged = (realtimeConfig.mode !== nextMode) || (realtimeConfig.wsUrl !== nextUrl);
             realtimeConfig = data.realtime;
+            // Do not clamp backup down — WS should carry live traffic
+            if (!realtimeConfig.backupPollMs) {
+                realtimeConfig.backupPollMs = 60000;
+            }
         }
-        loadRealtimeScript(function () {
-            if (conversationId) initVisitorRealtime();
-        });
+        // Only reconnect when mode/URL actually changed — never flap on settings sync
+        if (realtimeChanged) {
+            loadRealtimeScript(function () {
+                if (conversationId) initVisitorRealtime();
+            });
+        } else if (conversationId && !(realtimeClient && realtimeClient.shouldRun)) {
+            loadRealtimeScript(function () {
+                initVisitorRealtime();
+            });
+        }
+        if (conversationId && !chatClosed) {
+            startLiveMessageSync();
+        }
         syncPrechatGateUi();
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
@@ -1367,11 +1679,9 @@
         applyWidgetTheme();
         if (settings.poll_interval_ms) {
             pollMs = Math.max(800, parseInt(settings.poll_interval_ms, 10) || 1500);
-            if (pollTimer) {
-                resetVisitorPollTimers(!!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()));
-            }
-            startSettingsSync();
         }
+        resetVisitorPollTimers();
+        startSettingsSync();
         syncTicketFeatureUi();
         updatePrechatStatus(data.agents_online || 0);
     }
@@ -1411,12 +1721,12 @@
     }
 
     /**
-     * Entry rules (enterprise):
-     * - No auto-resume of old chats by IP / past device / localStorage
-     * - Same-tab continue: sessionStorage conversation id (survives refresh, dies with tab)
-     * - Widget never shows combined IP history - that is admin/agent only
-     * - Ticket resume: separate form when setting ON (visitor + agent share history)
-     * - Form ON → gate identity; Form OFF → direct chat
+     * Entry rules:
+     * - Same public IP reuses one live thread (server claim) — not a new ticket each visit
+     * - Same IP with known name+email → skip prechat form
+     * - Same-tab continue: sessionStorage conversation id
+     * - Ticket resume: separate form when setting ON
+     * - Form ON → gate identity (unless IP/local known); Form OFF → direct chat
      */
     function routeVisitorEntry(data) {
         if (!data || !data.success) return;
@@ -1702,7 +2012,15 @@
     }
 
     function showCloseConfirm() {
-        if (chatClosed || !conversationId) {
+        if (!conversationId) {
+            minimizePanel();
+            return;
+        }
+        if (chatClosed && lastClosedBy === 'visitor') {
+            showEndedState('visitor');
+            return;
+        }
+        if (chatClosed) {
             minimizePanel();
             return;
         }
@@ -1801,9 +2119,6 @@
             return;
         }
         isOpen = true;
-        if (conversationId) {
-            requestBrowserGeo();
-        }
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
@@ -1812,14 +2127,17 @@
         if (root) root.classList.add('lcw-panel-open');
         persistPanelOpen(true);
         hideTeaser(false);
+        // Geo is requested once from handleChatStarted — not on every panel open
         if (!options.silenceFlow) {
             if (!chatClosed) {
                 if (conversationId) {
                     showChatView();
-                    if (!pollTimer) {
-                        resetVisitorPollTimers(false);
+                    resetVisitorPollTimers();
+                    // History only if empty — do not reload on every open (kills "instant" feel)
+                    if (messagesNeedHistoryReload()) {
                         pollMessages(true);
                     }
+                    loadRealtimeScript(function () { initVisitorRealtime(); });
                 } else {
                     beginNewConversationFlow();
                 }
@@ -1829,11 +2147,10 @@
                 document.getElementById('lc-panel-head').style.display = 'none';
             }
         } else if (conversationId && !chatClosed) {
+            // silenceFlow (e.g. auto-open on WS message): never full-reload transcript
             showChatView();
-            if (!pollTimer) {
-                resetVisitorPollTimers(false);
-                pollMessages(true);
-            }
+            resetVisitorPollTimers();
+            loadRealtimeScript(function () { initVisitorRealtime(); });
         }
         var badge = document.getElementById('lc-bubble-badge');
         if (badge) badge.style.display = 'none';
@@ -1857,22 +2174,62 @@
         }, 80);
     }
 
+    function setCloseChatVisible(show) {
+        var closeBtn = document.getElementById('lc-close-chat');
+        if (!closeBtn) return;
+        closeBtn.style.display = show ? 'inline-flex' : 'none';
+        closeBtn.disabled = false;
+        closeBtn.hidden = !show;
+    }
+
     function setComposeEnabled(enabled) {
         var compose = document.getElementById('lc-panel-compose');
         var input = document.getElementById('lc-input');
         var send = document.getElementById('lc-send');
-        var closeBtn = document.getElementById('lc-close-chat');
         if (compose) compose.style.display = enabled ? 'block' : 'none';
         if (input) input.disabled = !enabled;
         if (send) send.disabled = !enabled;
-        if (closeBtn) {
-            closeBtn.style.display = enabled ? 'inline-flex' : 'none';
-            closeBtn.disabled = false;
-        }
+        // Close (X) is independent of compose — always available while chatting
     }
 
-    function showEndedState() {
-        document.getElementById('lc-panel').classList.remove('lcw-chat-active');
+    function isVisitorSelfCloseReason(reason) {
+        var r = String(reason || '').toLowerCase();
+        return r === 'visitor' || r === 'self' || r === 'visitor_close';
+    }
+
+    var lastClosedBy = '';
+
+    function detectClosedByFromMessages() {
+        if (lastClosedBy) return lastClosedBy;
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return '';
+        var blob = (box.innerText || box.textContent || '');
+        if (/visitor closed the live chat/i.test(blob)) return 'visitor';
+        if (/chat closed by agent/i.test(blob)) return 'agent';
+        if (/closed automatically due to inactivity/i.test(blob)) return 'inactivity';
+        if (/left the page/i.test(blob)) return 'leave';
+        return '';
+    }
+
+    /**
+     * @param {string} [reason] visitor | agent | inactivity | leave
+     * Visitor self-close → Resume / Email / New chat buttons.
+     * Agent/auto close → keep transcript + compose to continue in waiting queue.
+     */
+    function showEndedState(reason) {
+        var detected = detectClosedByFromMessages();
+        reason = reason || detected || 'remote';
+        // Prefer explicit visitor close text in transcript over vague "remote"
+        if (!isVisitorSelfCloseReason(reason) && detected === 'visitor') {
+            reason = 'visitor';
+        }
+        if (isVisitorSelfCloseReason(reason)) {
+            lastClosedBy = 'visitor';
+        }
+        var visitorEnded = isVisitorSelfCloseReason(reason);
+
+        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat', 'lcw-mode-idle');
+        document.getElementById('lc-panel').classList.add('lcw-chat-active');
         hideEmojiPicker();
         if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
         if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
@@ -1880,41 +2237,94 @@
         clearPendingAttachment();
         stopOwnTyping();
         setPeerTypingVisible(false);
+        stopLiveMessageSync();
+        stopSafetySync();
         leaveCloseSent = true;
         setWaitingState(false);
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
         }
-        // Keep conversationId/chatToken in memory so visitor can email this ended chat.
-        // Clear storage only - reload should not silently resume a closed session.
-        persistConversationId(null);
-        persistChatToken('');
-        lastMsgId = 0;
-        setComposeEnabled(false);
+
         document.getElementById('lc-panel-prechat').style.display = 'none';
-        document.getElementById('lc-panel-messages').style.display = 'none';
-        document.getElementById('lc-panel-compose').style.display = 'none';
-        document.getElementById('lc-panel-head').style.display = 'none';
-        document.getElementById('lc-panel-toolbar').style.display = 'flex';
-        document.getElementById('lc-panel-ended').style.display = 'flex';
-        document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
-        var emailInput = document.getElementById('lc-email-transcript-input');
-        if (emailInput && !emailInput.value) {
-            emailInput.value = localStorage.getItem('lc_visitor_email') || '';
+        hideIdleIntro();
+
+        if (visitorEnded) {
+            // Classic ended screen — Resume / Email / Start new
+            if (conversationId) {
+                persistConversationId(conversationId);
+                persistChatToken(chatToken || '');
+            }
+            setComposeEnabled(false);
+            setCloseChatVisible(false);
+            document.getElementById('lc-panel-messages').style.display = 'none';
+            document.getElementById('lc-panel-compose').style.display = 'none';
+            document.getElementById('lc-panel-head').style.display = 'none';
+            document.getElementById('lc-panel-toolbar').style.display = 'flex';
+            document.getElementById('lc-panel-ended').style.display = 'flex';
+            document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
+            var emailInput = document.getElementById('lc-email-transcript-input');
+            if (emailInput && !emailInput.value) {
+                emailInput.value = localStorage.getItem('lc_visitor_email') || '';
+            }
+            var emailPanel = document.getElementById('lc-email-transcript-panel');
+            if (emailPanel) emailPanel.hidden = true;
+            var endedEl = document.getElementById('lc-panel-ended');
+            if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
+            setEmailTranscriptStatus('', false, 'ended');
+            if (currentReference) {
+                updateWidgetReference(currentReference);
+            }
+            syncTicketFeatureUi();
+            updateEndedResumeButton();
+            syncTranscriptSentUi('ended');
+            syncTranscriptEndedUi();
+            return;
         }
-        var emailPanel = document.getElementById('lc-email-transcript-panel');
-        if (emailPanel) emailPanel.hidden = true;
-        var endedEl = document.getElementById('lc-panel-ended');
-        if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
-        setEmailTranscriptStatus('', false, 'ended');
-        if (currentReference) {
-            updateWidgetReference(currentReference);
+
+        // Agent / inactivity close — stay in thread, type to re-queue
+        if (conversationId) {
+            persistConversationId(conversationId);
+            persistChatToken(chatToken || '');
         }
-        syncTicketFeatureUi();
-        updateEndedResumeButton();
-        syncTranscriptSentUi('ended');
-        syncTranscriptEndedUi();
+        document.getElementById('lc-panel-ended').style.display = 'none';
+        document.getElementById('lc-panel-messages').style.display = 'flex';
+        document.getElementById('lc-panel-compose').style.display = 'block';
+        document.getElementById('lc-panel-head').style.display = 'flex';
+        document.getElementById('lc-panel-toolbar').style.display = 'none';
+        setComposeEnabled(true);
+        setCloseChatVisible(false);
+        var inputEl = document.getElementById('lc-input');
+        if (inputEl) {
+            inputEl.placeholder = 'Type a message to continue...';
+            inputEl.disabled = false;
+        }
+        updateStatus('Chat closed', false);
+        var box = document.getElementById('lc-panel-messages');
+        if (box) {
+            try { box.scrollTop = box.scrollHeight; } catch (e) {}
+        }
+    }
+
+    function markChatContinuedFromClosed(data) {
+        chatClosed = false;
+        lastClosedBy = '';
+        leaveCloseSent = false;
+        var inputEl = document.getElementById('lc-input');
+        if (inputEl) inputEl.placeholder = 'Write a message...';
+        setCloseChatVisible(true);
+        var status = (data && data.status) || 'waiting';
+        if (status === 'waiting') {
+            updateHeaderAgent(null);
+            setWaitingState(true);
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
+        } else {
+            setWaitingState(false);
+        }
+        startLiveMessageSync();
+        if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
+            loadRealtimeScript(function () { initVisitorRealtime(); });
+        }
     }
 
     function loadVisitorSoundPref() {
@@ -2388,14 +2798,17 @@
 
     function hideEndedState() {
         chatClosed = false;
+        lastClosedBy = '';
         leaveCloseSent = false;
         document.getElementById('lc-panel-ended').style.display = 'none';
         setComposeEnabled(true);
+        setCloseChatVisible(true);
     }
 
     function endChat() {
         if (chatClosed) {
-            minimizePanel();
+            // Already closed by visitor — keep ended actions visible
+            showEndedState('visitor');
             return;
         }
         if (!conversationId) {
@@ -2417,14 +2830,21 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (data.success) {
-                showEndedState();
-            } else if (closeBtn) {
+            // After confirm: always show Resume / Email / New chat
+            if (data && (data.success || data.already_closed)) {
+                lastClosedBy = 'visitor';
+                showEndedState('visitor');
+                return;
+            }
+            if (closeBtn) {
                 closeBtn.disabled = false;
+                setCloseChatVisible(true);
             }
         })
         .catch(function () {
-            if (closeBtn) closeBtn.disabled = false;
+            // Still show ended actions so visitor isn't stuck without options
+            lastClosedBy = 'visitor';
+            showEndedState('visitor');
         });
     }
 
@@ -2459,47 +2879,106 @@
 
 
     var GEO_SENT_KEY = 'lc_browser_geo_' + brandKey;
+    var GEO_ASKED_KEY = 'lc_browser_geo_asked_' + brandKey;
+    var geoRequestInFlight = false;
+
+    function markGeoAsked(state) {
+        try {
+            sessionStorage.setItem(GEO_ASKED_KEY, state || '1');
+        } catch (ignore) {}
+        try {
+            // Persist deny across refreshes so we don't spam the prompt
+            if (state === 'denied' || state === '1') {
+                localStorage.setItem(GEO_ASKED_KEY, state || '1');
+            }
+        } catch (ignore2) {}
+    }
+
+    function wasGeoAsked() {
+        try {
+            if (sessionStorage.getItem(GEO_ASKED_KEY)) return true;
+        } catch (ignore) {}
+        try {
+            if (localStorage.getItem(GEO_ASKED_KEY)) return true;
+        } catch (ignore2) {}
+        try {
+            if (sessionStorage.getItem(GEO_SENT_KEY) === '1') return true;
+        } catch (ignore3) {}
+        return false;
+    }
 
     function requestBrowserGeo() {
-        if (!navigator.geolocation || !visitorUid) {
+        if (!navigator.geolocation || !visitorUid || geoRequestInFlight) {
             return;
         }
-        try {
-            if (sessionStorage.getItem(GEO_SENT_KEY) === '1') {
-                return;
-            }
-        } catch (ignore) {}
+        if (wasGeoAsked()) {
+            return;
+        }
 
-        navigator.geolocation.getCurrentPosition(
-            function (pos) {
-                var lat = pos.coords && pos.coords.latitude;
-                var lon = pos.coords && pos.coords.longitude;
-                if (typeof lat !== 'number' || typeof lon !== 'number') {
-                    return;
-                }
-                fetch(siteUrl + '/api/visitor-geo.php', {
-                    method: 'POST',
-                    headers: apiHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({
-                        visitor_uid: visitorUid,
-                        brand_key: brandKey,
-                        lat: lat,
-                        lon: lon
+        function askPosition() {
+            geoRequestInFlight = true;
+            markGeoAsked('pending');
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    geoRequestInFlight = false;
+                    var lat = pos.coords && pos.coords.latitude;
+                    var lon = pos.coords && pos.coords.longitude;
+                    if (typeof lat !== 'number' || typeof lon !== 'number') {
+                        markGeoAsked('1');
+                        return;
+                    }
+                    fetch(siteUrl + '/api/visitor-geo.php', {
+                        method: 'POST',
+                        headers: apiHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            visitor_uid: visitorUid,
+                            brand_key: brandKey,
+                            lat: lat,
+                            lon: lon
+                        })
                     })
-                })
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data && data.success) {
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
                         try {
                             sessionStorage.setItem(GEO_SENT_KEY, '1');
                         } catch (ignore2) {}
-                    }
-                })
-                .catch(function () {});
-            },
-            function () {},
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 }
-        );
+                        markGeoAsked(data && data.success ? '1' : '1');
+                    })
+                    .catch(function () {
+                        markGeoAsked('1');
+                    });
+                },
+                function () {
+                    // User denied / timed out — never re-prompt this visitor
+                    geoRequestInFlight = false;
+                    markGeoAsked('denied');
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+            );
+        }
+
+        // If permission already decided, avoid a fresh prompt loop
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+                if (!status) {
+                    askPosition();
+                    return;
+                }
+                if (status.state === 'denied') {
+                    markGeoAsked('denied');
+                    return;
+                }
+                if (status.state === 'granted' || status.state === 'prompt') {
+                    // Only ask once even if state is "prompt"
+                    askPosition();
+                }
+            }).catch(function () {
+                askPosition();
+            });
+            return;
+        }
+
+        askPosition();
     }
 
     function handleChatStarted(data, options) {
@@ -2507,7 +2986,7 @@
         if (transcriptSentConvId && transcriptSentConvId !== data.conversation_id) {
             resetTranscriptSentState();
         }
-        conversationId = data.conversation_id;
+        conversationId = parseInt(data.conversation_id, 10) || 0;
         chatToken = data.chat_token || getStoredChatToken() || '';
         widgetLoadedAt = Date.now();
         persistConversationId(conversationId);
@@ -2528,7 +3007,13 @@
             if (Date.now() < resumeGraceUntil) {
                 chatClosed = false;
             } else {
-                showEndedState();
+                showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
+                if (!options.keepMessages) {
+                    lastMsgId = 0;
+                    lastDateLabel = '';
+                    document.getElementById('lc-panel-messages').innerHTML = '';
+                }
+                pollMessages(true);
                 return;
             }
         }
@@ -2557,9 +3042,13 @@
                 updateStatus(data.agents_online > 0 ? 'Team online' : 'We\'ll reply soon', data.agents_online > 0);
             }
         }
+        resetVisitorPollTimers();
         pollMessages(true);
-        resetVisitorPollTimers(false);
-        loadRealtimeScript(function () { initVisitorRealtime(); });
+        startLiveMessageSync();
+        var seedToken = data.realtime_token || '';
+        loadRealtimeScript(function () {
+            initVisitorRealtime(seedToken || null);
+        });
         requestBrowserGeo();
         capturePublicIpv4();
     }
@@ -3035,7 +3524,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-time.js?v=2';
+        s.src = siteUrl + '/assets/js/lc-time.js?v=41';
         s.async = true;
         s.setAttribute('data-lc-time', '1');
         document.head.appendChild(s);
@@ -3292,15 +3781,32 @@
         return !box.querySelector('[data-msg-id]');
     }
 
-    function pollMessages(isHistoryLoad) {
-        if (!conversationId) return;
-        if (messagesNeedHistoryReload()) {
+    var pollGen = 0;
+    function pollMessages(isHistoryLoad, done) {
+        if (!conversationId) {
+            if (typeof done === 'function') done();
+            return;
+        }
+        var convAtStart = parseInt(conversationId, 10) || 0;
+        var gen = ++pollGen;
+        var hasBubbles = !messagesNeedHistoryReload();
+
+        // Never wipe an already-painted transcript (WS race)
+        if (isHistoryLoad && hasBubbles) {
+            isHistoryLoad = false;
+        } else if (!isHistoryLoad && !hasBubbles) {
             isHistoryLoad = true;
         }
+
+        if (!isHistoryLoad && lastMsgId >= 100000000) {
+            isHistoryLoad = true;
+            lastMsgId = 0;
+        }
+
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        // viewing=1 only when panel open ΓåÆ agent ticks switch to "seen"
         var viewing = (isOpen && document.getElementById('lc-panel') &&
             document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
+
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
             '&last_id=' + fetchLastId +
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
@@ -3318,32 +3824,35 @@
                 });
             })
             .then(function (data) {
+                if ((parseInt(conversationId, 10) || 0) !== convAtStart) return;
+                if (isHistoryLoad && gen !== pollGen) return;
                 if (!data || !data.success) return;
+
+                var serverCursor = parseInt(data.message_cursor, 10) || 0;
+                if (!isHistoryLoad && serverCursor > 0 && lastMsgId > serverCursor) {
+                    lastMsgId = 0;
+                    persistLastMsgId(0);
+                    try { chatStore().removeItem(LAST_MSG_KEY); } catch (eClr) {}
+                    pollMessages(true, done);
+                    done = null;
+                    return;
+                }
 
                 if (data.ticket_display_enabled !== undefined) {
                     applyTicketFeatureFlags(data.ticket_display_enabled, data.ticket_resume_enabled);
                 }
-
                 if (data.reference && ticketDisplayEnabled) {
                     updateWidgetReference(data.reference);
                 }
-
                 applyTranscriptPollState(data);
-
-                if (data.status === 'closed') {
-                    if (Date.now() < resumeGraceUntil) {
-                        return;
-                    }
-                    showEndedState();
-                    return;
-                }
 
                 if (data.agents_online !== undefined) {
                     agentsOnline = data.agents_online;
                     setBubbleOnline(agentsOnline > 0);
                 }
-
-                applyAgentConnectionState(data);
+                if (data.status !== 'closed') {
+                    applyAgentConnectionState(data);
+                }
 
                 if (data.receipts && data.receipts.length) {
                     applyReceipts(data.receipts);
@@ -3360,50 +3869,83 @@
 
                 var messages = Array.isArray(data.messages) ? data.messages : [];
                 if (isHistoryLoad) {
-                    lastDateLabel = '';
-                    lastMsgId = 0;
-                    var histBox = document.getElementById('lc-panel-messages');
-                    if (histBox) histBox.innerHTML = '';
+                    // If WS painted while we fetched, merge instead of wipe
+                    if (!messagesNeedHistoryReload()) {
+                        isHistoryLoad = false;
+                    } else {
+                        lastDateLabel = '';
+                        lastMsgId = 0;
+                        var histBox = document.getElementById('lc-panel-messages');
+                        if (histBox) histBox.innerHTML = '';
+                    }
                 }
+
                 messages.forEach(function (m) {
+                    var mid = parseInt(m.id, 10) || 0;
                     if (isAdminOnlySystemMessage(m)) {
-                        if (m.id > lastMsgId) lastMsgId = m.id;
+                        advanceLastMsgId(mid);
                         return;
                     }
-                    if (isHistoryLoad || m.id > lastMsgId) {
-                        var isNewIncoming = !isHistoryLoad && m.id > lastMsgId && m.sender_type !== 'visitor';
-                        var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
-                        appendMessage(m, { suppressAgentState: suppressAgentState });
-                        if (m.id > lastMsgId) lastMsgId = m.id;
-                        persistLastMsgId(lastMsgId);
-                        if (isNewIncoming) {
-                            setPeerTypingVisible(false);
-                            if (!isOpen) {
-                                if (autoOpenOnMessage) {
-                                    openPanel({ silenceFlow: true });
-                                } else {
-                                    var badge = document.getElementById('lc-bubble-badge');
-                                    if (badge) badge.style.display = 'flex';
-                                }
+                    var exists = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
+                    if (exists) {
+                        advanceLastMsgId(mid);
+                        return;
+                    }
+                    if (mid < 1 && !isHistoryLoad) return;
+                    var isNewIncoming = !isHistoryLoad && m.sender_type !== 'visitor';
+                    var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
+                    appendMessage(m, { suppressAgentState: suppressAgentState });
+                    if (mid > 0 && document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
+                        advanceLastMsgId(mid);
+                    }
+                    if (isNewIncoming) {
+                        setPeerTypingVisible(false);
+                        if (!isOpen) {
+                            if (autoOpenOnMessage) {
+                                openPanel({ silenceFlow: true });
+                            } else {
+                                var badge = document.getElementById('lc-bubble-badge');
+                                if (badge) badge.style.display = 'flex';
                             }
-                            playNotifySound();
                         }
+                        playNotifySound();
                     }
                 });
 
                 if (data.status === 'closed') {
                     setPeerTypingVisible(false);
                     stopOwnTyping();
+                    if (Date.now() >= resumeGraceUntil) {
+                        if (lastClosedBy === 'visitor' || detectClosedByFromMessages() === 'visitor') {
+                            showEndedState('visitor');
+                        } else {
+                            showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
+                        }
+                    }
                 } else {
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
             })
-            .catch(function () {});
+            .catch(function () {})
+            .then(function () {
+                if (typeof done === 'function') done();
+            });
     }
 
     function messageBodyHtml(m) {
         if (window.LCChatFiles && m.attachment) {
-            return window.LCChatFiles.renderWidgetAttachmentHtml(m.attachment, m.message);
+            var att = m.attachment;
+            // Ensure image/file URLs carry visitor auth (WS payloads often omit token)
+            if (att.url && chatToken && att.url.indexOf('token=') === -1) {
+                att = Object.assign({}, att, {
+                    url: att.url + (att.url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(chatToken)
+                });
+            } else if (att.url && visitorUid && att.url.indexOf('token=') === -1 && att.url.indexOf('visitor_uid=') === -1) {
+                att = Object.assign({}, att, {
+                    url: att.url + (att.url.indexOf('?') >= 0 ? '&' : '?') + 'visitor_uid=' + encodeURIComponent(visitorUid)
+                });
+            }
+            return window.LCChatFiles.renderWidgetAttachmentHtml(att, m.message);
         }
         return esc(m.message);
     }
@@ -3484,7 +4026,7 @@
     }
 
     function queueVisitorFiles(files) {
-        if (!files || !files.length || !conversationId || visitorUploadBusy || chatClosed || !window.LCChatFiles) {
+        if (!files || !files.length || !conversationId || visitorUploadBusy || !window.LCChatFiles) {
             return;
         }
         var attachBtn = document.getElementById('lc-attach-file');
@@ -3532,7 +4074,7 @@
     }
 
     function sendPendingAttachment() {
-        if (!pendingAttachments.length || !conversationId || visitorUploadBusy || chatClosed) {
+        if (!pendingAttachments.length || !conversationId || visitorUploadBusy) {
             return;
         }
         stopOwnTyping();
@@ -3542,7 +4084,7 @@
     }
 
     function sendNextPendingAttachment(caption, isFirst) {
-        if (!pendingAttachments.length || !conversationId || chatClosed) {
+        if (!pendingAttachments.length || !conversationId) {
             visitorUploadBusy = false;
             var attachBtn = document.getElementById('lc-attach-file');
             var sendBtn = document.getElementById('lc-send');
@@ -3559,6 +4101,7 @@
         var item = pendingAttachments[0];
         var input = document.getElementById('lc-input');
         var useCaption = isFirst ? caption : '';
+        var wasClosed = chatClosed;
 
         window.LCChatFiles.upload({
             role: 'visitor',
@@ -3572,13 +4115,21 @@
             widgetLoadedAt: widgetLoadedAt
         }).then(function (data) {
             if (data && data.success) {
+                if (wasClosed || data.reopened) {
+                    markChatContinuedFromClosed(data);
+                }
                 revokePendingPreview(item);
                 pendingAttachments.shift();
                 if (isFirst && input) {
                     input.value = '';
                     autoResizeTextarea(input);
                 }
-                pollMessages(true);
+                if (data.message && data.message.id) {
+                    appendMessage(data.message);
+                    advanceLastMsgId(data.message.id);
+                } else {
+                    pollMessages(false);
+                }
                 if (pendingAttachments.length) {
                     sendNextPendingAttachment('', false);
                     return;
@@ -3603,7 +4154,6 @@
 
     function sendMessage() {
         hideEmojiPicker();
-        if (chatClosed) return;
         if (pendingAttachments.length) {
             if (!conversationId) {
                 if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
@@ -3649,6 +4199,7 @@
 
         var sendBtn = document.getElementById('lc-send');
         sendBtn.classList.add('is-sending');
+        var wasClosed = chatClosed;
 
         fetch(siteUrl + '/api/visitor-send.php', {
             method: 'POST',
@@ -3666,18 +4217,37 @@
         .then(function (data) {
             sendBtn.classList.remove('is-sending');
             var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
-            if (pending) pending.remove();
             if (data.success) {
-                pollMessages(true);
-            } else if (data.error) {
-                appendMessage({ sender_type: 'system', message: data.error });
+                if (wasClosed || data.reopened) {
+                    markChatContinuedFromClosed(data);
+                }
+                if (pending && data.message_id) {
+                    pending.setAttribute('data-msg-id', String(data.message_id));
+                    pending.classList.remove('lcw-msg-pending');
+                    updateVisitorTicks(String(data.message_id), 'sent');
+                    advanceLastMsgId(data.message_id);
+                } else if (pending) {
+                    pending.remove();
+                    pollMessages(false);
+                } else {
+                    pollMessages(false);
+                }
+                // Keep visitor socket alive after send
+                if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
+                    loadRealtimeScript(function () { initVisitorRealtime(); });
+                }
+            } else {
+                if (pending) pending.remove();
+                if (data.error) {
+                    appendMessage({ sender_type: 'system', message: data.error });
+                }
             }
         })
         .catch(function () {
             sendBtn.classList.remove('is-sending');
             var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
             if (pending) pending.remove();
-            appendMessage({ sender_type: 'system', message: 'Message failed to send. Please try again.' });
+            appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
         });
     }
 

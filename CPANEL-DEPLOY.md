@@ -17,7 +17,7 @@ WebSocket **nahi** chahiye — polling se kaam chal jata hai.
 
 ---
 
-## Option A: Subfolder (e.g. `yourdomain.com/livechat`)
+## Option A: Subfolder (e.g. `erp.3knotsdigital.com/WSlivechat`)
 
 ### Step 1 — Files upload karein
 
@@ -55,7 +55,7 @@ File Manager se:
 Browser mein kholo:
 
 ```
-https://yourdomain.com/livechat/install.php
+https://erp.3knotsdigital.com/WSlivechat/install.php
 ```
 
 Form mein cPanel wali DB details daalein + admin email/password.
@@ -63,7 +63,7 @@ Form mein cPanel wali DB details daalein + admin email/password.
 Install complete hone ke baad:
 
 ```
-https://yourdomain.com/livechat/admin/login.php
+https://erp.3knotsdigital.com/WSlivechat/admin/login.php
 ```
 
 ### Step 5 — Security (zaroori)
@@ -81,8 +81,8 @@ Install ke baad **delete ya rename** karein:
 2. Document root: `public_html/chat` (ya jo path mile)
 3. Saari files **us folder ke root** mein daalein (andar `livechat` subfolder nahi)
 4. Database steps same
-5. Install URL: `https://chat.yourdomain.com/install.php`
-6. Admin: `https://chat.yourdomain.com/admin/login.php`
+5. Install URL: `https://erp.3knotsdigital.com/WSlivechat/install.php`
+6. Admin: `https://erp.3knotsdigital.com/WSlivechat/admin/login.php`
 
 ---
 
@@ -93,8 +93,8 @@ Admin → **Brands** → apne brand ka **Embed code** copy karein.
 Example:
 
 ```html
-<script src="https://yourdomain.com/livechat/widget/embed.js"
-        data-site="https://yourdomain.com/livechat"
+<script src="https://erp.3knotsdigital.com/WSlivechat/widget/embed.js"
+        data-site="https://erp.3knotsdigital.com/WSlivechat"
         data-brand="default"></script>
 ```
 
@@ -103,7 +103,7 @@ Example:
 - `data-brand` = brand key (Brands page se)
 - Apni website **HTTPS** par ho to `data-site` bhi **https://** hona chahiye
 
-Test: `https://yourdomain.com/livechat/demo.html?brand=default`
+Test: `https://erp.3knotsdigital.com/WSlivechat/demo.html?brand=default`
 
 ---
 
@@ -160,11 +160,11 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 | Page | URL |
 |------|-----|
-| Install | `https://yourdomain.com/livechat/install.php` |
-| Admin Login | `https://yourdomain.com/livechat/admin/login.php` |
-| Live Chats | `https://yourdomain.com/livechat/admin/chats.php` |
-| Brands / Embed | `https://yourdomain.com/livechat/admin/brands.php` |
-| Widget Demo | `https://yourdomain.com/livechat/demo.html` |
+| Install | `https://erp.3knotsdigital.com/WSlivechat/install.php` |
+| Admin Login | `https://erp.3knotsdigital.com/WSlivechat/admin/login.php` |
+| Live Chats | `https://erp.3knotsdigital.com/WSlivechat/admin/chats.php` |
+| Brands / Embed | `https://erp.3knotsdigital.com/WSlivechat/admin/brands.php` |
+| Widget Demo | `https://erp.3knotsdigital.com/WSlivechat/demo.html` |
 
 ---
 

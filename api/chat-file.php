@@ -8,6 +8,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 
 $messageId = (int) ($_GET['id'] ?? 0);
 $chatToken = trim($_GET['token'] ?? '');
+$visitorUid = trim($_GET['visitor_uid'] ?? '');
 
 if ($messageId < 1) {
     http_response_code(400);
@@ -36,7 +37,13 @@ if (!$agent && !empty($_SESSION['super_admin_id'])) {
 }
 
 try {
-    lc_serve_chat_attachment($messageId, $chatToken !== '' ? $chatToken : null, $agent, $isSuperAdmin);
+    lc_serve_chat_attachment(
+        $messageId,
+        $chatToken !== '' ? $chatToken : null,
+        $agent,
+        $isSuperAdmin,
+        $visitorUid !== '' ? $visitorUid : null
+    );
 } catch (Throwable $e) {
     http_response_code(500);
     exit('Server error');

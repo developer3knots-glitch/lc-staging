@@ -38,20 +38,12 @@ try {
 
     $waiting = lc_waiting_count($agentBrandId, $accountId);
 
-    $activeSql = "SELECT COUNT(*) FROM conversations c WHERE c.status = 'active'" . $brandSql;
-    $stmt = $db->prepare($activeSql);
-    $stmt->execute($brandParams);
-    $activeAll = (int) $stmt->fetchColumn();
-
-    $closedSql = "SELECT COUNT(*) FROM conversations c WHERE c.status = 'closed' AND DATE(c.closed_at) = CURDATE()" . $brandSql;
-    $stmt = $db->prepare($closedSql);
-    $stmt->execute($brandParams);
-    $closedTodayAll = (int) $stmt->fetchColumn();
-
+    $activeAll = lc_active_count($agentBrandId, $accountId);
+    $closedTodayAll = lc_closed_today_count($agentBrandId, $accountId);
     $startedTodayAll = lc_dashboard_started_today($agentBrandId, $accountId);
     $scopeCounts = lc_dashboard_scope_counts($agentBrandId, $accountId, $scopeAgentId, $agentId);
     $activityChart = lc_dashboard_activity_chart($agentBrandId, 7, $accountId, $scopeAgentId);
-    $weekTotal = (int) array_sum(array_column($activityChart, 'count'));
+    $weekTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId, $scopeAgentId);
     $weekPreviousTotal = lc_dashboard_activity_total($agentBrandId, 7, $accountId, $scopeAgentId, 7);
     $weekDelta = $weekTotal - $weekPreviousTotal;
     $onlineAgents = lc_get_online_agents_count($agentBrandId, $accountId);
@@ -98,11 +90,11 @@ try {
     $stmt = $db->prepare($recentSql);
     $stmt->execute(array_merge([$agentId], $brandParams));
     $recent = $stmt->fetchAll();
+    // Same IP → one row (active preferred over closed)
     if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
-        $recent = array_slice(lc_dedupe_inbox_conversations_by_ip($recent), 0, 10);
-    } else {
-        $recent = array_slice($recent, 0, 10);
+        $recent = lc_dedupe_inbox_conversations_by_ip($recent);
     }
+    $recent = array_slice($recent, 0, 20);
 
     $recentFormatted = [];
     foreach ($recent as $r) {

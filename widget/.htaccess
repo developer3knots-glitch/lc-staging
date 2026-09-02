@@ -1,0 +1,4 @@
+# Force revalidation for widget scripts
+<IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, must-revalidate"
+</IfModule>

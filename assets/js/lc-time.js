@@ -163,7 +163,16 @@
         if (tickTimer !== null) {
             return;
         }
-        tickTimer = setInterval(refreshAll, 60000);
+        // Refresh often enough that two open clients (admin + widget) don't
+        // sit on neighboring minute labels for up to a full minute.
+        tickTimer = setInterval(refreshAll, 15000);
+        if (typeof document !== 'undefined' && document.addEventListener) {
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) {
+                    refreshAll();
+                }
+            });
+        }
     }
 
     function register(el) {

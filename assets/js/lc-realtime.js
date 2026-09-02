@@ -1,7 +1,6 @@
 /**
- * LiveChat realtime layer (Option A).
- * mode=poll: no-op bus (existing HTTP polling stays in admin-chat.js / embed.js).
- * mode=ws:   WebSocket to VPS server; polling slows to backupPollMs while connected.
+ * LiveChat realtime layer.
+ * mode=ws: WebSocket to realtime server. Reconnects fast; supports token refresh.
  */
 (function (global) {
     'use strict';
@@ -48,6 +47,7 @@
         this.pingTimer = null;
         this.retries = 0;
         this.shouldRun = false;
+        this._opening = false;
     }
 
     WebSocketDriver.prototype.on = function (event, fn) {
@@ -57,31 +57,47 @@
     };
 
     WebSocketDriver.prototype.isConnected = function () {
-        return this.connected;
+        return !!(this.connected && this.ws && this.ws.readyState === 1);
     };
 
     WebSocketDriver.prototype.connect = function () {
-        var self = this;
-        self.shouldRun = true;
-        self.retries = 0;
-        return self.openSocket();
+        this.shouldRun = true;
+        this.retries = 0;
+        return this.openSocket();
     };
 
-    WebSocketDriver.prototype.disconnect = function () {
-        this.shouldRun = false;
-        this.connected = false;
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
+    WebSocketDriver.prototype._clearSocket = function (suppressReconnect) {
         if (this.pingTimer) {
             clearInterval(this.pingTimer);
             this.pingTimer = null;
         }
         if (this.ws) {
-            try { this.ws.close(); } catch (e) { /* ignore */ }
+            var old = this.ws;
             this.ws = null;
+            try {
+                old.onopen = null;
+                old.onmessage = null;
+                old.onerror = null;
+                old.onclose = suppressReconnect
+                    ? function () {}
+                    : old.onclose;
+                if (suppressReconnect) {
+                    old.onclose = function () {};
+                }
+                old.close();
+            } catch (e) { /* ignore */ }
         }
+    };
+
+    WebSocketDriver.prototype.disconnect = function () {
+        this.shouldRun = false;
+        this.connected = false;
+        this._opening = false;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this._clearSocket(true);
         emitAll(this.handlers, 'disconnected', { mode: 'ws' });
     };
 
@@ -93,9 +109,12 @@
         if (typeof self.opts.fallbackPoll === 'function') {
             try { self.opts.fallbackPoll(); } catch (e) { /* ignore */ }
         }
-        var delay = Math.min(30000, 1000 * Math.pow(2, self.retries));
+        if (self.reconnectTimer) clearTimeout(self.reconnectTimer);
+        // Fast reconnect: 200ms, 400ms, 800ms... cap 5s (was 30s — caused missed msgs)
+        var delay = Math.min(5000, 200 * Math.pow(2, Math.min(self.retries, 5)));
         self.retries += 1;
         self.reconnectTimer = setTimeout(function () {
+            self.reconnectTimer = null;
             self.openSocket();
         }, delay);
     };
@@ -103,73 +122,135 @@
     WebSocketDriver.prototype.openSocket = function () {
         var self = this;
         var wsUrl = self.opts.wsUrl || '';
-        var token = self.opts.token || '';
-        if (!wsUrl || !token || !global.WebSocket) {
+        if (!wsUrl || !global.WebSocket) {
             return Promise.resolve();
         }
+        if (self._opening) {
+            return Promise.resolve();
+        }
+        self._opening = true;
 
-        return new Promise(function (resolve) {
-            try {
-                self.ws = new WebSocket(wsUrl);
-            } catch (e) {
-                self.scheduleReconnect();
-                resolve();
-                return;
+        // Drop prior socket without double-reconnect
+        self._clearSocket(true);
+
+        function beginWithToken(token) {
+            if (!token || !self.shouldRun) {
+                self._opening = false;
+                if (self.shouldRun) self.scheduleReconnect();
+                return Promise.resolve();
             }
+            self.opts.token = token;
 
-            self.ws.onopen = function () {
-                self.ws.send(JSON.stringify({ type: 'auth', token: token }));
-            };
-
-            self.ws.onmessage = function (ev) {
-                var msg;
-                try { msg = JSON.parse(ev.data); } catch (e) { return; }
-                if (!msg || !msg.type) return;
-
-                if (msg.type === 'auth.ok') {
-                    self.connected = true;
-                    self.retries = 0;
-                    emitAll(self.handlers, 'connected', { mode: 'ws' });
-                    if (self.pingTimer) clearInterval(self.pingTimer);
-                    self.pingTimer = setInterval(function () {
-                        if (self.ws && self.ws.readyState === 1) {
-                            self.ws.send(JSON.stringify({ type: 'ping' }));
-                        }
-                    }, 25000);
+            return new Promise(function (resolve) {
+                var settled = false;
+                function finish() {
+                    if (settled) return;
+                    settled = true;
+                    self._opening = false;
                     resolve();
-                    return;
                 }
 
-                if (msg.type === 'auth.error') {
+                try {
+                    self.ws = new WebSocket(wsUrl);
+                } catch (e) {
+                    self._opening = false;
                     self.scheduleReconnect();
-                    resolve();
+                    finish();
                     return;
                 }
 
-                if (msg.type === 'event' && msg.event) {
-                    emitAll(self.handlers, msg.event, msg.data || {});
-                    emitAll(self.handlers, 'event', msg);
-                }
-            };
+                self.ws.onopen = function () {
+                    try {
+                        self.ws.send(JSON.stringify({ type: 'auth', token: token }));
+                    } catch (e) {
+                        self.scheduleReconnect();
+                        finish();
+                    }
+                };
 
-            self.ws.onclose = function () {
-                if (self.pingTimer) {
-                    clearInterval(self.pingTimer);
-                    self.pingTimer = null;
-                }
-                self.scheduleReconnect();
-            };
+                self.ws.onmessage = function (ev) {
+                    var msg;
+                    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                    if (!msg || !msg.type) return;
 
-            self.ws.onerror = function () {
-                /* onclose handles reconnect */
-            };
-        });
+                    if (msg.type === 'auth.ok') {
+                        self.connected = true;
+                        self.retries = 0;
+                        self._lastPongAt = Date.now();
+                        emitAll(self.handlers, 'connected', { mode: 'ws', channels: msg.channels || [] });
+                        if (self.pingTimer) clearInterval(self.pingTimer);
+                        self.pingTimer = setInterval(function () {
+                            if (!self.ws || self.ws.readyState !== 1) return;
+                            // Dead socket watchdog: no pong for 45s → force reconnect
+                            if (self._lastPongAt && (Date.now() - self._lastPongAt) > 45000) {
+                                self.connected = false;
+                                self._clearSocket(true);
+                                self.scheduleReconnect();
+                                return;
+                            }
+                            try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
+                        }, 15000);
+                        finish();
+                        return;
+                    }
+
+                    if (msg.type === 'auth.error') {
+                        self.connected = false;
+                        // Force token refresh path on next open
+                        self.opts.token = '';
+                        self.scheduleReconnect();
+                        finish();
+                        return;
+                    }
+
+                    if (msg.type === 'pong') {
+                        self._lastPongAt = Date.now();
+                        return;
+                    }
+
+                    if (msg.type === 'event' && msg.event) {
+                        emitAll(self.handlers, msg.event, msg.data || {});
+                        emitAll(self.handlers, 'event', msg);
+                    }
+                };
+
+                self.ws.onclose = function () {
+                    self.connected = false;
+                    if (self.pingTimer) {
+                        clearInterval(self.pingTimer);
+                        self.pingTimer = null;
+                    }
+                    self._opening = false;
+                    self.scheduleReconnect();
+                    finish();
+                };
+
+                self.ws.onerror = function () {
+                    /* onclose handles reconnect */
+                };
+            });
+        }
+
+        // Optional async token refresh (widget/admin can pass getToken)
+        if (typeof self.opts.getToken === 'function') {
+            try {
+                return Promise.resolve(self.opts.getToken()).then(function (token) {
+                    return beginWithToken(token || self.opts.token || '');
+                }).catch(function () {
+                    return beginWithToken(self.opts.token || '');
+                });
+            } catch (e) {
+                return beginWithToken(self.opts.token || '');
+            }
+        }
+
+        return beginWithToken(self.opts.token || '');
     };
 
     function create(opts) {
         opts = opts || {};
         var mode = (opts.mode || 'poll').toLowerCase();
-        if (mode === 'ws' && opts.wsUrl && opts.token) {
+        if (mode === 'ws' && opts.wsUrl) {
             return new WebSocketDriver(opts);
         }
         return new PollDriver(opts);

@@ -16,7 +16,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $error = 'Invalid request. Refresh and try again.';
     } else {
         try {
-            $result = lc_merge_same_ip_conversations();
+            $result = lc_merge_same_ip_conversations_manual();
         } catch (Throwable $e) {
             $error = 'Merge failed. Check the database and try again.';
         }

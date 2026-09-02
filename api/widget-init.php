@@ -48,12 +48,21 @@ try {
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
 
     if (!$visitor && $settingsOnly) {
+        $known = function_exists('lc_find_visitor_profile_by_ip')
+            ? lc_find_visitor_profile_by_ip($ip, $brandId)
+            : null;
+        $liveByIp = function_exists('lc_find_conversation_by_ip')
+            ? lc_find_conversation_by_ip($ip, $brandId)
+            : null;
+        $hasLive = $liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => false,
-            'conversation_id' => null,
-            'visitor_identity_complete' => false,
+            'has_active_chat' => $hasLive,
+            'conversation_id' => $hasLive ? (int) $liveByIp['id'] : null,
+            'visitor_identity_complete' => $known !== null,
+            'visitor_name' => $known['name'] ?? '',
+            'visitor_email' => $known['email'] ?? '',
             'agents_online' => $onlineCount,
             'realtime' => lc_realtime_client_config($brandId),
         ]);
@@ -94,15 +103,36 @@ try {
     }
 
     if ($settingsOnly) {
-        // Never auto-resume old chats for visitors (same IP / same device).
-        // Session continue uses explicit resume_conversation_id from the client only.
-        // Ticket resume is a separate API when ticket_resume_enabled.
+        $known = function_exists('lc_find_visitor_profile_by_ip')
+            ? lc_find_visitor_profile_by_ip($ip, $brandId)
+            : null;
+        if ($known) {
+            $identityComplete = true;
+            if ($visitorName === '') {
+                $visitorName = $known['name'];
+            }
+            if ($visitorEmail === '') {
+                $visitorEmail = $known['email'];
+            }
+            // Persist onto this visitor record for next loads
+            try {
+                $db->prepare('UPDATE visitors SET name = COALESCE(NULLIF(?, ""), name), email = COALESCE(NULLIF(?, ""), email) WHERE id = ?')
+                    ->execute([$known['name'], $known['email'], $visitorId]);
+            } catch (Throwable $e) {
+            }
+        }
+        $liveByIp = function_exists('lc_find_conversation_by_ip')
+            ? lc_find_conversation_by_ip($ip, $brandId)
+            : null;
+        $hasLive = $liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
-            'has_active_chat' => false,
-            'conversation_id' => null,
+            'has_active_chat' => $hasLive,
+            'conversation_id' => $hasLive ? (int) $liveByIp['id'] : null,
             'visitor_identity_complete' => $identityComplete,
+            'visitor_name' => $visitorName,
+            'visitor_email' => $visitorEmail,
             'agents_online' => $onlineCount,
             'realtime' => lc_realtime_client_config($brandId),
         ]);
@@ -133,6 +163,15 @@ try {
         $conv = $stmt->fetch() ?: null;
     }
 
+    // Same public IP → one thread (reuse waiting/active or reopen closed)
+    if (!$conv && function_exists('lc_claim_ip_conversation')) {
+        $claimed = lc_claim_ip_conversation($ip, $brandId, $visitorId, $visitorUid);
+        if ($claimed) {
+            $conv = $claimed;
+            $visitorId = (int) (($db->query('SELECT visitor_id FROM conversations WHERE id = ' . (int) $claimed['id'])->fetchColumn()) ?: $visitorId);
+        }
+    }
+
     if ($conv) {
         $keepId = (int) $conv['id'];
         $db->prepare("
@@ -140,9 +179,39 @@ try {
             SET status = 'closed', closed_at = NOW()
             WHERE visitor_id = ? AND brand_id = ? AND status = 'waiting' AND id != ?
         ")->execute([$visitorId, $brandId, $keepId]);
+        // Same public IP → only one open thread in the agent inbox
+        if (function_exists('lc_ip_usable_for_identity') && lc_ip_usable_for_identity($ip)) {
+            try {
+                $db->prepare("
+                    UPDATE conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    SET c.status = 'closed', c.closed_at = COALESCE(c.closed_at, NOW())
+                    WHERE v.ip_address = ? AND c.brand_id = ? AND c.status IN ('waiting','active') AND c.id <> ?
+                ")->execute([$ip, $brandId, $keepId]);
+            } catch (Throwable $e) {
+            }
+        }
     }
 
     if (!$conv) {
+        // Returning IP with known profile → fill identity (no form again)
+        if (function_exists('lc_find_visitor_profile_by_ip')) {
+            $ipProfile = lc_find_visitor_profile_by_ip($ip, $brandId);
+            if ($ipProfile) {
+                if ($name === '') {
+                    $name = $ipProfile['name'];
+                }
+                if ($email === '') {
+                    $email = $ipProfile['email'];
+                }
+                try {
+                    $db->prepare('UPDATE visitors SET name = COALESCE(NULLIF(?, ""), name), email = COALESCE(NULLIF(?, ""), email) WHERE id = ?')
+                        ->execute([$name, $email, $visitorId]);
+                } catch (Throwable $e) {
+                }
+            }
+        }
+
         // Form required: name + email + first message (LiveChat-style gate)
         if ($prechatRequired) {
             if ($initialMessage === '') {
@@ -177,6 +246,26 @@ try {
         lc_touch_conversation($convId);
         lc_assign_agent($convId);
         $status = 'waiting';
+
+        // Same IP / email with earlier chats → Returning badge (not New)
+        if (function_exists('lc_detect_returning_visitor') && function_exists('lc_mark_conversation_returning')) {
+            $ipForReturn = (string) ($ip ?: '');
+            try {
+                $vipStmt = $db->prepare('SELECT ip_address, email FROM visitors WHERE id = ?');
+                $vipStmt->execute([$visitorId]);
+                $vip = $vipStmt->fetch() ?: [];
+                if ($ipForReturn === '' && !empty($vip['ip_address'])) {
+                    $ipForReturn = (string) $vip['ip_address'];
+                }
+                $emailForReturn = $email !== '' ? $email : trim((string) ($vip['email'] ?? ''));
+            } catch (Throwable $e) {
+                $emailForReturn = $email;
+            }
+            $det = lc_detect_returning_visitor($ipForReturn, $emailForReturn ?? $email, $brandId, $convId);
+            if (!empty($det['is_returning'])) {
+                lc_mark_conversation_returning($convId, (int) ($det['prior_count'] ?? 1), (string) ($det['match_by'] ?? ''));
+            }
+        }
     } else {
         $convId = (int) $conv['id'];
         $status = $conv['status'];
@@ -234,6 +323,9 @@ try {
         'ticket_display_enabled' => lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null),
         'ticket_resume_enabled' => lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null),
         'realtime' => lc_realtime_client_config($brandId),
+        'realtime_token' => lc_realtime_mode() === 'ws'
+            ? lc_realtime_visitor_token($visitorUid, $convId)
+            : '',
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

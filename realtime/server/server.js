@@ -21,11 +21,16 @@ const path = require('path');
 })();
 
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = parseInt(process.env.PORT || '6001', 10);
 const HOST = process.env.HOST || '127.0.0.1';
+const SSL_PORT = parseInt(process.env.SSL_PORT || '6002', 10);
+const SSL_HOST = process.env.SSL_HOST || '0.0.0.0';
+const SSL_CERT = process.env.SSL_CERT || '';
+const SSL_KEY = process.env.SSL_KEY || '';
 const SECRET = process.env.LC_REALTIME_SECRET || '';
 
 if (!SECRET) {
@@ -105,7 +110,7 @@ function readJson(req) {
   });
 }
 
-const server = http.createServer(async function (req, res) {
+const requestHandler = async function (req, res) {
   if (req.method === 'POST' && req.url === '/publish') {
     if (req.headers['x-lc-secret'] !== SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -132,55 +137,82 @@ const server = http.createServer(async function (req, res) {
   }
 
   if (req.method === 'GET' && req.url === '/health') {
+    const channels = [];
+    channelSubs.forEach(function (set, name) {
+      let live = 0;
+      set.forEach(function (client) {
+        if (client.readyState === 1) live += 1;
+      });
+      channels.push({ channel: name, subscribers: set.size, live: live });
+    });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, channels: channelSubs.size }));
+    res.end(JSON.stringify({ ok: true, channels: channels.length, detail: channels }));
     return;
   }
 
   res.writeHead(404);
   res.end();
-});
+};
 
-const wss = new WebSocketServer({ server });
+function wireWebSocket(server) {
+  const wss = new WebSocketServer({ server });
 
-wss.on('connection', function (ws) {
-  ws._lcAuthed = false;
+  wss.on('connection', function (ws) {
+    ws._lcAuthed = false;
 
-  ws.on('message', function (raw) {
-    let msg;
-    try { msg = JSON.parse(String(raw)); } catch (e) { return; }
-    if (!msg || !msg.type) return;
+    ws.on('message', function (raw) {
+      let msg;
+      try { msg = JSON.parse(String(raw)); } catch (e) { return; }
+      if (!msg || !msg.type) return;
 
-    if (msg.type === 'ping') {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }));
-      return;
-    }
-
-    if (msg.type === 'auth') {
-      const claims = verifyToken(String(msg.token || ''));
-      if (!claims) {
-        ws.send(JSON.stringify({ type: 'auth.error', error: 'Invalid token' }));
-        ws.close();
+      if (msg.type === 'ping') {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }));
         return;
       }
-      ws._lcAuthed = true;
-      ws._lcClaims = claims;
-      const channels = Array.isArray(claims.channels) ? claims.channels : [];
-      channels.forEach(function (ch) { subscribe(ws, String(ch)); });
-      ws.send(JSON.stringify({ type: 'auth.ok', channels }));
-      return;
-    }
 
-    if (!ws._lcAuthed) {
-      ws.close();
-    }
+      if (msg.type === 'auth') {
+        const claims = verifyToken(String(msg.token || ''));
+        if (!claims) {
+          ws.send(JSON.stringify({ type: 'auth.error', error: 'Invalid token' }));
+          ws.close();
+          return;
+        }
+        ws._lcAuthed = true;
+        ws._lcClaims = claims;
+        const channels = Array.isArray(claims.channels) ? claims.channels : [];
+        channels.forEach(function (ch) { subscribe(ws, String(ch)); });
+        ws.send(JSON.stringify({ type: 'auth.ok', channels }));
+        return;
+      }
+
+      if (!ws._lcAuthed) {
+        ws.close();
+      }
+    });
+
+    ws.on('close', function () {
+      unsubscribeAll(ws);
+    });
   });
 
-  ws.on('close', function () {
-    unsubscribeAll(ws);
-  });
+  return wss;
+}
+
+const httpServer = http.createServer(requestHandler);
+wireWebSocket(httpServer);
+httpServer.listen(PORT, HOST, function () {
+  console.log('[livechat-realtime] HTTP listening on ' + HOST + ':' + PORT);
 });
 
-server.listen(PORT, HOST, function () {
-  console.log('[livechat-realtime] listening on ' + HOST + ':' + PORT);
-});
+if (SSL_CERT && SSL_KEY && fs.existsSync(SSL_CERT) && fs.existsSync(SSL_KEY)) {
+  const httpsServer = https.createServer({
+    cert: fs.readFileSync(SSL_CERT),
+    key: fs.readFileSync(SSL_KEY),
+  }, requestHandler);
+  wireWebSocket(httpsServer);
+  httpsServer.listen(SSL_PORT, SSL_HOST, function () {
+    console.log('[livechat-realtime] HTTPS/WSS listening on ' + SSL_HOST + ':' + SSL_PORT);
+  });
+} else if (SSL_CERT || SSL_KEY) {
+  console.warn('[livechat-realtime] SSL_CERT/SSL_KEY set but file missing — WSS disabled');
+}

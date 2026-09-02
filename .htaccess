@@ -32,3 +32,10 @@ AddDefaultCharset UTF-8
 </IfModule>
 
 Options -Indexes
+
+# Always revalidate widget JS so pinned ?v= on customer sites still get fixes
+<IfModule mod_headers.c>
+    <FilesMatch "^(embed\.js|lc-realtime\.js)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

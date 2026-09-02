@@ -27,12 +27,122 @@ function lc_find_conversation_by_ip(string $ip, int $brandId): ?array
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         WHERE v.ip_address = ? AND c.brand_id = ?
-        ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
+        ORDER BY
+            CASE c.status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
+            COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         LIMIT 1
     ");
     $stmt->execute([$ip, $brandId]);
 
     return lc_conversation_identity_row($stmt->fetch() ?: null);
+}
+
+/**
+ * Known name/email for this public IP (skip pre-chat form on return visits).
+ *
+ * @return array{name:string,email:string,visitor_id:int}|null
+ */
+function lc_find_visitor_profile_by_ip(string $ip, int $brandId = 0): ?array
+{
+    if (!lc_ip_usable_for_identity($ip)) {
+        return null;
+    }
+    try {
+        $sql = "
+            SELECT v.id, v.name, v.email
+            FROM visitors v
+        ";
+        $params = [];
+        if ($brandId > 0) {
+            $sql .= " INNER JOIN conversations c ON c.visitor_id = v.id AND c.brand_id = ? ";
+            $params[] = $brandId;
+        }
+        $sql .= "
+            WHERE v.ip_address = ?
+              AND v.name IS NOT NULL AND TRIM(v.name) <> ''
+              AND v.email IS NOT NULL AND TRIM(v.email) <> ''
+            ORDER BY v.last_seen DESC, v.id DESC
+            LIMIT 1
+        ";
+        $params[] = $ip;
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+        $email = lc_normalize_visitor_email((string) ($row['email'] ?? ''));
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '' || $email === '') {
+            return null;
+        }
+        return [
+            'visitor_id' => (int) $row['id'],
+            'name' => $name,
+            'email' => $email,
+        ];
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * One live thread per IP: reuse waiting/active, or reopen latest closed for this IP.
+ *
+ * @return array{id:int,status:string}|null
+ */
+function lc_claim_ip_conversation(string $ip, int $brandId, int $currentVisitorId, string $visitorUid): ?array
+{
+    if ($brandId < 1 || $currentVisitorId < 1 || !lc_ip_usable_for_identity($ip)) {
+        return null;
+    }
+    $found = lc_find_conversation_by_ip($ip, $brandId);
+    if (!$found) {
+        return null;
+    }
+
+    $convId = (int) $found['id'];
+    $ownerVisitorId = (int) $found['visitor_id'];
+    $status = (string) $found['status'];
+    $db = lc_db();
+
+    // Bind this browser uid to the IP's visitor so poll/send keep working
+    try {
+        $db->prepare('UPDATE visitors SET visitor_uid = ?, ip_address = ?, last_seen = NOW() WHERE id = ?')
+            ->execute([$visitorUid, $ip, $ownerVisitorId]);
+        if ($ownerVisitorId !== $currentVisitorId) {
+            // Point current stub visitor's chats away; keep IP identity on owner
+            $db->prepare('UPDATE visitors SET ip_address = NULL WHERE id = ? AND id <> ?')
+                ->execute([$currentVisitorId, $ownerVisitorId]);
+        }
+    } catch (Throwable $e) {
+    }
+
+    if ($status === 'waiting' || $status === 'active') {
+        // Close other open chats for this IP so inbox stays one thread
+        try {
+            $db->prepare("
+                UPDATE conversations c
+                JOIN visitors v ON v.id = c.visitor_id
+                SET c.status = 'closed', c.closed_at = COALESCE(c.closed_at, NOW())
+                WHERE v.ip_address = ? AND c.brand_id = ? AND c.status IN ('waiting','active') AND c.id <> ?
+            ")->execute([$ip, $brandId, $convId]);
+        } catch (Throwable $e) {
+        }
+        return ['id' => $convId, 'status' => $status];
+    }
+
+    if ($status === 'closed') {
+        if (function_exists('lc_reopen_closed_for_visitor_continue')) {
+            lc_reopen_closed_for_visitor_continue($convId, $ownerVisitorId);
+        } else {
+            $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL WHERE id = ?")
+                ->execute([$convId]);
+        }
+        return ['id' => $convId, 'status' => 'waiting'];
+    }
+
+    return null;
 }
 
 function lc_normalize_visitor_email(string $email): string
@@ -210,28 +320,56 @@ function lc_inbox_row_rank(array $row): array
 }
 
 /**
- * Live inbox: one row per visitor identity. Prefer waiting/active over closed.
+ * One inbox/dashboard row per public IP (prefer waiting/active over closed).
+ * Different IPs stay separate even if email/name match.
  *
  * @param list<array<string,mixed>> $conversations
  * @return list<array<string,mixed>>
  */
 function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
 {
+    if ($conversations === []) {
+        return [];
+    }
+
     $best = [];
     foreach ($conversations as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
         $key = lc_inbox_identity_key($row);
         if (!isset($best[$key])) {
             $best[$key] = $row;
             continue;
         }
-        if (lc_inbox_row_rank($row) < lc_inbox_row_rank($best[$key])) {
+        $cur = lc_inbox_row_rank($row);
+        $prev = lc_inbox_row_rank($best[$key]);
+        $better = false;
+        for ($i = 0; $i < 3; $i++) {
+            if ($cur[$i] < $prev[$i]) {
+                $better = true;
+                break;
+            }
+            if ($cur[$i] > $prev[$i]) {
+                break;
+            }
+        }
+        if ($better) {
             $best[$key] = $row;
         }
     }
 
     $out = array_values($best);
     usort($out, static function ($a, $b) {
-        return lc_inbox_row_rank($a) <=> lc_inbox_row_rank($b);
+        $ra = lc_inbox_row_rank($a);
+        $rb = lc_inbox_row_rank($b);
+        for ($i = 0; $i < 3; $i++) {
+            if ($ra[$i] !== $rb[$i]) {
+                return $ra[$i] <=> $rb[$i];
+            }
+        }
+
+        return 0;
     });
 
     return $out;
@@ -307,15 +445,30 @@ function lc_merge_conversation_ids_into_one(array $ids): array
     }
 }
 
+/**
+ * Auto-merge is OFF. Different IPs / sessions must keep separate tickets.
+ * Manual admin tool can still call lc_merge_same_ip_conversations_manual().
+ */
 function lc_merge_same_ip_conversations(): array
+{
+    return [
+        'groups' => 0,
+        'messages_moved' => 0,
+        'conversations_removed' => 0,
+    ];
+}
+
+/**
+ * Manual-only: merge CLOSED chats that share the exact same IP (never by email).
+ * Does not run automatically — different IPs stay as separate tickets.
+ */
+function lc_merge_same_ip_conversations_manual(): array
 {
     $db = lc_db();
     $mergedGroups = 0;
     $movedMessages = 0;
     $removedConversations = 0;
 
-    // Archive cleanup only: merge CLOSED threads.
-    // Never move old messages into waiting/active chats - that poisons the visitor widget.
     $ipGroups = $db->query("
         SELECT v.ip_address AS ip
         FROM conversations c
@@ -336,40 +489,6 @@ function lc_merge_same_ip_conversations(): array
             ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         ");
         $stmt->execute([(string) $g['ip']]);
-        $ids = array_map(static function ($row) {
-            return (int) $row['id'];
-        }, $stmt->fetchAll());
-        $res = lc_merge_conversation_ids_into_one($ids);
-        if ($res['ok']) {
-            $mergedGroups++;
-            $movedMessages += $res['moved'];
-            $removedConversations += $res['removed'];
-        }
-    }
-
-    $emailGroups = $db->query("
-        SELECT LOWER(TRIM(v.email)) AS email, COALESCE(c.brand_id, 0) AS brand_id
-        FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
-        WHERE c.status = 'closed'
-          AND v.email IS NOT NULL AND TRIM(v.email) <> ''
-        GROUP BY LOWER(TRIM(v.email)), COALESCE(c.brand_id, 0)
-        HAVING COUNT(*) > 1
-    ")->fetchAll();
-
-    foreach ($emailGroups as $g) {
-        $email = lc_normalize_visitor_email((string) $g['email']);
-        if ($email === '') {
-            continue;
-        }
-        $stmt = $db->prepare("
-            SELECT c.id
-            FROM conversations c
-            JOIN visitors v ON v.id = c.visitor_id
-            WHERE LOWER(TRIM(v.email)) = ? AND COALESCE(c.brand_id, 0) = ? AND c.status = 'closed'
-            ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
-        ");
-        $stmt->execute([$email, (int) $g['brand_id']]);
         $ids = array_map(static function ($row) {
             return (int) $row['id'];
         }, $stmt->fetchAll());
@@ -482,14 +601,74 @@ function lc_mark_conversation_returning(int $conversationId, int $priorCount, st
 
 /**
  * Normalize API flags on a conversation row.
+ * Backfills is_returning when prior chats exist (IP/email/visitor) or a merge note is present.
  *
  * @param array<string,mixed> $row
  * @return array<string,mixed>
  */
 function lc_enrich_returning_visitor_flags(array $row): array
 {
+    lc_ensure_returning_visitor_schema();
+
     $is = !empty($row['is_returning']);
     $prior = (int) ($row['prior_chat_count'] ?? 0);
+    $cid = (int) ($row['id'] ?? 0);
+
+    if (!$is && $cid > 0) {
+        $brandId = (int) ($row['brand_id'] ?? 0);
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $email = trim((string) ($row['visitor_email'] ?? ''));
+        $visitorId = (int) ($row['visitor_id'] ?? 0);
+
+        if ($brandId > 0) {
+            $det = lc_detect_returning_visitor($ip, $email, $brandId, $cid);
+            if (!empty($det['is_returning'])) {
+                $is = true;
+                $prior = max($prior, (int) ($det['prior_count'] ?? 0), 1);
+            }
+        }
+
+        if (!$is && $visitorId > 0) {
+            try {
+                $stmt = lc_db()->prepare('SELECT COUNT(*) FROM conversations WHERE visitor_id = ? AND id <> ?');
+                $stmt->execute([$visitorId, $cid]);
+                $other = (int) $stmt->fetchColumn();
+                if ($other > 0) {
+                    $is = true;
+                    $prior = max($prior, $other);
+                }
+            } catch (Throwable $e) {
+            }
+        }
+
+        // Same-IP merge deletes prior rows — still treat as returning if merge note exists
+        if (!$is) {
+            try {
+                $stmt = lc_db()->prepare("
+                    SELECT message FROM messages
+                    WHERE conversation_id = ? AND sender_type = 'system'
+                      AND message LIKE 'Merged %earlier chat%'
+                    ORDER BY id DESC LIMIT 1
+                ");
+                $stmt->execute([$cid]);
+                $msg = (string) ($stmt->fetchColumn() ?: '');
+                if ($msg !== '') {
+                    $is = true;
+                    if (preg_match('/Merged\s+(\d+)\s+earlier/i', $msg, $m)) {
+                        $prior = max($prior, (int) $m[1], 1);
+                    } else {
+                        $prior = max($prior, 1);
+                    }
+                }
+            } catch (Throwable $e) {
+            }
+        }
+
+        if ($is) {
+            lc_mark_conversation_returning($cid, max(1, $prior));
+        }
+    }
+
     if ($is && $prior < 1) {
         $prior = 1;
     }
