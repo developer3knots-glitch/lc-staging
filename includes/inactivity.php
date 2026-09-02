@@ -49,6 +49,10 @@ function lc_add_inactivity_system_message(int $conversationId, string $message):
     if ($conversationId < 1 || $message === '') {
         return;
     }
+    if (function_exists('lc_add_system_message')) {
+        lc_add_system_message($conversationId, $message);
+        return;
+    }
     lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)')
         ->execute([$conversationId, 'system', $message]);
 }
@@ -211,6 +215,12 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
                     lc_send_pending_transcript($conversationId, true);
                 } catch (Throwable $e) {
                 }
+            }
+            if (function_exists('lc_realtime_publish_conversation_event')) {
+                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                    'status' => 'closed',
+                    'closed_by' => 'inactivity',
+                ]);
             }
             return 'closed';
         }

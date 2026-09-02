@@ -89,6 +89,18 @@ function lc_format_api_conversation(?array $conversation): ?array
         );
     }
 
+    $displayIp = '';
+    if (function_exists('lc_valid_public_ipv4')) {
+        $displayIp = lc_valid_public_ipv4((string) ($conversation['visitor_ipv4'] ?? ''))
+            ?: lc_valid_public_ipv4((string) ($conversation['visitor_ip'] ?? ''))
+            ?: (function_exists('lc_ipv4_from_any') ? lc_ipv4_from_any((string) ($conversation['visitor_ip'] ?? '')) : null)
+            ?: '';
+    }
+    if ($displayIp !== '') {
+        $conversation['visitor_ipv4'] = $displayIp;
+        $conversation['visitor_ip'] = $displayIp;
+    }
+
     return $conversation;
 }
 

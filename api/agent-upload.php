@@ -41,6 +41,9 @@ try {
 
     lc_clear_typing($conversationId, 'agent');
     lc_touch_conversation($conversationId);
+    if (function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, (int) $saved['message_id']);
+    }
     $row = lc_fetch_message_by_id((int) $saved['message_id']);
     lc_json([
         'success' => true,
@@ -48,5 +51,6 @@ try {
         'message' => $row ? lc_format_message_row($row) : null,
     ]);
 } catch (Throwable $e) {
+    error_log('agent-upload: ' . $e->getMessage());
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

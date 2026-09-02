@@ -187,65 +187,117 @@ function lc_attachment_validate_upload(array $file): array
     ];
 }
 
+function lc_attachment_image_ext(string $mime): string
+{
+    return match ($mime) {
+        'image/jpeg', 'image/pjpeg' => 'jpg',
+        'image/png', 'image/x-png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+        default => 'jpg',
+    };
+}
+
+/**
+ * Save the original image when GD is unavailable or re-encode fails.
+ *
+ * @return array{ok: bool, path?: string, mime?: string, size?: int, error?: string}
+ */
+function lc_attachment_store_image_raw(string $tmpPath, string $mime, int $conversationId): array
+{
+    $ext = lc_attachment_image_ext($mime);
+    $filename = 'f_' . bin2hex(random_bytes(12)) . '.' . $ext;
+    $dest = lc_attachment_upload_dir($conversationId) . '/' . $filename;
+    $moved = is_uploaded_file($tmpPath)
+        ? @move_uploaded_file($tmpPath, $dest)
+        : @copy($tmpPath, $dest);
+    if (!$moved || !is_file($dest)) {
+        return ['ok' => false, 'error' => 'Unable to save image'];
+    }
+
+    return [
+        'ok' => true,
+        'path' => 'uploads/chat/' . $conversationId . '/' . $filename,
+        'mime' => $mime,
+        'size' => (int) filesize($dest),
+    ];
+}
+
 /**
  * Re-encode images to strip metadata and keep uploads fast/small.
+ * Falls back to the original file when GD is missing (XAMPP default).
  *
  * @return array{ok: bool, path?: string, mime?: string, size?: int, error?: string}
  */
 function lc_attachment_store_image(string $tmpPath, string $mime, int $conversationId): array
 {
-    $limits = lc_attachment_limits();
-    $info = @getimagesize($tmpPath);
-    if (!$info) {
-        return ['ok' => false, 'error' => 'Invalid image'];
+    $canProcess = function_exists('imagecreatetruecolor')
+        && function_exists('imagejpeg')
+        && function_exists('imagecreatefromjpeg');
+    if (!$canProcess) {
+        return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
     }
 
-    $width = (int) $info[0];
-    $height = (int) $info[1];
-    $maxW = (int) $limits['max_image_width'];
-    $targetW = $width;
-    $targetH = $height;
-    if ($width > $maxW) {
-        $targetW = $maxW;
-        $targetH = (int) round($height * ($maxW / $width));
-    }
+    try {
+        $limits = lc_attachment_limits();
+        $info = @getimagesize($tmpPath);
+        if (!$info) {
+            return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
+        }
 
-    $src = match ($mime) {
-        'image/jpeg' => @imagecreatefromjpeg($tmpPath),
-        'image/png' => @imagecreatefrompng($tmpPath),
-        'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpPath) : false,
-        'image/gif' => @imagecreatefromgif($tmpPath),
-        default => false,
-    };
-    if (!$src) {
-        return ['ok' => false, 'error' => 'Unable to process image'];
-    }
+        $width = (int) $info[0];
+        $height = (int) $info[1];
+        if ($width < 1 || $height < 1) {
+            return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
+        }
+        $maxW = (int) $limits['max_image_width'];
+        $targetW = $width;
+        $targetH = $height;
+        if ($width > $maxW) {
+            $targetW = $maxW;
+            $targetH = (int) round($height * ($maxW / $width));
+        }
 
-    $dst = imagecreatetruecolor($targetW, $targetH);
-    if ($mime === 'image/png' || $mime === 'image/gif') {
-        imagealphablending($dst, false);
-        imagesavealpha($dst, true);
-        $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
-        imagefilledrectangle($dst, 0, 0, $targetW, $targetH, $transparent);
-    }
+        $src = match ($mime) {
+            'image/jpeg', 'image/pjpeg' => @imagecreatefromjpeg($tmpPath),
+            'image/png', 'image/x-png' => @imagecreatefrompng($tmpPath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpPath) : false,
+            'image/gif' => @imagecreatefromgif($tmpPath),
+            default => false,
+        };
+        if (!$src) {
+            return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
+        }
 
-    imagecopyresampled($dst, $src, 0, 0, 0, 0, $targetW, $targetH, $width, $height);
-    imagedestroy($src);
+        $dst = imagecreatetruecolor($targetW, $targetH);
+        if ($mime === 'image/png' || $mime === 'image/x-png' || $mime === 'image/gif') {
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+            imagefilledrectangle($dst, 0, 0, $targetW, $targetH, $transparent);
+        }
 
-    $filename = 'f_' . bin2hex(random_bytes(12)) . '.jpg';
-    $dest = lc_attachment_upload_dir($conversationId) . '/' . $filename;
-    if (!imagejpeg($dst, $dest, 82)) {
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $targetW, $targetH, $width, $height);
+        imagedestroy($src);
+
+        $filename = 'f_' . bin2hex(random_bytes(12)) . '.jpg';
+        $dest = lc_attachment_upload_dir($conversationId) . '/' . $filename;
+        if (!imagejpeg($dst, $dest, 82)) {
+            imagedestroy($dst);
+            return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
+        }
         imagedestroy($dst);
-        return ['ok' => false, 'error' => 'Unable to save image'];
-    }
-    imagedestroy($dst);
 
-    return [
-        'ok' => true,
-        'path' => 'uploads/chat/' . $conversationId . '/' . $filename,
-        'mime' => 'image/jpeg',
-        'size' => (int) filesize($dest),
-    ];
+        return [
+            'ok' => true,
+            'path' => 'uploads/chat/' . $conversationId . '/' . $filename,
+            'mime' => 'image/jpeg',
+            'size' => (int) filesize($dest),
+        ];
+    } catch (Throwable $e) {
+        error_log('lc_attachment_store_image: ' . $e->getMessage());
+        return lc_attachment_store_image_raw($tmpPath, $mime, $conversationId);
+    }
 }
 
 /**

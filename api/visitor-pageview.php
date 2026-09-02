@@ -66,13 +66,20 @@ try {
     // Tab/window closed — mark Left website and push Traffic over WebSocket.
     if ($event === 'unload' || $event === 'site_leave') {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
+        $storeIp = $ip;
+        if (function_exists('lc_valid_public_ipv4') && !lc_valid_public_ipv4($storeIp) && function_exists('lc_visitor_stored_ipv4')) {
+            $keep = lc_visitor_stored_ipv4($visitorId);
+            if ($keep) {
+                $storeIp = $keep;
+            }
+        }
         $db->prepare('
             UPDATE visitors
             SET ip_address = ?,
                 user_agent = ?,
                 page_url = COALESCE(?, page_url)
             WHERE id = ?
-        ')->execute([$ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
+        ')->execute([$storeIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         lc_mark_visitor_left_site($visitorId);
         if (function_exists('lc_realtime_publish_traffic')) {
             lc_realtime_publish_traffic($brandId, 'left', [

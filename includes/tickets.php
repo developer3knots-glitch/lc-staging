@@ -338,3 +338,77 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
         'reference' => $reference,
     ];
 }
+
+/**
+ * One-click resume from the widget ended screen.
+ * Always requeues as waiting/unassigned so an agent must assign themselves.
+ *
+ * @return array{ok: bool, error?: string, conversation_id?: int, status?: string}
+ */
+function lc_visitor_resume_closed_conversation(int $conversationId, int $visitorId, int $brandId, int $maxAgeDays = 14): array
+{
+    if ($conversationId < 1 || $visitorId < 1 || $brandId < 1) {
+        return ['ok' => false, 'error' => 'Invalid request'];
+    }
+
+    $stmt = lc_db()->prepare('
+        SELECT id, status, agent_id, visitor_id, brand_id, closed_at
+        FROM conversations
+        WHERE id = ? AND visitor_id = ? AND brand_id = ?
+        LIMIT 1
+    ');
+    $stmt->execute([$conversationId, $visitorId, $brandId]);
+    $conv = $stmt->fetch();
+    if (!$conv) {
+        return ['ok' => false, 'error' => 'Conversation not found'];
+    }
+
+    $status = (string) ($conv['status'] ?? '');
+    if ($status === 'waiting') {
+        return ['ok' => true, 'conversation_id' => $conversationId, 'status' => 'waiting'];
+    }
+    if ($status === 'active') {
+        return ['ok' => true, 'conversation_id' => $conversationId, 'status' => 'active'];
+    }
+    if ($status !== 'closed') {
+        return ['ok' => false, 'error' => 'Unable to resume this chat'];
+    }
+
+    $maxAgeDays = max(1, $maxAgeDays);
+    $closedAt = trim((string) ($conv['closed_at'] ?? ''));
+    if ($closedAt !== '') {
+        $closedTs = strtotime($closedAt . ' UTC');
+        if ($closedTs !== false && (time() - $closedTs) > ($maxAgeDays * 86400)) {
+            return ['ok' => false, 'error' => 'This conversation is too old to resume. Please start a new conversation.'];
+        }
+    }
+
+    $db = lc_db();
+    $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ? AND status = 'closed'");
+    $upd->execute([$conversationId]);
+    if (!$upd->rowCount()) {
+        $fresh = function_exists('lc_get_conversation') ? lc_get_conversation($conversationId) : null;
+        $freshStatus = (string) ($fresh['status'] ?? 'waiting');
+
+        return [
+            'ok' => true,
+            'conversation_id' => $conversationId,
+            'status' => $freshStatus !== '' ? $freshStatus : 'waiting',
+        ];
+    }
+
+    if (function_exists('lc_clear_transcript_request')) {
+        lc_clear_transcript_request($conversationId);
+    }
+    lc_add_system_message($conversationId, 'Visitor resumed this conversation. Waiting for an agent.');
+    lc_touch_conversation($conversationId);
+
+    if (function_exists('lc_realtime_publish_conversation_event')) {
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+            'status' => 'waiting',
+            'resumed' => true,
+        ]);
+    }
+
+    return ['ok' => true, 'conversation_id' => $conversationId, 'status' => 'waiting'];
+}

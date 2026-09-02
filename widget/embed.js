@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 53;
+    var LC_WIDGET_BUILD = 59;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -343,11 +343,12 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=51';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=55';
         document.head.appendChild(link);
     }
 
     var ICON_CHAT = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+    var ICON_USER = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.2 20.2C5.4 16.8 8.4 14.8 12 14.8s6.6 2 7.8 5.4"/></svg>';
     var ICON_SEND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
 
     var ICON_LOCK = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
@@ -554,7 +555,7 @@
                         '<p class="lcw-ended-ref" id="lc-ended-ref" hidden>Your ticket reference: <code id="lc-ended-ref-code"> - </code></p>' +
                     '</div>' +
                     '<div class="lcw-ended-actions">' +
-                        '<button type="button" id="lc-resume-ticket" class="lcw-ended-secondary">Resume this chat</button>' +
+                        '<button type="button" id="lc-resume-ticket">Resume this chat</button>' +
                         '<div class="lcw-email-export" id="lc-email-export">' +
                             '<button type="button" id="lc-email-transcript-toggle" class="lcw-ended-secondary">Email me this chat</button>' +
                             '<div id="lc-email-transcript-panel" class="lcw-email-export-panel" hidden>' +
@@ -570,11 +571,12 @@
                 '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
                     '<input type="text" id="lc-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
+                    '<div id="lc-emoji-picker" class="lcw-emoji-picker" hidden role="listbox" aria-label="Emoji"></div>' +
                     '<div class="lcw-compose-row">' +
                         '<div class="lcw-compose-inner lcw-compose-pill">' +
                             '<button type="button" id="lc-attach-file" class="lcw-compose-plus" title="Attach file" aria-label="Attach file">' + ICON_PLUS + '</button>' +
                             '<textarea id="lc-input" rows="1" placeholder="Write a message..."></textarea>' +
-                            '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" aria-hidden="true" tabindex="-1">' + ICON_EMOJI + '</button>' +
+                            '<button type="button" id="lc-emoji-btn" class="lcw-compose-emoji" title="Emoji" aria-label="Insert emoji" aria-expanded="false">' + ICON_EMOJI + '</button>' +
                         '</div>' +
                         '<button type="button" id="lc-send" aria-label="Send">' + ICON_SEND_UP + '</button>' +
                     '</div>' +
@@ -636,6 +638,7 @@
         document.getElementById('lc-ticket-resume-back').addEventListener('click', function () { hideTicketResumePanel(true); });
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
+        bindEmojiPicker();
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
             e.preventDefault();
             submitPrechatForm();
@@ -670,7 +673,7 @@
         if (attachBtn && fileInput) {
             attachBtn.addEventListener('click', function () {
                 if (!conversationId) {
-                    if (prechatFormEnabled) {
+                    if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
                         showPrechatForm();
                         showPrechatError('Please start a conversation before sending files.');
                     } else {
@@ -1025,6 +1028,32 @@
         });
     }
 
+    function hasStoredVisitorIdentity() {
+        var name = '';
+        var email = '';
+        try {
+            name = (localStorage.getItem('lc_visitor_name') || '').trim();
+            email = (localStorage.getItem('lc_visitor_email') || '').trim();
+        } catch (e) {}
+        return name.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    function storedVisitorName() {
+        try {
+            return (localStorage.getItem('lc_visitor_name') || '').trim();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function storedVisitorEmail() {
+        try {
+            return (localStorage.getItem('lc_visitor_email') || '').trim();
+        } catch (e) {
+            return '';
+        }
+    }
+
     function showPrechatForm(skipSettingsFetch, skipTicketReset) {
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
@@ -1099,17 +1128,13 @@
 
         var avatars = document.getElementById('lc-idle-avatars');
         if (avatars) {
-            var initials = team.replace(/[^A-Za-z0-9]/g, ' ').trim().split(/\s+/).slice(0, 2).map(function (w) {
-                return w.charAt(0).toUpperCase();
-            }).join('') || 'S';
             avatars.innerHTML =
-                '<span class="lcw-idle-avatar lcw-idle-avatar-brand" style="background:' + esc(color) + '">' + esc(initials.charAt(0) || 'S') + '</span>' +
+                '<span class="lcw-idle-avatar lcw-idle-avatar-brand" style="background:' + esc(color) + '">' + ICON_USER + '</span>' +
                 '<span class="lcw-idle-avatar lcw-idle-avatar-support">' + ICON_CHAT.replace('width="26"', 'width="14"').replace('height="26"', 'height="14"') + '</span>';
         }
         var msgAv = document.getElementById('lc-idle-msg-avatar');
         if (msgAv) {
-            var one = team.replace(/[^A-Za-z0-9]/g, ' ').trim().charAt(0).toUpperCase() || 'S';
-            msgAv.innerHTML = '<span class="lcw-idle-avatar-sm" style="background:' + esc(color) + '">' + esc(one) + '</span>';
+            msgAv.innerHTML = '<span class="lcw-idle-avatar-sm" style="background:' + esc(color) + '">' + ICON_USER + '</span>';
         }
 
         updateHeaderAgent(null);
@@ -1204,7 +1229,16 @@
         var refWrap = document.getElementById('lc-panel-ref');
         var endedRef = document.getElementById('lc-ended-ref');
         if (resumeWrap) resumeWrap.style.display = ticketResumeEnabled ? '' : 'none';
-        if (endedBtn) endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
+        if (endedBtn) {
+            if (conversationId) {
+                endedBtn.style.display = '';
+                endedBtn.hidden = false;
+                endedBtn.textContent = 'Resume this chat';
+            } else {
+                endedBtn.style.display = ticketResumeEnabled ? '' : 'none';
+                if (!ticketResumeEnabled) endedBtn.hidden = true;
+            }
+        }
         var menuResume = document.getElementById('lc-menu-resume-ticket');
         if (menuResume) menuResume.style.display = ticketResumeEnabled ? '' : 'none';
         var toolbarMenuWrap = document.getElementById('lc-toolbar-menu-wrap');
@@ -1407,17 +1441,23 @@
         }
 
         if (prechatFormEnabled) {
-            if (resumeId && identityOk) {
+            var knownIdentity = identityOk || hasStoredVisitorIdentity();
+            if (resumeId && knownIdentity) {
                 pendingResumeConvId = null;
                 showChatView();
                 initChat({ resumeConversationId: resumeId, keepMessages: false });
                 scheduleAutoOpenOnLoad();
                 return;
             }
-            if (resumeId && !identityOk) {
+            if (resumeId && !knownIdentity) {
                 pendingResumeConvId = resumeId;
             } else {
                 pendingResumeConvId = null;
+            }
+            if (knownIdentity) {
+                showIdleChatReady();
+                scheduleAutoOpenOnLoad();
+                return;
             }
             showPrechatForm(true);
             scheduleAutoOpenOnLoad();
@@ -1515,7 +1555,7 @@
 
     function startDirectChat(options) {
         options = options || {};
-        if (prechatFormEnabled) {
+        if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
             showPrechatForm(true);
             return;
         }
@@ -1533,8 +1573,8 @@
         var payload = {
             visitor_uid: visitorUid,
             brand_key: brandKey,
-            name: prechatFormEnabled ? (localStorage.getItem('lc_visitor_name') || '') : '',
-            email: prechatFormEnabled ? (localStorage.getItem('lc_visitor_email') || '') : '',
+            name: storedVisitorName(),
+            email: storedVisitorEmail(),
             page_url: window.location.href,
             website_url: '',
             public_ipv4: publicIpv4
@@ -1833,6 +1873,7 @@
 
     function showEndedState() {
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
+        hideEmojiPicker();
         if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
         if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
@@ -1871,6 +1912,7 @@
             updateWidgetReference(currentReference);
         }
         syncTicketFeatureUi();
+        updateEndedResumeButton();
         syncTranscriptSentUi('ended');
         syncTranscriptEndedUi();
     }
@@ -2495,7 +2537,7 @@
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
-        if (options.resumedByTicket || data.resumed_by_ticket) {
+        if (options.resumedByTicket || data.resumed_by_ticket || data.resumed) {
             fullHistoryMode = false;
             ticketResumeAwaitingAgent = data.status !== 'active';
         }
@@ -2519,6 +2561,7 @@
         resetVisitorPollTimers(false);
         loadRealtimeScript(function () { initVisitorRealtime(); });
         requestBrowserGeo();
+        capturePublicIpv4();
     }
 
     function initChat(options) {
@@ -2538,8 +2581,8 @@
             body: JSON.stringify({
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
-                name: prechatFormEnabled ? (localStorage.getItem('lc_visitor_name') || '') : '',
-                email: prechatFormEnabled ? (localStorage.getItem('lc_visitor_email') || '') : '',
+                name: storedVisitorName(),
+                email: storedVisitorEmail(),
                 page_url: window.location.href,
                 website_url: '',
                 public_ipv4: publicIpv4,
@@ -2572,6 +2615,72 @@
         el.style.height = '34px';
         var next = Math.min(Math.max(el.scrollHeight, 34), 88);
         el.style.height = next + 'px';
+    }
+
+    var EMOJI_LIST = [
+        '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂',
+        '😉', '😍', '😘', '😋', '😎', '🤩', '🤗', '🤔', '😐', '😏',
+        '😢', '😭', '😤', '😡', '👍', '👎', '👏', '🙏', '❤️', '🔥',
+        '🎉', '✨', '✅', '❌', '💯', '👀', '🙌', '🤝', '💪', '🌟',
+        '😴', '💡', '📌', '📎', '📷', '👋', '😮', '😬'
+    ];
+
+    function hideEmojiPicker() {
+        var picker = document.getElementById('lc-emoji-picker');
+        var btn = document.getElementById('lc-emoji-btn');
+        if (picker) picker.hidden = true;
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+
+    function insertEmoji(emoji) {
+        var input = document.getElementById('lc-input');
+        if (!input || input.disabled) return;
+        var start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+        var end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+        input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+        var pos = start + emoji.length;
+        try {
+            input.setSelectionRange(pos, pos);
+        } catch (e) {}
+        input.focus();
+        autoResizeTextarea(input);
+        if (typeof onVisitorComposeActivity === 'function') onVisitorComposeActivity();
+    }
+
+    function bindEmojiPicker() {
+        var picker = document.getElementById('lc-emoji-picker');
+        var btn = document.getElementById('lc-emoji-btn');
+        if (!picker || !btn) return;
+        if (!picker.dataset.ready) {
+            picker.innerHTML = EMOJI_LIST.map(function (emoji) {
+                return '<button type="button" class="lcw-emoji-item" data-emoji="' + emoji + '">' + emoji + '</button>';
+            }).join('');
+            picker.dataset.ready = '1';
+            picker.addEventListener('click', function (e) {
+                var item = e.target.closest('[data-emoji]');
+                if (!item) return;
+                insertEmoji(item.getAttribute('data-emoji') || '');
+            });
+        }
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var open = picker.hidden;
+            picker.hidden = !open;
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) {
+                var input = document.getElementById('lc-input');
+                if (input) input.focus();
+            }
+        });
+        document.addEventListener('click', function (e) {
+            if (!picker.hidden && !e.target.closest('#lc-emoji-picker') && !e.target.closest('#lc-emoji-btn')) {
+                hideEmojiPicker();
+            }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') hideEmojiPicker();
+        });
     }
 
     function formatMsgTime(ts) {
@@ -2858,19 +2967,63 @@
         document.head.appendChild(s);
     }
 
-    function capturePublicIpv4() {
-        if (publicIpv4) {
+    function isPublicIpv4(ip) {
+        return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(String(ip || '').trim());
+    }
+
+    function reportPublicIpv4(ip) {
+        ip = String(ip || '').trim();
+        if (!isPublicIpv4(ip)) {
             return;
         }
-        fetch('https://api.ipify.org?format=json')
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var ip = data && data.ip ? String(data.ip).trim() : '';
-                if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
-                    publicIpv4 = ip;
-                }
+        publicIpv4 = ip;
+        fetch(siteUrl + '/api/visitor-ipv4.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                public_ipv4: ip,
+                website_url: ''
             })
-            .catch(function () {});
+        }).catch(function () {});
+    }
+
+    function capturePublicIpv4() {
+        if (publicIpv4) {
+            reportPublicIpv4(publicIpv4);
+            return;
+        }
+        var urls = [
+            'https://api.ipify.org?format=json',
+            'https://ipv4.icanhazip.com',
+            'https://v4.ident.me'
+        ];
+        function tryNext(i) {
+            if (publicIpv4 || i >= urls.length) {
+                return;
+            }
+            var url = urls[i];
+            fetch(url, { cache: 'no-store' })
+                .then(function (r) {
+                    if (url.indexOf('ipify') !== -1) {
+                        return r.json();
+                    }
+                    return r.text();
+                })
+                .then(function (data) {
+                    var ip = (typeof data === 'string') ? data.trim() : ((data && data.ip) ? String(data.ip).trim() : '');
+                    if (isPublicIpv4(ip)) {
+                        reportPublicIpv4(ip);
+                        return;
+                    }
+                    tryNext(i + 1);
+                })
+                .catch(function () {
+                    tryNext(i + 1);
+                });
+        }
+        tryNext(0);
     }
 
     function loadTimeScript() {
@@ -3449,10 +3602,11 @@
     }
 
     function sendMessage() {
+        hideEmojiPicker();
         if (chatClosed) return;
         if (pendingAttachments.length) {
             if (!conversationId) {
-                if (prechatFormEnabled) {
+                if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
                     showPrechatForm();
                     showPrechatError('Please complete the form to start chatting.');
                     return;
@@ -3469,7 +3623,7 @@
         stopOwnTyping();
 
         if (!conversationId) {
-            if (prechatFormEnabled) {
+            if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
                 showPrechatForm();
                 showPrechatError('Please complete the form to start chatting.');
                 return;

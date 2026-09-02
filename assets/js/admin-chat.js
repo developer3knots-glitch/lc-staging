@@ -421,11 +421,19 @@
         if (window.LCTime) window.LCTime.scan(el);
     }
 
-    function formatDisplayIp(ip) {
+    function formatDisplayIp(ip, ipv4) {
+        var v4 = String(ipv4 || '').trim();
+        if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(v4)) {
+            return v4;
+        }
         ip = String(ip || '').trim();
-        if (!ip) return '';
+        if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
+            return ip;
+        }
         var mapped = ip.match(/(?:\:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i);
-        if (mapped) return mapped[1];
+        if (mapped) {
+            return mapped[1];
+        }
         return ip;
     }
 
@@ -571,7 +579,8 @@
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
         setText('lc-details-location', location);
-        setText('lc-details-local-time', formatDisplayIp(c.visitor_ip) ? ('IP ' + formatDisplayIp(c.visitor_ip)) : '');
+        var displayIp = formatDisplayIp(c.visitor_ip, c.visitor_ipv4);
+        setText('lc-details-local-time', displayIp ? ('IP ' + displayIp) : '');
 
         var stats = c.visitor_stats || {};
         var visitCount = parseInt(stats.visit_count, 10);
@@ -603,7 +612,7 @@
             groupsEl.innerHTML = '<span class="lc-details-group-pill"><span class="lc-details-group-icon">' + esc(initial) + '</span><span>' + esc(brand) + '</span></span>';
         }
 
-        setText('lc-details-ip', formatDisplayIp(c.visitor_ip || currentVisitorIp) || '-');
+        setText('lc-details-ip', formatDisplayIp(c.visitor_ip || currentVisitorIp, c.visitor_ipv4) || '-');
         setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
         setText('lc-details-ticket', c.reference || currentReference || '-');
 
@@ -709,14 +718,29 @@
         return html;
     }
 
-    function inboxIdentityKey(row) {
-        var ip = String((row && row.visitor_ip) || '').trim();
+    function inboxIdentityKeys(row) {
+        var keys = [];
+        var uid = String((row && row.visitor_uid) || '').trim();
         var email = String((row && row.visitor_email) || '').trim().toLowerCase();
+        var name = String((row && row.visitor_name) || '').trim().toLowerCase();
+        var brand = String((row && (row.brand_key || row.brand_name)) || '').trim().toLowerCase();
+        var ip = String((row && row.visitor_ip) || '').trim();
         var vid = parseInt((row && row.visitor_id) || 0, 10) || 0;
-        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') return 'ip:' + ip;
-        if (email) return 'em:' + email;
-        if (vid > 0) return 'vid:' + vid;
-        return 'id:' + (parseInt((row && row.id) || 0, 10) || 0);
+        if (uid) keys.push('uid:' + uid);
+        if (vid > 0) keys.push('vid:' + vid);
+        if (email && email.indexOf('@') !== -1) keys.push('em:' + email);
+        if (ip && ip !== '0.0.0.0' && ip !== '127.0.0.1' && ip !== '::1') keys.push('ip:' + ip);
+        if (name && name !== 'visitor' && name !== 'unnamed customer' && name.length >= 3) {
+            keys.push('nm:' + name + '|' + brand);
+        }
+        if (!keys.length) {
+            keys.push('id:' + (parseInt((row && row.id) || 0, 10) || 0));
+        }
+        return keys;
+    }
+
+    function inboxIdentityKey(row) {
+        return inboxIdentityKeys(row)[0];
     }
 
     function inboxRowRank(row) {
@@ -738,15 +762,39 @@
     }
 
     function collapseInboxConversations(list) {
-        if (currentTab === 'all') {
-            return (list || []).slice();
+        list = list || [];
+        var parent = [];
+        var i;
+        for (i = 0; i < list.length; i++) {
+            parent[i] = i;
         }
-        var best = {};
-        (list || []).forEach(function (row) {
+        function find(x) {
+            return parent[x] === x ? x : (parent[x] = find(parent[x]));
+        }
+        function union(a, b) {
+            a = find(a);
+            b = find(b);
+            if (a !== b) {
+                parent[b] = a;
+            }
+        }
+        var keyMap = {};
+        list.forEach(function (row, idx) {
             if (!row) return;
-            var key = inboxIdentityKey(row);
-            if (!best[key] || rankBetter(row, best[key])) {
-                best[key] = row;
+            inboxIdentityKeys(row).forEach(function (key) {
+                if (keyMap[key] !== undefined) {
+                    union(keyMap[key], idx);
+                } else {
+                    keyMap[key] = idx;
+                }
+            });
+        });
+        var best = {};
+        list.forEach(function (row, idx) {
+            if (!row) return;
+            var g = find(idx);
+            if (!best[g] || rankBetter(row, best[g])) {
+                best[g] = row;
             }
         });
         return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) {
@@ -2815,6 +2863,28 @@
                 realtimeClient.on('conversation.updated', function (payload) {
                     var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                     if (selectedId && cid === selectedId) {
+                        if (payload && payload.status === 'closed') {
+                            syncConversationListStatus({ id: cid, status: 'closed' });
+                            if (replyInput) {
+                                replyInput.disabled = true;
+                                replyInput.value = '';
+                                replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+                            }
+                            var sendBtn = document.getElementById('lc-send-reply');
+                            if (sendBtn) sendBtn.disabled = true;
+                            setUnassignedMode(false);
+                            setPeerTypingVisible(false);
+                            stopOwnTyping();
+                        } else if (payload && payload.status === 'waiting') {
+                            syncConversationListStatus({ id: cid, status: 'waiting', agent_id: 0 });
+                            if (replyInput) {
+                                replyInput.disabled = true;
+                                replyInput.placeholder = 'Assign to yourself to reply';
+                            }
+                            var sendWaitingBtn = document.getElementById('lc-send-reply');
+                            if (sendWaitingBtn) sendWaitingBtn.disabled = true;
+                            setUnassignedMode(true);
+                        }
                         pollMessages();
                     }
                     loadConversations();

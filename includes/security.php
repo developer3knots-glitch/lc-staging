@@ -308,8 +308,63 @@ function lc_widget_ticket_resume_security_check(array $input, string $ip, ?strin
     return true;
 }
 
+function lc_ensure_visitor_ipv4_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->exec('ALTER TABLE visitors ADD COLUMN ipv4_address VARCHAR(45) NULL');
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_visitor_stored_ipv4(int $visitorId): ?string
+{
+    lc_ensure_visitor_ipv4_schema();
+    $stmt = lc_db()->prepare('SELECT ipv4_address, ip_address FROM visitors WHERE id = ? LIMIT 1');
+    $stmt->execute([$visitorId]);
+    $row = $stmt->fetch() ?: [];
+    foreach (['ipv4_address', 'ip_address'] as $key) {
+        $v4 = lc_valid_public_ipv4((string) ($row[$key] ?? ''));
+        if ($v4 !== null) {
+            return $v4;
+        }
+        $mapped = lc_ipv4_from_any((string) ($row[$key] ?? ''));
+        if ($mapped !== null) {
+            return $mapped;
+        }
+    }
+
+    return null;
+}
+
+function lc_save_visitor_ipv4(int $visitorId, string $ipv4): void
+{
+    $ipv4 = lc_valid_public_ipv4($ipv4);
+    if ($visitorId < 1 || $ipv4 === null) {
+        return;
+    }
+    lc_ensure_visitor_ipv4_schema();
+    $stmt = lc_db()->prepare('UPDATE visitors SET ipv4_address = ?, ip_address = ? WHERE id = ?');
+    $stmt->execute([$ipv4, $ipv4, $visitorId]);
+}
+
 function lc_update_visitor_geo(int $visitorId, string $ip, ?string $userAgent, ?string $pageUrl): void
 {
+    $v4 = lc_valid_public_ipv4($ip) ?: lc_ipv4_from_any($ip);
+    if ($v4 !== null) {
+        lc_save_visitor_ipv4($visitorId, $v4);
+        $ip = $v4;
+    } else {
+        $stored = lc_visitor_stored_ipv4($visitorId);
+        if ($stored !== null) {
+            $ip = $stored;
+        }
+    }
+
     $geo = lc_resolve_geo($ip);
     $stmt = lc_db()->prepare('UPDATE visitors SET ip_address = ?, country = ?, user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP() WHERE id = ?');
     $stmt->execute([$ip, $geo['country'], $userAgent, $pageUrl, $visitorId]);

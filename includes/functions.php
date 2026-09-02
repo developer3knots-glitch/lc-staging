@@ -318,6 +318,10 @@ function lc_add_system_message(int $conversationId, string $message): void
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
     $stmt->execute([$conversationId, 'system', $message]);
     lc_touch_conversation($conversationId);
+    $messageId = (int) lc_db()->lastInsertId();
+    if ($messageId > 0 && function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, $messageId);
+    }
 }
 
 function lc_agent_can_access_conversation(array $agent, array $conv): bool
@@ -1076,9 +1080,12 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
 function lc_get_conversation(int $id): ?array
 {
     lc_ensure_visitor_geo_schema();
+    if (function_exists('lc_ensure_visitor_ipv4_schema')) {
+        lc_ensure_visitor_ipv4_schema();
+    }
     $stmt = lc_db()->prepare('
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
-               v.ip_address AS visitor_ip, v.country AS visitor_country, v.page_url AS visitor_page,
+               v.ip_address AS visitor_ip, v.ipv4_address AS visitor_ipv4, v.country AS visitor_country, v.page_url AS visitor_page,
                v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
                v.phone AS visitor_phone,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,

@@ -56,6 +56,13 @@ try {
         : 'Visitor closed the live chat.';
     lc_add_system_message($conversationId, $closeMsg);
 
+    if (function_exists('lc_realtime_publish_conversation_event')) {
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+            'status' => 'closed',
+            'closed_by' => $autoClose ? 'leave' : 'visitor',
+        ]);
+    }
+
     if (function_exists('lc_send_pending_transcript')) {
         try {
             lc_send_pending_transcript($conversationId, true);

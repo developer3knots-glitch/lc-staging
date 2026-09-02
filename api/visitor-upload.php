@@ -39,7 +39,11 @@ try {
         lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
     }
 
-    lc_update_visitor_geo((int) $conv['visitor_id'], $ip, $userAgent, null);
+    try {
+        lc_update_visitor_geo((int) $conv['visitor_id'], $ip, $userAgent, null);
+    } catch (Throwable $e) {
+        error_log('visitor-upload geo: ' . $e->getMessage());
+    }
 
     $saved = lc_attachment_save_message(
         $conversationId,
@@ -54,8 +58,8 @@ try {
 
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
-    if ($conv['status'] === 'waiting') {
-        // manual assign only
+    if (function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, (int) $saved['message_id']);
     }
 
     $row = lc_fetch_message_by_id((int) $saved['message_id']);
@@ -66,5 +70,6 @@ try {
         'message' => $row ? lc_format_message_row($row, $chatToken) : null,
     ]);
 } catch (Throwable $e) {
+    error_log('visitor-upload: ' . $e->getMessage());
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

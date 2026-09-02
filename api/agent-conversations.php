@@ -17,7 +17,7 @@ try {
     [$where, $params] = lc_agent_inbox_sql($agent, $tab, 'c');
 
     $sql = "
-        SELECT c.id, c.status, c.agent_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
+        SELECT c.id, c.status, c.agent_id, c.visitor_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
                v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
