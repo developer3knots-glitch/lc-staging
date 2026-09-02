@@ -2,6 +2,11 @@
 includes/config.php
 install/installed.lock
 .env
+includes/config.realtime.local.php.off
+
+# Alternate git dir (locked .git workaround)
+.git-real/
+.git-broken-lock/
 
 # Logs
 *.log
