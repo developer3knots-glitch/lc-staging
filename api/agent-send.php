@@ -51,6 +51,17 @@ try {
         }
     }
 
+    // Mark prior visitor messages as read by this agent
+    if (function_exists('lc_mark_messages_delivered')) {
+        lc_mark_messages_delivered($conversationId, 'visitor');
+    }
+    if (function_exists('lc_mark_messages_read')) {
+        lc_mark_messages_read($conversationId, 'visitor');
+    }
+    if (function_exists('lc_realtime_publish_message_receipts')) {
+        lc_realtime_publish_message_receipts($conversationId, 'visitor');
+    }
+
     $ins = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'agent', $agentId, $message]);
     lc_clear_typing($conversationId, 'agent');

@@ -29,6 +29,15 @@ try {
     $upd->execute([(int) $agent['id'], $conversationId]);
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, (int) $agent['id']);
+        if (function_exists('lc_mark_messages_delivered')) {
+            lc_mark_messages_delivered($conversationId, 'visitor');
+        }
+        if (function_exists('lc_mark_messages_read')) {
+            lc_mark_messages_read($conversationId, 'visitor');
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'visitor');
+        }
         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
             'status' => 'active',
             'agent' => [

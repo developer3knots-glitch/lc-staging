@@ -73,13 +73,17 @@ try {
     $cursorStmt->execute([$conversationId]);
     $messageCursor = (int) $cursorStmt->fetchColumn();
 
-    // Visitor messages delivered as soon as pulled; read while agent is viewing this chat
+    // Visitor messages stay "sent" while in queue/waiting.
+    // Mark as delivered/read ONLY after an agent has actively joined/accepted the conversation.
     $visitorReceiptChanged = 0;
-    if (!$priorOnly && (lc_agent_can_handle_conversation($agent, $conv) || lc_agent_can_view_conversation($agent, $conv))) {
+    $convStatus = (string) ($conv['status'] ?? '');
+    $convAgentId = (int) ($conv['agent_id'] ?? 0);
+    $agentId = (int) ($agent['id'] ?? 0);
+    $isAgentJoined = ($convStatus === 'active' && $convAgentId > 0 && ($convAgentId === $agentId || (string) ($agent['role'] ?? '') === 'admin'));
+
+    if (!$priorOnly && $isAgentJoined) {
         $visitorReceiptChanged += lc_mark_messages_delivered($conversationId, 'visitor');
-        if (lc_agent_can_handle_conversation($agent, $conv) || (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'] || ($conv['status'] ?? '') === 'waiting') {
-            $visitorReceiptChanged += lc_mark_messages_read($conversationId, 'visitor');
-        }
+        $visitorReceiptChanged += lc_mark_messages_read($conversationId, 'visitor');
     }
     if ($visitorReceiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
         lc_realtime_publish_message_receipts($conversationId, 'visitor');
