@@ -62,6 +62,24 @@
     var journeyListEl = document.getElementById('lc-page-journey-list');
     var journeyCountEl = document.getElementById('lc-journey-count');
     var acceptBtn = document.getElementById('lc-accept-chat');
+    var takeoverBtn = document.getElementById('lc-takeover-chat');
+    var superviseBar = document.getElementById('lc-supervise-bar');
+    var superviseAgentNameEl = document.getElementById('lc-supervise-agent-name');
+    var superviseTakeoverBtn = document.getElementById('lc-supervise-takeover-btn');
+    var composeModeBar = document.getElementById('lc-compose-mode-bar');
+    var modeTabReply = document.getElementById('lc-mode-tab-reply');
+    var modeTabNote = document.getElementById('lc-mode-tab-note');
+    var composeModeTag = document.getElementById('lc-compose-mode-tag');
+    var composeMode = 'reply'; // 'reply' | 'note'
+    var isSupervising = false;
+    var currentAssignedAgentId = 0;
+    var notesAccEl = document.getElementById('lc-details-notes-acc');
+    var notesToggleBtn = document.getElementById('lc-details-notes-toggle');
+    var notesListEl = document.getElementById('lc-details-notes-list');
+    var notesCountEl = document.getElementById('lc-details-notes-count');
+    var noteForm = document.getElementById('lc-details-note-form');
+    var noteInput = document.getElementById('lc-details-note-input');
+    var noteSubmitBtn = document.getElementById('lc-details-note-submit');
     var assignToMeBtn = document.getElementById('lc-assign-to-me');
     var archiveChatBtn = document.getElementById('lc-archive-chat');
     var unassignedBar = document.getElementById('lc-unassigned-bar');
@@ -1883,6 +1901,17 @@
                 unassignedBar.classList.remove('is-on');
             }
         }
+        if (acceptBtn) {
+            if (on) {
+                acceptBtn.style.display = 'inline-flex';
+                acceptBtn.hidden = false;
+                acceptBtn.removeAttribute('aria-hidden');
+            } else {
+                acceptBtn.style.display = 'none';
+                acceptBtn.hidden = true;
+                acceptBtn.setAttribute('aria-hidden', 'true');
+            }
+        }
         if (composeBox) {
             if (on) composeBox.classList.add('is-hidden-for-unassigned');
             else composeBox.classList.remove('is-hidden-for-unassigned');
@@ -1916,6 +1945,201 @@
             .catch(function () {});
     }
 
+    function renderChatNoteItem(n) {
+        var agentName = n.agent_name || 'Agent';
+        var avColor = (typeof avatarColor === 'function' ? avatarColor(agentName) : '#64748b');
+        var initials = esc(agentName.charAt(0).toUpperCase());
+        var time = (n.created_at ? timeHtml(n.created_at) : '') || esc(n.time_label || 'just now');
+        return (
+            '<div class="lc-rail-note" data-id="' + esc(String(n.id || '')) + '">' +
+                '<div class="lc-rail-note-head">' +
+                    '<span class="lc-rail-note-av" style="background:' + avColor + '">' + initials + '</span>' +
+                    '<strong class="lc-rail-note-agent">' + esc(agentName) + '</strong>' +
+                    '<span class="lc-rail-note-time">' + time + '</span>' +
+                '</div>' +
+                '<div class="lc-rail-note-body">' + esc(n.note || '').replace(/\n/g, '<br>') + '</div>' +
+            '</div>'
+        );
+    }
+
+    function renderConversationNotes(notes) {
+        if (!notesListEl) return;
+        notes = notes || [];
+        if (notesCountEl) {
+            notesCountEl.textContent = String(notes.length);
+        }
+        if (!notes.length) {
+            notesListEl.innerHTML = '<p class="lc-details-notes-empty" id="lc-details-notes-empty">No internal notes yet</p>';
+            return;
+        }
+        notesListEl.innerHTML = notes.map(renderChatNoteItem).join('');
+        notesListEl.scrollTop = notesListEl.scrollHeight;
+    }
+
+    function renderInlineNote(n) {
+        if (!n) return '';
+        var agentName = n.agent_name || 'Agent';
+        var timeStr = (n.created_at ? timeHtml(n.created_at) : '') || esc(n.time_label || 'just now');
+        var html = '<div class="lc-msg is-note" data-note-id="' + esc(String(n.id || '')) + '">';
+        html += '<div class="lc-msg-note-head">';
+        html += '<span class="lc-msg-note-tag"><i class="ti ti-lock"></i> Internal Note</span>';
+        html += '<span class="lc-meta-sep"></span>';
+        html += '<span class="lc-msg-note-author">' + esc(agentName) + '</span>';
+        html += '</div>';
+        html += '<div class="lc-msg-body">' + esc(n.note || '').replace(/\n/g, '<br>') + '</div>';
+        html += '<div class="lc-msg-foot"><span class="lc-msg-time">' + timeStr + '</span></div>';
+        html += '</div>';
+        return html;
+    }
+
+    function appendInlineNote(note) {
+        if (!messagesEl || !note) return;
+        var noteIdStr = String(note.id || '');
+        if (noteIdStr && messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + noteIdStr + '"]')) {
+            return;
+        }
+        messagesEl.insertAdjacentHTML('beforeend', renderInlineNote(note));
+        if (window.LCTime) window.LCTime.scan(messagesEl);
+        scrollMessagesToBottom(true);
+    }
+
+    function appendConversationNote(note) {
+        if (!note) return;
+        if (notesListEl) {
+            var emptyEl = notesListEl.querySelector('.lc-details-notes-empty');
+            if (emptyEl) emptyEl.remove();
+            if (note.id && notesListEl.querySelector('.lc-rail-note[data-id="' + note.id + '"]')) {
+                return;
+            }
+            notesListEl.insertAdjacentHTML('beforeend', renderChatNoteItem(note));
+            notesListEl.scrollTop = notesListEl.scrollHeight;
+            var count = notesListEl.querySelectorAll('.lc-rail-note').length;
+            if (notesCountEl) {
+                notesCountEl.textContent = String(count);
+            }
+        }
+    }
+
+    function loadConversationNotes(conversationId) {
+        if (!conversationId) {
+            renderConversationNotes([]);
+            return;
+        }
+        fetch(base + '/api/agent-notes.php?conversation_id=' + encodeURIComponent(conversationId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.success && Array.isArray(data.notes)) {
+                    renderConversationNotes(data.notes);
+                }
+            })
+            .catch(function () {});
+    }
+
+    function setComposeMode(mode) {
+        composeMode = (mode === 'note') ? 'note' : 'reply';
+        if (modeTabReply) {
+            modeTabReply.classList.toggle('is-active', composeMode === 'reply');
+            modeTabReply.setAttribute('aria-selected', composeMode === 'reply' ? 'true' : 'false');
+        }
+        if (modeTabNote) {
+            modeTabNote.classList.toggle('is-active', composeMode === 'note');
+            modeTabNote.setAttribute('aria-selected', composeMode === 'note' ? 'true' : 'false');
+        }
+        if (composeBox) {
+            composeBox.classList.toggle('is-note-mode', composeMode === 'note');
+        }
+        if (composeModeTag) {
+            if (composeMode === 'note') {
+                composeModeTag.removeAttribute('hidden');
+            } else {
+                composeModeTag.setAttribute('hidden', 'hidden');
+            }
+            composeModeTag.hidden = (composeMode !== 'note');
+        }
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (composeMode === 'note') {
+            if (replyInput && !replyInput.disabled) {
+                replyInput.placeholder = isSupervising
+                    ? 'Write an internal note (customer will not see this)...'
+                    : 'Write an internal note (only agents can see this)...';
+            }
+            if (sendBtn) {
+                sendBtn.title = 'Send internal note';
+            }
+        } else {
+            if (replyInput && !replyInput.disabled) {
+                replyInput.placeholder = 'Type a message...';
+            }
+            if (sendBtn) {
+                sendBtn.title = 'Send message';
+            }
+        }
+    }
+
+    if (modeTabReply) {
+        modeTabReply.addEventListener('click', function () {
+            if (isSupervising) {
+                takeoverSelectedChat();
+                return;
+            }
+            setComposeMode('reply');
+            if (replyInput) replyInput.focus();
+        });
+    }
+
+    if (modeTabNote) {
+        modeTabNote.addEventListener('click', function () {
+            setComposeMode('note');
+            if (replyInput) replyInput.focus();
+        });
+    }
+
+    if (superviseTakeoverBtn) {
+        superviseTakeoverBtn.addEventListener('click', takeoverSelectedChat);
+    }
+
+    function takeoverSelectedChat() {
+        if (!selectedId) return;
+        if (!confirm('Take over this chat? You will chat directly with the customer.')) return;
+        if (takeoverBtn) takeoverBtn.disabled = true;
+        if (superviseTakeoverBtn) superviseTakeoverBtn.disabled = true;
+        fetch(base + '/api/agent-takeover.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (takeoverBtn) takeoverBtn.disabled = false;
+            if (superviseTakeoverBtn) superviseTakeoverBtn.disabled = false;
+            if (!data || !data.success) {
+                alert((data && data.error) || 'Could not take over chat');
+                return;
+            }
+            isSupervising = false;
+            chatTransferredAway = false;
+            currentAssignedAgentId = myAgentId;
+            if (superviseBar) superviseBar.hidden = true;
+            if (takeoverBtn) {
+                takeoverBtn.style.display = 'none';
+                takeoverBtn.hidden = true;
+            }
+            setComposeMode('reply');
+            if (replyInput) {
+                replyInput.disabled = false;
+                replyInput.placeholder = 'Type a message...';
+                replyInput.focus();
+            }
+            var sendBtn = document.getElementById('lc-send-reply');
+            if (sendBtn) sendBtn.disabled = false;
+            pollMessages();
+            loadConversations();
+        }).catch(function () {
+            if (takeoverBtn) takeoverBtn.disabled = false;
+            if (superviseTakeoverBtn) superviseTakeoverBtn.disabled = false;
+            alert('Could not take over chat');
+        });
+    }
+
     function updateChatActions(c, canCompose) {
         canCompose = canComposeChat(c, canCompose);
         if (currentIpBlocked || (c && c.ip_blocked)) {
@@ -1923,24 +2147,99 @@
         }
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
-        var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !parseInt(c.agent_id || 0, 10));
-        chatTransferredAway = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
-        replyInput.disabled = !canCompose;
-        document.getElementById('lc-send-reply').disabled = !canCompose;
-        // Always sync placeholder with live status (reopen must clear "Chat closed...")
+        currentAssignedAgentId = assignedId;
+        var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !assignedId);
+        var isAssignedToOther = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
+        var sendBtn = document.getElementById('lc-send-reply');
+
         if (c.status === 'closed') {
+            isSupervising = false;
+            chatTransferredAway = false;
+            if (superviseBar) superviseBar.hidden = true;
+            if (takeoverBtn) {
+                takeoverBtn.style.display = 'none';
+                takeoverBtn.hidden = true;
+            }
+            replyInput.disabled = true;
+            if (sendBtn) sendBtn.disabled = true;
             replyInput.placeholder = 'Chat closed - visitor ended this conversation';
-        } else if (currentIpBlocked || (c && c.ip_blocked)) {
-            replyInput.placeholder = 'IP blocked — messaging disabled';
-        } else if (chatTransferredAway) {
-            replyInput.placeholder = 'Transferred - view only';
-        } else if (!canCompose) {
-            replyInput.placeholder = 'Assign to yourself to reply';
-        } else {
-            replyInput.placeholder = 'Type a message...';
+            setUnassignedMode(false);
+            if (transferWrap) transferWrap.style.display = 'none';
+            closeTransferPanel();
+            return;
         }
-        if (acceptBtn) acceptBtn.style.display = 'none';
-        setUnassignedMode(isUnassigned);
+
+        if (currentIpBlocked || (c && c.ip_blocked)) {
+            isSupervising = false;
+            chatTransferredAway = false;
+            if (superviseBar) superviseBar.hidden = true;
+            if (takeoverBtn) {
+                takeoverBtn.style.display = 'none';
+                takeoverBtn.hidden = true;
+            }
+            replyInput.disabled = true;
+            if (sendBtn) sendBtn.disabled = true;
+            replyInput.placeholder = 'IP blocked — messaging disabled';
+            setUnassignedMode(false);
+            if (transferWrap) transferWrap.style.display = 'none';
+            closeTransferPanel();
+            return;
+        }
+
+        if (isUnassigned) {
+            isSupervising = false;
+            chatTransferredAway = false;
+            if (superviseBar) superviseBar.hidden = true;
+            if (takeoverBtn) {
+                takeoverBtn.style.display = 'none';
+                takeoverBtn.hidden = true;
+            }
+            replyInput.disabled = true;
+            if (sendBtn) sendBtn.disabled = true;
+            replyInput.placeholder = 'Assign to yourself to reply';
+            setUnassignedMode(true);
+            if (transferWrap) transferWrap.style.display = 'none';
+            closeTransferPanel();
+            return;
+        }
+
+        if (isAssignedToOther) {
+            // Supervise Mode: The supervisor observes and writes internal notes
+            isSupervising = true;
+            chatTransferredAway = false;
+            setUnassignedMode(false);
+            if (superviseBar) {
+                superviseBar.hidden = false;
+                if (superviseAgentNameEl) {
+                    superviseAgentNameEl.textContent = c.agent_name || 'Agent';
+                }
+            }
+            if (takeoverBtn) {
+                takeoverBtn.style.display = 'inline-flex';
+                takeoverBtn.hidden = false;
+            }
+            setComposeMode('note');
+            replyInput.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+            if (transferWrap) transferWrap.style.display = 'none';
+            closeTransferPanel();
+            return;
+        }
+
+        // Active Chatting Agent Mode
+        isSupervising = false;
+        chatTransferredAway = false;
+        setUnassignedMode(false);
+        if (superviseBar) superviseBar.hidden = true;
+        if (takeoverBtn) {
+            takeoverBtn.style.display = 'none';
+            takeoverBtn.hidden = true;
+        }
+        if (composeMode !== 'note') {
+            setComposeMode('reply');
+        }
+        replyInput.disabled = false;
+        if (sendBtn) sendBtn.disabled = false;
         if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
     }
@@ -2106,6 +2405,7 @@
             replyInput.placeholder = 'Type a message...';
             replyInput.disabled = false;
         }
+        setComposeMode('reply');
         currentReference = '';
         currentVisitorIp = '';
         currentIpBlocked = false;
@@ -2140,6 +2440,7 @@
         }
         loadCanned();
         loadPageJourney(true);
+        loadConversationNotes(id);
         clearLocalUnread(id);
         // Seed Returning/New / blocked from inbox row immediately (before poll returns)
         if (lastConversations && lastConversations.length) {
@@ -2407,16 +2708,43 @@
                         markConversationBlocked(conversationId, c.ip_blocked);
                     }
                 }
+                if (data.notes && Array.isArray(data.notes)) {
+                    renderConversationNotes(data.notes);
+                }
 
                 function paintFirstLoadFrame() {
                     var html = '';
                     if (data.prior_threads && data.prior_threads.length) {
                         html += buildPriorThreadsHtml(data.prior_threads, c);
                     }
+                    var feedItems = [];
                     (data.messages || []).forEach(function (m) {
-                        html += renderMessage(m);
+                        feedItems.push({ type: 'msg', item: m, ts: m.created_at || '' });
                         if (m.id > lastMsgId) {
                             lastMsgId = m.id;
+                        }
+                    });
+                    (data.notes || []).forEach(function (n) {
+                        feedItems.push({ type: 'note', item: n, ts: n.created_at || '' });
+                    });
+                    feedItems.sort(function (a, b) {
+                        var ta = 0;
+                        if (a.ts) {
+                            var isoA = window.LCTime && window.LCTime.toIso ? window.LCTime.toIso(a.ts) : '';
+                            ta = isoA ? new Date(isoA).getTime() : new Date(a.ts).getTime();
+                        }
+                        var tb = 0;
+                        if (b.ts) {
+                            var isoB = window.LCTime && window.LCTime.toIso ? window.LCTime.toIso(b.ts) : '';
+                            tb = isoB ? new Date(isoB).getTime() : new Date(b.ts).getTime();
+                        }
+                        return (isNaN(ta) ? 0 : ta) - (isNaN(tb) ? 0 : tb);
+                    });
+                    feedItems.forEach(function (entry) {
+                        if (entry.type === 'note') {
+                            html += renderInlineNote(entry.item);
+                        } else {
+                            html += renderMessage(entry.item);
                         }
                     });
                     messagesEl.innerHTML = html;
@@ -2461,6 +2789,14 @@
                             }
                         }
                     });
+                    // Also render any incremental notes inline
+                    (data.notes || []).forEach(function (n) {
+                        var nid = String(n.id || '');
+                        if (nid && !messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + nid + '"]')) {
+                            messagesEl.insertAdjacentHTML('beforeend', renderInlineNote(n));
+                            added += 1;
+                        }
+                    });
                     if (data.receipts) applyReceipts(data.receipts);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     // Only stick to bottom for new messages when agent is already near bottom
@@ -2492,6 +2828,7 @@
                     replyInput.placeholder = 'Chat closed - visitor ended this conversation';
                     if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
                     if (acceptBtn) acceptBtn.style.display = 'none';
+                    if (takeoverBtn) takeoverBtn.style.display = 'none';
                     setUnassignedMode(false);
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
@@ -2533,6 +2870,9 @@
                 }
                 loadPageJourney(false);
                 setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
+            })
+            .catch(function (err) {
+                console.error('Agent poll error:', err);
             });
     }
 
@@ -2546,6 +2886,46 @@
         }
         var msg = replyInput.value.trim();
         if (!msg || !selectedId) return;
+
+        if (composeMode === 'note') {
+            replyInput.value = '';
+            autoResizeReplyInput();
+            var noteConvId = selectedId;
+            var tempNoteId = 'temp_note_' + Date.now();
+            var tempNote = {
+                id: tempNoteId,
+                conversation_id: noteConvId,
+                agent_id: myAgentId,
+                agent_name: 'You',
+                note: msg,
+                created_at: new Date().toISOString(),
+                time_label: 'just now'
+            };
+            appendInlineNote(tempNote);
+            appendConversationNote(tempNote);
+
+            fetch(base + '/api/agent-notes.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: noteConvId, note: msg })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (selectedId !== noteConvId) return;
+                if (data && data.success && data.note) {
+                    var tempEl = messagesEl ? messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + tempNoteId + '"]') : null;
+                    if (tempEl) {
+                        tempEl.setAttribute('data-note-id', String(data.note.id));
+                    }
+                    appendConversationNote(data.note);
+                } else {
+                    alert((data && data.error) || 'Unable to save note');
+                }
+            }).catch(function () {
+                alert('Unable to save note. Please check your connection.');
+            });
+            return;
+        }
+
         stopOwnTyping();
         replyInput.value = '';
         autoResizeReplyInput();
@@ -2691,19 +3071,33 @@
 
     function assignChatToMe() {
         if (!selectedId) return;
+        var btn = assignToMeBtn;
+        if (btn) btn.disabled = true;
+        if (acceptBtn) acceptBtn.disabled = true;
         fetch(base + '/api/agent-accept.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: selectedId })
         }).then(function (r) { return r.json(); }).then(function (data) {
+            if (btn) btn.disabled = false;
+            if (acceptBtn) acceptBtn.disabled = false;
             if (data && data.success === false) {
                 alert(data.error || 'Could not assign chat');
                 return;
             }
             pollMessages();
             loadConversations();
-        }).catch(function () { alert('Could not assign chat'); });
+            if (replyInput) {
+                setTimeout(function () {
+                    replyInput.focus();
+                }, 200);
+            }
+        }).catch(function () {
+            if (btn) btn.disabled = false;
+            if (acceptBtn) acceptBtn.disabled = false;
+            alert('Could not assign chat');
+        });
     }
 
     function archiveSelectedChat() {
@@ -2725,8 +3119,39 @@
     }
 
     if (acceptBtn) acceptBtn.addEventListener('click', assignChatToMe);
+    if (takeoverBtn) takeoverBtn.addEventListener('click', takeoverSelectedChat);
     if (assignToMeBtn) assignToMeBtn.addEventListener('click', assignChatToMe);
     if (archiveChatBtn) archiveChatBtn.addEventListener('click', archiveSelectedChat);
+
+    if (noteForm) {
+        noteForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (!selectedId) return;
+            var text = (noteInput ? noteInput.value : '').trim();
+            if (!text) return;
+            if (noteSubmitBtn) noteSubmitBtn.disabled = true;
+            fetch(base + '/api/agent-notes.php', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: selectedId, note: text })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (noteSubmitBtn) noteSubmitBtn.disabled = false;
+                    if (!data || !data.success) {
+                        throw new Error((data && data.error) || 'Failed to save note');
+                    }
+                    if (noteInput) noteInput.value = '';
+                    appendConversationNote(data.note);
+                    appendInlineNote(data.note);
+                })
+                .catch(function (err) {
+                    if (noteSubmitBtn) noteSubmitBtn.disabled = false;
+                    alert(err && err.message ? err.message : 'Could not add note');
+                });
+        });
+    }
 
     if (addTagBtn && addTagForm) {
         addTagBtn.addEventListener('click', function () {
@@ -3630,9 +4055,21 @@
                     pollMessages();
                 }
             });
+            realtimeClient.on('conversation.note', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (selectedId && cid === selectedId) {
+                    appendInlineNote(payload);
+                    appendConversationNote(payload);
+                }
+            });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (selectedId && cid === selectedId) {
+                    var newAgent = parseInt(payload && payload.agent_id, 10) || 0;
+                    if (newAgent > 0 && newAgent !== myAgentId && currentAssignedAgentId === myAgentId) {
+                        var taker = (payload.agent && payload.agent.name) || 'Another agent';
+                        alert(taker + ' took over this chat. You are now in Supervise Mode.');
+                    }
                     if (payload && payload.status === 'closed') {
                         syncConversationListStatus({ id: cid, status: 'closed' });
                         if (replyInput) {

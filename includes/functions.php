@@ -2199,3 +2199,97 @@ function lc_delete_conversation_tag(int $conversationId, int $tagId): void
     lc_db()->prepare('DELETE FROM conversation_tags WHERE id = ? AND conversation_id = ?')->execute([$tagId, $conversationId]);
 }
 
+function lc_ensure_conversation_notes_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    try {
+        $pdo->exec('
+            CREATE TABLE IF NOT EXISTS conversation_notes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                conversation_id INT NOT NULL,
+                agent_id INT NOT NULL,
+                note TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_conv_notes (conversation_id, id ASC)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ');
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_get_conversation_notes(int $conversationId): array
+{
+    if ($conversationId < 1) {
+        return [];
+    }
+    lc_ensure_conversation_notes_schema();
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT n.id, n.conversation_id, n.agent_id, n.note, n.created_at,
+                   a.name AS agent_name, a.avatar AS agent_avatar
+            FROM conversation_notes n
+            LEFT JOIN agents a ON a.id = n.agent_id
+            WHERE n.conversation_id = ?
+            ORDER BY n.id ASC
+        ');
+        $stmt->execute([$conversationId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out = [];
+        foreach ($rows as $r) {
+            $rawCreated = (string) $r['created_at'];
+            $iso = function_exists('lc_to_iso8601') ? lc_to_iso8601($rawCreated) : $rawCreated;
+            $out[] = [
+                'id' => (int) $r['id'],
+                'conversation_id' => (int) $r['conversation_id'],
+                'agent_id' => (int) $r['agent_id'],
+                'agent_name' => (string) ($r['agent_name'] ?? 'Agent'),
+                'agent_avatar' => $r['agent_avatar'] ?? null,
+                'note' => (string) $r['note'],
+                'created_at' => $iso ?: $rawCreated,
+                'time_label' => date('H:i', strtotime($rawCreated)),
+            ];
+        }
+        return $out;
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function lc_add_conversation_note(int $conversationId, int $agentId, string $note): ?array
+{
+    $note = trim($note);
+    if ($conversationId < 1 || $agentId < 1 || $note === '') {
+        return null;
+    }
+    lc_ensure_conversation_notes_schema();
+    try {
+        $nowUtc = gmdate('Y-m-d H:i:s');
+        $stmt = lc_db()->prepare('INSERT INTO conversation_notes (conversation_id, agent_id, note, created_at) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$conversationId, $agentId, $note, $nowUtc]);
+        $id = (int) lc_db()->lastInsertId();
+
+        $agentStmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
+        $agentStmt->execute([$agentId]);
+        $agent = $agentStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $iso = function_exists('lc_to_iso8601') ? lc_to_iso8601($nowUtc) : $nowUtc;
+
+        return [
+            'id' => $id,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'agent_name' => (string) ($agent['name'] ?? 'Agent'),
+            'agent_avatar' => $agent['avatar'] ?? null,
+            'note' => $note,
+            'created_at' => $iso ?: $nowUtc,
+            'time_label' => 'just now',
+        ];
+    } catch (Throwable $e) {
+        return null;
+    }
+}

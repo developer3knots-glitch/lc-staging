@@ -93,6 +93,21 @@
             }
             return '<div class="lc-traffic-actions">' + parts.join('') + '</div>';
         }
+        if (row.status === 'chatting' && row.conversation_id) {
+            var chatHref = row.chat_url || ('chats.php?id=' + encodeURIComponent(row.conversation_id));
+            return (
+                '<div class="lc-traffic-actions">' +
+                    '<a class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-action-btn" ' +
+                        'href="' + esc(chatHref) + '" ' +
+                        'title="Supervise this chat">' +
+                        '<i class="ti ti-shield-check" aria-hidden="true"></i> Supervise' +
+                    '</a>' +
+                    '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '">' +
+                        '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
+                    '</a>' +
+                '</div>'
+            );
+        }
         if (row.chat_url && (row.status === 'chatting' || row.status === 'queued')) {
             var label = row.status === 'queued' ? 'Open incoming' : 'Open chat';
             var icon = row.status === 'queued' ? 'ti-inbox' : 'ti-message-circle';
@@ -427,6 +442,9 @@
                 });
                 // Waiting chat / inbox updates also refresh Traffic (Incoming tab)
                 realtimeClient.on('inbox.changed', function () {
+                    loadSoon();
+                });
+                realtimeClient.on('message.new', function () {
                     loadSoon();
                 });
                 realtimeClient.on('conversation.updated', function () {

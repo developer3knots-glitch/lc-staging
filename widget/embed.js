@@ -3047,6 +3047,7 @@
      * Agent/auto close → keep transcript + compose to continue in waiting queue.
      */
     function showEndedState(reason) {
+        hideChatLoading();
         var detected = detectClosedByFromMessages();
         reason = reason || detected || 'remote';
         // Prefer explicit visitor close text in transcript over vague "remote"
@@ -4038,6 +4039,7 @@
         })
         .catch(function () {
             chatInitInFlight = false;
+            hideChatLoading();
             handleInitFailure('Connection error. Please try again.');
         });
     }
@@ -4256,10 +4258,16 @@
     }
 
     var chatHistoryLoading = false;
+    var chatLoadingWatchdog = null;
     var pendingResumeStatus = null;
 
     function showChatLoading(title, sub) {
         chatHistoryLoading = true;
+        if (chatLoadingWatchdog) clearTimeout(chatLoadingWatchdog);
+        chatLoadingWatchdog = setTimeout(function () {
+            hideChatLoading();
+        }, 3500);
+
         var el = ensureChatLoadingEl();
         if (el) {
             el.hidden = false;
@@ -4277,6 +4285,10 @@
     }
 
     function hideChatLoading() {
+        if (chatLoadingWatchdog) {
+            clearTimeout(chatLoadingWatchdog);
+            chatLoadingWatchdog = null;
+        }
         chatHistoryLoading = false;
         var el = document.getElementById('lc-chat-loading');
         if (el) {
@@ -4286,6 +4298,11 @@
                 try { el.parentNode.removeChild(el); } catch (eR) {}
             }
         }
+        try {
+            document.querySelectorAll('.lcw-chat-loading').forEach(function (node) {
+                try { node.remove(); } catch (eRem) {}
+            });
+        } catch (eAny) {}
         if (pendingResumeStatus) {
             var st = pendingResumeStatus;
             pendingResumeStatus = null;
@@ -4856,6 +4873,7 @@
                 if ((parseInt(conversationId, 10) || 0) !== convAtStart) return;
                 if (isHistoryLoad && gen !== pollGen) return;
                 if (!data || !data.success) {
+                    hideChatLoading();
                     // Auth/network miss — keep retrying history so agent replies appear
                     if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
                         if (historyRetryTimer) clearTimeout(historyRetryTimer);
@@ -5026,6 +5044,7 @@
                 } else {
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
+                hideChatLoading();
                 if (viewing === '1') {
                     // Poll already marked read server-side when viewing=1; nudge again if needed
                     ackAgentMessagesSeen();
@@ -5033,6 +5052,7 @@
             })
             .catch(function () {})
             .then(function () {
+                hideChatLoading();
                 if (typeof done === 'function') done();
             });
     }

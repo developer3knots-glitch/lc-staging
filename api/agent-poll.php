@@ -125,6 +125,7 @@ try {
         'messages' => $messages,
         'message_cursor' => $messageCursor,
         'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
+        'notes' => function_exists('lc_get_conversation_notes') ? lc_get_conversation_notes($conversationId) : [],
         'can_compose' => lc_agent_can_handle_conversation($agent, $conv)
             && !(
                 function_exists('lc_is_ip_blocked')
@@ -134,6 +135,9 @@ try {
                 )
             ),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
+        'assigned_agent_id' => (int) ($conv['agent_id'] ?? 0),
+        'assigned_agent_name' => (string) ($conv['agent_name'] ?? ''),
+
     ];
 
     $typing = lc_typing_state_for_viewer($conversationId, 'agent');

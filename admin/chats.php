@@ -61,6 +61,7 @@ require __DIR__ . '/includes/header.php';
                     </div>
                     <div class="lc-chat-header-actions">
                         <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none" hidden aria-hidden="true">Assign to me</button>
+                        <button type="button" class="lc-btn lc-btn-warning lc-btn-sm" id="lc-takeover-chat" style="display:none" hidden><i class="ti ti-arrow-right-circle" aria-hidden="true"></i> Take Over</button>
                         <div class="lc-chat-more-wrap" id="lc-chat-more-wrap">
                             <button type="button" class="lc-chat-more-btn" id="lc-chat-more-btn" aria-label="Chat actions" aria-haspopup="true" aria-expanded="false" title="More actions">
                                 <i class="ti ti-dots-vertical"></i>
@@ -157,7 +158,33 @@ require __DIR__ . '/includes/header.php';
                         </form>
                     </div>
                 </div>
+
+                <div class="lc-supervise-bar" id="lc-supervise-bar" hidden>
+                    <div class="lc-supervise-bar-left">
+                        <span class="lc-supervise-badge"><i class="ti ti-shield-check"></i> Supervise Mode</span>
+                        <span class="lc-supervise-bar-text">Chat assigned to <strong id="lc-supervise-agent-name">Agent</strong>. You can view all live messages and write internal notes.</span>
+                    </div>
+                    <div class="lc-supervise-bar-actions">
+                        <button type="button" class="lc-btn lc-btn-warning lc-btn-sm" id="lc-supervise-takeover-btn">
+                            <i class="ti ti-arrow-right-circle"></i> Take Over Chat
+                        </button>
+                    </div>
+                </div>
+
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
+                    <div class="lc-compose-mode-bar" id="lc-compose-mode-bar">
+                        <div class="lc-compose-mode-tabs" role="tablist">
+                            <button type="button" class="lc-compose-mode-tab is-active" id="lc-mode-tab-reply" role="tab" aria-selected="true" title="Send message to customer">
+                                <i class="ti ti-message-dots"></i> <span>Reply to customer</span>
+                            </button>
+                            <button type="button" class="lc-compose-mode-tab" id="lc-mode-tab-note" role="tab" aria-selected="false" title="Send internal note (agents only)">
+                                <i class="ti ti-lock"></i> <span>Internal Note</span>
+                            </button>
+                        </div>
+                        <div class="lc-compose-mode-tag" id="lc-compose-mode-tag" hidden>
+                            <i class="ti ti-lock"></i> Note visible only to agents
+                        </div>
+                    </div>
                     <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
                         <div class="lc-chat-canned-bar">
                             <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
@@ -277,6 +304,28 @@ require __DIR__ . '/includes/header.php';
                     <div class="lc-details-acc-body" id="lc-details-pages-body">
                         <ul class="lc-details-pages-list" id="lc-details-pages-list"></ul>
                         <p class="lc-details-pages-empty" id="lc-details-pages-empty">No pages recorded yet</p>
+                    </div>
+                </div>
+
+                <div class="lc-details-acc is-open" id="lc-details-notes-acc">
+                    <button type="button" class="lc-details-acc-head" id="lc-details-notes-toggle" aria-expanded="true" aria-controls="lc-details-notes-body">
+                        <span class="lc-details-notes-title-wrap">
+                            <i class="ti ti-notes" aria-hidden="true"></i> Internal Notes
+                            <span class="lc-badge lc-badge-sm lc-notes-badge" id="lc-details-notes-count">0</span>
+                        </span>
+                        <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="lc-details-acc-body" id="lc-details-notes-body">
+                        <div class="lc-details-notes-list" id="lc-details-notes-list">
+                            <p class="lc-details-notes-empty" id="lc-details-notes-empty">No internal notes yet</p>
+                        </div>
+                        <form class="lc-details-note-form" id="lc-details-note-form">
+                            <textarea id="lc-details-note-input" rows="2" placeholder="Add internal note (agents only)..." maxlength="1000" required></textarea>
+                            <div class="lc-details-note-actions">
+                                <span class="lc-details-note-hint"><i class="ti ti-lock"></i> Hidden from customer</span>
+                                <button type="submit" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-details-note-submit">Add Note</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
 
