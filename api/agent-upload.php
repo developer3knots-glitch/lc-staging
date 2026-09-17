@@ -32,6 +32,13 @@ try {
         lc_json(['success' => false, 'error' => 'This chat is assigned to another agent'], 403);
     }
 
+    $visitorIp = trim((string) ($conv['visitor_ip'] ?? ''));
+    $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
+    if ($visitorIp !== '' && function_exists('lc_is_ip_blocked')
+        && lc_is_ip_blocked($visitorIp, $accountId > 0 ? $accountId : null)) {
+        lc_json(['success' => false, 'error' => 'Visitor IP is blocked — messaging disabled', 'ip_blocked' => true], 403);
+    }
+
     $agentId = (int) $agent['id'];
 
     $saved = lc_attachment_save_message($conversationId, 'agent', $agentId, $_FILES['file'], $caption);

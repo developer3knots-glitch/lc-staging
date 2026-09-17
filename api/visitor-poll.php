@@ -18,6 +18,24 @@ try {
         lc_ensure_transcript_schema();
     }
     $db = lc_db();
+    $access = function_exists('lc_visitor_access_conversation')
+        ? lc_visitor_access_conversation($conversationId, $visitorUid, $chatToken)
+        : null;
+    if (!$access) {
+        // Legacy fallback
+        $stmt = $db->prepare('
+            SELECT c.status, c.agent_id, c.visitor_id, c.started_at
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.id = ? AND v.visitor_uid = ?
+        ');
+        $stmt->execute([$conversationId, $visitorUid]);
+        $access = $stmt->fetch() ?: null;
+    }
+    if (!$access) {
+        lc_json(['success' => false, 'error' => 'Not found'], 404);
+    }
+
     $convCols = $db->query('SHOW COLUMNS FROM conversations')->fetchAll(PDO::FETCH_COLUMN);
     $hasTranscriptCols = in_array('transcript_email', $convCols, true)
         && in_array('transcript_sent_at', $convCols, true);
@@ -30,9 +48,10 @@ try {
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN agents a ON a.id = c.agent_id
-        WHERE c.id = ? AND v.visitor_uid = ?
+        WHERE c.id = ?
+        LIMIT 1
     ');
-    $stmt->execute([$conversationId, $visitorUid]);
+    $stmt->execute([$conversationId]);
     $conv = $stmt->fetch();
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
@@ -41,7 +60,7 @@ try {
     if (function_exists('lc_apply_inactivity_to_conversation') && (($conv['status'] ?? '') === 'waiting' || ($conv['status'] ?? '') === 'active')) {
         try {
             lc_apply_inactivity_to_conversation($conversationId);
-            $stmt->execute([$conversationId, $visitorUid]);
+            $stmt->execute([$conversationId]);
             $fresh = $stmt->fetch();
             if ($fresh) {
                 $conv = $fresh;
@@ -52,7 +71,7 @@ try {
 
     if (($conv['status'] ?? '') === 'closed') {
         if (lc_reopen_if_visitor_returning($conversationId, (int) $conv['visitor_id'])) {
-            $stmt->execute([$conversationId, $visitorUid]);
+            $stmt->execute([$conversationId]);
             $conv = $stmt->fetch() ?: $conv;
         }
     }
@@ -98,11 +117,19 @@ try {
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
-    // Any visitor poll = delivered + read so admin agent ticks turn blue
-    $receiptChanged = lc_mark_messages_delivered($conversationId, 'agent')
-        + lc_mark_messages_read($conversationId, 'agent');
+    // Delivered on any poll; read only while the chat panel is open (WhatsApp-style)
+    $receiptChanged = lc_mark_messages_delivered($conversationId, 'agent');
+    if ($isViewing) {
+        $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
+    }
     if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
-        lc_realtime_publish_message_receipts($conversationId, 'agent');
+        if (function_exists('lc_realtime_defer')) {
+            lc_realtime_defer(static function () use ($conversationId): void {
+                lc_realtime_publish_message_receipts($conversationId, 'agent');
+            });
+        } else {
+            lc_realtime_publish_message_receipts($conversationId, 'agent');
+        }
     }
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');

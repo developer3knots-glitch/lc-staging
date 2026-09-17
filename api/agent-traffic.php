@@ -70,18 +70,35 @@ try {
             v.email AS visitor_email,
             v.ip_address AS visitor_ip,
             v.country AS visitor_country,
+            v.user_agent AS visitor_user_agent,
             v.page_url,
             v.last_seen,
             v.left_site_at,
             v.created_at AS visitor_created_at,
             c.id AS conversation_id,
             c.status AS conversation_status,
+            c.brand_id AS conversation_brand_id,
             c.agent_id,
             c.started_at AS chat_started_at,
             c.page_url AS chat_page_url,
             a.name AS agent_name,
             b.name AS brand_name,
             b.brand_key,
+            (
+                SELECT pv.brand_id
+                FROM visitor_page_views pv
+                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
+                ORDER BY pv.id DESC
+                LIMIT 1
+            ) AS page_brand_id,
+            (
+                SELECT b2.brand_key
+                FROM visitor_page_views pv
+                INNER JOIN brands b2 ON b2.id = pv.brand_id
+                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
+                ORDER BY pv.id DESC
+                LIMIT 1
+            ) AS page_brand_key,
             (
                 SELECT COALESCE(SUM(COALESCE(pv.duration_seconds, 0)), 0)
                 FROM visitor_page_views pv
@@ -144,18 +161,16 @@ try {
         )
         {$searchSql}
         ORDER BY
-            CASE
-                WHEN c.status = 'waiting' THEN 0
-                WHEN c.status = 'active' THEN 1
-                WHEN v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$onlineSec} SECOND) THEN 2
-                ELSE 3
-            END,
-            COALESCE(v.last_seen, v.created_at) DESC
+            COALESCE(c.last_message_at, v.last_seen, v.created_at) DESC,
+            v.id DESC
         LIMIT 200
     ";
 
-    // Placeholder order: pages SUM, open page, recent span, open-chat, EXISTS pv, EXISTS cx, search
+    // Placeholder order: pages SUM, open page, recent span, page_brand_id, page_brand_key,
+    // open-chat filter, EXISTS pv, EXISTS cx, search
     $execParams = array_merge(
+        $brandParams,
+        $brandParams,
         $brandParams,
         $brandParams,
         $brandParams,
@@ -178,6 +193,7 @@ try {
     ];
 
     $visitors = [];
+    $blockedIpCache = [];
     foreach ($rows as $row) {
         $convStatus = (string) ($row['conversation_status'] ?? '');
         $since = (int) ($row['seconds_since_seen'] ?? 999999);
@@ -237,11 +253,41 @@ try {
 
         $activity = 'Left website';
         if ($status === 'queued') {
-            $activity = 'Queued';
+            $activity = 'Incoming chat';
         } elseif ($status === 'chatting') {
             $activity = 'Chatting';
         } elseif ($status === 'browsing') {
             $activity = 'Browsing';
+        }
+
+        $device = function_exists('lc_parse_user_agent')
+            ? lc_parse_user_agent((string) ($row['visitor_user_agent'] ?? ''))
+            : [
+                'device' => 'Unknown',
+                'os' => 'Unknown',
+                'browser' => 'Unknown',
+                'label' => 'Unknown',
+                'raw' => '',
+            ];
+
+        $resolvedBrandId = (int) ($row['conversation_brand_id'] ?? 0);
+        if ($resolvedBrandId < 1) {
+            $resolvedBrandId = (int) ($row['page_brand_id'] ?? 0);
+        }
+        $resolvedBrandKey = (string) ($row['brand_key'] ?? '');
+        if ($resolvedBrandKey === '') {
+            $resolvedBrandKey = (string) ($row['page_brand_key'] ?? '');
+        }
+
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $ipBlocked = false;
+        if ($ip !== '') {
+            if (!array_key_exists($ip, $blockedIpCache)) {
+                $blockedIpCache[$ip] = function_exists('lc_is_ip_blocked')
+                    ? lc_is_ip_blocked($ip, $accountId > 0 ? $accountId : null)
+                    : false;
+            }
+            $ipBlocked = !empty($blockedIpCache[$ip]);
         }
 
         $visitors[] = [
@@ -250,13 +296,20 @@ try {
             'name' => $name,
             'initials' => lc_avatar_initials($name),
             'email' => (string) ($row['visitor_email'] ?? ''),
-            'ip' => (string) ($row['visitor_ip'] ?? ''),
+            'ip' => $ip,
+            'ip_blocked' => $ipBlocked,
             'country' => $country,
             'country_code' => $countryCode,
+            'device' => $device['device'] ?? 'Unknown',
+            'device_os' => $device['os'] ?? 'Unknown',
+            'device_browser' => $device['browser'] ?? 'Unknown',
+            'device_label' => $device['label'] ?? 'Unknown',
             'page_url' => $pageUrl,
             'page_path' => $pagePath,
             'status' => $status,
             'activity_label' => $activity,
+            'brand_id' => $resolvedBrandId,
+            'brand_key' => $resolvedBrandKey,
             'conversation_id' => $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null,
             'conversation_status' => $row['conversation_status'] ?? null,
             'agent_name' => (string) ($row['agent_name'] ?? ''),

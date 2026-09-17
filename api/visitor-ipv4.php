@@ -24,15 +24,34 @@ if (!lc_rate_limit('ip:' . $ipv4 . ':visitor-ipv4', 20, 60)) {
 }
 
 try {
-    $stmt = lc_db()->prepare('SELECT id FROM visitors WHERE visitor_uid = ? LIMIT 1');
+    $db = lc_db();
+    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ? LIMIT 1');
     $stmt->execute([$visitorUid]);
-    $visitorId = (int) ($stmt->fetchColumn() ?: 0);
-    if ($visitorId < 1) {
-        lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
+    $visitor = $stmt->fetch() ?: null;
+
+    $ipBind = function_exists('lc_visitor_for_current_ip')
+        ? lc_visitor_for_current_ip($visitor, $visitorUid, $ipv4)
+        : ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    $visitor = $ipBind['visitor'];
+    $visitorUid = $ipBind['visitor_uid'];
+    $rotated = !empty($ipBind['rotated']);
+
+    if (!$visitor) {
+        $country = function_exists('lc_resolve_country') ? lc_resolve_country($ipv4) : '';
+        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, ip_address, user_agent, country, last_seen) VALUES (?, ?, ?, ?, UTC_TIMESTAMP())');
+        $ins->execute([$visitorUid, $ipv4, $userAgent ?: null, $country]);
+        $visitorId = (int) $db->lastInsertId();
+    } else {
+        $visitorId = (int) $visitor['id'];
     }
 
     lc_save_visitor_ipv4($visitorId, $ipv4);
-    lc_json(['success' => true, 'ip' => $ipv4]);
+    lc_json([
+        'success' => true,
+        'ip' => $ipv4,
+        'visitor_uid' => $visitorUid,
+        'visitor_uid_rotated' => $rotated,
+    ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

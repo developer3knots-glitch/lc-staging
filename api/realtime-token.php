@@ -16,22 +16,36 @@ try {
     // Visitor token (widget)
     $visitorUid = trim((string) ($_GET['visitor_uid'] ?? ''));
     $conversationId = (int) ($_GET['conversation_id'] ?? 0);
-    if ($visitorUid !== '' && $conversationId > 0) {
+    if ($visitorUid !== '') {
         lc_cors_headers();
-        $stmt = lc_db()->prepare('
-            SELECT c.id
-            FROM conversations c
-            JOIN visitors v ON v.id = c.visitor_id
-            WHERE c.id = ? AND v.visitor_uid = ?
-            LIMIT 1
-        ');
-        $stmt->execute([$conversationId, $visitorUid]);
-        if (!$stmt->fetch()) {
-            lc_json(['success' => false, 'error' => 'Not found'], 404);
+        if ($conversationId > 0) {
+            $stmt = lc_db()->prepare('
+                SELECT c.id
+                FROM conversations c
+                JOIN visitors v ON v.id = c.visitor_id
+                WHERE c.id = ? AND v.visitor_uid = ?
+                LIMIT 1
+            ');
+            $stmt->execute([$conversationId, $visitorUid]);
+            if (!$stmt->fetch()) {
+                lc_json(['success' => false, 'error' => 'Not found'], 404);
+            }
+            lc_json([
+                'success' => true,
+                'token' => lc_realtime_visitor_token($visitorUid, $conversationId),
+                'realtime' => lc_realtime_client_config(),
+            ]);
+        }
+
+        // Presence-only token (proactive agent invite while browsing)
+        $exists = lc_db()->prepare('SELECT id FROM visitors WHERE visitor_uid = ? LIMIT 1');
+        $exists->execute([$visitorUid]);
+        if (!$exists->fetch()) {
+            // Brand-new uid before first pageview — still allow invite channel
         }
         lc_json([
             'success' => true,
-            'token' => lc_realtime_visitor_token($visitorUid, $conversationId),
+            'token' => lc_realtime_visitor_presence_token($visitorUid),
             'realtime' => lc_realtime_client_config(),
         ]);
     }

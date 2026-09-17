@@ -32,7 +32,31 @@ function lc_json(array $data, int $code = 200): void
 {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($data);
+    header('Connection: close');
+    $body = json_encode($data);
+    if ($body === false) {
+        $body = '{"success":false,"error":"Server error"}';
+        http_response_code(500);
+    }
+    // Content-Length lets Apache/nginx release the client before shutdown work
+    // (realtime fanout) — critical so the widget clock clears immediately.
+    if (!headers_sent()) {
+        header('Content-Length: ' . strlen($body));
+    }
+    echo $body;
+    if (function_exists('fastcgi_finish_request')) {
+        @fastcgi_finish_request();
+    } elseif (function_exists('litespeed_finish_request')) {
+        @litespeed_finish_request();
+    } else {
+        if (function_exists('session_write_close')) {
+            @session_write_close();
+        }
+        while (ob_get_level() > 0) {
+            @ob_end_flush();
+        }
+        @flush();
+    }
     exit;
 }
 
@@ -260,50 +284,152 @@ function lc_assign_agent(int $conversationId): ?int
     if (function_exists('lc_ensure_accounts_schema')) {
         lc_ensure_accounts_schema();
     }
-    $conv = lc_db()->prepare('SELECT c.brand_id, b.account_id FROM conversations c LEFT JOIN brands b ON b.id = c.brand_id WHERE c.id = ?');
+    $conv = lc_db()->prepare('SELECT c.id, c.status, c.agent_id, c.brand_id, b.account_id FROM conversations c LEFT JOIN brands b ON b.id = c.brand_id WHERE c.id = ?');
     $conv->execute([$conversationId]);
     $row = $conv->fetch();
-    $brandId = $row ? ($row['brand_id'] !== null ? (int) $row['brand_id'] : null) : null;
-    $accountId = $row && $row['account_id'] !== null ? (int) $row['account_id'] : 0;
+    if (!$row) {
+        return null;
+    }
+    // Already assigned — do not steal
+    if ((string) ($row['status'] ?? '') === 'active' && (int) ($row['agent_id'] ?? 0) > 0) {
+        return (int) $row['agent_id'];
+    }
+    if ((string) ($row['status'] ?? '') !== 'waiting') {
+        return null;
+    }
+
+    $brandId = $row['brand_id'] !== null ? (int) $row['brand_id'] : null;
+    $accountId = $row['account_id'] !== null ? (int) $row['account_id'] : 0;
 
     $autoAssign = $accountId > 0
-        ? lc_account_setting($accountId, 'auto_assign', '1')
-        : lc_setting('auto_assign', '1');
+        ? lc_account_setting($accountId, 'auto_assign', '0')
+        : lc_setting('auto_assign', '0');
     if ($autoAssign !== '1') {
         return null;
     }
 
-    if ($brandId) {
-        $sql = "SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND (brand_id IS NULL OR brand_id = ?)";
-        $params = [(int) $brandId];
-        if ($accountId > 0) {
-            $sql .= ' AND account_id = ?';
-            $params[] = $accountId;
-        }
-        $sql .= ' ORDER BY id ASC LIMIT 1';
-        $stmt = lc_db()->prepare($sql);
-        $stmt->execute($params);
-    } elseif ($accountId > 0) {
-        $stmt = lc_db()->prepare("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 AND account_id = ? ORDER BY id ASC LIMIT 1");
-        $stmt->execute([$accountId]);
-    } else {
-        $stmt = lc_db()->query("SELECT id FROM agents WHERE status = 'online' AND is_active = 1 ORDER BY id ASC LIMIT 1");
-    }
-    $agent = $stmt->fetch();
-    if (!$agent) {
+    $agentId = lc_pick_online_agent_for_assign($brandId, $accountId);
+    if (!$agentId) {
+        // No online agent — visitor stays waiting/unassigned until someone joins
         return null;
     }
-    $agentId = (int) $agent['id'];
-    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting'");
+
+    $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting' AND (agent_id IS NULL OR agent_id = 0)");
     $upd->execute([$agentId, $conversationId]);
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, $agentId);
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            $agentStmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
+            $agentStmt->execute([$agentId]);
+            $agentRow = $agentStmt->fetch() ?: [];
+            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                'status' => 'active',
+                'agent_id' => $agentId,
+                'agent' => function_exists('lc_agent_public')
+                    ? lc_agent_public((string) ($agentRow['name'] ?? ''), $agentRow['avatar'] ?? null)
+                    : null,
+            ]);
+        }
         return $agentId;
     }
     return null;
 }
 
-function lc_add_agent_join_message(int $conversationId, int $agentId): void
+/**
+ * Pick an online agent with the lightest active-chat load (round-robin fair).
+ * Away/offline agents are skipped — visitor waits until someone is Online.
+ */
+function lc_pick_online_agent_for_assign(?int $brandId, int $accountId = 0): ?int
+{
+    $db = lc_db();
+    $sql = "SELECT a.id,
+                   (SELECT COUNT(*) FROM conversations c
+                     WHERE c.agent_id = a.id AND c.status = 'active') AS load_count
+            FROM agents a
+            WHERE a.status = 'online' AND a.is_active = 1";
+    $params = [];
+    if ($brandId) {
+        $sql .= ' AND (a.brand_id IS NULL OR a.brand_id = ?)';
+        $params[] = (int) $brandId;
+    }
+    if ($accountId > 0) {
+        $sql .= ' AND a.account_id = ?';
+        $params[] = $accountId;
+    }
+    $sql .= ' ORDER BY load_count ASC, a.id ASC LIMIT 1';
+    $stmt = $params ? $db->prepare($sql) : $db->query($sql);
+    if ($params) {
+        $stmt->execute($params);
+    }
+    $agent = $stmt->fetch();
+    return $agent ? (int) $agent['id'] : null;
+}
+
+/**
+ * When an agent goes Online, pull oldest waiting chats (if auto-assign is on).
+ * @return int number of chats assigned
+ */
+function lc_drain_waiting_queue_for_agent(int $agentId, int $limit = 20): int
+{
+    $agentId = (int) $agentId;
+    if ($agentId <= 0) {
+        return 0;
+    }
+    $db = lc_db();
+    $agentStmt = $db->prepare('SELECT id, account_id, brand_id, status, is_active FROM agents WHERE id = ? LIMIT 1');
+    $agentStmt->execute([$agentId]);
+    $agent = $agentStmt->fetch();
+    if (!$agent || (int) ($agent['is_active'] ?? 0) !== 1 || (string) ($agent['status'] ?? '') !== 'online') {
+        return 0;
+    }
+
+    $accountId = (int) ($agent['account_id'] ?? 0);
+    $autoAssign = $accountId > 0
+        ? lc_account_setting($accountId, 'auto_assign', '0')
+        : lc_setting('auto_assign', '0');
+    if ($autoAssign !== '1') {
+        return 0;
+    }
+
+    $limit = max(1, min(50, (int) $limit));
+    $agentBrandId = (int) ($agent['brand_id'] ?? 0);
+
+    if ($accountId > 0 && $agentBrandId > 0) {
+        $sql = "SELECT c.id FROM conversations c
+                INNER JOIN brands b ON b.id = c.brand_id
+                WHERE c.status = 'waiting' AND (c.agent_id IS NULL OR c.agent_id = 0)
+                  AND b.account_id = ? AND c.brand_id = ?
+                ORDER BY COALESCE(c.last_message_at, c.started_at) ASC, c.id ASC
+                LIMIT {$limit}";
+        $stmt = $db->prepare($sql);
+        $stmt->execute([$accountId, $agentBrandId]);
+    } elseif ($accountId > 0) {
+        $sql = "SELECT c.id FROM conversations c
+                INNER JOIN brands b ON b.id = c.brand_id
+                WHERE c.status = 'waiting' AND (c.agent_id IS NULL OR c.agent_id = 0)
+                  AND b.account_id = ?
+                ORDER BY COALESCE(c.last_message_at, c.started_at) ASC, c.id ASC
+                LIMIT {$limit}";
+        $stmt = $db->prepare($sql);
+        $stmt->execute([$accountId]);
+    } else {
+        $sql = "SELECT c.id FROM conversations c
+                WHERE c.status = 'waiting' AND (c.agent_id IS NULL OR c.agent_id = 0)
+                ORDER BY COALESCE(c.last_message_at, c.started_at) ASC, c.id ASC
+                LIMIT {$limit}";
+        $stmt = $db->query($sql);
+    }
+
+    $assigned = 0;
+    while ($row = $stmt->fetch()) {
+        if (lc_assign_agent((int) $row['id'])) {
+            $assigned++;
+        }
+    }
+    return $assigned;
+}
+
+function lc_add_agent_join_message(int $conversationId, int $agentId, bool $publishRealtime = true): int
 {
     $stmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
     $stmt->execute([$agentId]);
@@ -316,20 +442,58 @@ function lc_add_agent_join_message(int $conversationId, int $agentId): void
     $msg->execute([$conversationId, 'system', $agentId, $name . ' joined the chat.']);
     lc_touch_conversation($conversationId);
     $messageId = (int) lc_db()->lastInsertId();
-    if ($messageId > 0 && function_exists('lc_realtime_publish_message')) {
+    if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
+    return $messageId;
 }
 
-function lc_add_system_message(int $conversationId, string $message): void
+function lc_add_system_message(int $conversationId, string $message, bool $publishRealtime = true): int
 {
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
     $stmt->execute([$conversationId, 'system', $message]);
     lc_touch_conversation($conversationId);
     $messageId = (int) lc_db()->lastInsertId();
-    if ($messageId > 0 && function_exists('lc_realtime_publish_message')) {
+    if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
+    return $messageId;
+}
+
+/**
+ * Visitor display name for agent-facing system notes (falls back to "Visitor").
+ */
+function lc_conversation_visitor_label(int $conversationId): string
+{
+    if ($conversationId < 1) {
+        return 'Visitor';
+    }
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT TRIM(COALESCE(v.name, ""))
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.id = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$conversationId]);
+        $name = trim((string) $stmt->fetchColumn());
+        if ($name !== '') {
+            return $name;
+        }
+    } catch (Throwable $e) {
+    }
+
+    return 'Visitor';
+}
+
+/** Build a system note that leads with the visitor name when known. */
+function lc_system_note_for_visitor(int $conversationId, string $actionRest): string
+{
+    $who = lc_conversation_visitor_label($conversationId);
+    $actionRest = ltrim($actionRest);
+
+    return $who . ($actionRest !== '' ? ' ' . $actionRest : '');
 }
 
 function lc_agent_can_access_conversation(array $agent, array $conv): bool
@@ -445,7 +609,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         return [
-            "{$a}.status IN ('waiting','active','closed'){$accountFilter}",
+            "{$a}.status IN ('waiting','active'){$accountFilter}",
             $accountParams,
         ];
     }
@@ -469,7 +633,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     return [
-        "{$a}.status IN ('waiting','active','closed') AND {$a}.brand_id = ?{$extra}",
+        "{$a}.status IN ('waiting','active') AND {$a}.brand_id = ?{$extra}",
         array_merge([$brandId], $extraParams),
     ];
 }
@@ -523,7 +687,7 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
         LEFT JOIN brands b ON b.id = a.brand_id
         WHERE a.is_active = 1
           AND a.status IN ('online', 'away')
-          AND a.role = 'agent'
+          AND a.role IN ('agent', 'admin')
           AND a.id NOT IN ({$placeholders})
     ";
     $params = $excludeIds;
@@ -565,14 +729,14 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         return ['ok' => false, 'error' => 'Chat is already with this agent'];
     }
 
-    $stmt = lc_db()->prepare('SELECT id, name, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
+    $stmt = lc_db()->prepare('SELECT id, name, avatar, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
     $stmt->execute([$targetAgentId]);
     $target = $stmt->fetch();
     if (!$target || !(int) $target['is_active']) {
         return ['ok' => false, 'error' => 'Agent not found'];
     }
-    if (($target['role'] ?? '') !== 'agent') {
-        return ['ok' => false, 'error' => 'Transfer is only available to support agents'];
+    if (!in_array(($target['role'] ?? ''), ['agent', 'admin'], true)) {
+        return ['ok' => false, 'error' => 'Transfer is only available to team members'];
     }
     if (($target['status'] ?? '') !== 'online' && ($target['status'] ?? '') !== 'away') {
         return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
@@ -582,34 +746,85 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     $targetName = trim((string) ($target['name'] ?? '')) ?: 'Agent';
     $note = trim($note);
 
+    // Resolve ticket + warm schema BEFORE the transaction. MySQL DDL (ALTER) inside
+    // a transaction implicitly commits — then commit() throws and the API returns
+    // "Server error" even though the transfer already saved.
+    if (function_exists('lc_ensure_ticket_schema')) {
+        lc_ensure_ticket_schema();
+    }
+    if (function_exists('lc_ensure_attachments_schema')) {
+        lc_ensure_attachments_schema();
+    }
+    $ticketRef = function_exists('lc_conversation_reference')
+        ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
+        : ('#' . $conversationId);
+
+    $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
+        . $ticketRef
+        . ' continues with full history.';
+    if ($note !== '') {
+        $transferMsg .= ' Note: ' . $note;
+    }
+    $joinMsg = $targetName . ' joined the chat.';
+
     $db = lc_db();
+    $systemMsgId = 0;
+    $joinMsgId = 0;
     $db->beginTransaction();
     try {
         $upd = $db->prepare("UPDATE conversations SET agent_id = ?, accepted_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'active'");
         $upd->execute([$targetAgentId, $conversationId]);
         if (!$upd->rowCount()) {
-            $db->rollBack();
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
             return ['ok' => false, 'error' => 'Transfer failed - chat may have been closed'];
         }
 
-        $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
-            . lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
-            . ' continues with full history.';
-        if ($note !== '') {
-            $transferMsg .= ' Note: ' . $note;
+        // Insert system lines only — no realtime/schema helpers inside the transaction.
+        $insSys = $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
+        $insSys->execute([$conversationId, 'system', $transferMsg]);
+        $systemMsgId = (int) $db->lastInsertId();
+        $insJoin = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+        $insJoin->execute([$conversationId, 'system', $targetAgentId, $joinMsg]);
+        $joinMsgId = (int) $db->lastInsertId();
+        $db->prepare('UPDATE conversations SET last_message_at = NOW() WHERE id = ?')->execute([$conversationId]);
+
+        if ($db->inTransaction()) {
+            $db->commit();
         }
-        lc_add_system_message($conversationId, $transferMsg);
-        lc_add_agent_join_message($conversationId, $targetAgentId);
-
-        $db->commit();
-
-        return ['ok' => true, 'agent_id' => $targetAgentId, 'agent_name' => $targetName];
     } catch (Throwable $e) {
         if ($db->inTransaction()) {
             $db->rollBack();
         }
         return ['ok' => false, 'error' => 'Server error'];
     }
+
+    // Notify after commit so publish/schema never breaks the transfer response.
+    try {
+        if ($systemMsgId > 0 && function_exists('lc_realtime_publish_message')) {
+            lc_realtime_publish_message($conversationId, $systemMsgId);
+        }
+        if ($joinMsgId > 0 && function_exists('lc_realtime_publish_message')) {
+            lc_realtime_publish_message($conversationId, $joinMsgId);
+        }
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            $agentInfo = null;
+            if (function_exists('lc_agent_public')) {
+                $agentInfo = lc_agent_public($targetName, $target['avatar'] ?? null);
+            }
+            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                'status' => 'active',
+                'agent_id' => $targetAgentId,
+                'agent' => $agentInfo,
+                'transferred' => true,
+            ]);
+        }
+    } catch (Throwable $e) {
+        // Transfer already persisted — never surface publish failures as transfer errors.
+    }
+
+    return ['ok' => true, 'agent_id' => $targetAgentId, 'agent_name' => $targetName];
 }
 
 /** Reopen chat when visitor returns (page refresh) after accidental auto-close */
@@ -661,21 +876,33 @@ function lc_reopen_closed_for_visitor_continue(int $conversationId, int $visitor
         $stmt = $db->prepare('SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
         $stmt->execute([$conversationId, $visitorId]);
         $row = $stmt->fetch();
-        if (!$row || ($row['status'] ?? '') !== 'closed') {
+        if (!$row) {
             return false;
         }
-        $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL WHERE id = ? AND status = 'closed'")
-            ->execute([$conversationId]);
+        if (($row['status'] ?? '') !== 'closed') {
+            // Already open — treat as success so visitor can keep messaging
+            return true;
+        }
+        $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ? AND status = 'closed'");
+        $upd->execute([$conversationId]);
+        if ($upd->rowCount() < 1) {
+            // Concurrent update — re-check
+            $check = $db->prepare('SELECT status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
+            $check->execute([$conversationId, $visitorId]);
+            $st = (string) ($check->fetchColumn() ?: '');
+            return $st === 'waiting' || $st === 'active';
+        }
+        // No realtime here — caller (visitor-send / upload / widget-init) publishes
+        // after the visitor message is stored so the send HTTP response stays fast.
         if (function_exists('lc_add_system_message')) {
-            lc_add_system_message($conversationId, 'Visitor continued this conversation.');
+            lc_add_system_message(
+                $conversationId,
+                lc_system_note_for_visitor($conversationId, 'continued this conversation.'),
+                false
+            );
         }
-        if (function_exists('lc_realtime_publish_conversation_event')) {
-            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                'status' => 'waiting',
-                'agent_id' => 0,
-                'reopened_by' => 'visitor',
-            ]);
-        }
+        // Do not auto-assign here — visitor-send assigns after the new message is stored
+        // so inactivity cannot race-close an empty reopen.
         return true;
     } catch (Throwable $e) {
         return false;
@@ -708,6 +935,88 @@ function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
     }
 
     return null;
+}
+
+/**
+ * First message id the visitor should see for the *current* chat session.
+ * Earlier closed rounds in the same ticket stay on the agent timeline only.
+ */
+function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
+{
+    if ($conversationId < 1) {
+        return 0;
+    }
+    try {
+        $db = lc_db();
+        // Latest end-of-session marker (visitor/agent/auto close, leave, merge notice optional)
+        $stmt = $db->prepare("
+            SELECT id, message, sender_type
+            FROM messages
+            WHERE conversation_id = ?
+              AND (
+                    (
+                        sender_type = 'system'
+                        AND (
+                            message LIKE '%closed the live chat%'
+                            OR message LIKE '%Chat closed%'
+                            OR message LIKE '%Chat ended%'
+                            OR message LIKE '%left the page%'
+                            OR message LIKE '%due to inactivity%'
+                            OR message LIKE '%ended this chat%'
+                            OR message LIKE 'Merged %earlier chat%'
+                        )
+                    )
+                 OR (
+                        sender_type = 'system'
+                        AND (
+                            message LIKE '%continued this conversation%'
+                            OR message LIKE '%returned. Previous conversation%'
+                            OR message LIKE 'Visitor continued this conversation%'
+                            OR message LIKE 'Visitor returned%'
+                        )
+                    )
+              )
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$conversationId]);
+        $marker = $stmt->fetch();
+        if (!$marker) {
+            return 0;
+        }
+
+        $markerId = (int) ($marker['id'] ?? 0);
+        $text = (string) ($marker['message'] ?? '');
+
+        // Continuation / return markers are part of the current session
+        if (stripos($text, 'continued this conversation') !== false
+            || stripos($text, 'returned. Previous conversation') !== false
+            || stripos($text, 'Visitor continued') !== false
+            || stripos($text, 'Visitor returned') !== false) {
+            return max(1, $markerId);
+        }
+
+        // Close/end marker → current session starts at the next message
+        $next = $db->prepare('SELECT id FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 1');
+        $next->execute([$conversationId, $markerId]);
+        $nextId = (int) ($next->fetchColumn() ?: 0);
+        return $nextId > 0 ? $nextId : ($markerId + 1);
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+function lc_message_hidden_from_visitor(string $message): bool
+{
+    $t = trim($message);
+    if ($t === '') {
+        return false;
+    }
+    // Internal / agent-only notices (never show in visitor widget)
+    return (bool) preg_match(
+        '/Merged \d+ earlier chat|transcript requested|IP blocked|visitor IP was blocked|moved to history after visitor IP|assigned to|transferred to|was contacted by an agent/i',
+        $t
+    );
 }
 
 /**
@@ -898,6 +1207,8 @@ function lc_agent_prior_threads_with_messages(
 
 function lc_touch_conversation(int $conversationId): void
 {
+    // Match messages.created_at (CURRENT_TIMESTAMP) + inactivity (NOW()).
+    // UTC_TIMESTAMP here made just-reopened chats look hours-idle and auto-close again.
     $stmt = lc_db()->prepare('UPDATE conversations SET last_message_at = NOW() WHERE id = ?');
     $stmt->execute([$conversationId]);
 }
@@ -993,12 +1304,28 @@ function lc_save_visitor_browser_geo(int $visitorId, float $lat, float $lon): ar
     $country = $rev['country'];
     $label = $rev['label'] !== '' ? $rev['label'] : (round($lat, 5) . ', ' . round($lon, 5));
 
+    $countryStore = $country;
+    if ($countryStore !== '') {
+        // Keep ISO code suffix consistent with IP geo rows when reverse-geocode has country only.
+        $countryStore = preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', $countryStore) ?: $countryStore;
+    }
+
     $upd = lc_db()->prepare('
         UPDATE visitors
-        SET geo_lat = ?, geo_lon = ?, geo_city = ?, geo_region = ?, geo_source = ?
+        SET geo_lat = ?, geo_lon = ?, geo_city = ?, geo_region = ?, geo_source = ?,
+            country = CASE WHEN ? <> "" THEN ? ELSE country END
         WHERE id = ?
     ');
-    $upd->execute([$lat, $lon, $city !== '' ? $city : null, $region !== '' ? $region : null, 'browser', $visitorId]);
+    $upd->execute([
+        $lat,
+        $lon,
+        $city !== '' ? $city : null,
+        $region !== '' ? $region : null,
+        'browser',
+        $countryStore,
+        $countryStore,
+        $visitorId,
+    ]);
 
     return [
         'label' => $label,
@@ -1067,9 +1394,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
         return $payload;
     }
-    if ($payload['lat'] !== null && $payload['lon'] !== null && $payload['city'] !== '') {
-        return $payload;
-    }
+    // Do not permanently freeze wrong IP-city guesses — re-resolve below when source is IP.
 
     $ip = trim($ip);
     if ($ip === '' && !empty($row['ip_address'])) {
@@ -1083,7 +1408,8 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     }
 
     $geo = lc_resolve_geo_full($ip);
-    if (($geo['lat'] === null || $geo['lon'] === null) && $geo['city'] === '') {
+    // Empty Unknown only — still persist country-only results so stale Lahore/Karachi pins clear.
+    if (($geo['label'] ?? '') === 'Unknown' && ($geo['city'] ?? '') === '' && ($geo['country'] ?? '') === 'Unknown') {
         return $payload;
     }
 
@@ -1092,9 +1418,10 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         $countryStore .= ' (' . $geo['country_code'] . ')';
     }
 
+    // Always refresh IP guesses (never freeze a wrong Lahore/Karachi pin), but never overwrite GPS.
     $upd = lc_db()->prepare('
         UPDATE visitors
-        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = COALESCE(geo_source, ?),
+        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = ?,
             country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
         WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')
     ');
@@ -1125,9 +1452,9 @@ function lc_get_conversation(int $id): ?array
     if (function_exists('lc_ensure_visitor_ipv4_schema')) {
         lc_ensure_visitor_ipv4_schema();
     }
-    $stmt = lc_db()->prepare('
+    $stmt = lc_db()->prepare("
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
-               v.ip_address AS visitor_ip, v.ipv4_address AS visitor_ipv4, v.country AS visitor_country, v.page_url AS visitor_page,
+               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.ipv4_address AS visitor_ipv4, v.country AS visitor_country, v.page_url AS visitor_page,
                v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
                v.phone AS visitor_phone,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
@@ -1138,9 +1465,16 @@ function lc_get_conversation(int $id): ?array
         LEFT JOIN agents a ON a.id = c.agent_id
         LEFT JOIN brands b ON b.id = c.brand_id
         WHERE c.id = ?
-    ');
+    ");
     $stmt->execute([$id]);
     $row = $stmt->fetch();
+    if ($row) {
+        $frozen = trim((string) ($row['client_ip'] ?? ''));
+        if ($frozen !== '' && filter_var($frozen, FILTER_VALIDATE_IP)) {
+            $row['visitor_ip'] = $frozen;
+            $row['visitor_ipv4'] = $frozen;
+        }
+    }
     return $row ?: null;
 }
 
@@ -1213,7 +1547,7 @@ function lc_waiting_count(?int $brandId = null, ?int $accountId = null): int
 }
 
 /**
- * Unique visitor IPs for a conversation status (not raw ticket rows).
+ * Conversation count for a status (one count per chat row).
  */
 function lc_dashboard_conversation_count_by_ip(
     string $status,
@@ -1228,11 +1562,9 @@ function lc_dashboard_conversation_count_by_ip(
         return 0;
     }
 
-    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
-    $sql = "SELECT COUNT(DISTINCT {$identity})
+    $sql = 'SELECT COUNT(*)
         FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
-        WHERE c.status = ?";
+        WHERE c.status = ?';
     $params = [$status];
 
     if ($closedTodayOnly && $status === 'closed') {
@@ -1305,8 +1637,8 @@ function lc_dashboard_chart_y_scale(int $maxValue): array
 }
 
 /**
- * Count unique visitor threads (public IP), not every ticket row.
- * Loopback / empty IP falls back to visitor_id so local tests still count.
+ * Optional identity key for inbox grouping helpers (IP + calendar day).
+ * Dashboard totals count conversations directly — do not use this for KPIs.
  */
 function lc_dashboard_visitor_identity_sql(string $visitorAlias = 'v', string $conversationAlias = 'c'): string
 {
@@ -1317,8 +1649,8 @@ function lc_dashboard_visitor_identity_sql(string $visitorAlias = 'v', string $c
         WHEN {$v}.ip_address IS NOT NULL
          AND TRIM({$v}.ip_address) <> ''
          AND {$v}.ip_address NOT IN ('0.0.0.0', '127.0.0.1', '::1')
-        THEN CONCAT('ip:', {$v}.ip_address)
-        ELSE CONCAT('vid:', {$c}.visitor_id)
+        THEN CONCAT('ip:', {$v}.ip_address, ':', DATE({$c}.started_at))
+        ELSE CONCAT('vid:', {$c}.visitor_id, ':', DATE({$c}.started_at))
     END";
 }
 
@@ -1351,11 +1683,9 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
         $params[] = $agentId;
     }
 
-    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
     $stmt = lc_db()->prepare("
-        SELECT DATE(c.started_at) AS day, COUNT(DISTINCT {$identity}) AS cnt
+        SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
         FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
         WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
         GROUP BY DATE(c.started_at)
     ");
@@ -1379,6 +1709,140 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
     }
 
     return $chart;
+}
+
+/**
+ * Chat volume by day for History / Total chats report (one count per conversation).
+ *
+ * @return array<int, array{label:string,full_label:string,count:int,iso:string}>
+ */
+function lc_history_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null): array
+{
+    lc_ensure_brands_schema();
+    $days = max(1, min(30, $days));
+    $end = new DateTimeImmutable('today');
+    $start = $end->modify('-' . ($days - 1) . ' days');
+
+    $params = [
+        $start->format('Y-m-d') . ' 00:00:00',
+        $end->format('Y-m-d') . ' 23:59:59',
+    ];
+    $brandFilter = '';
+    if ($brandId !== null) {
+        $brandFilter = ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
+    }
+    $agentFilter = '';
+    if ($agentId !== null && $agentId > 0) {
+        $agentFilter = ' AND c.agent_id = ?';
+        $params[] = $agentId;
+    }
+
+    $stmt = lc_db()->prepare("
+        SELECT DATE(c.started_at) AS day, COUNT(*) AS cnt
+        FROM conversations c
+        WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
+        GROUP BY DATE(c.started_at)
+    ");
+    $stmt->execute($params);
+    $rows = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[(string) $row['day']] = (int) $row['cnt'];
+    }
+
+    $chart = [];
+    for ($i = 0; $i < $days; $i++) {
+        $d = $start->modify("+{$i} days");
+        $key = $d->format('Y-m-d');
+        $chart[] = [
+            'label' => $d->format('j M'),
+            'full_label' => $d->format('j M Y'),
+            'header' => $d->format("j M 'y"),
+            'count' => $rows[$key] ?? 0,
+            'iso' => $key,
+        ];
+    }
+
+    return $chart;
+}
+
+/**
+ * Heatmap: hourly buckets × days (LiveChat-style total chats heatmap).
+ *
+ * @return array{hours:list<int>,slots:list<int>,days:list<string>,matrix:array<string,array<int,int>>,max:int}
+ */
+function lc_history_heatmap(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null): array
+{
+    $days = max(1, min(30, $days));
+    $end = new DateTimeImmutable('today');
+    $start = $end->modify('-' . ($days - 1) . ' days');
+    $hours = range(0, 23);
+    $slots = [0, 3, 6, 9, 12, 15, 18, 21];
+
+    $dayList = [];
+    for ($i = 0; $i < $days; $i++) {
+        $dayList[] = $start->modify("+{$i} days")->format('Y-m-d');
+    }
+
+    $params = [
+        $start->format('Y-m-d') . ' 00:00:00',
+        $end->format('Y-m-d') . ' 23:59:59',
+    ];
+    $brandFilter = '';
+    if ($brandId !== null) {
+        $brandFilter = ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
+    }
+    $agentFilter = '';
+    if ($agentId !== null && $agentId > 0) {
+        $agentFilter = ' AND c.agent_id = ?';
+        $params[] = $agentId;
+    }
+
+    $stmt = lc_db()->prepare("
+        SELECT DATE(c.started_at) AS day,
+               HOUR(c.started_at) AS hour,
+               COUNT(*) AS cnt
+        FROM conversations c
+        WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
+        GROUP BY DATE(c.started_at), HOUR(c.started_at)
+    ");
+    $stmt->execute($params);
+
+    $matrix = [];
+    $max = 0;
+    foreach ($dayList as $day) {
+        $matrix[$day] = [];
+        foreach ($hours as $hour) {
+            $matrix[$day][$hour] = 0;
+        }
+    }
+    foreach ($stmt->fetchAll() as $row) {
+        $day = (string) ($row['day'] ?? '');
+        $hour = (int) ($row['hour'] ?? 0);
+        $cnt = (int) ($row['cnt'] ?? 0);
+        if (!isset($matrix[$day]) || $hour < 0 || $hour > 23) {
+            continue;
+        }
+        $matrix[$day][$hour] = $cnt;
+        if ($cnt > $max) {
+            $max = $cnt;
+        }
+    }
+
+    return [
+        'hours' => $hours,
+        'slots' => $slots,
+        'days' => $dayList,
+        'matrix' => $matrix,
+        'max' => max(1, $max),
+    ];
 }
 
 function lc_dashboard_activity_total(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null, int $endOffsetDays = 0): int
@@ -1407,17 +1871,16 @@ function lc_dashboard_activity_total(?int $brandId, int $days = 7, ?int $account
         $params[] = $agentId;
     }
 
-    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
     $stmt = lc_db()->prepare("
-        SELECT COUNT(DISTINCT {$identity})
+        SELECT COUNT(*)
         FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
         WHERE c.started_at >= ? AND c.started_at <= ? {$brandFilter}{$agentFilter}
     ");
     $stmt->execute($params);
 
     return (int) $stmt->fetchColumn();
 }
+
 
 /**
  * @return array{waiting: int, active: int, closed_today: int, started_today: int, unread: int}
@@ -1482,11 +1945,9 @@ function lc_dashboard_started_today(?int $brandId, ?int $accountId = null, ?int 
 {
     lc_ensure_brands_schema();
     $params = [];
-    $identity = lc_dashboard_visitor_identity_sql('v', 'c');
-    $sql = "SELECT COUNT(DISTINCT {$identity})
+    $sql = 'SELECT COUNT(*)
         FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
-        WHERE DATE(c.started_at) = CURDATE()";
+        WHERE DATE(c.started_at) = CURDATE()';
     if ($brandId !== null) {
         $sql .= ' AND c.brand_id = ?';
         $params[] = $brandId;

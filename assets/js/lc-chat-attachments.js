@@ -181,6 +181,13 @@
         return Promise.resolve({ ok: true, file: file });
     }
 
+    function isDuplicateAttachCaption(messageText, attachment) {
+        var text = String(messageText || '').trim();
+        var name = String((attachment && attachment.name) || '').trim();
+        if (!text || !name) return false;
+        return text.toLowerCase() === name.toLowerCase();
+    }
+
     function renderDocumentAttachHtml(classPrefix, url, attachment) {
         var label = attachmentDocLabel(attachment);
         var iconClass = classPrefix + '-attach-file-icon';
@@ -201,7 +208,7 @@
             return esc(messageText || '');
         }
         var html = '';
-        if (messageText) {
+        if (messageText && !isDuplicateAttachCaption(messageText, attachment)) {
             html += '<div class="lc-chat-text">' + esc(messageText) + '</div>';
         }
         if (attachment.kind === 'image') {
@@ -219,16 +226,20 @@
             return esc(messageText || '');
         }
         var html = '';
-        if (messageText) {
+        if (messageText && !isDuplicateAttachCaption(messageText, attachment)) {
             html += '<div class="lcw-chat-text">' + esc(messageText) + '</div>';
         }
-        if (attachment.kind === 'image') {
-            html += '<a class="lcw-attach-image" href="' + esc(attachment.url) + '" target="_blank" rel="noopener">';
-            html += '<img src="' + esc(attachment.url) + '" alt="' + esc(attachment.name || 'Image') + '" loading="lazy">';
-            html += '</a>';
-        } else {
-            html += renderDocumentAttachHtml('lcw', attachment.url, attachment);
-        }
+        var name = attachment.name || (attachment.kind === 'image' ? 'Image' : 'File');
+        var label = attachmentDocLabel(attachment);
+        var meta = formatSize(attachment.size) + ' · ' + label;
+        html += '<a class="lcw-attach-link" href="' + esc(attachment.url) + '" target="_blank" rel="noopener noreferrer">'
+            + '<span class="lcw-attach-link-icon" aria-hidden="true">'
+            + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'
+            + '</span>'
+            + '<span class="lcw-attach-link-text">'
+            + '<strong>' + esc(name) + '</strong>'
+            + '<span>' + esc(meta) + '</span>'
+            + '</span></a>';
         return html;
     }
 

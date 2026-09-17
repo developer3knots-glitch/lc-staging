@@ -12,7 +12,146 @@ function lc_ip_usable_for_identity(string $ip): bool
 }
 
 /**
- * Latest conversation for this IP + brand (any status). One thread per IP.
+ * Normalize to a comparable public IPv4 when possible (for "new IP = new visitor").
+ */
+function lc_identity_ip(string $ip): ?string
+{
+    $ip = trim($ip);
+    if ($ip === '' || !lc_ip_usable_for_identity($ip)) {
+        return null;
+    }
+    if (function_exists('lc_valid_public_ipv4')) {
+        $v4 = lc_valid_public_ipv4($ip);
+        if ($v4 !== null) {
+            return $v4;
+        }
+    }
+    if (function_exists('lc_ipv4_from_any')) {
+        $mapped = lc_ipv4_from_any($ip);
+        if ($mapped !== null) {
+            return $mapped;
+        }
+    }
+    // Keep usable non-v4 only if filter_var already passed in lc_ip_usable_for_identity
+    return $ip;
+}
+
+/**
+ * Product rule: different public IP = different visitor (new uid, blank identity, new chat).
+ * Same browser cookie must NOT keep old chats/name when the network IP changed.
+ *
+ * Exception: if this visitor already has an open chat today, do NOT rotate mid-session
+ * (server IP vs ipify / IPv4↔IPv6 mismatch was wiping chat_token → Invalid session).
+ *
+ * @param array<string,mixed>|false|null $visitor
+ * @return array{visitor: ?array, visitor_uid: string, rotated: bool}
+ */
+function lc_visitor_for_current_ip($visitor, string $visitorUid, string $currentIp): array
+{
+    $visitorUid = trim($visitorUid);
+    if (!$visitor || !is_array($visitor)) {
+        return ['visitor' => null, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    }
+
+    $storedRaw = trim((string) ($visitor['ip_address'] ?? ''));
+    $stored = lc_identity_ip($storedRaw);
+    $current = lc_identity_ip($currentIp);
+
+    // No usable stored IP yet — keep this visitor and let first IP bind.
+    if ($stored === null || $current === null) {
+        return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    }
+
+    if ($stored === $current) {
+        return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    }
+
+    // Keep identity while a live chat is in progress — avoid mid-chat token wipe.
+    $visitorId = (int) ($visitor['id'] ?? 0);
+    if ($visitorId > 0) {
+        try {
+            $open = lc_db()->prepare("
+                SELECT id FROM conversations
+                WHERE visitor_id = ?
+                  AND status IN ('waiting', 'active')
+                  AND DATE(started_at) = CURDATE()
+                LIMIT 1
+            ");
+            $open->execute([$visitorId]);
+            if ($open->fetchColumn()) {
+                return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
+            }
+        } catch (Throwable $e) {
+        }
+    }
+
+    // New public IP → mint a fresh visitor identity. Never merge two IPs into one row.
+    $newUid = 'v_' . bin2hex(random_bytes(8)) . '_' . substr((string) time(), -6);
+
+    return ['visitor' => null, 'visitor_uid' => $newUid, 'rotated' => true];
+}
+
+/**
+ * Calendar day for IP+date inbox grouping (Y-m-d). Uses conversation started_at.
+ */
+function lc_conversation_day_key(?string $startedAt): string
+{
+    $startedAt = trim((string) $startedAt);
+    if ($startedAt !== '' && preg_match('/^(\d{4}-\d{2}-\d{2})/', $startedAt, $m)) {
+        return $m[1];
+    }
+
+    return date('Y-m-d');
+}
+
+/**
+ * Freeze the visitor public IP on the conversation at start time.
+ * Visitor.ip_address can change later (reconnect / VPN / claim) — chat IP must not.
+ */
+function lc_ensure_conversation_client_ip_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $pdo = lc_db();
+        $has = $pdo->query("SHOW COLUMNS FROM conversations LIKE 'client_ip'")->fetch();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE conversations ADD COLUMN client_ip VARCHAR(45) NULL DEFAULT NULL AFTER page_url");
+        }
+        // Do NOT backfill the whole table here — that locked/hung Chats inbox on every poll.
+        // New chats set client_ip at create; older rows fall back to visitors.ip_address in SELECT.
+    } catch (Throwable $e) {
+    }
+}
+
+/** SQL expression: prefer frozen conversation IP over live visitor IP. */
+function lc_conversation_display_ip_sql(string $conversationAlias = 'c', string $visitorAlias = 'v'): string
+{
+    $c = $conversationAlias;
+    $v = $visitorAlias;
+
+    return "COALESCE(NULLIF(TRIM({$c}.client_ip), ''), {$v}.ip_address)";
+}
+
+function lc_set_conversation_client_ip(int $conversationId, string $ip): void
+{
+    if ($conversationId < 1 || !lc_ip_usable_for_identity($ip)) {
+        return;
+    }
+    try {
+        lc_ensure_conversation_client_ip_schema();
+        lc_db()->prepare("UPDATE conversations SET client_ip = COALESCE(NULLIF(TRIM(client_ip), ''), ?) WHERE id = ?")
+            ->execute([$ip, $conversationId]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Latest conversation for this IP + brand on today's calendar date.
+ * Same IP on a different day starts a separate inbox thread.
  *
  * @return array{id:int,status:string,agent_id:?int,visitor_id:int}|null
  */
@@ -22,17 +161,21 @@ function lc_find_conversation_by_ip(string $ip, int $brandId): ?array
         return null;
     }
 
+    lc_ensure_conversation_client_ip_schema();
+    $ipExpr = lc_conversation_display_ip_sql('c', 'v');
     $stmt = lc_db()->prepare("
         SELECT c.id, c.status, c.agent_id, c.visitor_id
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
-        WHERE v.ip_address = ? AND c.brand_id = ?
+        WHERE c.brand_id = ?
+          AND DATE(c.started_at) = CURDATE()
+          AND ({$ipExpr}) = ?
         ORDER BY
             CASE c.status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
             COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         LIMIT 1
     ");
-    $stmt->execute([$ip, $brandId]);
+    $stmt->execute([$brandId, $ip]);
 
     return lc_conversation_identity_row($stmt->fetch() ?: null);
 }
@@ -87,7 +230,8 @@ function lc_find_visitor_profile_by_ip(string $ip, int $brandId = 0): ?array
 }
 
 /**
- * One live thread per IP: reuse waiting/active, or reopen latest closed for this IP.
+ * Same public IP + same calendar day → one chat thread.
+ * Different IP → never claim. Different day → find returns null → new chat.
  *
  * @return array{id:int,status:string}|null
  */
@@ -106,40 +250,129 @@ function lc_claim_ip_conversation(string $ip, int $brandId, int $currentVisitorI
     $status = (string) $found['status'];
     $db = lc_db();
 
-    // Bind this browser uid to the IP's visitor so poll/send keep working
     try {
-        $db->prepare('UPDATE visitors SET visitor_uid = ?, ip_address = ?, last_seen = NOW() WHERE id = ?')
-            ->execute([$visitorUid, $ip, $ownerVisitorId]);
-        if ($ownerVisitorId !== $currentVisitorId) {
-            // Point current stub visitor's chats away; keep IP identity on owner
-            $db->prepare('UPDATE visitors SET ip_address = NULL WHERE id = ? AND id <> ?')
-                ->execute([$currentVisitorId, $ownerVisitorId]);
+        // Bind today's IP thread to this browser visitor.
+        // Only copy name/email when the other side is empty AND we are not mixing two people
+        // (never paste owner.name onto a visitor who already has a different email).
+        $db->prepare('
+            UPDATE visitors cur
+            JOIN visitors own ON own.id = ?
+            SET
+                cur.email = CASE
+                    WHEN NULLIF(TRIM(cur.email), "") IS NULL AND NULLIF(TRIM(own.email), "") IS NOT NULL
+                    THEN own.email ELSE cur.email END,
+                cur.name = CASE
+                    WHEN NULLIF(TRIM(cur.name), "") IS NULL
+                     AND NULLIF(TRIM(own.name), "") IS NOT NULL
+                     AND (
+                        NULLIF(TRIM(cur.email), "") IS NULL
+                        OR LOWER(TRIM(cur.email)) = LOWER(TRIM(own.email))
+                     )
+                    THEN own.name ELSE cur.name END
+            WHERE cur.id = ? AND ? <> ?
+        ')->execute([$ownerVisitorId, $currentVisitorId, $ownerVisitorId, $currentVisitorId]);
+        $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ? AND DATE(started_at) = CURDATE()')
+            ->execute([$currentVisitorId, $convId]);
+        $ownerVisitorId = $currentVisitorId;
+        if (function_exists('lc_record_visitor_ip')) {
+            lc_record_visitor_ip($currentVisitorId, $ip);
         }
     } catch (Throwable $e) {
     }
 
     if ($status === 'waiting' || $status === 'active') {
-        // Close other open chats for this IP so inbox stays one thread
         try {
             $db->prepare("
-                UPDATE conversations c
-                JOIN visitors v ON v.id = c.visitor_id
-                SET c.status = 'closed', c.closed_at = COALESCE(c.closed_at, NOW())
-                WHERE v.ip_address = ? AND c.brand_id = ? AND c.status IN ('waiting','active') AND c.id <> ?
-            ")->execute([$ip, $brandId, $convId]);
+                UPDATE conversations
+                SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
+                WHERE brand_id = ?
+                  AND DATE(started_at) = CURDATE()
+                  AND status IN ('waiting','active') AND id <> ?
+                  AND id IN (
+                      SELECT x.id FROM (
+                          SELECT c2.id
+                          FROM conversations c2
+                          JOIN visitors v2 ON v2.id = c2.visitor_id
+                          WHERE c2.brand_id = ?
+                            AND DATE(c2.started_at) = CURDATE()
+                            AND COALESCE(NULLIF(TRIM(c2.client_ip), ''), v2.ip_address) = ?
+                      ) x
+                  )
+            ")->execute([$brandId, $convId, $brandId, $ip]);
         } catch (Throwable $e) {
+            try {
+                $db->prepare("
+                    UPDATE conversations
+                    SET status = 'closed', closed_at = COALESCE(closed_at, NOW())
+                    WHERE visitor_id = ? AND brand_id = ?
+                      AND DATE(started_at) = CURDATE()
+                      AND status IN ('waiting','active') AND id <> ?
+                ")->execute([$ownerVisitorId, $brandId, $convId]);
+            } catch (Throwable $e2) {
+            }
         }
         return ['id' => $convId, 'status' => $status];
     }
 
     if ($status === 'closed') {
-        if (function_exists('lc_reopen_closed_for_visitor_continue')) {
-            lc_reopen_closed_for_visitor_continue($convId, $ownerVisitorId);
-        } else {
-            $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL WHERE id = ?")
-                ->execute([$convId]);
+        // Same IP + same day: keep ONE ticket identity, but do NOT reopen on page load /
+        // widget refresh. Reopen only when the visitor actually continues (send / upload).
+        try {
+            $db->prepare('
+                UPDATE conversations
+                SET visitor_id = ?
+                WHERE id = ? AND DATE(started_at) = CURDATE()
+            ')->execute([$currentVisitorId, $convId]);
+        } catch (Throwable $e) {
         }
-        return ['id' => $convId, 'status' => 'waiting'];
+        return ['id' => $convId, 'status' => 'closed'];
+    }
+
+    return null;
+}
+
+/**
+ * Allow visitor poll/send when uid matches, or rebind uid with a valid chat_token
+ * (covers IP-claim / multi-tab cases where the browser uid changed).
+ *
+ * @return array<string,mixed>|null
+ */
+function lc_visitor_access_conversation(int $conversationId, string $visitorUid, string $chatToken = ''): ?array
+{
+    if ($conversationId < 1) {
+        return null;
+    }
+    $db = lc_db();
+    $stmt = $db->prepare('
+        SELECT c.id, c.status, c.agent_id, c.visitor_id, c.started_at, c.brand_id,
+               v.visitor_uid, v.ip_address
+        FROM conversations c
+        JOIN visitors v ON v.id = c.visitor_id
+        WHERE c.id = ?
+        LIMIT 1
+    ');
+    $stmt->execute([$conversationId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return null;
+    }
+
+    $ownerUid = trim((string) ($row['visitor_uid'] ?? ''));
+    $visitorUid = trim($visitorUid);
+    if ($visitorUid !== '' && $ownerUid === $visitorUid) {
+        return $row;
+    }
+
+    if ($visitorUid !== '' && $chatToken !== ''
+        && function_exists('lc_validate_chat_token')
+        && lc_validate_chat_token($conversationId, $chatToken)) {
+        try {
+            $db->prepare('UPDATE visitors SET visitor_uid = ?, last_seen = NOW() WHERE id = ?')
+                ->execute([$visitorUid, (int) $row['visitor_id']]);
+            $row['visitor_uid'] = $visitorUid;
+        } catch (Throwable $e) {
+        }
+        return $row;
     }
 
     return null;
@@ -265,14 +498,14 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
     $status = (string) ($conv['status'] ?? '');
     $wasClosed = $status === 'closed';
     if ($wasClosed) {
-        // Manual assign: returning visitor re-enters the unassigned queue (never auto-join prior agent).
+        // Re-enter queue; auto-assign (if enabled) picks an online agent below.
         $status = 'waiting';
         $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
         if (function_exists('lc_clear_transcript_request')) {
             lc_clear_transcript_request($convId);
         }
-        lc_add_system_message($convId, 'Visitor returned. Previous conversation is open again.');
+        lc_add_system_message($convId, lc_system_note_for_visitor($convId, 'returned. Previous conversation is open again.'));
     }
 
     if ($wasClosed || $visitorChanged) {
@@ -280,14 +513,19 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
         lc_touch_conversation($convId);
     }
 
+    if ($wasClosed && function_exists('lc_assign_agent')) {
+        $assignedId = lc_assign_agent($convId);
+        if ($assignedId) {
+            $status = 'active';
+        }
+    }
+
     return ['id' => $convId, 'status' => $status];
 }
 
 /**
- * Live inbox: one row per public/LAN IP (latest activity). Loopback IPs stay separate.
- *
- * @param list<array<string,mixed>> $conversations
- * @return list<array<string,mixed>>
+ * Live inbox: one row per public IP per calendar day (started_at date).
+ * Same IP + same date = one chat row. Different date = separate row.
  */
 function lc_inbox_identity_key(array $row): string
 {
@@ -296,15 +534,18 @@ function lc_inbox_identity_key(array $row): string
         ? lc_normalize_visitor_email((string) ($row['visitor_email'] ?? ''))
         : strtolower(trim((string) ($row['visitor_email'] ?? '')));
     $visitorId = (int) ($row['visitor_id'] ?? 0);
+    $day = function_exists('lc_conversation_day_key')
+        ? lc_conversation_day_key((string) ($row['started_at'] ?? $row['last_message_at'] ?? ''))
+        : date('Y-m-d');
 
     if (function_exists('lc_ip_usable_for_identity') ? lc_ip_usable_for_identity($ip) : ($ip !== '' && $ip !== '127.0.0.1' && $ip !== '::1')) {
-        return 'ip:' . $ip;
+        return 'ip:' . $ip . ':' . $day;
     }
     if ($email !== '') {
-        return 'em:' . $email;
+        return 'em:' . $email . ':' . $day;
     }
     if ($visitorId > 0) {
-        return 'vid:' . $visitorId;
+        return 'vid:' . $visitorId . ':' . $day;
     }
     return 'id:' . (int) ($row['id'] ?? 0);
 }
@@ -314,14 +555,15 @@ function lc_inbox_row_rank(array $row): array
     $status = (string) ($row['status'] ?? '');
     // Prefer live queue over archived/closed so returning visitors don't blink two rows.
     $statusRank = $status === 'waiting' ? 0 : ($status === 'active' ? 1 : 2);
+    // Newest human activity first (ignore closed_at — it made agent-replied chats sink).
     $ts = strtotime((string) ($row['last_message_at'] ?? $row['started_at'] ?? '')) ?: 0;
+    $msgs = (int) ($row['msg_count'] ?? 0);
     $id = (int) ($row['id'] ?? 0);
-    return [$statusRank, -$ts, -$id];
+    return [$statusRank, -$ts, -$msgs, -$id];
 }
 
 /**
- * One inbox/dashboard row per public IP (prefer waiting/active over closed).
- * Different IPs stay separate even if email/name match.
+ * One inbox/dashboard row per public IP per calendar day.
  *
  * @param list<array<string,mixed>> $conversations
  * @return list<array<string,mixed>>
@@ -345,7 +587,8 @@ function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
         $cur = lc_inbox_row_rank($row);
         $prev = lc_inbox_row_rank($best[$key]);
         $better = false;
-        for ($i = 0; $i < 3; $i++) {
+        $len = min(count($cur), count($prev));
+        for ($i = 0; $i < $len; $i++) {
             if ($cur[$i] < $prev[$i]) {
                 $better = true;
                 break;
@@ -363,7 +606,8 @@ function lc_dedupe_inbox_conversations_by_ip(array $conversations): array
     usort($out, static function ($a, $b) {
         $ra = lc_inbox_row_rank($a);
         $rb = lc_inbox_row_rank($b);
-        for ($i = 0; $i < 3; $i++) {
+        $len = min(count($ra), count($rb));
+        for ($i = 0; $i < $len; $i++) {
             if ($ra[$i] !== $rb[$i]) {
                 return $ra[$i] <=> $rb[$i];
             }
@@ -459,8 +703,8 @@ function lc_merge_same_ip_conversations(): array
 }
 
 /**
- * Manual-only: merge CLOSED chats that share the exact same IP (never by email).
- * Does not run automatically — different IPs stay as separate tickets.
+ * Manual-only: merge CLOSED chats that share the same IP on the same calendar day.
+ * Different dates stay separate tickets. Never merges by email alone.
  */
 function lc_merge_same_ip_conversations_manual(): array
 {
@@ -470,13 +714,13 @@ function lc_merge_same_ip_conversations_manual(): array
     $removedConversations = 0;
 
     $ipGroups = $db->query("
-        SELECT v.ip_address AS ip
+        SELECT v.ip_address AS ip, DATE(c.started_at) AS day
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         WHERE c.status = 'closed'
           AND v.ip_address IS NOT NULL
           AND v.ip_address NOT IN ('', '0.0.0.0', '127.0.0.1', '::1')
-        GROUP BY v.ip_address
+        GROUP BY v.ip_address, DATE(c.started_at)
         HAVING COUNT(*) > 1
     ")->fetchAll();
 
@@ -486,9 +730,10 @@ function lc_merge_same_ip_conversations_manual(): array
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
             WHERE v.ip_address = ? AND c.status = 'closed'
+              AND DATE(c.started_at) = ?
             ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         ");
-        $stmt->execute([(string) $g['ip']]);
+        $stmt->execute([(string) $g['ip'], (string) $g['day']]);
         $ids = array_map(static function ($row) {
             return (int) $row['id'];
         }, $stmt->fetchAll());
@@ -504,6 +749,179 @@ function lc_merge_same_ip_conversations_manual(): array
         'groups' => $mergedGroups,
         'messages_moved' => $movedMessages,
         'conversations_removed' => $removedConversations,
+    ];
+}
+
+/**
+ * Split conversations whose messages span multiple calendar days into
+ * one ticket per day (same visitor/IP). Earliest day keeps the original id.
+ *
+ * @return array{conversations_split:int,days_created:int,messages_moved:int}
+ */
+function lc_split_conversations_by_ip_day(): array
+{
+    $db = lc_db();
+    $split = 0;
+    $daysCreated = 0;
+    $moved = 0;
+
+    // Ticket schema may run ALTER (implicit commit) — do it once before any splits.
+    if (function_exists('lc_ensure_ticket_schema')) {
+        try {
+            lc_ensure_ticket_schema();
+        } catch (Throwable $e) {
+        }
+    }
+
+    $candidates = $db->query("
+        SELECT c.id
+        FROM conversations c
+        JOIN messages m ON m.conversation_id = c.id
+        GROUP BY c.id
+        HAVING COUNT(DISTINCT DATE(m.created_at)) > 1
+        ORDER BY c.id ASC
+    ")->fetchAll(PDO::FETCH_COLUMN);
+
+    foreach ($candidates as $rawId) {
+        $convId = (int) $rawId;
+        if ($convId < 1) {
+            continue;
+        }
+
+        $lock = $db->prepare('SELECT * FROM conversations WHERE id = ?');
+        $lock->execute([$convId]);
+        $conv = $lock->fetch();
+        if (!$conv) {
+            continue;
+        }
+
+        $dayStmt = $db->prepare("
+            SELECT DATE(created_at) AS day,
+                   MIN(created_at) AS first_at,
+                   MAX(created_at) AS last_at,
+                   COUNT(*) AS msg_count
+            FROM messages
+            WHERE conversation_id = ?
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+        ");
+        $dayStmt->execute([$convId]);
+        $days = $dayStmt->fetchAll();
+        if (count($days) < 2) {
+            continue;
+        }
+
+        $origStatus = (string) ($conv['status'] ?? 'closed');
+        $keepDay = (string) ($days[0]['day'] ?? '');
+        $latestDay = (string) ($days[count($days) - 1]['day'] ?? '');
+        $didSplit = false;
+
+        foreach ($days as $idx => $dayRow) {
+            $day = (string) ($dayRow['day'] ?? '');
+            if ($day === '' || $day === $keepDay) {
+                continue;
+            }
+
+            $firstAt = (string) ($dayRow['first_at'] ?? $day . ' 00:00:00');
+            $lastAt = (string) ($dayRow['last_at'] ?? $firstAt);
+            $isLatest = ($day === $latestDay);
+            $newStatus = $isLatest ? $origStatus : 'closed';
+            $closedAt = ($newStatus === 'closed')
+                ? ($isLatest ? ($conv['closed_at'] ?? $lastAt) : $lastAt)
+                : null;
+            $agentId = $isLatest ? ($conv['agent_id'] ?? null) : null;
+            $acceptedAt = ($newStatus === 'active' && $isLatest)
+                ? ($conv['accepted_at'] ?? $firstAt)
+                : null;
+
+            $ins = $db->prepare("
+                INSERT INTO conversations (
+                    visitor_id, brand_id, agent_id, status, subject, page_url,
+                    started_at, accepted_at, closed_at, last_message_at,
+                    is_returning, prior_chat_count
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?
+                )
+            ");
+            $ins->execute([
+                (int) $conv['visitor_id'],
+                $conv['brand_id'] !== null ? (int) $conv['brand_id'] : null,
+                $agentId !== null && $agentId !== '' ? (int) $agentId : null,
+                $newStatus,
+                $conv['subject'] ?? null,
+                $conv['page_url'] ?? null,
+                $firstAt,
+                $acceptedAt,
+                $closedAt,
+                $lastAt,
+                1,
+                max(1, (int) ($conv['prior_chat_count'] ?? 0) + $idx),
+            ]);
+            $newId = (int) $db->lastInsertId();
+            if ($newId < 1) {
+                throw new RuntimeException('Failed to create day-split conversation');
+            }
+
+            if (function_exists('lc_assign_conversation_ticket')) {
+                try {
+                    lc_assign_conversation_ticket($newId, $firstAt);
+                } catch (Throwable $ticketErr) {
+                }
+            }
+
+            $upd = $db->prepare('UPDATE messages SET conversation_id = ? WHERE conversation_id = ? AND DATE(created_at) = ?');
+            $upd->execute([$newId, $convId, $day]);
+            $moved += (int) $upd->rowCount();
+            $daysCreated++;
+            $didSplit = true;
+
+            // Stamp note on that calendar day so a re-run does not see a new "today" day
+            try {
+                $db->prepare('
+                    INSERT INTO messages (conversation_id, sender_type, message, created_at)
+                    VALUES (?, ?, ?, ?)
+                ')->execute([
+                    $newId,
+                    'system',
+                    'Split from earlier chat #' . $convId . ' for date ' . $day . ' (same visitor IP).',
+                    $lastAt,
+                ]);
+            } catch (Throwable $noteErr) {
+            }
+        }
+
+        if ($didSplit) {
+            $keepMeta = $db->prepare("
+                SELECT MIN(created_at) AS first_at, MAX(created_at) AS last_at
+                FROM messages WHERE conversation_id = ?
+            ");
+            $keepMeta->execute([$convId]);
+            $meta = $keepMeta->fetch() ?: [];
+            $keepFirst = (string) ($meta['first_at'] ?? $conv['started_at']);
+            $keepLast = (string) ($meta['last_at'] ?? $keepFirst);
+
+            $db->prepare("
+                UPDATE conversations
+                SET status = 'closed',
+                    agent_id = NULL,
+                    accepted_at = NULL,
+                    closed_at = COALESCE(closed_at, ?),
+                    started_at = ?,
+                    last_message_at = ?,
+                    is_returning = GREATEST(COALESCE(is_returning, 0), 1)
+                WHERE id = ?
+            ")->execute([$keepLast, $keepFirst, $keepLast, $convId]);
+
+            $split++;
+        }
+    }
+
+    return [
+        'conversations_split' => $split,
+        'days_created' => $daysCreated,
+        'messages_moved' => $moved,
     ];
 }
 

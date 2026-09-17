@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Keep global fallback in sync (brands without account_id / legacy installs)
             if (function_exists('lc_set_setting')) {
                 lc_set_setting('prechat_form_enabled', $prechatOn);
+                lc_set_setting('auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             }
             $inactOn = isset($_POST['inactivity_close_enabled']) ? '1' : '0';
             $closeMin = max(5, min(240, (int) ($_POST['inactivity_close_minutes'] ?? 15)));
@@ -293,11 +294,13 @@ require __DIR__ . '/includes/header.php';
                                 <div class="lc-settings-tile-icon green"><i class="ti ti-users"></i></div>
                                 <div class="lc-settings-tile-body">
                                     <label class="lc-settings-toggle">
-                                        <input type="checkbox" name="auto_assign" disabled <?= $autoAssign ? 'checked' : '' ?> title="Manual assign only">
+                                        <input type="checkbox" name="auto_assign" id="lc-auto-assign" <?= $autoAssign ? 'checked' : '' ?>>
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
                                             <strong>Auto-assign chats</strong>
-                                            <small>Disabled — every chat stays Unassigned until an agent clicks Assign to me.</small>
+                                            <small id="lc-auto-assign-hint"><?= $autoAssign
+                                                ? 'Enabled — new chats auto-assign to an online agent (least busy). If nobody is online, the chat stays Unassigned until an agent comes online.'
+                                                : 'Disabled — every new chat goes to Unassigned, whether agents are online or not. An agent must click Assign to me.' ?></small>
                                         </span>
                                     </label>
                                 </div>
@@ -591,5 +594,19 @@ require __DIR__ . '/includes/header.php';
         </aside>
     </div>
 </div>
+
+<script>
+(function () {
+  var toggle = document.getElementById('lc-auto-assign');
+  var hint = document.getElementById('lc-auto-assign-hint');
+  if (!toggle || !hint) return;
+  function sync() {
+    hint.textContent = toggle.checked
+      ? 'Enabled — new chats auto-assign to an online agent (least busy). If nobody is online, the chat stays Unassigned until an agent comes online.'
+      : 'Disabled — every new chat goes to Unassigned, whether agents are online or not. An agent must click Assign to me.';
+  }
+  toggle.addEventListener('change', sync);
+})();
+</script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

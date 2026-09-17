@@ -19,46 +19,61 @@ $extraScripts = ['admin-traffic.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-traffic" id="lc-traffic" data-poll-ms="3000">
+<div class="lc-traffic" id="lc-traffic" data-poll-ms="3000" data-page-size="10">
     <div class="lc-traffic-head">
-        <div>
-            <h3 class="lc-traffic-title">Traffic</h3>
-            <p class="lc-traffic-sub">Live visitors on your website — browsing, queued, and chatting.</p>
-        </div>
-        <div class="lc-traffic-head-actions">
-            <div class="lc-traffic-search-wrap">
-                <i class="ti ti-search"></i>
-                <input type="search" id="lc-traffic-q" placeholder="Search name, email, IP, page..." autocomplete="off">
+        <div class="lc-traffic-head-copy">
+            <div class="lc-traffic-kicker">
+                <span class="lc-traffic-live-dot" aria-hidden="true"></span>
+                Live monitor
             </div>
-            <?php if ($agentBrandId === null && !empty($brands)): ?>
-            <select id="lc-traffic-brand" class="lc-traffic-brand">
-                <option value="0">All brands</option>
-                <?php foreach ($brands as $b): ?>
-                    <option value="<?= (int) $b['id'] ?>"><?= lc_sanitize($b['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php endif; ?>
-            <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-traffic-refresh" title="Refresh">
-                <i class="ti ti-refresh"></i>
-            </button>
+            <h3 class="lc-traffic-title">Traffic</h3>
+            <p class="lc-traffic-sub">Visitors on your site — browsing, incoming, chatting, or left.</p>
         </div>
+    </div>
+
+    <div class="lc-traffic-toolbar">
+        <div class="lc-traffic-search-wrap">
+            <i class="ti ti-search" aria-hidden="true"></i>
+            <input type="search" id="lc-traffic-q" placeholder="Search name, email, IP, page…" autocomplete="off">
+        </div>
+        <?php if ($agentBrandId === null && !empty($brands)): ?>
+        <select id="lc-traffic-brand" class="lc-traffic-brand" aria-label="Filter by brand">
+            <option value="0">All brands</option>
+            <?php foreach ($brands as $b): ?>
+                <option value="<?= (int) $b['id'] ?>"><?= lc_sanitize($b['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <?php endif; ?>
+        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-refresh" id="lc-traffic-refresh" title="Refresh now" aria-label="Refresh">
+            <i class="ti ti-refresh"></i>
+        </button>
     </div>
 
     <div class="lc-traffic-tabs" role="tablist" aria-label="Traffic filters">
         <button type="button" class="lc-traffic-tab is-active" data-traffic-tab="all" role="tab" aria-selected="true">
-            All customers <span class="lc-traffic-tab-count" data-count="all">0</span>
+            <i class="ti ti-users" aria-hidden="true"></i>
+            <span class="lc-traffic-tab-label">All</span>
+            <span class="lc-traffic-tab-count" data-count="all">0</span>
         </button>
         <button type="button" class="lc-traffic-tab" data-traffic-tab="chatting" role="tab" aria-selected="false">
-            Chatting <span class="lc-traffic-tab-count" data-count="chatting">0</span>
+            <i class="ti ti-message-circle" aria-hidden="true"></i>
+            <span class="lc-traffic-tab-label">Chatting</span>
+            <span class="lc-traffic-tab-count" data-count="chatting">0</span>
         </button>
         <button type="button" class="lc-traffic-tab" data-traffic-tab="queued" role="tab" aria-selected="false">
-            Queued <span class="lc-traffic-tab-count" data-count="queued">0</span>
+            <i class="ti ti-clock-hour-4" aria-hidden="true"></i>
+            <span class="lc-traffic-tab-label">Incoming chat</span>
+            <span class="lc-traffic-tab-count" data-count="queued">0</span>
         </button>
         <button type="button" class="lc-traffic-tab" data-traffic-tab="browsing" role="tab" aria-selected="false">
-            Browsing <span class="lc-traffic-tab-count" data-count="browsing">0</span>
+            <i class="ti ti-eye" aria-hidden="true"></i>
+            <span class="lc-traffic-tab-label">Browsing</span>
+            <span class="lc-traffic-tab-count" data-count="browsing">0</span>
         </button>
         <button type="button" class="lc-traffic-tab" data-traffic-tab="left" role="tab" aria-selected="false">
-            Left website <span class="lc-traffic-tab-count" data-count="left">0</span>
+            <i class="ti ti-logout" aria-hidden="true"></i>
+            <span class="lc-traffic-tab-label">Left</span>
+            <span class="lc-traffic-tab-count" data-count="left">0</span>
         </button>
     </div>
 
@@ -67,27 +82,55 @@ require __DIR__ . '/includes/header.php';
             <table class="lc-traffic-table" id="lc-traffic-table">
                 <thead>
                     <tr>
-                        <th>Name</th>
+                        <th>Visitor</th>
                         <th>Email</th>
-                        <th>Actions</th>
+                        <th>Status</th>
                         <th>Country</th>
-                        <th>Activity</th>
-                        <th>Chatting with</th>
-                        <th>Time on all pages</th>
+                        <th>Device</th>
+                        <th>Agent</th>
+                        <th>Time on site</th>
                         <th>Current page</th>
+                        <th class="lc-traffic-th-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="lc-traffic-body">
                     <tr class="lc-traffic-loading-row">
-                        <td colspan="8">Loading traffic…</td>
+                        <td colspan="9">
+                            <span class="lc-traffic-loading-inner">
+                                <span class="lc-traffic-spinner" aria-hidden="true"></span>
+                                Loading traffic…
+                            </span>
+                        </td>
                     </tr>
                 </tbody>
             </table>
         </div>
         <div class="lc-traffic-empty" id="lc-traffic-empty" hidden>
-            <i class="ti ti-world-off"></i>
+            <div class="lc-traffic-empty-icon" aria-hidden="true"><i class="ti ti-world-off"></i></div>
             <p>No visitors in this view</p>
             <span>When customers browse your site with the widget installed, they appear here in real time.</span>
+        </div>
+        <div class="lc-traffic-pager" id="lc-traffic-pager" hidden>
+            <p class="lc-traffic-pager-meta" id="lc-traffic-pager-meta">Showing 0 of 0</p>
+            <div class="lc-traffic-pager-controls">
+                <label class="lc-traffic-page-size">
+                    <span>Rows</span>
+                    <select id="lc-traffic-page-size" aria-label="Rows per page">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </label>
+                <div class="lc-traffic-pager-btns">
+                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-traffic-prev" aria-label="Previous page">
+                        <i class="ti ti-chevron-left"></i>
+                    </button>
+                    <span class="lc-traffic-pager-pages" id="lc-traffic-pager-pages">1 / 1</span>
+                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-traffic-next" aria-label="Next page">
+                        <i class="ti ti-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>

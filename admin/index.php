@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/pageviews.php';
 $agent = lc_require_auth();
 lc_ensure_brands_schema();
 
@@ -15,6 +16,11 @@ if (function_exists('lc_sweep_inactive_conversations')) {
 [$brandSql, $brandParams] = lc_brand_sql_filter($agent, 'c');
 
 $waiting = lc_waiting_count($agentBrandId, $accountId);
+$customersOnline = function_exists('lc_customers_online_count')
+    ? lc_customers_online_count($agentBrandId, $accountId)
+    : (function_exists('lc_browsing_visitors_count')
+        ? lc_browsing_visitors_count($agentBrandId, $accountId)
+        : 0);
 $active = lc_active_count($agentBrandId, $accountId);
 $closedToday = lc_closed_today_count($agentBrandId, $accountId);
 $startedToday = lc_dashboard_started_today($agentBrandId, $accountId);
@@ -68,13 +74,17 @@ $waitingChats = $stmt->fetchAll();
 if (is_file(__DIR__ . '/../includes/ip-resume.php')) {
     require_once __DIR__ . '/../includes/ip-resume.php';
 }
+if (function_exists('lc_ensure_conversation_client_ip_schema')) {
+    try { lc_ensure_conversation_client_ip_schema(); } catch (Throwable $e) {}
+}
 if (function_exists('lc_merge_same_ip_conversations')) {
     try { lc_merge_same_ip_conversations(); } catch (Throwable $e) {}
 }
 $agentId = (int) $agent['id'];
 $recentSql = "
-    SELECT c.id, c.status, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
-           v.ip_address AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+    SELECT c.id, c.status, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
+               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+               v.user_agent AS visitor_user_agent,
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
            (CASE
                 WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
@@ -155,7 +165,7 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="lc-home-hello-actions">
             <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-dash-cta" style="<?= $waiting > 0 ? '' : 'display:none' ?>">
-                <i class="ti ti-bolt"></i> Answer <span id="lc-dash-cta-count"><?= (int) $waiting ?></span> waiting
+                <i class="ti ti-bolt"></i> Answer <span id="lc-dash-cta-count"><?= (int) $waiting ?></span> incoming
             </a>
             <span id="lc-dash-cta-wrap" style="display:none"></span>
         </div>
@@ -225,10 +235,10 @@ require __DIR__ . '/includes/header.php';
     <section class="lc-home-section">
         <h3 class="lc-home-section-title">Real time overview</h3>
         <div class="lc-home-rt">
-            <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>" class="lc-home-rt-card">
-                <span class="lc-home-rt-label">Customers waiting</span>
-                <span class="lc-home-rt-value" id="lc-dash-waiting"><?= (int) $waiting ?></span>
-                <span class="lc-home-rt-value" id="lc-kpi-waiting" hidden><?= (int) $waiting ?></span>
+            <a href="<?= lc_admin_url('traffic') ?>" class="lc-home-rt-card">
+                <span class="lc-home-rt-label">Customers online</span>
+                <span class="lc-home-rt-value" id="lc-dash-waiting"><?= (int) $customersOnline ?></span>
+                <span class="lc-home-rt-value" id="lc-kpi-waiting" hidden><?= (int) $customersOnline ?></span>
             </a>
             <a href="<?= lc_admin_url('chats', ['tab' => 'active']) ?>" class="lc-home-rt-card">
                 <span class="lc-home-rt-label">Ongoing chats</span>
@@ -300,7 +310,7 @@ require __DIR__ . '/includes/header.php';
                 </div>
             </div>
             <div class="lc-home-week-foot">
-                <div><span>Waiting now</span><strong id="lc-home-foot-waiting"><?= (int) $waiting ?></strong></div>
+                <div><span>Incoming now</span><strong id="lc-home-foot-waiting"><?= (int) $waiting ?></strong></div>
                 <div><span>Active now</span><strong id="lc-home-foot-active"><?= (int) $active ?></strong></div>
                 <div><span>Closed today</span><strong id="lc-home-foot-closed"><?= (int) $closedToday ?></strong></div>
                 <div><span>Unread</span><strong id="lc-home-foot-unread"><?= (int) $unread ?></strong></div>
@@ -312,7 +322,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-home-col">
             <div class="lc-home-panel" id="lc-waiting-card"<?= empty($waitingChats) ? ' style="display:none"' : '' ?>>
                 <div class="lc-home-panel-head">
-                    <h3>Priority queue <span class="lc-home-count" id="lc-waiting-count"><?= count($waitingChats) ?></span></h3>
+                    <h3>Incoming chat <span class="lc-home-count" id="lc-waiting-count"><?= count($waitingChats) ?></span></h3>
                     <a href="<?= lc_admin_url('chats', ['tab' => 'waiting']) ?>">View all</a>
                 </div>
                 <div class="lc-conv-feed" id="lc-waiting-feed">
@@ -326,7 +336,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-conv-item-body">
                             <div class="lc-conv-item-top">
                                 <strong><?= lc_sanitize($name) ?></strong>
-                                <span class="lc-badge lc-badge-waiting">Waiting</span>
+                                <span class="lc-badge lc-badge-waiting">Incoming chat</span>
                             </div>
                             <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
                             <div class="lc-conv-item-meta">
@@ -358,6 +368,16 @@ require __DIR__ . '/includes/header.php';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
                         $msg = function_exists('mb_strimwidth') ? mb_strimwidth($r['last_msg'] ?? '-', 0, 72, '...') : substr((string) ($r['last_msg'] ?? '-'), 0, 72);
                         $itemUnread = (int) ($r['unread'] ?? 0);
+                        $dayRaw = (string) ($r['started_at'] ?? $r['last_message_at'] ?? '');
+                        $dayLabel = $dayRaw !== '' && function_exists('lc_format_datetime_tz')
+                            ? lc_format_datetime_tz($dayRaw, null, 'd M Y')
+                            : ($dayRaw !== '' ? date('d M Y', strtotime($dayRaw)) : '');
+                        $deviceInfo = function_exists('lc_parse_user_agent')
+                            ? lc_parse_user_agent((string) ($r['visitor_user_agent'] ?? ''))
+                            : ['device' => 'Unknown', 'label' => 'Unknown'];
+                        $deviceType = strtolower((string) ($deviceInfo['device'] ?? 'unknown'));
+                        $deviceIcon = $deviceType === 'mobile' ? 'ti-device-mobile' : ($deviceType === 'tablet' ? 'ti-device-tablet' : ($deviceType === 'desktop' ? 'ti-device-desktop' : 'ti-devices'));
+                        $deviceLabel = (string) ($deviceInfo['label'] ?? $deviceInfo['device'] ?? '');
                     ?>
                     <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>">
                         <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
@@ -372,8 +392,12 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
                             <div class="lc-conv-item-meta">
                                 <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
+                                <?php if ($deviceType !== 'unknown' && $deviceLabel !== '' && $deviceLabel !== 'Unknown'): ?>
+                                    <span class="lc-conv-device is-<?= lc_sanitize($deviceType) ?>" title="<?= lc_sanitize($deviceLabel) ?>"><i class="ti <?= lc_sanitize($deviceIcon) ?>"></i> <?= lc_sanitize($deviceInfo['device']) ?></span>
+                                <?php endif; ?>
                                 <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
                                 <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
+                                <?php if ($dayLabel !== ''): ?><span class="lc-conv-item-date"><i class="ti ti-calendar"></i> <?= lc_sanitize($dayLabel) ?></span><?php endif; ?>
                                 <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '-' ?></span>
                             </div>
                         </div>

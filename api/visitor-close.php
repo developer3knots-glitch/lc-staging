@@ -52,8 +52,8 @@ try {
     $upd = $db->prepare("UPDATE conversations SET status = 'closed', closed_at = NOW() WHERE id = ?");
     $upd->execute([$conversationId]);
     $closeMsg = $autoClose
-        ? 'Visitor left the page — chat closed automatically.'
-        : 'Visitor closed the live chat.';
+        ? lc_system_note_for_visitor($conversationId, 'left the page — chat closed automatically.')
+        : lc_system_note_for_visitor($conversationId, 'closed the live chat.');
     lc_add_system_message($conversationId, $closeMsg);
 
     if (function_exists('lc_realtime_publish_conversation_event')) {

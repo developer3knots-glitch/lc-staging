@@ -618,8 +618,17 @@
     border-color: var(--lcw-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
 }
-#lc-prechat-honeypot, #lc-ticket-honeypot, #lc-honeypot {
-    position: absolute; left: -9999px; opacity: 0; height: 0; width: 0; pointer-events: none;
+#lc-prechat-honeypot, #lc-ticket-honeypot, #lc-honeypot,
+.lcw-hp-wrap {
+    position: absolute !important;
+    left: -10000px !important;
+    top: auto !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
 }
 .lcw-prechat-error {
     background: #fef2f2;
@@ -1161,6 +1170,7 @@
     max-height: 88px;
     height: 34px;
     color: var(--lcw-ink);
+    caret-color: currentColor;
     line-height: 1.35;
     align-self: center;
     overflow-x: hidden;
@@ -1527,8 +1537,93 @@
     width: 100%;
     margin-top: 0.35rem;
 }
-.lcw-msg.has-attachment { max-width: min(88%, 260px); padding: 0.45rem; }
+.lcw-msg.has-attachment { max-width: min(92%, 280px); padding: 0.45rem 0.6rem; }
 .lcw-chat-text { margin-bottom: 0.4rem; white-space: pre-wrap; word-break: break-word; }
+.lcw-attach-gated { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.lcw-attach-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.2rem 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    text-decoration: none;
+}
+.lcw-attach-link:hover .lcw-attach-link-text strong {
+    text-decoration-thickness: 2px;
+}
+.lcw-attach-link-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* High contrast on both light + dark bubbles */
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.lcw-attach-link-icon svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+}
+.lcw-agent .lcw-attach-link-icon {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: rgba(15, 23, 42, 0.2);
+}
+.lcw-visitor .lcw-attach-link-icon {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: rgba(255, 255, 255, 0.55);
+}
+.lcw-attach-link-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
+    min-width: 0;
+}
+.lcw-attach-link-text strong {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+    color: inherit;
+    opacity: 1;
+}
+.lcw-attach-link-text span {
+    font-size: 0.64rem;
+    opacity: 0.85;
+    color: inherit;
+}
+/* Dark panel: keep chip readable on dark agent bubbles too */
+#lc-panel.lcw-theme-dark .lcw-attach-link-icon {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: rgba(248, 250, 252, 0.9);
+}
+#lc-panel.lcw-theme-light .lcw-attach-link-icon {
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.16);
+}
+.lcw-attach-gated-preview[hidden] { display: none !important; }
+.lcw-attach-gated.is-open .lcw-attach-link-text span::after { content: none; }
 .lcw-attach-image {
     display: block;
     border-radius: 10px;
@@ -1662,6 +1757,25 @@
     border: 1px solid #e2e8f0;
 }
 .lcw-connecting-card[hidden] { display: none !important; }
+.lcw-chat-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    flex: 1;
+    min-height: 12rem;
+    margin: 1rem;
+    padding: 1.5rem 1rem;
+    text-align: center;
+}
+.lcw-chat-loading[hidden] { display: none !important; }
+.lcw-chat-loading .lcw-connecting-copy {
+    align-items: center;
+}
+.lcw-chat-loading .lcw-connecting-copy strong {
+    font-size: 0.95rem;
+}
 .lcw-connecting-spinner {
     width: 1.35rem;
     height: 1.35rem;
@@ -2057,6 +2171,13 @@
     color: var(--lcw-chat-muted);
 }
 
+#lc-panel.lcw-theme-dark .lcw-chat-loading .lcw-connecting-copy strong {
+    color: #f4f4f5;
+}
+#lc-panel.lcw-theme-dark .lcw-chat-loading .lcw-connecting-copy span {
+    color: var(--lcw-chat-muted, #a1a1aa);
+}
+
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-compose,
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-panel-compose {
     background: var(--lcw-chat-bg);
@@ -2084,6 +2205,7 @@
 }
 #lc-panel.lcw-theme-dark.lcw-chat-active #lc-input {
     color: #f9fafb;
+    caret-color: #f9fafb;
     font-size: 0.86rem;
     min-height: 34px;
     height: 34px;
@@ -2202,6 +2324,7 @@
 }
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-input {
     color: #0f172a;
+    caret-color: #0f172a;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active #lc-input::placeholder {
     color: #94a3b8;
@@ -2413,6 +2536,7 @@
     line-height: 1.35;
     border: none;
     background: transparent;
+    caret-color: #0f172a;
 }
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-plus,
 #lc-panel.lcw-theme-light.lcw-chat-active .lcw-compose-emoji,

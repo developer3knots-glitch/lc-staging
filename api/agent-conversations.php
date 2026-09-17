@@ -64,7 +64,7 @@ try {
                v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
-               (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_message,
+               (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
                (CASE
                     WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
                         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND sender_type = 'visitor' AND is_read = 0)
@@ -77,7 +77,13 @@ try {
         WHERE {$where}
         ORDER BY
             CASE c.status WHEN 'waiting' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
-            COALESCE(c.last_message_at, c.started_at) DESC
+            COALESCE(
+                (SELECT MAX(m.created_at) FROM messages m
+                 WHERE m.conversation_id = c.id AND m.sender_type IN ('visitor','agent')),
+                c.last_message_at,
+                c.started_at
+            ) DESC,
+            c.id DESC
         LIMIT 500
     ";
     $stmt = $db->prepare($sql);
@@ -86,6 +92,9 @@ try {
     foreach ($conversations as &$row) {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
         unset($row['ticket_reference']);
+        if (function_exists('lc_format_api_datetimes')) {
+            $row = lc_format_api_datetimes($row, ['started_at', 'accepted_at', 'closed_at', 'last_message_at']);
+        }
         if (function_exists('lc_enrich_returning_visitor_flags')) {
             $row = lc_enrich_returning_visitor_flags($row);
         }
@@ -96,6 +105,24 @@ try {
     if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
         $conversations = lc_dedupe_inbox_conversations_by_ip($conversations);
     }
+
+    // Mark blocked IPs so the inbox can show a BLOCKED badge
+    $accountIdForBlock = lc_agent_account_id($agent);
+    $blockedIpCache = [];
+    foreach ($conversations as &$row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        if ($ip === '') {
+            $row['ip_blocked'] = false;
+            continue;
+        }
+        if (!array_key_exists($ip, $blockedIpCache)) {
+            $blockedIpCache[$ip] = function_exists('lc_is_ip_blocked')
+                ? lc_is_ip_blocked($ip, $accountIdForBlock > 0 ? $accountIdForBlock : null)
+                : false;
+        }
+        $row['ip_blocked'] = !empty($blockedIpCache[$ip]);
+    }
+    unset($row);
 
     // Only touch messages when inbox actually shows unread visitor mail
     $deliverIds = [];

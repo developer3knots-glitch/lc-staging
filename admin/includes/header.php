@@ -27,7 +27,7 @@ if ($agent['role'] === 'admin') {
     <?php require __DIR__ . '/head-assets.php'; ?>
     <style>:root { --lc-primary: <?= lc_sanitize($primary) ?>; --lc-primary-dark: <?= lc_sanitize($primary) ?>; }</style>
 </head>
-<body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?><?= (($activeNav ?? '') === 'dashboard') ? ' lc-page-dashboard' : '' ?>">
+<body class="lc-admin-body<?= (($activeNav ?? '') === 'chats') ? ' lc-page-chats' : '' ?><?= (($activeNav ?? '') === 'dashboard') ? ' lc-page-dashboard' : '' ?><?= (($activeNav ?? '') === 'history') ? ' lc-page-history' : '' ?>">
 <div class="lc-app" id="lc-app">
     <div class="lc-sidebar-backdrop" id="lc-sidebar-backdrop"></div>
         <aside class="lc-sidebar lc-sidebar-rail" id="lc-sidebar">

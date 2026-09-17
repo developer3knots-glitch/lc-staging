@@ -347,9 +347,7 @@ function lc_attachment_save_message(
     }
 
     $caption = trim($caption);
-    if ($caption === '' && $validated['kind'] === 'document') {
-        $caption = $validated['name'];
-    }
+    // Do not store filename as caption — it duplicates the attachment card name.
 
     $stmt = lc_db()->prepare('
         INSERT INTO messages (
@@ -519,7 +517,8 @@ function lc_serve_chat_attachment(int $messageId, ?string $chatToken, ?array $ag
     header('Content-Length: ' . $size);
     header('X-Content-Type-Options: nosniff');
     header('Cache-Control: private, max-age=86400');
-    if ($row['attachment_kind'] === 'document') {
+    if ($row['attachment_kind'] === 'document'
+        && stripos($mime, 'pdf') === false) {
         header('Content-Disposition: attachment; filename="' . str_replace('"', '', $name) . '"');
     } else {
         header('Content-Disposition: inline; filename="' . str_replace('"', '', $name) . '"');

@@ -8,13 +8,18 @@ $db = lc_db();
 $agentBrandId = lc_agent_brand_id($agent);
 $accountId = lc_agent_account_id($agent);
 
-$search = trim($_GET['q'] ?? '');
 $brandFilter = (int) ($_GET['brand'] ?? 0);
 $agentFilter = (int) ($_GET['agent'] ?? 0);
-$period = $_GET['period'] ?? 'all';
-if (!in_array($period, ['all', 'today', 'week', 'month'], true)) {
-    $period = 'all';
+$period = $_GET['period'] ?? 'week';
+if (!in_array($period, ['today', 'week', 'month'], true)) {
+    $period = 'week';
 }
+$periodDays = $period === 'today' ? 1 : ($period === 'month' ? 30 : 7);
+$periodLabels = [
+    'today' => 'Today',
+    'week' => 'Last 7 days',
+    'month' => 'Last 30 days',
+];
 
 $scopeBrandId = $agentBrandId;
 if ($scopeBrandId === null && $brandFilter > 0) {
@@ -29,330 +34,430 @@ if ($scopeBrandId === null && $brandFilter > 0) {
     }
 }
 
-$where = ["c.status = 'closed'"];
-$params = [];
-
-if ($scopeBrandId !== null) {
-    $where[] = 'c.brand_id = ?';
-    $params[] = $scopeBrandId;
-} elseif ($accountId > 0) {
-    $where[] = 'c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
-    $params[] = $accountId;
-}
-
-if ($search !== '') {
-    $refId = lc_parse_conversation_reference($search);
-    if ($refId !== null) {
-        $where[] = '(c.id = ? OR c.ticket_reference = ?)';
-        $params[] = $refId;
-        $params[] = strtoupper(trim($search));
-    } else {
-        $where[] = '(v.name LIKE ? OR v.email LIKE ? OR v.ip_address LIKE ? OR b.name LIKE ? OR a.name LIKE ? OR v.country LIKE ? OR CAST(c.id AS CHAR) LIKE ? OR c.ticket_reference LIKE ?)';
-        $like = '%' . $search . '%';
-        $params = array_merge($params, array_fill(0, 8, $like));
-    }
-}
-
-
-if ($agentFilter > 0) {
-    $where[] = 'c.agent_id = ?';
-    $params[] = $agentFilter;
-}
-
-if ($period === 'today') {
-    $where[] = 'DATE(c.closed_at) = CURDATE()';
-} elseif ($period === 'week') {
-    $where[] = 'c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
-} elseif ($period === 'month') {
-    $where[] = 'c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
-}
-
-$whereSql = implode(' AND ', $where);
-
-$baseFrom = "
-    FROM conversations c
-    JOIN visitors v ON v.id = c.visitor_id
-    LEFT JOIN brands b ON b.id = c.brand_id
-    LEFT JOIN agents a ON a.id = c.agent_id
-    WHERE {$whereSql}
-";
-
-$statsWhere = ["c.status = 'closed'"];
-$statsParams = [];
-if ($agentBrandId !== null) {
-    $statsWhere[] = 'c.brand_id = ?';
-    $statsParams[] = $agentBrandId;
-}
-$statsWhereSql = implode(' AND ', $statsWhere);
-
+$reportAgentId = $agentFilter > 0 ? $agentFilter : null;
 $historyError = null;
+$chart = [];
+$heatmap = ['hours' => range(0, 23), 'slots' => [0, 3, 6, 9, 12, 15, 18, 21], 'days' => [], 'matrix' => [], 'max' => 1];
+$totalChats = 0;
+$agents = [];
+
 try {
-    $countStmt = $db->prepare('SELECT COUNT(*) ' . $baseFrom);
-    $countStmt->execute($params);
-    $totalMatching = (int) $countStmt->fetchColumn();
+    $chart = lc_history_activity_chart($scopeBrandId, $periodDays, $accountId > 0 ? $accountId : null, $reportAgentId);
+    $heatmap = lc_history_heatmap($scopeBrandId, $periodDays, $accountId > 0 ? $accountId : null, $reportAgentId);
+    $totalChats = array_sum(array_map(static function ($b) {
+        return (int) ($b['count'] ?? 0);
+    }, $chart));
+    $chartMax = $chart !== [] ? max(1, ...(array_map(static function ($b) {
+        return (int) ($b['count'] ?? 0);
+    }, $chart))) : 1;
+    $chartY = lc_dashboard_chart_y_scale($chartMax);
+    $chartTop = (int) $chartY['top'];
+    $chartTicks = $chartY['ticks'];
 
-    $statsStmt = $db->prepare("
-        SELECT
-            COUNT(*) AS total_closed,
-            SUM(CASE WHEN DATE(c.closed_at) = CURDATE() THEN 1 ELSE 0 END) AS closed_today,
-            SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS closed_week,
-            SUM(CASE WHEN c.closed_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS closed_month,
-            COALESCE(AVG(msg_counts.cnt), 0) AS avg_messages
-        FROM conversations c
-        LEFT JOIN (
-            SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
-        ) msg_counts ON msg_counts.conversation_id = c.id
-        WHERE {$statsWhereSql}
-    ");
-    $statsStmt->execute($statsParams);
-    $stats = $statsStmt->fetch() ?: ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'closed_month' => 0, 'avg_messages' => 0];
+    // Closed chats table loads via api/agent-history-closed.php (search + pagination).
 
-    $sql = "
-        SELECT c.id, c.status, c.started_at, c.closed_at, c.last_message_at, c.ticket_reference,
-               v.name AS visitor_name, v.email AS visitor_email,
-               v.ip_address AS visitor_ip, v.country AS visitor_country,
-               b.name AS brand_name, b.widget_color AS brand_color,
-               a.name AS agent_name,
-               (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) AS msg_count
-        {$baseFrom}
-        ORDER BY c.closed_at DESC
-        LIMIT 100
-    ";
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll();
-
-    $agentsSql = "
-        SELECT DISTINCT a.id, a.name
-        FROM agents a
-        INNER JOIN conversations c ON c.agent_id = a.id AND c.status = 'closed'
-    ";
+    $agentsSql = 'SELECT id, name FROM agents WHERE is_active = 1';
     $agentsParams = [];
-    $agentsWhere = [];
     if ($agentBrandId !== null) {
-        $agentsWhere[] = 'c.brand_id = ?';
+        $agentsSql .= ' AND (brand_id IS NULL OR brand_id = ?)';
         $agentsParams[] = $agentBrandId;
     } elseif ($accountId > 0) {
-        $agentsWhere[] = 'a.account_id = ?';
+        $agentsSql .= ' AND account_id = ?';
         $agentsParams[] = $accountId;
     }
-    if ($agentsWhere) {
-        $agentsSql .= ' WHERE ' . implode(' AND ', $agentsWhere);
-    }
-    $agentsSql .= ' ORDER BY a.name ASC';
+    $agentsSql .= ' ORDER BY name ASC';
     $agentsStmt = $db->prepare($agentsSql);
     $agentsStmt->execute($agentsParams);
     $agents = $agentsStmt->fetchAll();
 } catch (Throwable $e) {
-    $totalMatching = 0;
-    $stats = ['total_closed' => 0, 'closed_today' => 0, 'closed_week' => 0, 'closed_month' => 0, 'avg_messages' => 0];
-    $rows = [];
-    $agents = [];
-    $historyError = 'Unable to load history. Please refresh or contact support.';
+    $chartTop = 1;
+    $chartTicks = [1, 0];
+    $historyError = 'Unable to load report. Please refresh or contact support.';
 }
 
 $brands = $agentBrandId === null ? lc_get_all_brands(true, $accountId > 0 ? $accountId : null) : [];
 
-$formatDuration = static function (?string $started, ?string $closed): string {
-    if (!$started || !$closed) {
-        return ' - ';
+$slotLabel = static function (int $hour): string {
+    $ampm = $hour < 12 ? 'am' : 'pm';
+    $h12 = $hour % 12;
+    if ($h12 === 0) {
+        $h12 = 12;
     }
-    try {
-        $secs = (new DateTimeImmutable($closed))->getTimestamp() - (new DateTimeImmutable($started))->getTimestamp();
-    } catch (Throwable $e) {
-        return ' - ';
-    }
-    if ($secs < 60) {
-        return $secs . 's';
-    }
-    if ($secs < 3600) {
-        return floor($secs / 60) . 'm ' . ($secs % 60) . 's';
-    }
-    return floor($secs / 3600) . 'h ' . floor(($secs % 3600) / 60) . 'm';
+    return $h12 . ':00 ' . $ampm;
 };
 
-$hasFilters = $search !== '' || $brandFilter > 0 || $agentFilter > 0 || $period !== 'all';
+$generatedAt = function_exists('lc_format_datetime_tz')
+    ? lc_format_datetime_tz(gmdate('Y-m-d H:i:s'), null, 'd M Y \a\t h:i:s A')
+    : date('d M Y \a\t h:i:s A');
 
-$pageTitle = 'Chat History';
+$pageTitle = 'Total chats';
 $activeNav = 'history';
+$extraScripts = ['lc-chat-attachments.js'];
 $extraScript = 'admin-history.js';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-history-pro">
+<div class="lc-rpt" id="lc-total-chats-report"
+     data-period="<?= lc_sanitize($period) ?>"
+     data-total="<?= (int) $totalChats ?>">
     <?php if (!empty($historyError)): ?>
         <div class="lc-alert lc-alert-error"><i class="ti ti-alert-circle"></i> <?= lc_sanitize($historyError) ?></div>
     <?php endif; ?>
 
-    <div class="lc-hx-panel">
-        <div class="lc-hx-top">
-            <div class="lc-hx-top-left">
-                <h1 class="lc-hx-title">Closed conversations</h1>
-                <p class="lc-hx-sub"><?= (int) $totalMatching ?> archived chat<?= (int) $totalMatching === 1 ? '' : 's' ?><?= $totalMatching > 100 ? ' · showing latest 100' : '' ?></p>
-            </div>
-            <div class="lc-hx-top-right">
-                <a href="<?= lc_admin_url('chats') ?>" class="lc-hx-btn"><i class="ti ti-inbox"></i> Live Inbox</a>
-                <?php if ($hasFilters): ?>
-                    <a href="<?= lc_admin_url('history') ?>" class="lc-hx-btn"><i class="ti ti-x"></i> Clear filters</a>
+    <div class="lc-rpt-head">
+        <div class="lc-rpt-title-wrap">
+            <h1 class="lc-rpt-title">Total chats</h1>
+        </div>
+        <div class="lc-rpt-head-actions">
+            <button type="button" class="lc-rpt-btn" id="lc-rpt-export-csv" title="Download breakdown as CSV"><i class="ti ti-download"></i> Export CSV</button>
+        </div>
+    </div>
+
+    <form method="get" class="lc-rpt-filters" id="lc-history-form">
+        <div class="lc-rpt-filter-row">
+            <div class="lc-rpt-filter-pills">
+                <button type="button" class="lc-rpt-add-filter" id="lc-rpt-toggle-filters" aria-expanded="false" aria-controls="lc-rpt-filter-controls">
+                    <i class="ti ti-plus"></i> Add filter
+                </button>
+                <span class="lc-rpt-pill is-active"><strong>Date</strong> is <?= lc_sanitize($periodLabels[$period]) ?></span>
+                <?php if ($agentFilter > 0): ?>
+                    <?php
+                    $agentPill = 'Agent';
+                    foreach ($agents as $ag) {
+                        if ((int) $ag['id'] === $agentFilter) {
+                            $agentPill = (string) $ag['name'];
+                            break;
+                        }
+                    }
+                    ?>
+                    <span class="lc-rpt-pill"><strong>Agent</strong> is <?= lc_sanitize($agentPill) ?></span>
+                <?php endif; ?>
+                <?php if ($brandFilter > 0 && $agentBrandId === null): ?>
+                    <?php
+                    $brandPill = 'Brand';
+                    foreach ($brands as $brand) {
+                        if ((int) $brand['id'] === $brandFilter) {
+                            $brandPill = (string) $brand['name'];
+                            break;
+                        }
+                    }
+                    ?>
+                    <span class="lc-rpt-pill"><strong>Brand</strong> is <?= lc_sanitize($brandPill) ?></span>
                 <?php endif; ?>
             </div>
         </div>
-
-        <div class="lc-hx-stats">
-            <div class="lc-hx-stat">
-                <span class="lc-hx-stat-label">All closed</span>
-                <strong class="lc-hx-stat-val"><?= (int) $stats['total_closed'] ?></strong>
-            </div>
-            <div class="lc-hx-stat">
-                <span class="lc-hx-stat-label">Today</span>
-                <strong class="lc-hx-stat-val"><?= (int) $stats['closed_today'] ?></strong>
-            </div>
-            <div class="lc-hx-stat">
-                <span class="lc-hx-stat-label">This week</span>
-                <strong class="lc-hx-stat-val"><?= (int) $stats['closed_week'] ?></strong>
-            </div>
-            <div class="lc-hx-stat">
-                <span class="lc-hx-stat-label">Avg messages</span>
-                <strong class="lc-hx-stat-val"><?= number_format((float) $stats['avg_messages'], 1) ?></strong>
-            </div>
-        </div>
-
-        <div class="lc-hx-tabs" role="tablist" aria-label="Period">
-            <?php
-            $periods = [
-                'all' => ['label' => 'All closed', 'count' => (int) ($stats['total_closed'] ?? 0)],
-                'today' => ['label' => 'Today', 'count' => (int) ($stats['closed_today'] ?? 0)],
-                'week' => ['label' => '7 days', 'count' => (int) ($stats['closed_week'] ?? 0)],
-                'month' => ['label' => '30 days', 'count' => (int) ($stats['closed_month'] ?? 0)],
-            ];
-            foreach ($periods as $key => $meta):
-                $href = lc_admin_url('history', array_filter([
-                    'q' => $search !== '' ? $search : null,
-                    'brand' => $brandFilter > 0 ? $brandFilter : null,
-                    'agent' => $agentFilter > 0 ? $agentFilter : null,
-                    'period' => $key !== 'all' ? $key : null,
-                ], static function ($value) {
-                    return $value !== null && $value !== '';
-                }));
-            ?>
-                <a href="<?= lc_sanitize($href) ?>" class="lc-hx-tab<?= $period === $key ? ' is-active' : '' ?>" role="tab" aria-selected="<?= $period === $key ? 'true' : 'false' ?>">
-                    <?= lc_sanitize($meta['label']) ?> <span class="lc-hx-tab-count">(<?= (int) $meta['count'] ?>)</span>
-                </a>
-            <?php endforeach; ?>
-        </div>
-
-        <form method="get" class="lc-hx-toolbar" id="lc-history-form">
-            <div class="lc-hx-filters-meta">
-                <i class="ti ti-filter" aria-hidden="true"></i>
-                <span>Match all filters</span>
-            </div>
-            <div class="lc-hx-search">
-                <i class="ti ti-search" aria-hidden="true"></i>
-                <input type="search" id="lc-history-q" name="q" value="<?= lc_sanitize($search) ?>" placeholder="Search ticket, visitor, IP, brand, agent..." autocomplete="off" aria-label="Search history">
-            </div>
+        <div class="lc-rpt-filter-controls" id="lc-rpt-filter-controls" hidden>
+            <label class="lc-rpt-select-label">
+                <span>Period</span>
+                <select name="period" id="lc-history-period" aria-label="Date period">
+                    <option value="today"<?= $period === 'today' ? ' selected' : '' ?>>Today</option>
+                    <option value="week"<?= $period === 'week' ? ' selected' : '' ?>>Last 7 days</option>
+                    <option value="month"<?= $period === 'month' ? ' selected' : '' ?>>Last 30 days</option>
+                </select>
+            </label>
             <?php if ($agentBrandId === null && !empty($brands)): ?>
-            <select id="lc-history-brand" name="brand" aria-label="Brand">
-                <option value="0">All brands</option>
-                <?php foreach ($brands as $brand): ?>
-                    <option value="<?= (int) $brand['id'] ?>"<?= $brandFilter === (int) $brand['id'] ? ' selected' : '' ?>><?= lc_sanitize($brand['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
+            <label class="lc-rpt-select-label">
+                <span>Brand</span>
+                <select name="brand" id="lc-history-brand" aria-label="Brand">
+                    <option value="0">All brands</option>
+                    <?php foreach ($brands as $brand): ?>
+                        <option value="<?= (int) $brand['id'] ?>"<?= $brandFilter === (int) $brand['id'] ? ' selected' : '' ?>><?= lc_sanitize($brand['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
             <?php endif; ?>
-            <select id="lc-history-agent" name="agent" aria-label="Agent">
-                <option value="0">All agents</option>
-                <?php foreach ($agents as $ag): ?>
-                    <option value="<?= (int) $ag['id'] ?>"<?= $agentFilter === (int) $ag['id'] ? ' selected' : '' ?>><?= lc_sanitize($ag['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <select id="lc-history-period" name="period" aria-label="Period" hidden>
-                <option value="all"<?= $period === 'all' ? ' selected' : '' ?>>All time</option>
-                <option value="today"<?= $period === 'today' ? ' selected' : '' ?>>Today</option>
-                <option value="week"<?= $period === 'week' ? ' selected' : '' ?>>Last 7 days</option>
-                <option value="month"<?= $period === 'month' ? ' selected' : '' ?>>Last 30 days</option>
-            </select>
-            <button type="submit" class="lc-hx-add-filter"><i class="ti ti-plus"></i> Apply filters</button>
-        </form>
+            <label class="lc-rpt-select-label">
+                <span>Agent</span>
+                <select name="agent" id="lc-history-agent" aria-label="Agent">
+                    <option value="0">All agents</option>
+                    <?php foreach ($agents as $ag): ?>
+                        <option value="<?= (int) $ag['id'] ?>"<?= $agentFilter === (int) $ag['id'] ? ' selected' : '' ?>><?= lc_sanitize($ag['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <button type="submit" class="lc-rpt-btn lc-rpt-btn-primary"><i class="ti ti-check"></i> Apply</button>
+        </div>
+    </form>
 
-        <div class="lc-hx-table-wrap" id="lc-history-list">
-            <?php if (empty($rows)): ?>
-                <div class="lc-history-empty">
-                    <i class="ti ti-inbox-off"></i>
-                    <p>No closed chats found</p>
-                    <span><?= $hasFilters ? 'Try adjusting your filters or search terms.' : 'Closed conversations will appear here after agents end chats.' ?></span>
-                    <?php if ($hasFilters): ?>
-                        <a href="<?= lc_admin_url('history') ?>" class="lc-hx-btn"><i class="ti ti-x"></i> Clear filters</a>
-                    <?php endif; ?>
-                </div>
-            <?php else: ?>
-            <table class="lc-hx-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Actions</th>
-                        <th>Country</th>
-                        <th>Activity</th>
-                        <th>Agent</th>
-                        <th>Duration</th>
-                        <th>Ticket</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($rows as $r):
-                    $name = $r['visitor_name'] ?: 'Visitor';
-                    $duration = $formatDuration($r['started_at'], $r['closed_at']);
-                    $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
-                    $ticketRef = $r['ticket_reference'] ?: lc_conversation_reference((int) $r['id'], $r['started_at'] ?? null);
-                    $email = trim((string) ($r['visitor_email'] ?? ''));
-                    $agentName = trim((string) ($r['agent_name'] ?? ''));
-                    $searchBlob = strtolower($name . ' ' . $email . ' ' . ($r['visitor_ip'] ?? '') . ' ' . ($r['visitor_country'] ?? '') . ' ' . ($r['brand_name'] ?? '') . ' ' . $agentName . ' ' . $ticketRef);
-                ?>
-                    <tr class="lc-hx-row" data-search="<?= lc_sanitize($searchBlob) ?>">
-                        <td class="lc-hx-visitor">
-                            <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-hx-visitor-link">
-                                <span class="lc-hx-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></span>
-                                <span class="lc-hx-visitor-copy">
-                                    <strong><?= lc_sanitize($name) ?></strong>
-                                    <?php if (!empty($r['visitor_ip'])): ?>
-                                        <span><?= lc_sanitize($r['visitor_ip']) ?></span>
-                                    <?php endif; ?>
-                                </span>
-                            </a>
-                        </td>
-                        <td class="lc-hx-email"><?= $email !== '' ? lc_sanitize($email) : '—' ?></td>
-                        <td class="lc-hx-action">
-                            <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-hx-go-chat">Go to chat</a>
-                        </td>
-                        <td class="lc-hx-country">
-                            <?php if (!empty($r['visitor_country'])): ?>
-                                <span class="lc-hx-country-pill"><?= lc_sanitize($r['visitor_country']) ?></span>
-                            <?php else: ?>
-                                —
-                            <?php endif; ?>
-                        </td>
-                        <td class="lc-hx-activity">
-                            <span class="lc-hx-activity-dot is-closed"></span>
-                            <span>Closed</span>
-                        </td>
-                        <td class="lc-hx-agent">
-                            <?php if ($agentName !== ''): ?>
-                                <span class="lc-hx-agent-pill">
-                                    <span class="lc-hx-agent-av"><?= lc_sanitize(lc_avatar_initials($agentName)) ?></span>
-                                    <?= lc_sanitize($agentName) ?>
-                                </span>
-                            <?php else: ?>
-                                —
-                            <?php endif; ?>
-                        </td>
-                        <td class="lc-hx-num"><?= lc_sanitize($duration) ?></td>
-                        <td><code class="lc-hx-ticket"><?= lc_sanitize($ticketRef) ?></code></td>
-                    </tr>
+    <section class="lc-rpt-card lc-rpt-card-chart">
+        <div class="lc-rpt-card-head">
+            <div>
+                <h2 class="lc-rpt-card-title">Total chats <i class="ti ti-info-circle" title="Chats started in the selected period"></i></h2>
+                <p class="lc-rpt-total" id="lc-rpt-total"><?= (int) $totalChats ?></p>
+            </div>
+        </div>
+        <div class="lc-rpt-chart" id="lc-rpt-chart" data-chart-top="<?= (int) $chartTop ?>">
+            <div class="lc-rpt-chart-y" aria-hidden="true">
+                <?php foreach ($chartTicks as $tick): ?>
+                    <span><?= (int) $tick ?></span>
                 <?php endforeach; ?>
-                </tbody>
-            </table>
-            <?php endif; ?>
+            </div>
+            <div class="lc-rpt-chart-plot">
+                <div class="lc-rpt-chart-grid" aria-hidden="true">
+                    <?php foreach ($chartTicks as $tick): ?>
+                        <div class="lc-rpt-chart-grid-line"></div>
+                    <?php endforeach; ?>
+                </div>
+                <div class="lc-rpt-chart-bars">
+                    <?php foreach ($chart as $bar):
+                        $pct = $chartTop > 0 ? min(100, round(((int) $bar['count'] / $chartTop) * 100, 2)) : 0;
+                        $count = (int) $bar['count'];
+                        $full = (string) ($bar['full_label'] ?? $bar['label']);
+                        ?>
+                        <div class="lc-rpt-bar-wrap"
+                             data-label="<?= lc_sanitize($full) ?>"
+                             data-count="<?= $count ?>"
+                             tabindex="0">
+                            <div class="lc-rpt-bar-track">
+                                <div class="lc-rpt-bar<?= $count === 0 ? ' is-zero' : '' ?>" style="height: <?= $pct ?>%"></div>
+                            </div>
+                            <span class="lc-rpt-bar-label"><?= lc_sanitize($bar['label']) ?></span>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="lc-rpt-card" id="lc-rpt-breakdown">
+        <div class="lc-rpt-card-head lc-rpt-card-head-row">
+            <h2 class="lc-rpt-card-title"><button type="button" class="lc-rpt-collapse" data-target="lc-rpt-breakdown-body" aria-expanded="true"><i class="ti ti-chevron-down"></i> Total chats breakdown</button></h2>
+            <button type="button" class="lc-rpt-btn lc-rpt-btn-sm" id="lc-rpt-export-breakdown"><i class="ti ti-file-spreadsheet"></i> Export CSV</button>
+        </div>
+        <div class="lc-rpt-card-body" id="lc-rpt-breakdown-body">
+            <div class="lc-rpt-table-wrap">
+                <table class="lc-rpt-table" id="lc-rpt-breakdown-table">
+                    <thead>
+                        <tr>
+                            <th>Series</th>
+                            <?php foreach ($chart as $bar): ?>
+                                <th><?= lc_sanitize($bar['header'] ?? $bar['label']) ?></th>
+                            <?php endforeach; ?>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Total chats</td>
+                            <?php foreach ($chart as $bar): ?>
+                                <td><?= (int) $bar['count'] ?></td>
+                            <?php endforeach; ?>
+                            <td><strong><?= (int) $totalChats ?></strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="lc-rpt-card" id="lc-rpt-heatmap-card">
+        <div class="lc-rpt-card-head lc-rpt-card-head-row">
+            <h2 class="lc-rpt-card-title">
+                <button type="button" class="lc-rpt-collapse" data-target="lc-rpt-heatmap-body" aria-expanded="true">
+                    <i class="ti ti-chevron-down"></i> Total chats heatmap
+                </button>
+                <i class="ti ti-info-circle" title="Chat starts by hour of day"></i>
+            </h2>
+            <button type="button" class="lc-rpt-btn lc-rpt-btn-sm" id="lc-rpt-export-heatmap"><i class="ti ti-download"></i> Export CSV</button>
+        </div>
+        <div class="lc-rpt-card-body" id="lc-rpt-heatmap-body">
+            <?php
+            $heatDays = $heatmap['days'] ?? [];
+            $heatHours = $heatmap['hours'] ?? range(0, 23);
+            $heatMax = max(1, (int) ($heatmap['max'] ?? 1));
+            $heatCols = max(1, count($heatDays));
+            $legendSteps = 5;
+            ?>
+            <div class="lc-heat" id="lc-rpt-heatmap" style="--heat-cols: <?= (int) $heatCols ?>; --heat-max: <?= (int) $heatMax ?>;">
+                <div class="lc-heat-ylabels" aria-hidden="true">
+                    <span class="lc-heat-values">Values</span>
+                    <div class="lc-heat-ylabels-inner">
+                        <?php foreach ([0, 3, 6, 9, 12, 15, 18, 21] as $slot): ?>
+                            <span class="lc-heat-ytick" style="--slot: <?= (int) ($slot / 3) ?>"><?= lc_sanitize($slotLabel((int) $slot)) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <div class="lc-heat-main">
+                    <div class="lc-heat-xlabels">
+                        <?php foreach ($heatDays as $day):
+                            $dObj = DateTimeImmutable::createFromFormat('Y-m-d', $day) ?: null;
+                            $hLabel = $dObj ? $dObj->format('d M') : $day;
+                            ?>
+                            <span><?= lc_sanitize($hLabel) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="lc-heat-grid" role="grid" aria-label="Total chats heatmap">
+                        <?php foreach ($heatHours as $hour):
+                            $hour = (int) $hour;
+                            $nextHour = ($hour + 1) % 24;
+                            $isBandStart = ($hour % 3) === 0;
+                            foreach ($heatDays as $day):
+                                $val = (int) ($heatmap['matrix'][$day][$hour] ?? 0);
+                                if ($val <= 0) {
+                                    $level = 0;
+                                } elseif ($heatMax <= 1) {
+                                    $level = 5;
+                                } else {
+                                    $level = max(1, (int) ceil(($val / $heatMax) * $legendSteps));
+                                }
+                                $dayObj = DateTimeImmutable::createFromFormat('Y-m-d', $day);
+                                $dayNice = $dayObj ? $dayObj->format('j M Y') : $day;
+                                $tip = $dayNice . ' · ' . $slotLabel($hour) . ' – ' . $slotLabel($nextHour === 0 ? 0 : $nextHour);
+                                ?>
+                                <button type="button"
+                                    class="lc-heat-cell<?= $val > 0 ? ' has-value' : '' ?><?= $isBandStart ? ' is-band-start' : '' ?>"
+                                    data-label="<?= lc_sanitize($tip) ?>"
+                                    data-count="<?= $val ?>"
+                                    data-level="<?= $level ?>"
+                                    aria-label="<?= lc_sanitize($tip . ': ' . $val . ' chats') ?>">
+                                    <span class="lc-heat-pill"></span>
+                                </button>
+                            <?php endforeach;
+                        endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="lc-heat-legend" aria-label="Heatmap color scale">
+                <div class="lc-heat-legend-bar">
+                    <?php for ($i = 1; $i <= 5; $i++): ?>
+                        <span class="lc-heat-legend-seg" data-level="<?= $i ?>"></span>
+                    <?php endfor; ?>
+                </div>
+                <div class="lc-heat-legend-ticks">
+                    <?php
+                    for ($i = 0; $i <= 5; $i++) {
+                        $tick = $i === 0 ? 1 : (int) max(1, (int) round(($heatMax * $i) / 5));
+                        echo '<span>' . $tick . '</span>';
+                    }
+                    ?>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="lc-rpt-card" id="lc-rpt-closed"
+             data-period="<?= lc_sanitize($period) ?>"
+             data-brand="<?= (int) $brandFilter ?>"
+             data-agent="<?= (int) $agentFilter ?>">
+        <div class="lc-rpt-card-head lc-rpt-card-head-row">
+            <h2 class="lc-rpt-card-title"><button type="button" class="lc-rpt-collapse" data-target="lc-rpt-closed-body" aria-expanded="true"><i class="ti ti-chevron-down"></i> Closed chats</button></h2>
+            <div class="lc-rpt-closed-tools">
+                <label class="lc-rpt-closed-search">
+                    <i class="ti ti-search" aria-hidden="true"></i>
+                    <input type="search" id="lc-closed-q" placeholder="Search name, phone, email..." autocomplete="off" aria-label="Search closed chats">
+                </label>
+                <a href="<?= lc_admin_url('chats') ?>" class="lc-rpt-btn lc-rpt-btn-sm"><i class="ti ti-inbox"></i> Live Inbox</a>
+            </div>
+        </div>
+        <div class="lc-rpt-card-body" id="lc-rpt-closed-body">
+            <div class="lc-rpt-table-wrap">
+                <table class="lc-rpt-table lc-rpt-table-closed">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Date</th>
+                            <th>IP</th>
+                            <th>Agent</th>
+                            <th>Duration</th>
+                            <th>Ticket</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="lc-closed-body">
+                        <tr>
+                            <td colspan="9" class="lc-rpt-loading-cell">
+                                <span class="lc-rpt-loading"><i class="ti ti-loader-2" aria-hidden="true"></i> Loading closed chats…</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="lc-rpt-empty" id="lc-closed-empty" hidden>No closed chats in this period.</div>
+            <div class="lc-traffic-pager lc-rpt-closed-pager" id="lc-closed-pager" hidden>
+                <p class="lc-traffic-pager-meta" id="lc-closed-pager-meta">Showing 0 of 0</p>
+                <div class="lc-traffic-pager-controls">
+                    <label class="lc-traffic-page-size">
+                        <span>Rows</span>
+                        <select id="lc-closed-page-size" aria-label="Rows per page">
+                            <option value="10" selected>10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                        </select>
+                    </label>
+                    <div class="lc-traffic-pager-btns">
+                        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-closed-prev" aria-label="Previous page">
+                            <i class="ti ti-chevron-left"></i>
+                        </button>
+                        <span class="lc-traffic-pager-pages" id="lc-closed-pager-pages">1 / 1</span>
+                        <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-closed-next" aria-label="Next page">
+                            <i class="ti ti-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <p class="lc-rpt-foot">
+        This report was generated on <strong><?= lc_sanitize($generatedAt) ?></strong>.
+        All reports are displayed in your local time.
+    </p>
+</div>
+
+<div class="lc-rpt-tip" id="lc-rpt-tip" hidden></div>
+
+<!-- LiveChat-style archive reader: stays on History (no jump to Inbox) -->
+<div class="lc-hx-archive" id="lc-hx-archive" hidden>
+    <div class="lc-hx-archive-backdrop" id="lc-hx-archive-backdrop" tabindex="-1"></div>
+    <div class="lc-hx-archive-panel" role="dialog" aria-modal="true" aria-labelledby="lc-hx-archive-title">
+        <header class="lc-hx-archive-head">
+            <button type="button" class="lc-hx-archive-back" id="lc-hx-archive-close" aria-label="Back to history">
+                <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                <span>Back to history</span>
+            </button>
+            <div class="lc-hx-archive-head-main">
+                <h2 class="lc-hx-archive-title" id="lc-hx-archive-title">Chat transcript</h2>
+                <p class="lc-hx-archive-sub" id="lc-hx-archive-sub"></p>
+            </div>
+            <span class="lc-hx-archive-badge" id="lc-hx-archive-ticket"></span>
+        </header>
+        <div class="lc-hx-archive-body">
+            <div class="lc-hx-archive-feed" id="lc-hx-archive-feed" aria-live="polite">
+                <div class="lc-hx-archive-loading" id="lc-hx-archive-loading">
+                    <i class="ti ti-loader-2" aria-hidden="true"></i> Loading transcript…
+                </div>
+                <div class="lc-hx-archive-messages lc-messages" id="lc-hx-archive-messages" hidden></div>
+                <div class="lc-hx-archive-empty" id="lc-hx-archive-empty" hidden>No messages in this chat.</div>
+                <div class="lc-hx-archive-error" id="lc-hx-archive-error" hidden>Could not load this chat.</div>
+            </div>
+            <aside class="lc-hx-archive-details" aria-label="Visitor details">
+                <h3 class="lc-hx-archive-details-title">Details</h3>
+                <dl class="lc-hx-archive-dl">
+                    <div><dt>Name</dt><dd id="lc-hx-d-name">—</dd></div>
+                    <div><dt>Email</dt><dd id="lc-hx-d-email">—</dd></div>
+                    <div><dt>Phone</dt><dd id="lc-hx-d-phone">—</dd></div>
+                    <div><dt>IP</dt><dd id="lc-hx-d-ip">—</dd></div>
+                    <div><dt>Agent</dt><dd id="lc-hx-d-agent">—</dd></div>
+                    <div><dt>Date</dt><dd id="lc-hx-d-date">—</dd></div>
+                    <div><dt>Duration</dt><dd id="lc-hx-d-duration">—</dd></div>
+                    <div><dt>Status</dt><dd id="lc-hx-d-status">Closed</dd></div>
+                </dl>
+                <p class="lc-hx-archive-note">Read-only archive. Reply from Live Inbox if the chat is still open.</p>
+            </aside>
         </div>
     </div>
 </div>
+
+<script type="application/json" id="lc-rpt-chart-data"><?=
+    json_encode(array_map(static function ($b) {
+        return [
+            'iso' => $b['iso'],
+            'label' => $b['header'] ?? $b['label'],
+            'count' => (int) $b['count'],
+        ];
+    }, $chart), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS)
+?></script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

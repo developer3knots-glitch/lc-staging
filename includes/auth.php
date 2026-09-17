@@ -84,6 +84,9 @@ function lc_login_agent(string $email, string $password): bool
     $_SESSION['agent_role'] = $agent['role'];
     $upd = lc_db()->prepare("UPDATE agents SET status = 'online', last_seen = NOW() WHERE id = ?");
     $upd->execute([$agent['id']]);
+    if (function_exists('lc_drain_waiting_queue_for_agent')) {
+        lc_drain_waiting_queue_for_agent((int) $agent['id']);
+    }
     return true;
 }
 

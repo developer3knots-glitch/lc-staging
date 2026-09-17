@@ -50,9 +50,9 @@ try {
     }
 
     try {
-        lc_update_visitor_geo((int) $conv['visitor_id'], $ip, $userAgent, null);
+        $db->prepare('UPDATE visitors SET last_seen = UTC_TIMESTAMP(), user_agent = COALESCE(?, user_agent) WHERE id = ?')
+            ->execute([$userAgent !== '' ? $userAgent : null, (int) $conv['visitor_id']]);
     } catch (Throwable $e) {
-        error_log('visitor-upload geo: ' . $e->getMessage());
     }
 
     $saved = lc_attachment_save_message(
@@ -69,12 +69,43 @@ try {
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
     $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: 'waiting');
+    if ($status === 'closed') {
+        $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
+            ->execute([$conversationId]);
+        $status = 'waiting';
+        $reopened = true;
+    }
     if ($status === 'waiting') {
         lc_assign_agent($conversationId);
         $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: $status);
     }
     if (function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, (int) $saved['message_id']);
+    }
+    $uploadStatus = $status !== '' ? $status : 'waiting';
+    $uploadReopened = $reopened;
+    if (function_exists('lc_realtime_defer')) {
+        lc_realtime_defer(static function () use ($conversationId, $uploadStatus, $uploadReopened): void {
+            if (function_exists('lc_realtime_publish_conversation_event')) {
+                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                    'status' => $uploadStatus,
+                    'reopened_by' => $uploadReopened ? 'visitor' : null,
+                ]);
+            }
+            if ($uploadStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
+                lc_realtime_publish_incoming_chat($conversationId);
+            }
+        });
+    } else {
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                'status' => $uploadStatus,
+                'reopened_by' => $uploadReopened ? 'visitor' : null,
+            ]);
+        }
+        if ($uploadStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
+            lc_realtime_publish_incoming_chat($conversationId);
+        }
     }
 
     $row = lc_fetch_message_by_id((int) $saved['message_id']);

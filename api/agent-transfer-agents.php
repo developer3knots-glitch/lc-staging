@@ -28,6 +28,7 @@ try {
             'name' => (string) $row['name'],
             'email' => (string) $row['email'],
             'status' => (string) $row['status'],
+            'role' => (string) ($row['role'] ?? 'agent'),
             'brand_name' => (string) ($row['brand_name'] ?? ''),
             'can_receive' => (bool) ($row['can_receive'] ?? true),
             'avatar' => lc_avatar_meta($row['avatar'] ?? null, (string) $row['name']),

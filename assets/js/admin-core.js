@@ -136,6 +136,486 @@
             window.LCTime.scan(document);
         }
     }
+
+    /* ── Visitor land push (any admin page) ──
+       Desktop/browser notification + toast + sound.
+       Agent Online / Away / Offline status does NOT matter — only browser permission.
+       Chat start NOT required.
+       Reliability: WebSocket only while connected. Poll ONLY if WS is down. */
+    (function initVisitorLandPush() {
+        var base = window.LC_BASE_URL || '';
+        var seenAt = {};
+        var knownOnSite = null;
+        var landRt = null;
+        var pollTimer = null;
+        var swReg = null;
+        var DEDUPE_MS = 45000;
+        var POLL_MS = 4000;
+        var trafficUrl = base + '/admin/traffic';
+
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function loadSeenMap() {
+            try {
+                var raw = sessionStorage.getItem('lc_land_seen_v1');
+                if (!raw) return;
+                var parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') seenAt = parsed;
+            } catch (e) { /* ignore */ }
+        }
+
+        function saveSeenMap() {
+            try {
+                var now = Date.now();
+                var trimmed = {};
+                Object.keys(seenAt).forEach(function (k) {
+                    if (now - (seenAt[k] || 0) < 3600000) trimmed[k] = seenAt[k];
+                });
+                seenAt = trimmed;
+                sessionStorage.setItem('lc_land_seen_v1', JSON.stringify(seenAt));
+            } catch (e) { /* ignore */ }
+        }
+
+        function canNotifyVisitor(id) {
+            id = String(id || '');
+            if (!id) return false;
+            var now = Date.now();
+            if (seenAt[id] && (now - seenAt[id]) < DEDUPE_MS) return false;
+            seenAt[id] = now;
+            saveSeenMap();
+            return true;
+        }
+
+        function markKnown(id, row) {
+            id = String(id || '');
+            if (!id || !knownOnSite) return;
+            knownOnSite[id] = row || true;
+        }
+
+        function unmarkKnown(id) {
+            id = String(id || '');
+            if (!id || !knownOnSite) return;
+            delete knownOnSite[id];
+        }
+
+        function permissionState() {
+            if (!window.Notification) return 'unsupported';
+            return Notification.permission || 'default';
+        }
+
+        function hidePermissionBanner() {
+            var el = document.getElementById('lc-notify-perm-banner');
+            if (el) el.remove();
+        }
+
+        function showPermissionBanner() {
+            if (permissionState() === 'granted' || permissionState() === 'unsupported') {
+                hidePermissionBanner();
+                return;
+            }
+            if (document.getElementById('lc-notify-perm-banner')) return;
+
+            var el = document.createElement('div');
+            el.id = 'lc-notify-perm-banner';
+            el.className = 'lc-notify-perm-banner';
+            el.setAttribute('role', 'region');
+            el.setAttribute('aria-label', 'Desktop notifications');
+            var denied = permissionState() === 'denied';
+            el.innerHTML =
+                '<i class="ti ti-bell" aria-hidden="true"></i>' +
+                '<div class="lc-notify-perm-copy">' +
+                    '<strong>Desktop notifications</strong>' +
+                    '<span>' + (denied
+                        ? 'Blocked by browser. Click the lock / tune icon left of the URL → Site settings → Notifications → Allow, then refresh this page.'
+                        : 'Turn on browser alerts for new visitors — works even if your status is Away or Offline.') +
+                    '</span>' +
+                '</div>' +
+                (denied
+                    ? '<button type="button" class="lc-notify-perm-btn is-primary" data-action="recheck">I allowed it</button>'
+                    : '<button type="button" class="lc-notify-perm-btn is-primary" data-action="enable">Enable</button>') +
+                '<button type="button" class="lc-notify-perm-close" data-action="dismiss" aria-label="Close">&times;</button>';
+            document.body.appendChild(el);
+
+            el.addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-action]');
+                if (!btn) return;
+                var action = btn.getAttribute('data-action');
+                if (action === 'enable') {
+                    requestPermission(true);
+                } else if (action === 'recheck') {
+                    if (permissionState() === 'granted') {
+                        hidePermissionBanner();
+                        try { sessionStorage.removeItem('lc_notify_banner_dismiss'); } catch (eR) {}
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    try { sessionStorage.setItem('lc_notify_banner_dismiss', '1'); } catch (eS) {}
+                    hidePermissionBanner();
+                }
+            });
+        }
+
+        function requestPermission(fromUser) {
+            if (!window.Notification) return Promise.resolve('unsupported');
+            if (Notification.permission === 'granted') {
+                hidePermissionBanner();
+                return Promise.resolve('granted');
+            }
+            if (Notification.permission === 'denied') {
+                showPermissionBanner();
+                return Promise.resolve('denied');
+            }
+            if (!fromUser) {
+                showPermissionBanner();
+                return Promise.resolve('default');
+            }
+            return Notification.requestPermission().then(function (p) {
+                if (p === 'granted') hidePermissionBanner();
+                else showPermissionBanner();
+                return p;
+            }).catch(function () {
+                showPermissionBanner();
+                return 'default';
+            });
+        }
+
+        function registerNotifySW() {
+            if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+            return navigator.serviceWorker.register(base + '/sw-admin.js', { scope: base + '/admin/' })
+                .then(function (reg) {
+                    swReg = reg;
+                    return reg;
+                })
+                .catch(function () {
+                    return null;
+                });
+        }
+
+        function showLandToast(name, detail) {
+            var el = document.getElementById('lc-land-toast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'lc-land-toast';
+                el.className = 'lc-return-toast lc-land-toast';
+                el.setAttribute('role', 'status');
+                document.body.appendChild(el);
+            }
+            el.innerHTML =
+                '<i class="ti ti-world" aria-hidden="true"></i>' +
+                '<div><strong>Visitor on site</strong><span>' +
+                esc(name || 'Visitor') + (detail ? ' · ' + esc(detail) : '') +
+                '</span></div>';
+            el.classList.add('is-visible');
+            clearTimeout(showLandToast._t);
+            showLandToast._t = setTimeout(function () {
+                el.classList.remove('is-visible');
+            }, 8000);
+            el.onclick = function () {
+                window.location.href = trafficUrl;
+            };
+        }
+
+        function showIncomingToast(name, detail, chatUrl) {
+            var el = document.getElementById('lc-incoming-toast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'lc-incoming-toast';
+                el.className = 'lc-return-toast lc-land-toast';
+                el.setAttribute('role', 'status');
+                document.body.appendChild(el);
+            }
+            el.innerHTML =
+                '<i class="ti ti-message-circle" aria-hidden="true"></i>' +
+                '<div><strong>Incoming chat</strong><span>' +
+                esc(name || 'Visitor') + (detail ? ' · ' + esc(detail) : '') +
+                '</span></div>';
+            el.classList.add('is-visible');
+            clearTimeout(showIncomingToast._t);
+            showIncomingToast._t = setTimeout(function () {
+                el.classList.remove('is-visible');
+            }, 10000);
+            el.onclick = function () {
+                window.location.href = chatUrl || (base + '/admin/chats');
+            };
+        }
+
+        function fireBrowserPush(name, detail, visitorKey, options) {
+            options = options || {};
+            if (!window.Notification || Notification.permission !== 'granted') {
+                showPermissionBanner();
+                return;
+            }
+            var title = options.title || 'Visitor on site';
+            var body = options.body || ((name || 'Visitor') + (detail ? ' — ' + detail : ' is browsing your website'));
+            var tag = options.tag || ('lc-visitor-land-' + String(visitorKey || name || Date.now()));
+            var targetUrl = options.url || trafficUrl;
+            var opts = {
+                body: body,
+                tag: tag,
+                renotify: true,
+                requireInteraction: true,
+                silent: false,
+                data: { url: targetUrl }
+            };
+
+            var showViaSw = function (reg) {
+                if (!reg || typeof reg.showNotification !== 'function') return false;
+                try {
+                    reg.showNotification(title, opts);
+                    return true;
+                } catch (eSw) {
+                    return false;
+                }
+            };
+
+            var viaSw = swReg && showViaSw(swReg);
+            if (!viaSw && navigator.serviceWorker && navigator.serviceWorker.ready) {
+                navigator.serviceWorker.ready.then(function (reg) {
+                    swReg = reg;
+                    if (!showViaSw(reg)) fallbackNotification(title, opts, targetUrl);
+                }).catch(function () {
+                    fallbackNotification(title, opts, targetUrl);
+                });
+            } else if (!viaSw) {
+                fallbackNotification(title, opts, targetUrl);
+            }
+        }
+
+        function fallbackNotification(title, opts, targetUrl) {
+            try {
+                var n = new Notification(title, opts);
+                n.onclick = function () {
+                    try { window.focus(); } catch (eF) {}
+                    window.location.href = targetUrl || trafficUrl;
+                    try { n.close(); } catch (eC) {}
+                };
+            } catch (eN) { /* ignore */ }
+        }
+
+        function notifyLand(payload, source) {
+            payload = payload || {};
+            if (payload.notify === false || payload.notify === 0 || payload.notify === '0') {
+                return false;
+            }
+            var presence = String(payload.presence || 'browsing').toLowerCase();
+            if (presence === 'left') {
+                unmarkKnown(payload.visitor_id || payload.visitor_uid || '');
+                return false;
+            }
+
+            var vid = payload.visitor_id || payload.visitor_uid || '';
+            if (!canNotifyVisitor(vid)) return false;
+
+            markKnown(vid, payload);
+
+            var name = payload.name || 'Visitor';
+            var detail = payload.page_path || payload.ip || '';
+            showLandToast(name, detail);
+            fireBrowserPush(name, detail, vid);
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+            return true;
+        }
+
+        function notifyIncomingChat(payload) {
+            payload = payload || {};
+            if (payload.notify === false || payload.notify === 0 || payload.notify === '0') {
+                return false;
+            }
+            var cid = parseInt(payload.conversation_id, 10) || 0;
+            var dedupeKey = 'incoming:' + (cid || payload.visitor_id || payload.visitor_uid || '');
+            if (!canNotifyVisitor(dedupeKey)) return false;
+
+            var name = payload.name || 'Visitor';
+            var detail = payload.page_path || payload.ip || '';
+            var chatUrl = cid
+                ? (base + '/admin/chats?id=' + cid)
+                : (base + '/admin/chats');
+            showIncomingToast(name, detail, chatUrl);
+            fireBrowserPush(name, detail, dedupeKey, {
+                title: 'Incoming chat',
+                body: (name || 'Visitor') + ' is waiting' + (detail ? ' — ' + detail : ''),
+                tag: 'lc-incoming-' + String(cid || dedupeKey),
+                url: chatUrl
+            });
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+            return true;
+        }
+
+        function handleTrafficEvent(payload) {
+            payload = payload || {};
+            var presence = String(payload.presence || 'browsing').toLowerCase();
+            var vid = payload.visitor_id || payload.visitor_uid || '';
+            if (presence === 'left') {
+                unmarkKnown(vid);
+                return;
+            }
+            if (presence === 'queued' || payload.is_incoming || payload.status === 'waiting') {
+                if (payload.notify === true || payload.notify === 1 || payload.notify === '1' || payload.is_incoming) {
+                    notifyIncomingChat(payload);
+                }
+                return;
+            }
+            // Instant path — only when server says this is a land/return.
+            if (payload.notify === true || payload.notify === 1 || payload.notify === '1' || payload.is_new) {
+                notifyLand(Object.assign({}, payload, { notify: true, presence: presence || 'browsing' }), 'ws');
+            }
+        }
+
+        function initRealtime() {
+            var cfg = window.LC_REALTIME || {};
+            if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) {
+                startPollFallback(POLL_MS);
+                return;
+            }
+            fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success || !data.token) {
+                        startPollFallback(POLL_MS);
+                        return;
+                    }
+                    if (data.realtime) window.LC_REALTIME = data.realtime;
+                    cfg = window.LC_REALTIME || cfg;
+                    if (landRt && landRt.disconnect) {
+                        try { landRt.disconnect(); } catch (eD) {}
+                    }
+                    landRt = window.LCRealtime.create({
+                        mode: 'ws',
+                        wsUrl: cfg.wsUrl,
+                        token: data.token,
+                        fallbackPoll: function () { /* unused — land push uses WS only while connected */ }
+                    });
+                    landRt.on('traffic.changed', function (payload) {
+                        handleTrafficEvent(payload || {});
+                    });
+                    landRt.on('disconnected', function () {
+                        startPollFallback(POLL_MS);
+                    });
+                    landRt.on('connected', function () {
+                        stopPollFallback();
+                        // Seed known set once so a later disconnect→poll doesn't spam everyone already on site
+                        if (knownOnSite === null) {
+                            seedKnownOnSite();
+                        }
+                    });
+                    landRt.connect();
+                })
+                .catch(function () {
+                    startPollFallback(POLL_MS);
+                });
+        }
+
+        function stopPollFallback() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function startPollFallback(ms) {
+            if (pollTimer) return;
+            pollOnSiteLand();
+            pollTimer = setInterval(pollOnSiteLand, Math.max(3000, ms || POLL_MS));
+        }
+
+        function seedKnownOnSite() {
+            fetch(base + '/api/agent-traffic.php?tab=all', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success || knownOnSite !== null) return;
+                    var onSite = {};
+                    (data.visitors || []).forEach(function (v) {
+                        var status = String(v.status || '').toLowerCase();
+                        if (status === 'left') return;
+                        var id = String(v.visitor_id || v.visitor_uid || '');
+                        if (id) onSite[id] = v;
+                    });
+                    knownOnSite = onSite;
+                })
+                .catch(function () {
+                    if (knownOnSite === null) knownOnSite = {};
+                });
+        }
+
+        function pollOnSiteLand() {
+            fetch(base + '/api/agent-traffic.php?tab=all', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) return;
+                    var list = data.visitors || [];
+                    var onSite = {};
+                    list.forEach(function (v) {
+                        var status = String(v.status || '').toLowerCase();
+                        if (status === 'left') return;
+                        var id = String(v.visitor_id || v.visitor_uid || '');
+                        if (!id) return;
+                        onSite[id] = v;
+                    });
+                    if (knownOnSite === null) {
+                        knownOnSite = onSite;
+                        return;
+                    }
+                    Object.keys(onSite).forEach(function (id) {
+                        if (!knownOnSite[id]) {
+                            var v = onSite[id];
+                            notifyLand({
+                                presence: 'browsing',
+                                notify: true,
+                                visitor_id: v.visitor_id,
+                                visitor_uid: v.visitor_uid,
+                                name: v.name,
+                                ip: v.ip,
+                                page_path: v.page_path || v.page_url
+                            }, 'poll');
+                        }
+                    });
+                    knownOnSite = onSite;
+                })
+                .catch(function () { /* ignore */ });
+        }
+
+        loadSeenMap();
+        registerNotifySW();
+        try {
+            if (!sessionStorage.getItem('lc_notify_banner_dismiss') && permissionState() !== 'granted') {
+                showPermissionBanner();
+            }
+        } catch (eB) {
+            if (permissionState() !== 'granted') showPermissionBanner();
+        }
+
+        document.addEventListener('click', function () {
+            if (window.LCNotifySound && window.LCNotifySound.unlock) {
+                window.LCNotifySound.unlock();
+            }
+        }, { once: true });
+
+        // Re-show sticky alert opportunity when tab becomes visible again
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden && permissionState() === 'granted') {
+                hidePermissionBanner();
+            }
+        });
+
+        initRealtime();
+    })();
 })();
 
 /* Sidebar icon rail: fixed tooltips (not clipped by overflow) */

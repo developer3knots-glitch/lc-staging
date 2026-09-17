@@ -101,6 +101,11 @@ function lc_format_api_conversation(?array $conversation): ?array
         $conversation['visitor_ip'] = $displayIp;
     }
 
+    $ua = (string) ($conversation['visitor_user_agent'] ?? $conversation['user_agent'] ?? '');
+    if (function_exists('lc_parse_user_agent')) {
+        $conversation['visitor_device'] = lc_parse_user_agent($ua);
+    }
+
     return $conversation;
 }
 

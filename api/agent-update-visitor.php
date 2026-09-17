@@ -13,13 +13,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $conversationId = (int) ($input['conversation_id'] ?? 0);
+$hasName = array_key_exists('name', $input);
 $hasEmail = array_key_exists('email', $input);
 $hasPhone = array_key_exists('phone', $input);
 
 if ($conversationId < 1) {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
-if (!$hasEmail && !$hasPhone) {
+if (!$hasName && !$hasEmail && !$hasPhone) {
     lc_json(['success' => false, 'error' => 'Nothing to update'], 400);
 }
 
@@ -45,8 +46,20 @@ try {
 
     $updates = [];
     $params = [];
+    $outName = trim((string) ($conv['visitor_name'] ?? ''));
     $outEmail = trim((string) ($conv['visitor_email'] ?? ''));
     $outPhone = trim((string) ($conv['visitor_phone'] ?? ''));
+
+    if ($hasName) {
+        $name = trim(preg_replace('/\s+/u', ' ', (string) ($input['name'] ?? '')) ?? '');
+        $name = mb_substr($name, 0, 120);
+        if ($name === '') {
+            lc_json(['success' => false, 'error' => 'Name cannot be empty'], 400);
+        }
+        $updates[] = 'name = ?';
+        $params[] = $name;
+        $outName = $name;
+    }
 
     if ($hasEmail) {
         $email = lc_normalize_visitor_email((string) ($input['email'] ?? ''));
@@ -74,6 +87,7 @@ try {
 
     lc_json([
         'success' => true,
+        'name' => $outName,
         'email' => $outEmail,
         'phone' => $outPhone,
         'visitor_id' => $visitorId,

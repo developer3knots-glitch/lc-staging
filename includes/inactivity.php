@@ -89,7 +89,10 @@ function lc_inactivity_human_anchor(int $conversationId, array $conv = []): ?str
             FROM messages
             WHERE conversation_id = ?
               AND sender_type = 'system'
-              AND message LIKE 'Visitor resumed this conversation%'
+              AND (
+                    message LIKE 'Visitor resumed this conversation%'
+                 OR message LIKE '%continued this conversation%'
+              )
         ");
         $resumeStmt->execute([$conversationId]);
         $resumedAt = $resumeStmt->fetchColumn();
@@ -191,6 +194,20 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
         $closeSec = (int) $settings['close_minutes'] * 60;
         $warnSec = (int) $settings['warn_minutes'] * 60;
         $db = lc_db();
+
+        // Hard safety: never auto-close if a real visitor/agent message landed in the last 2 minutes
+        // (covers reopen races + clock skew right after "continue this chat").
+        $freshHuman = $db->prepare("
+            SELECT id FROM messages
+            WHERE conversation_id = ?
+              AND sender_type IN ('visitor', 'agent')
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+            LIMIT 1
+        ");
+        $freshHuman->execute([$conversationId]);
+        if ($freshHuman->fetchColumn()) {
+            return null;
+        }
 
         if ($idle >= $closeSec) {
             $db->prepare("UPDATE conversations SET status = 'closed', closed_at = COALESCE(closed_at, NOW()) WHERE id = ? AND status IN ('waiting','active')")
@@ -296,7 +313,10 @@ function lc_sweep_inactive_conversations(?int $accountId = null, int $limit = 40
                     COALESCE(
                         (SELECT MAX(m2.created_at) FROM messages m2
                          WHERE m2.conversation_id = c.id AND m2.sender_type = 'system'
-                           AND m2.message LIKE 'Visitor resumed this conversation%'),
+                           AND (
+                                m2.message LIKE 'Visitor resumed this conversation%'
+                             OR m2.message LIKE '%continued this conversation%'
+                           )),
                         c.started_at
                     )
                   ) <= DATE_SUB(NOW(), INTERVAL ? MINUTE)

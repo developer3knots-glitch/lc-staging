@@ -5,12 +5,27 @@
     if (!heroWaiting) return;
 
     var base = window.LC_BASE_URL;
-    var pollMs = window.LC_POLL_INTERVAL || 1500;
+    var rtCfg = window.LC_REALTIME || {};
+    var pollMs = Math.max(3000, window.LC_POLL_INTERVAL || 3000);
     var statsScope = 'all';
     var weekCard = document.getElementById('lc-home-week');
     if (weekCard && weekCard.getAttribute('data-stats-scope')) {
         statsScope = weekCard.getAttribute('data-stats-scope') || 'all';
     }
+
+    var lastSig = {
+        stats: '',
+        week: '',
+        activity: '',
+        recent: '',
+        waiting: '',
+        team: ''
+    };
+    var refreshInFlight = false;
+    var pollTimer = null;
+    var wsConnected = false;
+    var realtimeClient = null;
+    var useWebsocket = rtCfg.mode === 'ws' && !!rtCfg.wsUrl && !!window.LCRealtime;
 
     function esc(s) {
         var d = document.createElement('div');
@@ -27,7 +42,7 @@
 
     function statusBadge(status) {
         var cls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-        var label = status.charAt(0).toUpperCase() + status.slice(1);
+        var label = status === 'waiting' ? 'Incoming chat' : (status.charAt(0).toUpperCase() + status.slice(1));
         return '<span class="lc-badge lc-badge-' + cls + '">' + esc(label) + '</span>';
     }
 
@@ -39,9 +54,85 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';
     }
 
+    function dateCell(iso) {
+        if (!iso) {
+            return '';
+        }
+        var label = '';
+        if (window.LCTime && typeof window.LCTime.formatDateLabel === 'function') {
+            label = window.LCTime.formatDateLabel(iso);
+        } else {
+            try {
+                var d = new Date(iso);
+                if (!isNaN(d.getTime())) {
+                    label = d.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+                }
+            } catch (e) {}
+        }
+        if (!label) {
+            return '';
+        }
+        return '<span class="lc-conv-item-date"><i class="ti ti-calendar"></i> ' + esc(label) + '</span>';
+    }
+
     function metaSpan(icon, text) {
         if (!text) return '';
         return '<span><i class="ti ' + icon + '"></i> ' + esc(text) + '</span>';
+    }
+
+    function recentSig(list) {
+        return (list || []).map(function (r) {
+            return [
+                r.id,
+                r.status,
+                r.unread || 0,
+                r.last_msg || '',
+                r.last_message_at || '',
+                r.visitor_name || '',
+                r.visitor_ip || '',
+                r.visitor_country || '',
+                r.device || '',
+                r.device_label || ''
+            ].join('|');
+        }).join('||');
+    }
+
+    function deviceTypeIcon(type) {
+        var t = String(type || '').toLowerCase();
+        if (t === 'mobile') return 'ti-device-mobile';
+        if (t === 'tablet') return 'ti-device-tablet';
+        if (t === 'desktop') return 'ti-device-desktop';
+        return 'ti-devices';
+    }
+
+    function deviceMeta(r) {
+        var kind = (r.device || '').trim();
+        var label = (r.device_label || '').trim();
+        if (!kind || kind === 'Unknown') return '';
+        var typeClass = 'is-' + kind.toLowerCase().replace(/\s+/g, '-');
+        return '<span class="lc-conv-device ' + typeClass + '" title="' + esc(label || kind) + '"><i class="ti ' + deviceTypeIcon(kind) + '"></i> ' + esc(kind) + '</span>';
+    }
+
+    function activitySig(activity) {
+        return (activity || []).map(function (b) {
+            return (b.iso || b.label || '') + ':' + (b.count || 0);
+        }).join('|');
+    }
+
+    function statsSig(s, week) {
+        s = s || {};
+        week = week || {};
+        return [
+            s.waiting, s.browsing, s.customers_online, s.active, s.unread, s.closed_today, s.started_today,
+            s.online_agents, s.total_agents,
+            week.total, week.delta, week.waiting, week.active, week.closed_today, week.unread
+        ].join('|');
+    }
+
+    function teamSig(team) {
+        return (team || []).map(function (a) {
+            return (a.name || '') + ':' + (a.status || '');
+        }).join('|');
     }
 
     function renderWaitingItem(r) {
@@ -52,7 +143,9 @@
         html += '<div class="lc-conv-item-msg">' + esc(r.last_msg) + '</div>';
         html += '<div class="lc-conv-item-meta">';
         html += metaSpan('ti-tag', r.brand_name);
+        html += deviceMeta(r);
         html += metaSpan('ti-map-pin', r.visitor_country);
+        html += dateCell(r.started_at || r.last_message_at);
         html += '<span>' + timeCell(r.last_message_at) + '</span>';
         html += '</div></div>';
         html += '<a href="' + esc(r.chat_url) + '" class="lc-btn lc-btn-primary lc-btn-sm lc-conv-reply"><i class="ti ti-send"></i> Reply</a>';
@@ -73,8 +166,10 @@
         html += '<div class="lc-conv-item-msg">' + esc(r.last_msg) + '</div>';
         html += '<div class="lc-conv-item-meta">';
         html += metaSpan('ti-tag', r.brand_name);
+        html += deviceMeta(r);
         html += metaSpan('ti-world', r.visitor_ip);
         html += metaSpan('ti-map-pin', r.visitor_country);
+        html += dateCell(r.started_at || r.last_message_at);
         html += '<span>' + timeCell(r.last_message_at) + '</span>';
         html += '</div></div>';
         html += '<i class="ti ti-chevron-right lc-conv-item-arrow"></i>';
@@ -91,7 +186,7 @@
             if (cta) {
                 cta.style.display = '';
                 if (!ctaCount) {
-                    cta.innerHTML = '<i class="ti ti-bolt"></i> Answer ' + count + ' waiting';
+                    cta.innerHTML = '<i class="ti ti-bolt"></i> Answer ' + count + ' incoming';
                 }
             }
             if (wrap) wrap.style.display = '';
@@ -204,7 +299,10 @@
             btn.classList.toggle('is-active', active);
             btn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
-        refreshDashboard();
+        lastSig.stats = '';
+        lastSig.week = '';
+        lastSig.activity = '';
+        refreshDashboard(true);
     }
 
     function updateTeamList(team, onlineCount) {
@@ -228,70 +326,186 @@
         }).join('');
     }
 
-    function refreshDashboard() {
+    function stopPoll() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function schedulePoll() {
+        stopPoll();
+        // WebSocket live = no interval. Poll only when WS is off / disconnected.
+        if (useWebsocket && wsConnected) {
+            return;
+        }
+        pollTimer = setInterval(function () {
+            refreshDashboard(false);
+        }, pollMs);
+    }
+
+    function refreshDashboard(force) {
+        if (refreshInFlight) return;
+        refreshInFlight = true;
         fetch(base + '/api/dashboard-stats.php?scope=' + encodeURIComponent(statsScope), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data.success) return;
 
-                var s = data.stats;
-                heroWaiting.textContent = s.waiting;
+                var s = data.stats || {};
+                var week = data.week || null;
+                var activity = data.activity || [];
+                var recent = data.recent || [];
+                var team = data.team || [];
+                var waitingItems = recent.filter(function (r) { return r.status === 'waiting'; });
 
-                var heroActive = document.getElementById('lc-dash-active');
-                var heroStarted = document.getElementById('lc-dash-started');
-                if (heroActive) heroActive.textContent = s.active;
-                if (heroStarted) heroStarted.textContent = s.started_today;
+                var nextStats = statsSig(s, week);
+                var nextActivity = activitySig(activity);
+                var nextRecent = recentSig(recent);
+                var nextWaiting = recentSig(waitingItems);
+                var nextTeam = teamSig(team);
 
-                var kpiWaiting = document.getElementById('lc-kpi-waiting');
-                var kpiActive = document.getElementById('lc-kpi-active');
-                var kpiUnread = document.getElementById('lc-kpi-unread');
-                var kpiAgents = document.getElementById('lc-kpi-agents');
-                var kpiClosed = document.getElementById('lc-kpi-closed');
+                if (force || nextStats !== lastSig.stats) {
+                    lastSig.stats = nextStats;
+                    var onlineCount = s.customers_online != null ? s.customers_online
+                        : (s.browsing != null ? s.browsing : s.waiting);
+                    heroWaiting.textContent = onlineCount;
 
-                if (kpiWaiting) kpiWaiting.textContent = s.waiting;
-                if (kpiActive) kpiActive.textContent = s.active;
-                if (kpiUnread) kpiUnread.textContent = s.unread;
-                if (kpiAgents) kpiAgents.textContent = s.online_agents + '/' + s.total_agents;
-                if (kpiClosed) kpiClosed.textContent = s.closed_today;
+                    var heroActive = document.getElementById('lc-dash-active');
+                    var heroStarted = document.getElementById('lc-dash-started');
+                    if (heroActive) heroActive.textContent = s.active;
+                    if (heroStarted) heroStarted.textContent = s.started_today;
 
-                var alertEl = document.getElementById('lc-dash-unread-alert');
-                var unreadText = document.getElementById('lc-dash-unread-text');
-                if (alertEl) alertEl.style.display = s.unread > 0 ? '' : 'none';
-                if (unreadText) unreadText.textContent = s.unread;
+                    var kpiWaiting = document.getElementById('lc-kpi-waiting');
+                    var kpiActive = document.getElementById('lc-kpi-active');
+                    var kpiUnread = document.getElementById('lc-kpi-unread');
+                    var kpiAgents = document.getElementById('lc-kpi-agents');
+                    var kpiClosed = document.getElementById('lc-kpi-closed');
 
-                updateWaitingCta(s.waiting);
-                updateActivityChart(data.activity || []);
-                updateWeekScopeStats(data.week || null);
-                updateTeamList(data.team || [], s.online_agents);
+                    if (kpiWaiting) kpiWaiting.textContent = onlineCount;
+                    if (kpiActive) kpiActive.textContent = s.active;
+                    if (kpiUnread) kpiUnread.textContent = s.unread;
+                    if (kpiAgents) kpiAgents.textContent = s.online_agents + '/' + s.total_agents;
+                    if (kpiClosed) kpiClosed.textContent = s.closed_today;
 
-                var waitingItems = data.recent.filter(function (r) { return r.status === 'waiting'; });
-                var waitingCard = document.getElementById('lc-waiting-card');
-                var waitingFeed = document.getElementById('lc-waiting-feed');
-                var waitingCount = document.getElementById('lc-waiting-count');
+                    var alertEl = document.getElementById('lc-dash-unread-alert');
+                    var unreadText = document.getElementById('lc-dash-unread-text');
+                    if (alertEl) alertEl.style.display = s.unread > 0 ? '' : 'none';
+                    if (unreadText) unreadText.textContent = s.unread;
 
-                if (waitingCard) waitingCard.style.display = waitingItems.length ? '' : 'none';
-                if (waitingCount) waitingCount.textContent = waitingItems.length;
-                if (waitingFeed) {
-                    waitingFeed.innerHTML = waitingItems.length
-                        ? waitingItems.map(renderWaitingItem).join('')
-                        : '';
+                    updateWaitingCta(s.waiting);
+                    updateWeekScopeStats(week);
                 }
 
-                var feed = document.getElementById('lc-recent-feed');
-                if (!feed) return;
-
-                if (!data.recent.length) {
-                    feed.innerHTML = '<div class="lc-conv-empty"><i class="ti ti-message-circle-off"></i><p>No conversations yet</p><span>Add a brand and embed its widget on your site to start receiving chats.</span></div>';
-                    return;
+                if (force || nextActivity !== lastSig.activity) {
+                    lastSig.activity = nextActivity;
+                    updateActivityChart(activity);
+                    if (week && week.total != null) {
+                        var totalEl = document.getElementById('lc-chart-total');
+                        if (totalEl) totalEl.textContent = week.total;
+                    }
                 }
 
-                feed.innerHTML = data.recent.map(renderRecentItem).join('');
-                if (window.LCTime) {
-                    if (waitingFeed) window.LCTime.scan(waitingFeed);
-                    window.LCTime.scan(feed);
+                if (force || nextTeam !== lastSig.team) {
+                    lastSig.team = nextTeam;
+                    updateTeamList(team, s.online_agents);
+                }
+
+                if (force || nextWaiting !== lastSig.waiting) {
+                    lastSig.waiting = nextWaiting;
+                    var waitingCard = document.getElementById('lc-waiting-card');
+                    var waitingFeed = document.getElementById('lc-waiting-feed');
+                    var waitingCount = document.getElementById('lc-waiting-count');
+                    if (waitingCard) waitingCard.style.display = waitingItems.length ? '' : 'none';
+                    if (waitingCount) waitingCount.textContent = waitingItems.length;
+                    if (waitingFeed) {
+                        waitingFeed.innerHTML = waitingItems.length
+                            ? waitingItems.map(renderWaitingItem).join('')
+                            : '';
+                        if (window.LCTime) window.LCTime.scan(waitingFeed);
+                    }
+                }
+
+                if (force || nextRecent !== lastSig.recent) {
+                    lastSig.recent = nextRecent;
+                    var feed = document.getElementById('lc-recent-feed');
+                    if (!feed) return;
+                    if (!recent.length) {
+                        feed.innerHTML = '<div class="lc-conv-empty"><i class="ti ti-message-circle-off"></i><p>No conversations yet</p><span>Add a brand and embed its widget on your site to start receiving chats.</span></div>';
+                    } else {
+                        feed.innerHTML = recent.map(renderRecentItem).join('');
+                        if (window.LCTime) window.LCTime.scan(feed);
+                    }
                 }
             })
-            .catch(function () {});
+            .catch(function () {})
+            .then(function () {
+                refreshInFlight = false;
+            });
+    }
+
+    function bindRealtime() {
+        if (!useWebsocket) {
+            return;
+        }
+        function fetchAgentToken() {
+            return fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.realtime) {
+                        window.LC_REALTIME = data.realtime;
+                        rtCfg = data.realtime;
+                        useWebsocket = rtCfg.mode === 'ws' && !!rtCfg.wsUrl && !!window.LCRealtime;
+                    }
+                    return (data && data.success && data.token) ? data.token : '';
+                })
+                .catch(function () { return ''; });
+        }
+
+        fetchAgentToken().then(function (token) {
+            if (!token) {
+                schedulePoll();
+                return;
+            }
+            try {
+                if (realtimeClient && realtimeClient.disconnect) {
+                    realtimeClient.disconnect();
+                }
+                realtimeClient = window.LCRealtime.create({
+                    mode: 'ws',
+                    wsUrl: rtCfg.wsUrl || window.LC_REALTIME.wsUrl,
+                    token: token,
+                    getToken: fetchAgentToken
+                });
+                realtimeClient.on('connected', function () {
+                    wsConnected = true;
+                    stopPoll();
+                    refreshDashboard(false);
+                });
+                realtimeClient.on('disconnected', function () {
+                    wsConnected = false;
+                    schedulePoll();
+                });
+                function onChange() {
+                    refreshDashboard(false);
+                }
+                realtimeClient.on('inbox.changed', onChange);
+                realtimeClient.on('conversation.updated', onChange);
+                realtimeClient.on('message.new', onChange);
+                if (typeof realtimeClient.connect === 'function') {
+                    realtimeClient.connect();
+                }
+                // If WS never comes up, fall back to poll once.
+                setTimeout(function () {
+                    if (!wsConnected) {
+                        schedulePoll();
+                    }
+                }, 5000);
+            } catch (e) {
+                wsConnected = false;
+                schedulePoll();
+            }
+        });
     }
 
     document.querySelectorAll('.lc-home-week-tab').forEach(function (btn) {
@@ -300,6 +514,10 @@
         });
     });
 
-    refreshDashboard();
-    setInterval(refreshDashboard, pollMs);
+    bindRealtime();
+    refreshDashboard(true);
+    // Start poll only if WS is not in use; WS path stops poll on connect.
+    if (!useWebsocket) {
+        schedulePoll();
+    }
 })();

@@ -100,10 +100,13 @@
     var currentConversationMeta = {};
     var ipModalOkHandler = null;
     var lastConversations = [];
+    /** Stable visual order of inbox rows (ids). New messages must NOT reshuffle this. */
+    var inboxStableIds = [];
     var inboxSearch = '';
     var currentReference = '';
     var currentVisitorEmail = '';
     var currentVisitorPhone = '';
+    var currentVisitorName = '';
     var contactFieldsDirty = false;
     var chatRefEl = document.getElementById('lc-chat-ref');
     var chatRefCodeEl = document.getElementById('lc-chat-ref-code');
@@ -451,7 +454,12 @@
         var lat = geo.lat;
         var lon = geo.lon;
         var label = (geo.label || geo.country || '').trim();
-        var key = (lat && lon) ? (String(lat) + ',' + String(lon)) : label;
+        var source = String(geo.source || 'ip').toLowerCase();
+        var isBrowser = source === 'browser';
+        // IP coords are ISP guesses (often wrong neighborhood). Prefer city/country search.
+        var key = isBrowser && lat && lon
+            ? ('gps:' + String(lat) + ',' + String(lon))
+            : (label ? ('ip:' + label) : ((lat && lon) ? ('ipxy:' + lat + ',' + lon) : ''));
         if (!key) {
             if (lastDetailsMapKey !== '') {
                 lastDetailsMapKey = '';
@@ -465,11 +473,12 @@
             return;
         }
         lastDetailsMapKey = key;
-        if (lat && lon) {
-            var zoom = (geo.source === 'browser') ? 15 : 11;
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=' + zoom + '&output=embed';
-        } else {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=6&output=embed';
+        if (isBrowser && lat && lon) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+        } else if (label) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+        } else if (lat && lon) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
         }
     }
 
@@ -575,6 +584,7 @@
         var displayName = name || 'Unnamed customer';
         setText('lc-details-name', displayName);
         if (!isContactFieldActive()) {
+            currentVisitorName = name;
             currentVisitorEmail = (c.visitor_email || '').trim();
             currentVisitorPhone = (c.visitor_phone || '').trim();
             populateContactFields(true);
@@ -583,6 +593,12 @@
 
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
+        var geoSource = String(geo.source || 'ip').toLowerCase();
+        if (location && location !== '-' && geoSource !== 'browser') {
+            location = location + ' (approx. from IP)';
+        } else if (location && location !== '-' && geoSource === 'browser') {
+            location = location + ' (device GPS)';
+        }
         setText('lc-details-location', location);
         var displayIp = formatDisplayIp(c.visitor_ip, c.visitor_ipv4);
         setText('lc-details-local-time', displayIp ? ('IP ' + displayIp) : '');
@@ -664,6 +680,14 @@
     }
 
     function filterConversations(list) {
+        // Blocked chats stay in inbox only while they are the open chat.
+        // Switching away (or refreshing on another chat) sends them to History.
+        list = (list || []).filter(function (c) {
+            if (!c) return false;
+            if (!c.ip_blocked) return true;
+            var id = parseInt(c.id, 10) || 0;
+            return !!(selectedId && id === selectedId);
+        });
         if (!inboxSearch) {
             return list;
         }
@@ -718,7 +742,9 @@
         html += esc(c.last_message || ' - ');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
-        if (isReturningVisitor(c)) {
+        if (c.ip_blocked) {
+            html += '<span class="lc-badge lc-badge-blocked" title="Visitor IP is blocked">Blocked</span>';
+        } else if (isReturningVisitor(c)) {
             html += '<span class="lc-badge lc-badge-returning" title="' + esc(visitorKindLabel(c)) + '">Returning</span>';
         } else if (status === 'waiting') {
             // "New" only for unassigned queue — hide once chat is active/being viewed
@@ -727,19 +753,27 @@
         var cidNum = parseInt(c.id, 10) || 0;
         var isViewing = !!(selectedId && cidNum === selectedId);
         var unreadCount = parseInt(c.unread, 10) || 0;
-        if (!isViewing && unreadCount > 0) {
+        if (c.ip_blocked) {
+            // Blocked replaces the normal active/waiting status chip
+        } else if (!isViewing && unreadCount > 0) {
             html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
         } else {
             var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-            html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(status) + '</span>';
+            var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
+            html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
         }
-        if (c.agent_name && status === 'active') {
+        if (c.agent_name && status === 'active' && !c.ip_blocked) {
             html += '<span class="lc-chat-item-agent"><i class="ti ti-user"></i> ' + esc(c.agent_name) + '</span>';
         }
         if (c.reference) {
             html += '<span class="lc-chat-item-ticket" title="Support ticket">' + esc(c.reference) + '</span>';
         }
-        html += '</div></div></div>';
+        html += '</div></div>';
+        if (status !== 'closed') {
+            html += '<button type="button" class="lc-chat-item-close" data-close-id="' + esc(String(c.id)) + '"' +
+                ' title="Close chat" aria-label="Close chat"><i class="ti ti-x" aria-hidden="true"></i></button>';
+        }
+        html += '</div>';
         return html;
     }
 
@@ -769,10 +803,10 @@
 
     function inboxRowRank(row) {
         var status = String((row && row.status) || '');
+        // Only for picking which duplicate row to keep — NOT for list display order
         var statusRank = status === 'waiting' ? 0 : (status === 'active' ? 1 : 2);
-        var ts = Date.parse(String((row && (row.last_message_at || row.started_at)) || '')) || 0;
         var id = parseInt((row && row.id) || 0, 10) || 0;
-        return [statusRank, -ts, -id];
+        return [statusRank, -id];
     }
 
     function rankBetter(a, b) {
@@ -783,6 +817,44 @@
             if (ra[i] > rb[i]) return false;
         }
         return false;
+    }
+
+    /**
+     * Keep chats glued in place. Existing ids stay where they were;
+     * only brand-new chats are prepended. Message activity never reorders.
+     */
+    function applyStableInboxOrder(list) {
+        list = list || [];
+        var byId = {};
+        list.forEach(function (row) {
+            if (!row) return;
+            var id = parseInt(row.id, 10) || 0;
+            if (id > 0) byId[id] = row;
+        });
+        var out = [];
+        var seen = {};
+        (inboxStableIds || []).forEach(function (id) {
+            id = parseInt(id, 10) || 0;
+            if (id > 0 && byId[id] && !seen[id]) {
+                out.push(byId[id]);
+                seen[id] = true;
+            }
+        });
+        // Truly new conversations (first time in this session/tab) — show at top once
+        var newcomers = [];
+        list.forEach(function (row) {
+            if (!row) return;
+            var id = parseInt(row.id, 10) || 0;
+            if (id > 0 && !seen[id]) {
+                newcomers.push(row);
+                seen[id] = true;
+            }
+        });
+        out = newcomers.concat(out);
+        inboxStableIds = out.map(function (row) {
+            return parseInt(row.id, 10) || 0;
+        }).filter(function (id) { return id > 0; });
+        return out;
     }
 
     function collapseInboxConversations(list) {
@@ -821,8 +893,47 @@
                 best[g] = row;
             }
         });
-        return Object.keys(best).map(function (k) { return best[k]; }).sort(function (a, b) {
-            return rankBetter(a, b) ? -1 : (rankBetter(b, a) ? 1 : 0);
+        var collapsed = Object.keys(best).map(function (k) { return best[k]; });
+        // Never sort by last_message_at — keep positions stable
+        return applyStableInboxOrder(collapsed);
+    }
+
+    function patchInboxRowActivity(conversationId, messagePayload) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id) return false;
+        var found = false;
+        var msg = messagePayload || {};
+        var text = String(msg.message || msg.body || '').trim();
+        var sender = String(msg.sender_type || '');
+        lastConversations = (lastConversations || []).map(function (row) {
+            if ((parseInt(row.id, 10) || 0) !== id) return row;
+            found = true;
+            var next = Object.assign({}, row);
+            if (text) {
+                next.last_message = text.slice(0, 200);
+            }
+            if (sender === 'visitor' && id !== selectedId) {
+                next.unread = (parseInt(next.unread, 10) || 0) + 1;
+            }
+            // Update preview/time fields but do NOT reshuffle list order
+            if (msg.created_at) {
+                next.last_message_at = msg.created_at;
+            }
+            return next;
+        });
+        if (!found) return false;
+        paintConversationList(filterConversations(lastConversations));
+        return true;
+    }
+
+    function pruneInboxStableIds() {
+        var alive = {};
+        (lastConversations || []).forEach(function (row) {
+            var id = parseInt(row.id, 10) || 0;
+            if (id > 0) alive[id] = true;
+        });
+        inboxStableIds = (inboxStableIds || []).filter(function (id) {
+            return !!alive[parseInt(id, 10) || 0];
         });
     }
 
@@ -848,6 +959,7 @@
         var status = String(c.status || '');
         if (!status) return;
         var found = false;
+        var beforeKey = inboxListPaintKey(lastConversations);
         lastConversations = (lastConversations || []).map(function (row) {
             if (parseInt(row.id, 10) !== id) return row;
             found = true;
@@ -869,16 +981,64 @@
             return next;
         });
         if (!found) {
-            // Keep open chat visible in the list
+            // Keep open chat visible in the list (new id → top once via stable order)
             var seeded = Object.assign({}, c);
             if (selectedId && id === selectedId) seeded.unread = 0;
-            lastConversations = [seeded].concat(lastConversations || []);
+            lastConversations = applyStableInboxOrder([seeded].concat(lastConversations || []));
+        } else {
+            // Same set of chats — never reshuffle on status/preview sync
+            lastConversations = applyStableInboxOrder(lastConversations);
         }
-        lastConversations = collapseInboxConversations(lastConversations);
+        var afterKey = inboxListPaintKey(lastConversations);
+        if (beforeKey === afterKey) {
+            // Same order + content — update relative time only, avoid blink
+            var el = listEl ? listEl.querySelector('.lc-chat-item[data-id="' + id + '"]') : null;
+            var row = null;
+            for (var i = 0; i < lastConversations.length; i++) {
+                if ((parseInt(lastConversations[i].id, 10) || 0) === id) {
+                    row = lastConversations[i];
+                    break;
+                }
+            }
+            if (el && row) {
+                syncConversationItemEl(el, row);
+            }
+            return;
+        }
         paintConversationList(filterConversations(lastConversations));
     }
 
-        function conversationItemSignature(c) {
+    function bumpConversationActivity(conversationId, messageText) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id) return;
+        var nowIso = new Date().toISOString();
+        var found = false;
+        lastConversations = (lastConversations || []).map(function (row) {
+            if ((parseInt(row.id, 10) || 0) !== id) return row;
+            found = true;
+            var next = Object.assign({}, row, {
+                last_message_at: nowIso,
+                unread: selectedId === id ? 0 : row.unread
+            });
+            if (messageText) {
+                next.last_message = String(messageText).slice(0, 200);
+            }
+            return next;
+        });
+        if (!found) return;
+        // Stay in place — only preview/unread change
+        paintConversationList(filterConversations(lastConversations));
+    }
+
+    function activityStamp(ts) {
+        return String(ts || '')
+            .replace('T', ' ')
+            .replace(/\.\d+Z?$/i, '')
+            .replace(/Z$/i, '')
+            .slice(0, 19);
+    }
+
+    function conversationItemSignature(c) {
         return [
             c.id,
             c.status || '',
@@ -891,8 +1051,17 @@
             c.brand_name || '',
             c.visitor_email || '',
             c.visitor_phone || '',
-            isReturningVisitor(c) ? '1' : '0'
+            isReturningVisitor(c) ? '1' : '0',
+            c.ip_blocked ? '1' : '0',
+            // Normalized so ISO vs MySQL strings don't thrash the list
+            activityStamp(c.last_message_at)
         ].join('\u001f');
+    }
+
+    function inboxListPaintKey(conversations) {
+        return (conversations || []).map(function (c) {
+            return conversationItemSignature(c);
+        }).join('|');
     }
 
     function inboxOrderKey(conversations) {
@@ -959,10 +1128,10 @@
         if (currentTab === 'waiting') {
             html = section('Unassigned', unassigned, 'Newest');
         } else if (currentTab === 'active') {
-            html = section('My chats', mine.concat(other), 'Newest');
+            html = section('My chats', mine.concat(other), '');
         } else {
             // All: every status, in clear groups
-            html += section('Unassigned', unassigned, 'Waiting');
+            html += section('Unassigned', unassigned, 'Incoming');
             html += section('My chats', mine, 'Active');
             html += section('Assigned', other, 'Active');
             html += section('Closed', closed, '');
@@ -1023,6 +1192,7 @@
         }
         if (!conversations.length) {
             listEl.dataset.inboxOrder = '';
+            listEl.dataset.paintKey = '';
             if (inboxSearch) {
                 listEl.innerHTML = '<div class="lc-chat-inbox-empty"><i class="ti ti-search-off"></i><p>No matches</p><span>Try another search term</span></div>';
             } else {
@@ -1031,37 +1201,59 @@
             return;
         }
 
+        var paintKey = currentTab + '#' + inboxListPaintKey(conversations);
+        if (listEl.dataset.paintKey === paintKey && listEl.querySelector('.lc-chat-item[data-id]')) {
+            return;
+        }
+
         var orderKey = currentTab + ':' + inboxOrderKey(conversations);
-        var missingRow = conversations.some(function (c) {
-            return !listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
+        var existingMap = {};
+        listEl.querySelectorAll('.lc-chat-item[data-id]').forEach(function (el) {
+            existingMap[el.getAttribute('data-id')] = el;
         });
-        var domCount = listEl.querySelectorAll('.lc-chat-item[data-id]').length;
-        if (listEl.dataset.inboxOrder === orderKey
-            && !missingRow
-            && domCount === conversations.length
-            && listEl.querySelector('.lc-chat-item[data-id]')) {
-            conversations.forEach(function (c) {
-                var el = listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
-                if (!el) {
-                    return;
+        var canReuse = Object.keys(existingMap).length > 0
+            && conversations.every(function (c) {
+                return !!existingMap[String(c.id)];
+            })
+            && Object.keys(existingMap).length === conversations.length;
+
+        if (canReuse) {
+            // Rebuild structure but reuse unchanged row nodes (cuts blink on reorder)
+            var wrap = document.createElement('div');
+            wrap.innerHTML = buildInboxHtml(conversations);
+            wrap.querySelectorAll('.lc-chat-item[data-id]').forEach(function (ph) {
+                var id = ph.getAttribute('data-id');
+                var existing = existingMap[id];
+                if (!existing || !ph.parentNode) return;
+                var row = null;
+                for (var i = 0; i < conversations.length; i++) {
+                    if (String(conversations[i].id) === id) {
+                        row = conversations[i];
+                        break;
+                    }
                 }
-                var sig = conversationItemSignature(c);
-                if (el.dataset.sig === sig) {
-                    syncConversationItemEl(el, c);
-                    return;
+                if (!row) return;
+                var sig = conversationItemSignature(row);
+                if (existing.dataset.sig === sig) {
+                    syncConversationItemEl(existing, row);
+                    ph.parentNode.replaceChild(existing, ph);
                 }
-                var wrap = document.createElement('div');
-                wrap.innerHTML = renderConversationItem(c);
-                var next = wrap.firstElementChild;
-                if (next) {
-                    el.replaceWith(next);
-                }
+                // else keep freshly rendered placeholder
             });
+            while (listEl.firstChild) {
+                listEl.removeChild(listEl.firstChild);
+            }
+            while (wrap.firstChild) {
+                listEl.appendChild(wrap.firstChild);
+            }
+            listEl.dataset.inboxOrder = orderKey;
+            listEl.dataset.paintKey = paintKey;
             return;
         }
 
         listEl.innerHTML = buildInboxHtml(conversations);
         listEl.dataset.inboxOrder = orderKey;
+        listEl.dataset.paintKey = paintKey;
     }
 
     function esc(s) {
@@ -1109,8 +1301,19 @@
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length || !messagesEl) return;
         receipts.forEach(function (r) {
-            var el = messagesEl.querySelector('.lc-msg[data-id="' + r.id + '"] .lc-msg-ticks');
-            if (!el) return;
+            var rid = parseInt(r && r.id, 10) || 0;
+            if (rid < 1) return;
+            var msgEl = messagesEl.querySelector('.lc-msg[data-id="' + rid + '"]');
+            if (!msgEl) return;
+            var el = msgEl.querySelector('.lc-msg-ticks');
+            if (!el) {
+                // Older bubble missing ticks node — inject into foot
+                var foot = msgEl.querySelector('.lc-msg-foot');
+                if (!foot || !msgEl.classList.contains('agent')) return;
+                var status0 = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
+                foot.insertAdjacentHTML('beforeend', msgTicksHtml(status0));
+                return;
+            }
             var status = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
             var wrap = document.createElement('div');
             wrap.innerHTML = msgTicksHtml(status);
@@ -1464,7 +1667,7 @@
                 var badge = document.getElementById('lc-waiting-badge');
                 if (data.waiting_count > 0) {
                     badge.style.display = 'inline-flex';
-                    badge.textContent = data.waiting_count + ' waiting';
+                    badge.textContent = data.waiting_count + ' incoming';
                 } else {
                     badge.style.display = 'none';
                 }
@@ -1489,6 +1692,19 @@
                         showReturningVisitorToast(returningName);
                     } else if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
                         playIncomingSound();
+                        if (waiting > lastInboxWaiting && window.Notification && Notification.permission === 'granted') {
+                            try {
+                                var n = new Notification('Incoming chat', {
+                                    body: (returningName || 'A visitor') + ' is waiting in the queue',
+                                    tag: 'lc-inbox-waiting',
+                                    renotify: true
+                                });
+                                n.onclick = function () {
+                                    try { window.focus(); } catch (eF) {}
+                                    try { n.close(); } catch (eC) {}
+                                };
+                            } catch (eN) { /* ignore */ }
+                        }
                     }
                 } else {
                     inboxSoundReady = true;
@@ -1499,11 +1715,12 @@
 
                 if (!data.conversations.length) {
                     lastConversations = [];
+                    inboxStableIds = [];
                     paintConversationList([]);
                     return;
                 }
                 var rawList = data.conversations || [];
-                // Always one row per IP (even while searching name/phone)
+                // Dedupe + keep sticky positions (no bump-to-top on new messages)
                 lastConversations = collapseInboxConversations(rawList);
                 // Open chat is being viewed — never keep unread/"N new" on that row
                 if (selectedId) {
@@ -1513,6 +1730,14 @@
                         return Object.assign({}, row, { unread: 0 });
                     });
                 }
+                // Blocked chats not currently open → History (leave inbox)
+                (lastConversations || []).slice().forEach(function (row) {
+                    if (!row || !row.ip_blocked) return;
+                    var rid = parseInt(row.id, 10) || 0;
+                    if (rid && (!selectedId || rid !== selectedId)) {
+                        archiveBlockedConversation(rid);
+                    }
+                });
                 paintConversationList(filterConversations(lastConversations));
 
                 // Keep the open chat mounted even if inbox hides IP duplicates.
@@ -1634,6 +1859,7 @@
     function canComposeChat(c, serverFlag) {
         if (!c) return false;
         if (c.status === 'closed') return false;
+        if (c.ip_blocked || currentIpBlocked) return false;
         if (typeof serverFlag === 'boolean') {
             return serverFlag;
         }
@@ -1692,6 +1918,9 @@
 
     function updateChatActions(c, canCompose) {
         canCompose = canComposeChat(c, canCompose);
+        if (currentIpBlocked || (c && c.ip_blocked)) {
+            canCompose = false;
+        }
         var transfer = canTransferChat(c);
         var assignedId = parseInt(c.agent_id || 0, 10);
         var isUnassigned = c.status === 'waiting' || (c.status === 'active' && !parseInt(c.agent_id || 0, 10));
@@ -1701,6 +1930,8 @@
         // Always sync placeholder with live status (reopen must clear "Chat closed...")
         if (c.status === 'closed') {
             replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+        } else if (currentIpBlocked || (c && c.ip_blocked)) {
+            replyInput.placeholder = 'IP blocked — messaging disabled';
         } else if (chatTransferredAway) {
             replyInput.placeholder = 'Transferred - view only';
         } else if (!canCompose) {
@@ -1803,11 +2034,59 @@
             });
     }
 
+    var blockedArchiveInFlight = {};
+
+    function markConversationBlocked(conversationId, blocked) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id) return;
+        lastConversations = (lastConversations || []).map(function (row) {
+            if ((parseInt(row.id, 10) || 0) !== id) return row;
+            return Object.assign({}, row, { ip_blocked: !!blocked });
+        });
+        paintConversationList(filterConversations(lastConversations));
+    }
+
+    function archiveBlockedConversation(conversationId) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id || blockedArchiveInFlight[id]) return;
+        blockedArchiveInFlight[id] = true;
+        // Optimistically drop from live inbox
+        lastConversations = (lastConversations || []).filter(function (row) {
+            return (parseInt(row.id, 10) || 0) !== id;
+        });
+        pruneInboxStableIds();
+        paintConversationList(filterConversations(lastConversations));
+        fetch(base + '/api/agent-close.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: id, blocked_leave: true })
+        }).then(function (r) { return r.json(); }).then(function () {
+            delete blockedArchiveInFlight[id];
+            loadConversations();
+        }).catch(function () {
+            delete blockedArchiveInFlight[id];
+            loadConversations();
+        });
+    }
+
     function openConversation(id) {
+        id = parseInt(id, 10) || 0;
+        if (!id) return;
+        var previousId = selectedId;
+        var previousBlocked = !!currentIpBlocked;
+        if (!previousBlocked && previousId && lastConversations && lastConversations.length) {
+            for (var pi = 0; pi < lastConversations.length; pi++) {
+                if ((parseInt(lastConversations[pi].id, 10) || 0) === previousId) {
+                    previousBlocked = !!lastConversations[pi].ip_blocked;
+                    break;
+                }
+            }
+        }
         lastDetailsMapKey = '';
-        lastDetailsMapConvId = parseInt(id, 10) || 0;
+        lastDetailsMapConvId = id;
         clearPendingAttachment();
-        if (id !== selectedId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
+        if (id !== previousId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
@@ -1838,6 +2117,7 @@
         setText('lc-details-name', 'Loading...');
         currentVisitorEmail = '';
         currentVisitorPhone = '';
+        currentVisitorName = '';
         contactFieldsDirty = false;
         populateContactFields(true);
         setText('lc-details-visitor-kind', '-');
@@ -1861,11 +2141,15 @@
         loadCanned();
         loadPageJourney(true);
         clearLocalUnread(id);
-        // Seed Returning/New from inbox row immediately (before poll returns)
+        // Seed Returning/New / blocked from inbox row immediately (before poll returns)
         if (lastConversations && lastConversations.length) {
             for (var si = 0; si < lastConversations.length; si++) {
-                if ((parseInt(lastConversations[si].id, 10) || 0) === (parseInt(id, 10) || 0)) {
+                if ((parseInt(lastConversations[si].id, 10) || 0) === id) {
                     setVisitorKindBadge(lastConversations[si]);
+                    if (lastConversations[si].ip_blocked) {
+                        currentIpBlocked = true;
+                        updateBlockIpMenu();
+                    }
                     break;
                 }
             }
@@ -1878,6 +2162,10 @@
         // Re-paint list so New / N new badges drop for the open chat
         if (lastConversations && lastConversations.length) {
             paintConversationList(filterConversations(lastConversations));
+        }
+        // Leaving a blocked chat → History (gone from inbox)
+        if (previousId && previousId !== id && previousBlocked) {
+            archiveBlockedConversation(previousId);
         }
     }
 
@@ -1989,6 +2277,14 @@
                 }
                 currentIpBlocked = true;
                 renderVisitorDetails(currentConversationMeta, true);
+                markConversationBlocked(selectedId, true);
+                updateBlockIpMenu();
+                if (replyInput) {
+                    replyInput.disabled = true;
+                    replyInput.placeholder = 'IP blocked — messaging disabled';
+                }
+                var sendBtn = document.getElementById('lc-send-reply');
+                if (sendBtn) sendBtn.disabled = true;
             })
             .catch(function () {
                 if (okBtn) {
@@ -2034,6 +2330,9 @@
                 }
                 currentIpBlocked = false;
                 renderVisitorDetails(currentConversationMeta, false);
+                markConversationBlocked(selectedId, false);
+                updateBlockIpMenu();
+                pollMessages();
             })
             .catch(function () {
                 if (okBtn) {
@@ -2104,6 +2403,9 @@
                 if (c) {
                     syncConversationListStatus(c);
                     clearLocalUnread(conversationId);
+                    if (typeof c.ip_blocked === 'boolean') {
+                        markConversationBlocked(conversationId, c.ip_blocked);
+                    }
                 }
 
                 function paintFirstLoadFrame() {
@@ -2294,6 +2596,8 @@
                 } else if (!tempEl) {
                     pollMessages();
                 }
+                // Keep inbox order stable & correct: agent reply also counts as newest
+                bumpConversationActivity(sendConvId, msg);
                 loadConversations();
                 return;
             }
@@ -2328,6 +2632,7 @@
             document.querySelectorAll('.lc-chat-tab').forEach(function (t) { t.classList.remove('active'); });
             tab.classList.add('active');
             currentTab = tab.dataset.tab;
+            inboxStableIds = [];
             loadConversations();
         });
     });
@@ -2346,6 +2651,18 @@
     });
 
     listEl.addEventListener('click', function (e) {
+        var closeBtn = e.target.closest('.lc-chat-item-close');
+        if (closeBtn && listEl.contains(closeBtn)) {
+            e.preventDefault();
+            e.stopPropagation();
+            inboxClickLock = false;
+            if (inboxClickLockTimer) {
+                clearTimeout(inboxClickLockTimer);
+                inboxClickLockTimer = null;
+            }
+            closeConversationById(parseInt(closeBtn.getAttribute('data-close-id'), 10) || 0);
+            return;
+        }
         var item = e.target.closest('.lc-chat-item');
         if (item) {
             inboxClickLock = false;
@@ -2473,6 +2790,7 @@
     var emailTranscriptSend = document.getElementById('lc-email-transcript-send');
     var emailTranscriptTo = document.getElementById('lc-email-transcript-to');
     var emailPanelStatus = document.getElementById('lc-email-panel-status');
+    var detailsNameInput = document.getElementById('lc-details-name-input');
     var detailsEmailInput = document.getElementById('lc-details-email-input');
     var detailsPhoneInput = document.getElementById('lc-details-phone-input');
     var detailsContactSaveBtn = document.getElementById('lc-details-contact-save');
@@ -2481,11 +2799,12 @@
     function isContactFieldActive() {
         if (contactFieldsDirty) return true;
         var active = document.activeElement;
-        return active === detailsEmailInput || active === detailsPhoneInput;
+        return active === detailsNameInput || active === detailsEmailInput || active === detailsPhoneInput;
     }
 
     function populateContactFields(force) {
         if (!force && isContactFieldActive()) return;
+        if (detailsNameInput) detailsNameInput.value = currentVisitorName || '';
         if (detailsEmailInput) detailsEmailInput.value = currentVisitorEmail || '';
         if (detailsPhoneInput) detailsPhoneInput.value = currentVisitorPhone || '';
         if (force) contactFieldsDirty = false;
@@ -2498,11 +2817,12 @@
         detailsContactStatus.classList.toggle('is-ok', !!msg && !isError);
     }
 
-    function applySavedContactToList(email, phone) {
+    function applySavedContactToList(name, email, phone) {
         if (!selectedId) return;
         lastConversations = (lastConversations || []).map(function (row) {
             if (parseInt(row.id, 10) !== selectedId) return row;
             return Object.assign({}, row, {
+                visitor_name: name,
                 visitor_email: email,
                 visitor_phone: phone
             });
@@ -2512,8 +2832,14 @@
 
     function saveVisitorContact() {
         if (!selectedId) return;
+        var name = detailsNameInput ? detailsNameInput.value.trim() : '';
         var email = detailsEmailInput ? detailsEmailInput.value.trim() : '';
         var phone = detailsPhoneInput ? detailsPhoneInput.value.trim() : '';
+        if (!name) {
+            setContactStatus('Name is required', true);
+            if (detailsNameInput) detailsNameInput.focus();
+            return;
+        }
         if (detailsContactSaveBtn) detailsContactSaveBtn.disabled = true;
         setContactStatus('Saving...', false);
         fetch(base + '/api/agent-update-visitor.php', {
@@ -2522,6 +2848,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 conversation_id: selectedId,
+                name: name,
                 email: email,
                 phone: phone
             })
@@ -2531,11 +2858,16 @@
                 setContactStatus((data && data.error) || 'Unable to save', true);
                 return;
             }
+            currentVisitorName = (data.name || '').trim();
             currentVisitorEmail = (data.email || '').trim();
             currentVisitorPhone = (data.phone || '').trim();
             contactFieldsDirty = false;
             populateContactFields(true);
-            applySavedContactToList(currentVisitorEmail, currentVisitorPhone);
+            applySavedContactToList(currentVisitorName, currentVisitorEmail, currentVisitorPhone);
+            var displayName = currentVisitorName || 'Unnamed customer';
+            setText('lc-details-name', displayName);
+            updateHeaderAvatar(displayName);
+            if (visitorNameEl) visitorNameEl.textContent = displayName;
             if (emailTranscriptTo && currentVisitorEmail) {
                 emailTranscriptTo.value = currentVisitorEmail;
             }
@@ -2635,7 +2967,7 @@
     if (emailTranscriptBtn) emailTranscriptBtn.addEventListener('click', openEmailPanel);
     if (detailsEmailChatBtn) detailsEmailChatBtn.addEventListener('click', openEmailPanel);
     if (detailsContactSaveBtn) detailsContactSaveBtn.addEventListener('click', saveVisitorContact);
-    [detailsEmailInput, detailsPhoneInput].forEach(function (el) {
+    [detailsNameInput, detailsEmailInput, detailsPhoneInput].forEach(function (el) {
         if (!el) return;
         el.addEventListener('input', function () {
             contactFieldsDirty = true;
@@ -2668,21 +3000,40 @@
         emailPanel.addEventListener('click', function (e) { e.stopPropagation(); });
     }
 
-    document.getElementById('lc-close-chat').addEventListener('click', function () {
-        if (!selectedId || !confirm('Close this chat?')) return;
+    function closeConversationById(conversationId) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!id) return;
+        if (!confirm('Close this chat?')) return;
         closeTransferPanel();
         closeMoreMenu();
         fetch(base + '/api/agent-close.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function () {
-            selectedId = 0;
-            activeEl.style.display = 'none';
-            emptyEl.style.display = 'flex';
+            body: JSON.stringify({ conversation_id: id })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data && data.success === false) {
+                alert(data.error || 'Could not close chat');
+                return;
+            }
+            if (selectedId === id) {
+                selectedId = 0;
+                if (activeEl) activeEl.style.display = 'none';
+                if (emptyEl) emptyEl.style.display = 'flex';
+            }
+            lastConversations = (lastConversations || []).filter(function (row) {
+                return (parseInt(row.id, 10) || 0) !== id;
+            });
+            pruneInboxStableIds();
+            paintConversationList(filterConversations(lastConversations));
             loadConversations();
+        }).catch(function () {
+            alert('Could not close chat');
         });
+    }
+
+    document.getElementById('lc-close-chat').addEventListener('click', function () {
+        closeConversationById(selectedId);
     });
 
     if (cannedSelect) {
@@ -3100,24 +3451,34 @@
         }, true);
     }
 
+    function isRealtimeWsLive() {
+        return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
+    }
+
     function resetPollTimers() {
-        // No message polling — WebSocket only. Keep a slow inbox refresh so
-        // inactivity warn/close still runs via agent-conversations sweep.
-        // Also refresh receipts for the open chat (backup if WS receipt event is missed).
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
+        if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
         pollTimer = null;
+        listTimer = null;
+        window.__lcReceiptTimer = null;
+
+        if (isRealtimeWsLive()) {
+            // WS owns live bubbles — but receipt ticks are easy to miss once.
+            // Light poll keeps agent blue ticks in sync without inbox thrash.
+            window.__lcReceiptTimer = setInterval(function () {
+                if (selectedId) pollMessages();
+            }, 4000);
+            return;
+        }
+
+        // Fallback when WS is down or mode=poll
+        pollTimer = setInterval(function () {
+            if (selectedId) pollMessages();
+        }, Math.max(2000, pollMs || 1500));
         listTimer = setInterval(function () {
             loadConversations();
-            if (selectedId) {
-                pollMessages();
-            }
-        }, 30000);
-        // Fast receipt ticks while a chat is open
-        if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
-        window.__lcReceiptTimer = setInterval(function () {
-            if (selectedId) pollMessages();
-        }, 2500);
+        }, 15000);
     }
 
     function appendLiveMessage(m) {
@@ -3209,11 +3570,11 @@
             });
             realtimeClient.on('connected', function () {
                 resetPollTimers();
+                // Pick up any read receipts missed while socket was down
                 if (selectedId) pollMessages();
-                loadConversations();
             });
             realtimeClient.on('disconnected', function () {
-                resetPollTimers();
+                resetPollTimers(); // switches to poll fallback
                 if (selectedId) pollMessages();
             });
             realtimeClient.on('message.new', function (payload) {
@@ -3224,17 +3585,30 @@
                     } else {
                         pollMessages();
                     }
+                    clearLocalUnread(cid);
+                    return;
                 }
-                loadConversations();
+                // Other chat: update "N new" + preview in place — no list jump
+                if (cid && patchInboxRowActivity(cid, payload && payload.message)) {
+                    playIncomingSound();
+                    return;
+                }
+                // Prefer patch; only full list reload if we cannot patch from payload
+                if (!cid || !(payload && payload.message)) {
+                    loadConversations();
+                }
             });
             realtimeClient.on('inbox.changed', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (selectedId && cid === selectedId) {
                     if (payload && payload.message && payload.message.id) {
                         appendLiveMessage(payload.message);
-                    } else {
-                        pollMessages();
                     }
+                    clearLocalUnread(cid);
+                    return;
+                }
+                if (cid && patchInboxRowActivity(cid, payload && payload.message)) {
+                    return;
                 }
                 loadConversations();
             });
@@ -3252,6 +3626,7 @@
                 if (payload && payload.receipts) {
                     applyReceipts(payload.receipts);
                 } else {
+                    // Event without body — refresh ticks from API
                     pollMessages();
                 }
             });

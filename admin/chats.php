@@ -210,6 +210,8 @@ require __DIR__ . '/includes/header.php';
 
                 <div class="lc-details-contact" id="lc-details-contact">
                     <h4 class="lc-details-contact-title">Contact</h4>
+                    <label class="lc-details-contact-label" for="lc-details-name-input">Name</label>
+                    <input type="text" id="lc-details-name-input" class="lc-details-contact-input" placeholder="Add customer name" autocomplete="off" maxlength="120">
                     <label class="lc-details-contact-label" for="lc-details-email-input">Email</label>
                     <input type="email" id="lc-details-email-input" class="lc-details-contact-input" placeholder="Add email address" autocomplete="off" inputmode="email">
                     <label class="lc-details-contact-label" for="lc-details-phone-input">Phone</label>

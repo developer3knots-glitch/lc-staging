@@ -64,6 +64,110 @@ function lc_mark_visitor_left_site(int $visitorId): void
     }
 }
 
+/**
+ * Visitors currently browsing the site (Traffic "Browsing" tab).
+ * On-site recently, not left, and not in an open chat (waiting/active).
+ */
+function lc_browsing_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 20): int
+{
+    return lc_on_site_visitors_count($brandId, $accountId, $onlineSec, false);
+}
+
+/**
+ * Customers online = anyone currently on the site (browsing, waiting, or chatting).
+ * Waiting / active chats count as online — they are still on your website.
+ */
+function lc_customers_online_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 90): int
+{
+    return lc_on_site_visitors_count($brandId, $accountId, $onlineSec, true);
+}
+
+/**
+ * @param bool $includeOpenChats true = browsing + waiting + chatting; false = browsing only
+ */
+function lc_on_site_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 20, bool $includeOpenChats = true): int
+{
+    lc_ensure_brands_schema();
+    lc_ensure_page_views_schema();
+    $onlineSec = max(5, min(300, $onlineSec));
+    $db = lc_db();
+
+    $brandSql = '1=1';
+    $params = [];
+    if ($brandId !== null && $brandId > 0) {
+        $brandSql = 'brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandSql = 'brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
+    } else {
+        return 0;
+    }
+
+    $excludeOpen = '';
+    if (!$includeOpenChats) {
+        $excludeOpen = "
+          AND NOT EXISTS (
+            SELECT 1 FROM conversations c
+            WHERE c.visitor_id = v.id
+              AND c.{$brandSql}
+              AND c.status IN ('waiting', 'active')
+              AND DATE(c.started_at) = CURDATE()
+          )
+        ";
+    }
+
+    // Open chats: also count if last_seen is a bit older (poll/WS gaps) but not left.
+    $presenceSql = "v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$onlineSec} SECOND)";
+    if ($includeOpenChats) {
+        $presenceSql = "(
+            v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$onlineSec} SECOND)
+            OR EXISTS (
+                SELECT 1 FROM conversations co
+                WHERE co.visitor_id = v.id
+                  AND co.{$brandSql}
+                  AND co.status IN ('waiting', 'active')
+                  AND DATE(co.started_at) = CURDATE()
+                  AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 180 SECOND)
+            )
+        )";
+    }
+
+    $sql = "
+        SELECT COUNT(*) FROM visitors v
+        WHERE v.left_site_at IS NULL
+          AND {$presenceSql}
+          AND (
+            EXISTS (
+                SELECT 1 FROM visitor_page_views pv
+                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
+            )
+            OR EXISTS (
+                SELECT 1 FROM conversations cx
+                WHERE cx.visitor_id = v.id AND cx.{$brandSql}
+            )
+          )
+          {$excludeOpen}
+    ";
+
+    $exec = $params;
+    if ($includeOpenChats) {
+        // brandSql in: presence OR, EXISTS pv, EXISTS cx
+        $exec = array_merge($params, $params, $params);
+    } else {
+        // brandSql in: EXISTS pv, EXISTS cx, NOT EXISTS open
+        $exec = array_merge($params, $params, $params);
+    }
+
+    try {
+        $stmt = $db->prepare($sql);
+        $stmt->execute($exec);
+        return (int) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
 function lc_record_visitor_page_view(int $visitorId, int $brandId, string $pageUrl, ?string $title, ?string $referrer): void
 {
     lc_ensure_page_views_schema();

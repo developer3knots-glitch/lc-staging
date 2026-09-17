@@ -37,6 +37,12 @@ try {
     $scopeAgentId = $scope === 'mine' ? $agentId : null;
 
     $waiting = lc_waiting_count($agentBrandId, $accountId);
+    $browsing = function_exists('lc_browsing_visitors_count')
+        ? lc_browsing_visitors_count($agentBrandId, $accountId)
+        : 0;
+    $customersOnline = function_exists('lc_customers_online_count')
+        ? lc_customers_online_count($agentBrandId, $accountId)
+        : ($browsing + $waiting);
 
     $activeAll = lc_active_count($agentBrandId, $accountId);
     $closedTodayAll = lc_closed_today_count($agentBrandId, $accountId);
@@ -72,8 +78,9 @@ try {
     $unread = lc_unread_count_for_agent($agentId);
 
     $recentSql = "
-        SELECT c.id, c.status, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
-               v.ip_address AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+        SELECT c.id, c.status, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
+               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+               v.user_agent AS visitor_user_agent,
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
                (CASE
                     WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
@@ -90,7 +97,7 @@ try {
     $stmt = $db->prepare($recentSql);
     $stmt->execute(array_merge([$agentId], $brandParams));
     $recent = $stmt->fetchAll();
-    // Same IP → one row (active preferred over closed)
+    // Same IP + same day → one row (active preferred over closed)
     if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
         $recent = lc_dedupe_inbox_conversations_by_ip($recent);
     }
@@ -108,6 +115,9 @@ try {
             $msg = substr($msg, 0, 72) . '...';
         }
         $name = $r['visitor_name'] ?: 'Visitor';
+        $device = function_exists('lc_parse_user_agent')
+            ? lc_parse_user_agent((string) ($r['visitor_user_agent'] ?? ''))
+            : ['device' => 'Unknown', 'os' => 'Unknown', 'browser' => 'Unknown', 'label' => 'Unknown'];
         $recentFormatted[] = [
             'id' => (int) $r['id'],
             'visitor_name' => $name,
@@ -115,10 +125,15 @@ try {
             'brand_name' => $r['brand_name'] ?? '',
             'visitor_ip' => $r['visitor_ip'] ?? '',
             'visitor_country' => $r['visitor_country'] ?? '',
+            'device' => $device['device'] ?? 'Unknown',
+            'device_os' => $device['os'] ?? 'Unknown',
+            'device_browser' => $device['browser'] ?? 'Unknown',
+            'device_label' => $device['label'] ?? 'Unknown',
             'status' => $r['status'],
             'unread' => (int) ($r['unread'] ?? 0),
             'last_msg' => $msg,
             'last_message_at' => $r['last_message_at'] ? lc_to_iso8601($r['last_message_at']) : null,
+            'started_at' => !empty($r['started_at']) ? lc_to_iso8601($r['started_at']) : null,
             'chat_url' => lc_admin_url('chats', ['id' => (int) $r['id']]),
         ];
     }
@@ -138,6 +153,8 @@ try {
         'success' => true,
         'stats' => [
             'waiting' => $waiting,
+            'browsing' => $browsing,
+            'customers_online' => $customersOnline,
             'active' => $activeAll,
             'closed_today' => $closedTodayAll,
             'started_today' => $startedTodayAll,

@@ -103,20 +103,16 @@ try {
             if (!empty($conv['visitor_last_seen'])) {
                 $formattedConv['visitor_last_seen'] = lc_to_iso8601($conv['visitor_last_seen']);
             }
-            if ($visitorId > 0 && function_exists('lc_refresh_visitor_geo')) {
-                $formattedConv['visitor_geo'] = lc_refresh_visitor_geo(
-                    $visitorId,
-                    (string) ($conv['visitor_ip'] ?? ''),
-                    [
-                        'country' => $conv['visitor_country'] ?? '',
-                        'ip_address' => $conv['visitor_ip'] ?? '',
-                        'geo_city' => $conv['visitor_geo_city'] ?? null,
-                        'geo_region' => $conv['visitor_geo_region'] ?? null,
-                        'geo_lat' => $conv['visitor_geo_lat'] ?? null,
-                        'geo_lon' => $conv['visitor_geo_lon'] ?? null,
-                        'geo_source' => $conv['visitor_geo_source'] ?? null,
-                    ]
-                );
+            // Use stored geo only — never block chat open on external IP lookups.
+            if ($visitorId > 0 && function_exists('lc_visitor_geo_payload')) {
+                $formattedConv['visitor_geo'] = lc_visitor_geo_payload([
+                    'visitor_country' => $conv['visitor_country'] ?? '',
+                    'visitor_geo_city' => $conv['visitor_geo_city'] ?? null,
+                    'visitor_geo_region' => $conv['visitor_geo_region'] ?? null,
+                    'visitor_geo_lat' => $conv['visitor_geo_lat'] ?? null,
+                    'visitor_geo_lon' => $conv['visitor_geo_lon'] ?? null,
+                    'geo_source' => $conv['visitor_geo_source'] ?? null,
+                ]);
             }
             return $formattedConv;
         })(),
@@ -125,7 +121,14 @@ try {
         'messages' => $messages,
         'message_cursor' => $messageCursor,
         'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
-        'can_compose' => lc_agent_can_handle_conversation($agent, $conv),
+        'can_compose' => lc_agent_can_handle_conversation($agent, $conv)
+            && !(
+                function_exists('lc_is_ip_blocked')
+                && lc_is_ip_blocked(
+                    (string) ($conv['visitor_ip'] ?? ''),
+                    (function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0) ?: null
+                )
+            ),
         'is_assigned' => (int) ($conv['agent_id'] ?? 0) === (int) $agent['id'],
     ];
 
@@ -134,8 +137,8 @@ try {
     $payload['peer_typing_name'] = $typing['peer_name'] ?? '';
     $payload['peer_typing_preview'] = $typing['peer_typing_preview'] ?? '';
 
-    // Prior history on full open, or dedicated prior=1 follow-up request
-    if ($fullLoad || $priorOnly) {
+    // Prior history only on dedicated prior=1 (after fast first paint of current chat).
+    if ($priorOnly) {
         $payload['prior_threads'] = lc_agent_prior_threads_with_messages(
             (string) ($conv['visitor_ip'] ?? ''),
             $conversationId,

@@ -26,7 +26,11 @@ if (!in_array($status, ['online', 'away', 'offline'], true)) {
 try {
     $stmt = lc_db()->prepare('UPDATE agents SET status = ?, last_seen = NOW() WHERE id = ?');
     $stmt->execute([$status, (int) $agent['id']]);
-    lc_json(['success' => true, 'status' => $status]);
+    $assigned = 0;
+    if ($status === 'online' && function_exists('lc_drain_waiting_queue_for_agent')) {
+        $assigned = lc_drain_waiting_queue_for_agent((int) $agent['id']);
+    }
+    lc_json(['success' => true, 'status' => $status, 'auto_assigned' => $assigned]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

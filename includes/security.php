@@ -4,6 +4,11 @@ require_once __DIR__ . '/db.php';
 
 function lc_ensure_security_schema(): void
 {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
     $pdo = lc_db();
     try {
         $pdo->exec('ALTER TABLE conversations ADD COLUMN access_token VARCHAR(64) NULL AFTER page_url');
@@ -129,6 +134,114 @@ function lc_is_bot_user_agent(?string $ua): bool
     return false;
 }
 
+/**
+ * Parse visitor User-Agent into device / OS / browser for admin details.
+ *
+ * @return array{device:string,os:string,browser:string,label:string,raw:string}
+ */
+function lc_parse_user_agent(?string $ua): array
+{
+    $raw = trim((string) $ua);
+    $empty = [
+        'device' => 'Unknown',
+        'os' => 'Unknown',
+        'browser' => 'Unknown',
+        'label' => 'Unknown',
+        'raw' => $raw,
+    ];
+    if ($raw === '') {
+        return $empty;
+    }
+
+    $lower = strtolower($raw);
+    $device = 'Desktop';
+    if (preg_match('/ipad|tablet|kindle|silk|playbook|nexus (?:7|9|10)|sm-t/i', $raw)) {
+        $device = 'Tablet';
+    } elseif (preg_match('/mobi|iphone|ipod|android.*mobile|windows phone|opera mini|iemobile/i', $raw)) {
+        $device = 'Mobile';
+    } elseif (str_contains($lower, 'android') && !str_contains($lower, 'mobile')) {
+        $device = 'Tablet';
+    }
+
+    $os = 'Unknown';
+    if (preg_match('/windows nt 10/i', $raw)) {
+        $os = 'Windows 10/11';
+    } elseif (preg_match('/windows nt 6\.3/i', $raw)) {
+        $os = 'Windows 8.1';
+    } elseif (preg_match('/windows nt 6\.1/i', $raw)) {
+        $os = 'Windows 7';
+    } elseif (preg_match('/windows/i', $raw)) {
+        $os = 'Windows';
+    } elseif (preg_match('/iphone|ipod/i', $raw)) {
+        $os = 'iOS';
+        if (preg_match('/os ([\d_]+)/i', $raw, $m)) {
+            $os = 'iOS ' . str_replace('_', '.', $m[1]);
+        }
+    } elseif (preg_match('/ipad/i', $raw)) {
+        $os = 'iPadOS';
+        if (preg_match('/os ([\d_]+)/i', $raw, $m)) {
+            $os = 'iPadOS ' . str_replace('_', '.', $m[1]);
+        }
+    } elseif (preg_match('/android ([\d.]+)/i', $raw, $m)) {
+        $os = 'Android ' . $m[1];
+    } elseif (str_contains($lower, 'android')) {
+        $os = 'Android';
+    } elseif (preg_match('/mac os x ([\d_]+)/i', $raw, $m)) {
+        $os = 'macOS ' . str_replace('_', '.', $m[1]);
+    } elseif (str_contains($lower, 'mac os x') || str_contains($lower, 'macintosh')) {
+        $os = 'macOS';
+    } elseif (str_contains($lower, 'cros')) {
+        $os = 'Chrome OS';
+    } elseif (str_contains($lower, 'linux')) {
+        $os = 'Linux';
+    }
+
+    $browser = 'Unknown';
+    if (preg_match('/edg(?:e|a|ios)?\/([\d.]+)/i', $raw, $m)) {
+        $browser = 'Edge ' . $m[1];
+    } elseif (preg_match('/opr\/([\d.]+)|opera\/([\d.]+)/i', $raw, $m)) {
+        $browser = 'Opera ' . ($m[1] !== '' ? $m[1] : $m[2]);
+    } elseif (preg_match('/samsungbrowser\/([\d.]+)/i', $raw, $m)) {
+        $browser = 'Samsung Internet ' . $m[1];
+    } elseif (preg_match('/firefox\/([\d.]+)/i', $raw, $m)) {
+        $browser = 'Firefox ' . $m[1];
+    } elseif (preg_match('/crios\/([\d.]+)/i', $raw, $m)) {
+        $browser = 'Chrome ' . $m[1];
+    } elseif (preg_match('/chrome\/([\d.]+)/i', $raw, $m) && !preg_match('/edg/i', $raw)) {
+        $browser = 'Chrome ' . $m[1];
+    } elseif (preg_match('/version\/([\d.]+).*safari|safari\/([\d.]+)/i', $raw, $m) && !preg_match('/chrome|crios|android/i', $raw)) {
+        $browser = 'Safari ' . ($m[1] !== '' ? $m[1] : ($m[2] ?? ''));
+        $browser = rtrim($browser);
+    } elseif (str_contains($lower, 'safari')) {
+        $browser = 'Safari';
+    }
+
+    // Short versions look cleaner in the rail (Chrome 120.0.0.0 → Chrome 120)
+    $browserShort = $browser;
+    if (preg_match('/^(.+?)\s+(\d+)(?:\.\d+)*.*$/', $browser, $bm)) {
+        $browserShort = $bm[1] . ' ' . $bm[2];
+    }
+    $osShort = $os;
+    if (preg_match('/^(.+?)\s+(\d+)(?:\.\d+)+$/', $os, $om)) {
+        $osShort = $om[1] . ' ' . $om[2];
+    } elseif (preg_match('/^(.+?)\s+(\d+)$/', $os, $om)) {
+        $osShort = $om[1] . ' ' . $om[2];
+    }
+
+    $label = trim($browserShort . ' on ' . $osShort . ' · ' . $device);
+    if (str_starts_with($label, 'Unknown on')) {
+        $label = $device !== 'Unknown' ? $device : 'Unknown';
+    }
+
+    return [
+        'device' => $device,
+        'os' => $osShort,
+        'browser' => $browserShort,
+        'label' => $label,
+        'raw' => $raw,
+    ];
+}
+
 function lc_rate_limit(string $key, int $maxHits, int $windowSeconds): bool
 {
     lc_ensure_security_schema();
@@ -157,6 +270,10 @@ function lc_rate_limit(string $key, int $maxHits, int $windowSeconds): bool
     return true;
 }
 
+/**
+ * Mint a fresh access token (invalidates any previous token for this conversation).
+ * Prefer lc_ensure_chat_token() for normal widget resume/send flows.
+ */
 function lc_issue_chat_token(int $conversationId): string
 {
     lc_ensure_security_schema();
@@ -174,7 +291,39 @@ function lc_validate_chat_token(int $conversationId, string $token): bool
     $stmt = lc_db()->prepare('SELECT access_token FROM conversations WHERE id = ? LIMIT 1');
     $stmt->execute([$conversationId]);
     $stored = $stmt->fetchColumn();
-    return is_string($stored) && hash_equals($stored, $token);
+    return is_string($stored) && $stored !== '' && hash_equals($stored, $token);
+}
+
+/**
+ * Return a usable chat token without needlessly rotating.
+ * Re-issuing on every widget-init races (double init / same-IP claim) and causes
+ * "Invalid session" on the tab that still holds the previous token.
+ *
+ * @param string $preferToken Client token to keep when still valid
+ * @param bool   $forceNew    True only for explicit ended-screen resume takeover
+ */
+function lc_ensure_chat_token(int $conversationId, string $preferToken = '', bool $forceNew = false): string
+{
+    lc_ensure_security_schema();
+    if ($conversationId < 1) {
+        return '';
+    }
+
+    $preferToken = trim($preferToken);
+    if (!$forceNew && $preferToken !== '' && lc_validate_chat_token($conversationId, $preferToken)) {
+        return $preferToken;
+    }
+
+    if (!$forceNew) {
+        $stmt = lc_db()->prepare('SELECT access_token FROM conversations WHERE id = ? LIMIT 1');
+        $stmt->execute([$conversationId]);
+        $stored = $stmt->fetchColumn();
+        if (is_string($stored) && $stored !== '') {
+            return $stored;
+        }
+    }
+
+    return lc_issue_chat_token($conversationId);
 }
 
 /**
@@ -195,18 +344,28 @@ function lc_widget_security_check(array $input, string $ip, ?string $userAgent, 
         return $block;
     }
 
-    if (lc_is_bot_user_agent($userAgent)) {
-        return 'Automated access blocked.';
-    }
+    // Bot / honeypot checks intentionally disabled — real visitors must never see
+    // "Automated access blocked." (autofill, odd UAs, headless browsers, etc.).
 
-    if (lc_widget_honeypot_hit($input)) {
-        return 'Automated access blocked.';
-    }
-
-    $rateKey = 'ip:' . $ip . ($isSend ? ':send' : ':init');
-    $max = $isSend ? 20 : 30;
-    if (!lc_rate_limit($rateKey, $max, 60)) {
-        return 'Too many requests. Please wait a moment.';
+    // Send: generous per conversation (real chatters burst), IP is only a spam backstop.
+    // Init: settings sync + resume share this bucket — keep it high enough for one visitor.
+    if ($isSend) {
+        $convId = (int) ($input['conversation_id'] ?? 0);
+        $uid = trim((string) ($input['visitor_uid'] ?? ''));
+        $sendKey = $convId > 0
+            ? ('conv:' . $convId . ':send')
+            : ('uid:' . ($uid !== '' ? $uid : $ip) . ':send');
+        if (!lc_rate_limit($sendKey, 90, 60)) {
+            return 'Too many requests. Please wait a moment.';
+        }
+        // Shared office / NAT IP backstop (not the primary throttle)
+        if (!lc_rate_limit('ip:' . $ip . ':send', 180, 60)) {
+            return 'Too many requests. Please wait a moment.';
+        }
+    } else {
+        if (!lc_rate_limit('ip:' . $ip . ':init', 90, 60)) {
+            return 'Too many requests. Please wait a moment.';
+        }
     }
 
     if ($isSend) {
@@ -216,13 +375,8 @@ function lc_widget_security_check(array $input, string $ip, ?string $userAgent, 
             return 'Invalid session. Please refresh the chat.';
         }
 
-        $loadedAt = (int) ($input['widget_loaded_at'] ?? 0);
-        if ($loadedAt > 0) {
-            $elapsed = (time() * 1000) - $loadedAt;
-            if ($elapsed < 1500) {
-                return 'Please wait before sending.';
-            }
-        }
+        // Do not gate on widget_loaded_at — clock skew + first-message delay
+        // made the visitor see a spinning clock / "Please wait" on every fast send.
 
         $msg = trim((string) ($input['message'] ?? ''));
         if (strlen($msg) > 2000) {
@@ -252,14 +406,6 @@ function lc_widget_upload_security_check(array $input, string $ip, ?string $user
     $block = lc_widget_block_check($ip, $accountId > 0 ? $accountId : null);
     if ($block !== true) {
         return $block;
-    }
-
-    if (lc_is_bot_user_agent($userAgent)) {
-        return 'Automated access blocked.';
-    }
-
-    if (lc_widget_honeypot_hit($input)) {
-        return 'Automated access blocked.';
     }
 
     if (!lc_rate_limit('ip:' . $ip . ':upload', 12, 60)) {
@@ -293,14 +439,6 @@ function lc_widget_ticket_resume_security_check(array $input, string $ip, ?strin
         return $block;
     }
 
-    if ($userAgent !== null && trim($userAgent) !== '' && lc_is_bot_user_agent($userAgent)) {
-        return 'Automated access blocked.';
-    }
-
-    if (lc_widget_honeypot_hit($input)) {
-        return 'Automated access blocked.';
-    }
-
     if (!lc_rate_limit('ip:' . $ip . ':ticket_resume', 8, 60)) {
         return 'Too many attempts. Please wait a moment.';
     }
@@ -317,6 +455,95 @@ function lc_ensure_visitor_ipv4_schema(): void
     $done = true;
     try {
         lc_db()->exec('ALTER TABLE visitors ADD COLUMN ipv4_address VARCHAR(45) NULL');
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Extra IPs for a visitor (VPN / network change). Primary ip_address is never overwritten.
+ */
+function lc_ensure_visitor_ip_history_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->exec("
+            CREATE TABLE IF NOT EXISTS visitor_ip_history (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                visitor_id INT UNSIGNED NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                first_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_visitor_ip (visitor_id, ip_address),
+                KEY idx_visitor_ip_hist_visitor (visitor_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Keep the first public IP on the visitor forever.
+ * If a different IP appears later, add it to history — never overwrite primary.
+ */
+function lc_record_visitor_ip(int $visitorId, string $ip): void
+{
+    if ($visitorId < 1) {
+        return;
+    }
+    $ip = trim($ip);
+    $v4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($ip) : null;
+    if ($v4 === null && function_exists('lc_ipv4_from_any')) {
+        $v4 = lc_ipv4_from_any($ip);
+    }
+    if ($v4 !== null) {
+        $ip = $v4;
+    }
+    if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        return;
+    }
+    if (function_exists('lc_ip_usable_for_identity') && !lc_ip_usable_for_identity($ip)) {
+        return;
+    }
+
+    lc_ensure_visitor_ipv4_schema();
+    lc_ensure_visitor_ip_history_schema();
+    $db = lc_db();
+
+    try {
+        $stmt = $db->prepare('SELECT ip_address, ipv4_address FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $row = $stmt->fetch() ?: [];
+        $primary = trim((string) ($row['ipv4_address'] ?? ''));
+        if ($primary === '' || !filter_var($primary, FILTER_VALIDATE_IP)) {
+            $primary = trim((string) ($row['ip_address'] ?? ''));
+        }
+
+        if ($primary === '' || !filter_var($primary, FILTER_VALIDATE_IP)) {
+            // First IP only — set primary once
+            $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ? WHERE id = ?')
+                ->execute([$ip, $v4 ?: $ip, $visitorId]);
+            $primary = $ip;
+        }
+
+        // Always track this IP in history (primary + any later VPN/network IPs)
+        $db->prepare('
+            INSERT INTO visitor_ip_history (visitor_id, ip_address, first_seen, last_seen)
+            VALUES (?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+            ON DUPLICATE KEY UPDATE last_seen = UTC_TIMESTAMP()
+        ')->execute([$visitorId, $ip]);
+
+        // If this is a new/different IP, do NOT touch visitors.ip_address / ipv4_address
+        if ($ip !== $primary) {
+            $db->prepare('
+                INSERT INTO visitor_ip_history (visitor_id, ip_address, first_seen, last_seen)
+                VALUES (?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                ON DUPLICATE KEY UPDATE last_seen = UTC_TIMESTAMP()
+            ')->execute([$visitorId, $primary]);
+        }
     } catch (Throwable $e) {
     }
 }
@@ -343,32 +570,29 @@ function lc_visitor_stored_ipv4(int $visitorId): ?string
 
 function lc_save_visitor_ipv4(int $visitorId, string $ipv4): void
 {
-    $ipv4 = lc_valid_public_ipv4($ipv4);
-    if ($visitorId < 1 || $ipv4 === null) {
-        return;
-    }
-    lc_ensure_visitor_ipv4_schema();
-    $stmt = lc_db()->prepare('UPDATE visitors SET ipv4_address = ?, ip_address = ? WHERE id = ?');
-    $stmt->execute([$ipv4, $ipv4, $visitorId]);
+    // Never overwrite — first IP stays; extras go to history.
+    lc_record_visitor_ip($visitorId, $ipv4);
 }
 
 function lc_update_visitor_geo(int $visitorId, string $ip, ?string $userAgent, ?string $pageUrl): void
 {
     $v4 = lc_valid_public_ipv4($ip) ?: lc_ipv4_from_any($ip);
-    if ($v4 !== null) {
-        lc_save_visitor_ipv4($visitorId, $v4);
-        $ip = $v4;
-    } else {
-        $stored = lc_visitor_stored_ipv4($visitorId);
-        if ($stored !== null) {
-            $ip = $stored;
-        }
+    $incoming = $v4 ?: trim($ip);
+    if ($incoming !== '') {
+        lc_record_visitor_ip($visitorId, $incoming);
     }
 
-    $geo = lc_resolve_geo($ip);
-    $stmt = lc_db()->prepare('UPDATE visitors SET ip_address = ?, country = ?, user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP() WHERE id = ?');
-    $stmt->execute([$ip, $geo['country'], $userAgent, $pageUrl, $visitorId]);
+    // Geo / display stay on the frozen primary IP (first seen), not the latest VPN hop.
+    $stored = lc_visitor_stored_ipv4($visitorId);
+    $geoIp = $stored ?: ($v4 ?: $ip);
+    if ($geoIp === '') {
+        $geoIp = $ip;
+    }
+
+    $geo = lc_resolve_geo($geoIp);
+    $stmt = lc_db()->prepare('UPDATE visitors SET user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP(), country = COALESCE(NULLIF(?, ""), country) WHERE id = ?');
+    $stmt->execute([$userAgent, $pageUrl, $geo['country'] ?? '', $visitorId]);
     if (function_exists('lc_refresh_visitor_geo')) {
-        lc_refresh_visitor_geo($visitorId, $ip);
+        lc_refresh_visitor_geo($visitorId, $geoIp);
     }
 }

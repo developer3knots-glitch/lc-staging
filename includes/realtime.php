@@ -241,7 +241,18 @@ function lc_realtime_visitor_token(string $visitorUid, int $conversationId): str
     ], 7200);
 }
 
-function lc_realtime_publish(string $channel, string $event, array $data = []): void
+/** Visitor presence channel only — for proactive chat.invite before a thread is open. */
+function lc_realtime_visitor_presence_token(string $visitorUid): string
+{
+    return lc_realtime_issue_token([
+        'role' => 'visitor',
+        'visitor_uid' => $visitorUid,
+        'conversation_id' => 0,
+        'channels' => [lc_realtime_channel_visitor($visitorUid)],
+    ], 7200);
+}
+
+function lc_realtime_publish(string $channel, string $event, array $data = [], int $timeoutMs = 300): void
 {
     if (lc_realtime_mode() !== 'ws') {
         return;
@@ -275,10 +286,18 @@ function lc_realtime_publish(string $channel, string $event, array $data = []): 
         return;
     }
 
+    // Fire-and-forget: write request and close — never wait on Node (send UI delay).
+    if (lc_realtime_publish_fire_and_forget($url, $payload)) {
+        return;
+    }
+
     $headers = [
         'Content-Type: application/json',
         'X-LC-Secret: ' . lc_realtime_secret(),
     ];
+
+    $timeoutMs = max(50, min(200, $timeoutMs));
+    $connectMs = max(30, min(100, (int) floor($timeoutMs * 0.5)));
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
@@ -293,8 +312,8 @@ function lc_realtime_publish(string $channel, string $event, array $data = []): 
             CURLOPT_NOSIGNAL => 1,
         ];
         if (defined('CURLOPT_TIMEOUT_MS')) {
-            $curlOpts[CURLOPT_TIMEOUT_MS] = 800;
-            $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = 400;
+            $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
+            $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
         } else {
             $curlOpts[CURLOPT_TIMEOUT] = 1;
             $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
@@ -311,11 +330,49 @@ function lc_realtime_publish(string $channel, string $event, array $data = []): 
             'method' => 'POST',
             'header' => implode("\r\n", $headers),
             'content' => $payload,
-            'timeout' => 2,
+            'timeout' => 1,
             'ignore_errors' => true,
         ],
     ]);
     @file_get_contents($url, false, $ctx);
+}
+
+/**
+ * Non-blocking POST to realtime /publish — returns as soon as bytes are written.
+ */
+function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
+{
+    $parts = parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return false;
+    }
+    $host = (string) $parts['host'];
+    $scheme = strtolower((string) ($parts['scheme'] ?? 'http'));
+    $port = (int) ($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    $path = (string) ($parts['path'] ?? '/');
+    if (!empty($parts['query'])) {
+        $path .= '?' . $parts['query'];
+    }
+    $target = ($scheme === 'https' ? 'ssl://' : '') . $host;
+
+    $errno = 0;
+    $errstr = '';
+    $fp = @fsockopen($target, $port, $errno, $errstr, 0.2);
+    if ($fp === false) {
+        return false;
+    }
+    stream_set_timeout($fp, 0, 200000);
+    $req = "POST {$path} HTTP/1.1\r\n"
+        . "Host: {$host}\r\n"
+        . "Content-Type: application/json\r\n"
+        . 'X-LC-Secret: ' . lc_realtime_secret() . "\r\n"
+        . 'Content-Length: ' . strlen($payload) . "\r\n"
+        . "Connection: close\r\n\r\n"
+        . $payload;
+    $ok = @fwrite($fp, $req) !== false;
+    @fclose($fp);
+
+    return $ok;
 }
 
 function lc_realtime_publish_conversation_event(int $conversationId, string $event, array $data = []): void
@@ -326,14 +383,15 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $payload = array_merge(['conversation_id' => $conversationId], $data);
     $conv = lc_get_conversation($conversationId);
 
-    // Visitor-critical channels first (widget receive path)
-    lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload);
-
     $brandId = (int) ($conv['brand_id'] ?? 0);
     $agentId = (int) ($conv['agent_id'] ?? 0);
     $fanoutEvents = ['message.new', 'typing', 'message.receipts'];
+    $isFanout = in_array($event, $fanoutEvents, true);
 
-    if ($conv && in_array($event, $fanoutEvents, true)) {
+    // Peer-critical first (open chat windows) — short timeouts
+    lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 180);
+
+    if ($conv && $isFanout) {
         $visitorId = (int) ($conv['visitor_id'] ?? 0);
         if ($visitorId > 0 && $event !== 'message.receipts') {
             try {
@@ -341,7 +399,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
                 $vStmt->execute([$visitorId]);
                 $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
                 if ($visitorUid !== '') {
-                    lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload);
+                    lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 180);
                 }
             } catch (Throwable $e) {
             }
@@ -352,21 +410,21 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         return;
     }
 
+    if ($agentId > 0 && $isFanout) {
+        lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 180);
+    }
+
+    // Inbox list noise last — even shorter
     if ($brandId > 0) {
-        if (in_array($event, $fanoutEvents, true)) {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload);
+        if ($isFanout) {
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload, 120);
         }
         if ($event !== 'typing' && $event !== 'message.receipts') {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload);
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload, 120);
         }
     }
-    if ($agentId > 0) {
-        if (in_array($event, $fanoutEvents, true)) {
-            lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload);
-        }
-        if ($event !== 'typing' && $event !== 'message.receipts') {
-            lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload);
-        }
+    if ($agentId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
+        lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload, 120);
     }
 }
 
@@ -397,6 +455,11 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
     lc_realtime_publish_conversation_event($conversationId, 'message.new', [
         'message_id' => $messageId,
         'message' => lc_format_message_row($row),
+        'hidden_from_visitor' => (
+            ($row['sender_type'] ?? '') === 'system'
+            && function_exists('lc_message_hidden_from_visitor')
+            && lc_message_hidden_from_visitor((string) ($row['message'] ?? ''))
+        ),
     ]);
 }
 
@@ -408,6 +471,41 @@ function lc_realtime_publish_typing(int $conversationId, string $role, bool $typ
     ], $extra));
 }
 
+/**
+ * Run work after the HTTP response is sent (keeps visitor/agent APIs snappy).
+ */
+function lc_realtime_defer(callable $fn): void
+{
+    static $registered = false;
+    static $queue = [];
+    $queue[] = $fn;
+    if ($registered) {
+        return;
+    }
+    $registered = true;
+    register_shutdown_function(static function () use (&$queue): void {
+        if (function_exists('fastcgi_finish_request')) {
+            @fastcgi_finish_request();
+        } elseif (function_exists('litespeed_finish_request')) {
+            @litespeed_finish_request();
+        } else {
+            if (function_exists('session_write_close')) {
+                @session_write_close();
+            }
+            @ob_end_flush();
+            @flush();
+        }
+        foreach ($queue as $cb) {
+            try {
+                $cb();
+            } catch (Throwable $e) {
+                // never break the request after response
+            }
+        }
+        $queue = [];
+    });
+}
+
 function lc_realtime_publish_traffic(int $brandId, string $presence, array $extra = []): void
 {
     if ($brandId < 1) {
@@ -416,5 +514,62 @@ function lc_realtime_publish_traffic(int $brandId, string $presence, array $extr
     lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'traffic.changed', array_merge([
         'brand_id' => $brandId,
         'presence' => $presence,
+    ], $extra));
+}
+
+/**
+ * Push Traffic "Incoming chat" + agent browser notify for a waiting conversation.
+ */
+function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = []): void
+{
+    if ($conversationId < 1) {
+        return;
+    }
+    $conv = lc_get_conversation($conversationId);
+    if (!$conv || (string) ($conv['status'] ?? '') !== 'waiting') {
+        return;
+    }
+    $brandId = (int) ($conv['brand_id'] ?? 0);
+    if ($brandId < 1) {
+        return;
+    }
+    $visitorId = (int) ($conv['visitor_id'] ?? 0);
+    $visitorUid = '';
+    $visitorName = 'Visitor';
+    $pagePath = '';
+    if ($visitorId > 0) {
+        try {
+            $vStmt = lc_db()->prepare('SELECT visitor_uid, name, page_url FROM visitors WHERE id = ? LIMIT 1');
+            $vStmt->execute([$visitorId]);
+            $vRow = $vStmt->fetch() ?: [];
+            $visitorUid = trim((string) ($vRow['visitor_uid'] ?? ''));
+            $name = trim((string) ($vRow['name'] ?? ''));
+            if ($name !== '') {
+                $visitorName = $name;
+            }
+            $pageUrl = trim((string) ($vRow['page_url'] ?? ''));
+            if ($pageUrl !== '') {
+                $parsed = parse_url($pageUrl);
+                if (is_array($parsed) && !empty($parsed['path'])) {
+                    $pagePath = (string) $parsed['path'];
+                    if (!empty($parsed['query'])) {
+                        $pagePath .= '?' . $parsed['query'];
+                    }
+                } else {
+                    $pagePath = $pageUrl;
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    }
+    lc_realtime_publish_traffic($brandId, 'queued', array_merge([
+        'visitor_id' => $visitorId,
+        'visitor_uid' => $visitorUid,
+        'conversation_id' => $conversationId,
+        'name' => $visitorName,
+        'page_path' => $pagePath,
+        'status' => 'waiting',
+        'notify' => true,
+        'is_incoming' => true,
     ], $extra));
 }

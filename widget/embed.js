@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 80;
+    var LC_WIDGET_BUILD = 131;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -25,7 +25,7 @@
     }
 
     var brandKey = (script && script.getAttribute('data-brand')) || 'default';
-    // Default ON: panel opens with the page; also re-opens on agent/system messages
+    // Default ON: widget opens on page load, but never auto-connects by itself.
     var autoOpenOnLoad = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase() !== 'false';
     var autoOpenOnMessage = ((script && script.getAttribute('data-auto-open-msg')) || 'true').toLowerCase() !== 'false';
     var didAutoOpenOnLoad = false;
@@ -37,14 +37,61 @@
         localStorage.setItem(STORAGE_KEY, visitorUid);
     }
 
+    function adoptVisitorUid(nextUid, rotated) {
+        nextUid = String(nextUid || '').trim();
+        if (!nextUid || nextUid === visitorUid) {
+            return false;
+        }
+        visitorUid = nextUid;
+        try {
+            localStorage.setItem(STORAGE_KEY, visitorUid);
+        } catch (eStore) {}
+        // Only wipe when IP identity actually rotated. Clearing token mid-chat
+        // (while bubbles stay on screen) causes "Invalid session" on send.
+        if (!rotated) {
+            return true;
+        }
+        conversationId = null;
+        chatToken = '';
+        lastMsgId = 0;
+        pendingResumeConvId = null;
+        serverLiveConversationId = 0;
+        serverLiveConversationStatus = '';
+        serverIdentityComplete = false;
+        serverVisitorName = '';
+        serverVisitorEmail = '';
+        entryRouted = false;
+        persistConversationId(null);
+        persistChatToken('');
+        try { chatStore().removeItem(LAST_MSG_KEY); } catch (eClear) {}
+        chatClosed = false;
+        // New visitor identity → show landing popup + push again
+        didAutoOpenOnLoad = false;
+        scheduleWelcomeEngagement();
+        // Fresh identity may be on a new network — allow GPS prompt again
+        clearBrowserGeoAskState();
+        return true;
+    }
+
+    function applyVisitorIdentityFromResponse(data) {
+        if (!data) return;
+        if (data.visitor_uid) {
+            adoptVisitorUid(data.visitor_uid, !!data.visitor_uid_rotated);
+        }
+    }
+
     var conversationId = null;
     var publicIpv4 = '';
     var chatInitInFlight = false;
     var lastMsgId = 0;
+    var pendingHistoryWipe = false;
+    var historyRetryTimer = null;
     var pollTimer = null;
     var realtimeClient = null;
+    var presenceClient = null;
     var realtimeBoundConvId = 0;
     var realtimeConfig = { mode: 'poll', wsUrl: '', backupPollMs: 15000 };
+    var proactiveInviteInFlight = false;
     var pollMs = 1500;
     var visitorSoundsEnabled = true;
     var transcriptSentConvId = null;
@@ -55,6 +102,9 @@
     var chatClosed = false;
     var chatToken = '';
     var widgetLoadedAt = 0;
+    var sendCooldownUntil = 0;
+    var lastTransientErrorAt = 0;
+    var lastTransientErrorText = '';
     var CONV_STORAGE_KEY = 'lc_active_conv_' + brandKey;
     var PANEL_OPEN_KEY = 'lc_panel_open_' + brandKey;
     var LAST_MSG_KEY = 'lc_last_msg_' + brandKey;
@@ -71,14 +121,23 @@
     var ticketResumeAwaitingAgent = false;
     var lastDateLabel = '';
     var teaserTimer = null;
+    var welcomeTimer = null;
+    var autoOpenTimer = null;
     var TEASER_KEY = 'lc_teaser_dismissed_' + brandKey;
+    var welcomePushPending = false;
     var visitorUploadBusy = false;
     var pendingAttachments = [];
     var pendingAttachSeq = 0;
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
     var prechatFormEnabled = false; // default: direct chat (matches server)
+    var serverIdentityComplete = false;
+    var serverVisitorName = '';
+    var serverVisitorEmail = '';
+    var serverLiveConversationId = 0;
+    var serverLiveConversationStatus = '';
     var pendingResumeConvId = null;
+    var entryRouted = false; // lock first entry decision so settings sync cannot flip form ↔ idle
     var settingsSyncTimer = null;
     var ownTypingActive = false;
     var typingHeartbeatTimer = null;
@@ -227,6 +286,15 @@
                 headers: apiHeaders({ 'Content-Type': 'application/json' }),
                 body: body,
                 keepalive: true
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data && data.success) {
+                    var prevUid = visitorUid;
+                    applyVisitorIdentityFromResponse(data);
+                    if (data.visitor_uid_rotated || (data.visitor_uid && data.visitor_uid !== prevUid)) {
+                        entryRouted = false;
+                        beginNewConversationFlow();
+                    }
+                }
             }).catch(function () {});
         }
 
@@ -350,7 +418,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=55';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=61';
         document.head.appendChild(link);
     }
 
@@ -369,7 +437,7 @@
             return;
         }
         var script = document.createElement('script');
-        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=3';
+        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=6';
         script.onload = callback;
         script.onerror = callback;
         document.head.appendChild(script);
@@ -482,20 +550,23 @@
                             '<h3 class="lcw-form-title">Start a conversation</h3>' +
                             '<p class="lcw-form-subtitle">Tell us a little about yourself - our team will take it from here.</p>' +
                         '</div>' +
-                        '<form id="lc-prechat-form" class="lcw-prechat-form">' +
+                        '<form id="lc-prechat-form" class="lcw-prechat-form" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
                             '<div class="lcw-field">' +
                                 '<label for="lc-prechat-name">Full name <span>*</span></label>' +
-                                '<input type="text" id="lc-prechat-name" required placeholder="John Smith" autocomplete="name">' +
+                                '<input type="text" id="lc-prechat-name" name="lc_visitor_name" required placeholder="John Smith" autocomplete="off" autocapitalize="words" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
                             '</div>' +
                             '<div class="lcw-field">' +
                                 '<label for="lc-prechat-email">Work email <span>*</span></label>' +
-                                '<input type="email" id="lc-prechat-email" required placeholder="you@company.com" autocomplete="email">' +
+                                '<input type="email" id="lc-prechat-email" name="lc_visitor_email" required placeholder="you@company.com" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" inputmode="email">' +
                             '</div>' +
                             '<div class="lcw-field">' +
                                 '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
-                                '<textarea id="lc-prechat-message" required rows="2" placeholder="Describe your question or request..."></textarea>' +
+                                '<textarea id="lc-prechat-message" name="lc_visitor_message" required rows="2" placeholder="Describe your question or request..." autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></textarea>' +
                             '</div>' +
-                            '<input type="text" id="lc-prechat-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
+                            '<div class="lcw-hp-wrap" aria-hidden="true">' +
+                                '<label for="lc-prechat-honeypot">Leave blank</label>' +
+                                '<input type="text" id="lc-prechat-honeypot" class="lcw-hp" name="lc_hp_field" value="" tabindex="-1" autocomplete="new-password" readonly aria-hidden="true" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
+                            '</div>' +
                             '<div id="lc-prechat-error" class="lcw-prechat-error" style="display:none"></div>' +
                             '<button type="submit" class="lcw-prechat-btn" id="lc-prechat-submit">' +
                                 '<span class="lcw-btn-spinner"></span>' +
@@ -519,7 +590,7 @@
                                         '<label for="lc-ticket-email">Email <span>*</span></label>' +
                                         '<input type="email" id="lc-ticket-email" required placeholder="you@company.com" autocomplete="email">' +
                                     '</div>' +
-                                    '<input type="text" id="lc-ticket-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
+                                    '<input type="text" id="lc-ticket-honeypot" class="lcw-hp" name="lc_hp_ticket" value="" tabindex="-1" autocomplete="new-password" readonly aria-hidden="true" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
                                     '<div id="lc-ticket-resume-error" class="lcw-prechat-error" style="display:none"></div>' +
                                     '<button type="submit" class="lcw-prechat-btn" id="lc-ticket-resume-submit">' +
                                         '<span class="lcw-btn-spinner"></span>' +
@@ -532,7 +603,15 @@
                     '</div>' +
                     '<div class="lcw-powered">' + ICON_LOCK + ' Secure &amp; confidential</div>' +
                 '</div>' +
-                '<div id="lc-panel-messages" class="lcw-messages"></div>' +
+                '<div id="lc-panel-messages" class="lcw-messages">' +
+                    '<div id="lc-chat-loading" class="lcw-chat-loading" hidden>' +
+                        '<div class="lcw-connecting-spinner" aria-hidden="true"></div>' +
+                        '<div class="lcw-connecting-copy">' +
+                            '<strong id="lc-chat-loading-title">Loading chat...</strong>' +
+                            '<span id="lc-chat-loading-sub">Waiting for chat to load</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
                 '<div id="lc-idle-intro" class="lcw-idle-intro" hidden>' +
                     '<div class="lcw-idle-agent-card">' +
                         '<div class="lcw-idle-avatars" id="lc-idle-avatars" aria-hidden="true"></div>' +
@@ -576,7 +655,7 @@
                     '</div>' +
                 '</div>' +
                 '<div id="lc-panel-compose" class="lcw-compose lcw-compose-pro">' +
-                    '<input type="text" id="lc-honeypot" class="lcw-hp" tabindex="-1" autocomplete="off" aria-hidden="true" data-lpignore="true" data-1p-ignore>' +
+                    '<input type="text" id="lc-honeypot" class="lcw-hp" name="lc_hp_compose" value="" tabindex="-1" autocomplete="new-password" readonly aria-hidden="true" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
                     '<div id="lc-attach-preview" class="lcw-attach-preview" hidden></div>' +
                     '<div id="lc-emoji-picker" class="lcw-emoji-picker" hidden role="listbox" aria-label="Emoji"></div>' +
                     '<div class="lcw-compose-row">' +
@@ -635,7 +714,13 @@
         bindToolbarMenu();
         bindTranscriptEmailInputs();
         var letsChatBtn = document.getElementById('lc-lets-chat');
-        if (letsChatBtn) letsChatBtn.addEventListener('click', beginChatFromIdle);
+        if (letsChatBtn) {
+            letsChatBtn.addEventListener('click', function () {
+                // Browser requires a user gesture before Notification.requestPermission()
+                requestVisitorPushPermission(true);
+                beginChatFromIdle();
+            });
+        }
         document.getElementById('lc-new-chat').addEventListener('click', startNewChat);
         document.getElementById('lc-resume-ticket').addEventListener('click', resumeFromEnded);
         var emailToggle = document.getElementById('lc-email-transcript-toggle');
@@ -650,13 +735,24 @@
             e.preventDefault();
             submitPrechatForm();
         });
+        disablePrechatAutofill();
 
         var inputEl = document.getElementById('lc-input');
-        inputEl.addEventListener('input', function () {
-            autoResizeTextarea(inputEl);
-            onVisitorComposeActivity();
-        });
+        function scheduleComposeActivity() {
+            // Mobile soft keyboards often commit textarea.value AFTER the input event.
+            // Reading synchronously can miss the draft → agent never sees "typing".
+            setTimeout(function () {
+                autoResizeTextarea(inputEl);
+                onVisitorComposeActivity();
+            }, 0);
+        }
+        inputEl.addEventListener('input', scheduleComposeActivity);
+        inputEl.addEventListener('keyup', scheduleComposeActivity);
+        inputEl.addEventListener('compositionupdate', scheduleComposeActivity);
+        inputEl.addEventListener('compositionend', scheduleComposeActivity);
+        inputEl.addEventListener('change', scheduleComposeActivity);
         inputEl.addEventListener('keydown', function (e) {
+            if (e.isComposing || e.keyCode === 229) return; // IME composing on mobile
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
         });
         inputEl.addEventListener('paste', function (e) {
@@ -680,8 +776,8 @@
         if (attachBtn && fileInput) {
             attachBtn.addEventListener('click', function () {
                 if (!conversationId) {
-                    if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
-                        showPrechatForm();
+                    if (prechatFormEnabled && !visitorHasKnownIdentity()) {
+                        showPrechatForm(true);
                         showPrechatError('Please start a conversation before sending files.');
                     } else {
                         showIdleChatReady();
@@ -706,6 +802,7 @@
         document.getElementById('lc-teaser').addEventListener('click', function (e) {
             if (e.target.id === 'lc-teaser-close') return;
             hideTeaser(true);
+            requestVisitorPushPermission(true);
             if (!isOpen) togglePanel();
         });
         document.getElementById('lc-teaser-close').addEventListener('click', function (e) {
@@ -726,7 +823,9 @@
             }
         });
 
-        scheduleTeaser();
+        // Maximize immediately — don't wait for settings/access network round-trips
+        openPanelInstantIdle();
+        scheduleWelcomeEngagement();
         loadWidgetSettings();
         startSettingsSync();
 
@@ -774,10 +873,36 @@
 
     function advanceLastMsgId(id) {
         id = parseInt(id, 10) || 0;
-        if (id > 0 && id < 100000000 && id > lastMsgId) {
+        if (id < 1 || id >= 100000000) return;
+        // Cursor jumped over missing ids → force catch-up (even while WS is live)
+        if (lastMsgId > 0 && id > lastMsgId + 1) {
+            scheduleGapFill();
+            forceMessageCatchup();
+        }
+        if (id > lastMsgId) {
             lastMsgId = id;
             persistLastMsgId(lastMsgId);
         }
+    }
+
+    var gapFillTimer = null;
+    var gapFillInFlight = false;
+    function scheduleGapFill() {
+        if (!conversationId) return;
+        if (gapFillTimer) clearTimeout(gapFillTimer);
+        gapFillTimer = setTimeout(function () {
+            gapFillTimer = null;
+            runGapFill();
+        }, 120);
+    }
+
+    function runGapFill() {
+        if (!conversationId || gapFillInFlight) return;
+        gapFillInFlight = true;
+        // History fetch from floor, merge into DOM (never wipe painted bubbles)
+        pollMessages(true, function () {
+            gapFillInFlight = false;
+        });
     }
 
     function getStoredLastMsgId() {
@@ -804,6 +929,10 @@
     }
 
     function handleInitFailure(errorMsg) {
+        if (isWidgetIpBlockedError(errorMsg)) {
+            hideWidgetForBlockedIp();
+            return;
+        }
         conversationId = null;
         chatToken = '';
         lastMsgId = 0;
@@ -814,7 +943,7 @@
             pollTimer = null;
         }
         if (prechatFormEnabled) {
-            showPrechatForm();
+            showPrechatForm(true);
             if (errorMsg && errorMsg !== 'Pre-chat form required') {
                 showPrechatError(errorMsg);
             }
@@ -827,17 +956,111 @@
         }
     }
 
+    function isWidgetIpBlockedError(msgOrData) {
+        if (msgOrData && typeof msgOrData === 'object') {
+            if (msgOrData.blocked || msgOrData.ip_blocked) return true;
+            msgOrData = msgOrData.error || '';
+        }
+        var msg = String(msgOrData || '');
+        return /access restricted/i.test(msg) || /ip.*(block|banned)/i.test(msg);
+    }
+
+    function hideWidgetForBlockedIp() {
+        try {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+            if (typeof settingsSyncTimer !== 'undefined' && settingsSyncTimer) {
+                clearInterval(settingsSyncTimer);
+                settingsSyncTimer = null;
+            }
+            conversationId = null;
+            chatToken = '';
+            persistConversationId(null);
+            persistChatToken('');
+            var root = document.getElementById('lc-root');
+            if (root && root.parentNode) {
+                root.parentNode.removeChild(root);
+            }
+            var bubble = document.getElementById('lc-bubble');
+            if (bubble && bubble.parentNode) {
+                bubble.parentNode.removeChild(bubble);
+            }
+        } catch (eHide) {}
+    }
+
     function readHoneypotField(id) {
         var el = document.getElementById(id);
         if (!el) return '';
+        // Autofill often fills honeypots; only treat as bot if a real user typed there.
+        if (el.getAttribute('data-lc-user-typed') !== '1') {
+            el.value = '';
+            return '';
+        }
         return (el.value || '').trim();
     }
 
     function clearHoneypotFields() {
         ['lc-prechat-honeypot', 'lc-ticket-honeypot', 'lc-honeypot'].forEach(function (id) {
             var el = document.getElementById(id);
-            if (el) el.value = '';
+            if (!el) return;
+            el.value = '';
+            el.removeAttribute('data-lc-user-typed');
+            try { el.setAttribute('readonly', 'readonly'); } catch (eRo) {}
         });
+    }
+
+    function hardenHoneypotFields() {
+        ['lc-prechat-honeypot', 'lc-ticket-honeypot', 'lc-honeypot'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el || el.getAttribute('data-lc-hp-ready') === '1') return;
+            el.setAttribute('data-lc-hp-ready', '1');
+            el.value = '';
+            el.setAttribute('readonly', 'readonly');
+            el.addEventListener('focus', function () {
+                // Real bots sometimes focus; humans almost never. Keep empty on focus.
+                try { el.blur(); } catch (eBlur) {}
+            });
+            el.addEventListener('input', function () {
+                el.setAttribute('data-lc-user-typed', '1');
+            });
+            el.addEventListener('change', function () {
+                // Delayed autofill — wipe unless we already saw a genuine input event.
+                if (el.getAttribute('data-lc-user-typed') !== '1') {
+                    el.value = '';
+                }
+            });
+        });
+        // Autofill is async — wipe only autofilled honeypots (never mark as user-typed).
+        [50, 300, 1000, 2500].forEach(function (ms) {
+            setTimeout(function () {
+                ['lc-prechat-honeypot', 'lc-ticket-honeypot', 'lc-honeypot'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (!el || el.getAttribute('data-lc-user-typed') === '1') return;
+                    el.value = '';
+                });
+            }, ms);
+        });
+    }
+
+    function disablePrechatAutofill() {
+        var form = document.getElementById('lc-prechat-form');
+        if (form) {
+            form.setAttribute('autocomplete', 'off');
+            form.setAttribute('data-lpignore', 'true');
+            form.setAttribute('data-1p-ignore', 'true');
+        }
+        ['lc-prechat-name', 'lc-prechat-email', 'lc-prechat-message'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.setAttribute('autocomplete', 'off');
+            el.setAttribute('data-lpignore', 'true');
+            el.setAttribute('data-1p-ignore', 'true');
+            el.setAttribute('data-bwignore', 'true');
+            el.setAttribute('data-form-type', 'other');
+        });
+        hardenHoneypotFields();
     }
 
     function showTicketResumeError(msg) {
@@ -869,7 +1092,7 @@
         }
         var emailEl = document.getElementById('lc-ticket-email');
         if (emailEl) {
-            emailEl.value = localStorage.getItem('lc_visitor_email') || emailEl.value || '';
+            emailEl.value = storedVisitorEmail() || emailEl.value || '';
         }
         showTicketResumeError('');
     }
@@ -1013,7 +1236,7 @@
         }
 
         showTicketResumeError('');
-        clearHoneypotFields();
+        var honeypot = readHoneypotField('lc-ticket-honeypot');
         if (submitBtn) submitBtn.classList.add('is-loading');
 
         fetch(siteUrl + '/api/visitor-resume-ticket.php', {
@@ -1025,7 +1248,7 @@
                 ticket_reference: ticketRef,
                 email: email,
                 page_url: window.location.href,
-                lc_hp: readHoneypotField('lc-ticket-honeypot')
+                lc_hp: honeypot
             })
         })
         .then(function (r) { return r.json(); })
@@ -1035,7 +1258,7 @@
                 showTicketResumeError(data.error || 'Unable to resume this conversation.');
                 return;
             }
-            localStorage.setItem('lc_visitor_email', email);
+            serverVisitorEmail = email;
             fullHistoryMode = false;
             handleChatStarted(data, { keepMessages: false, resumedByTicket: true });
         })
@@ -1045,30 +1268,30 @@
         });
     }
 
-    function hasStoredVisitorIdentity() {
-        var name = '';
-        var email = '';
-        try {
-            name = (localStorage.getItem('lc_visitor_name') || '').trim();
-            email = (localStorage.getItem('lc_visitor_email') || '').trim();
-        } catch (e) {}
-        return name.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    }
-
     function storedVisitorName() {
-        try {
-            return (localStorage.getItem('lc_visitor_name') || '').trim();
-        } catch (e) {
-            return '';
-        }
+        return serverVisitorName;
     }
 
     function storedVisitorEmail() {
-        try {
-            return (localStorage.getItem('lc_visitor_email') || '').trim();
-        } catch (e) {
-            return '';
+        return serverVisitorEmail;
+    }
+
+    /** Name+email already known this session (or confirmed by server) — never flash the form. */
+    function visitorHasKnownIdentity() {
+        if (serverIdentityComplete) return true;
+        var n = String(serverVisitorName || '').trim();
+        var e = String(serverVisitorEmail || '').trim();
+        return n !== '' && e !== '' && e.indexOf('@') !== -1;
+    }
+
+    /** Single entry paint for a fresh chat (idle compose or prechat — never both). */
+    function paintFreshChatEntry() {
+        if (prechatFormEnabled && !visitorHasKnownIdentity()) {
+            showPrechatForm(true);
+            return;
         }
+        showIdleChatReady({ force: true });
+        beginChatFromIdle();
     }
 
     function showPrechatForm(skipSettingsFetch, skipTicketReset) {
@@ -1080,8 +1303,12 @@
         document.getElementById('lc-panel-ended').style.display = 'none';
         document.getElementById('lc-panel-head').style.display = 'none';
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
-        document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
-        document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
+        // Always keep pre-chat form inputs empty.
+        // (Even if server knows identity by IP, prefill here is what looks like "form not filled but still filled".)
+        document.getElementById('lc-prechat-name').value = '';
+        document.getElementById('lc-prechat-email').value = '';
+        clearHoneypotFields();
+        disablePrechatAutofill();
         if (!skipTicketReset) {
             hideTicketResumePanel(true);
         }
@@ -1165,7 +1392,23 @@
         intro.hidden = false;
     }
 
+    function isIdleLandingVisible() {
+        var intro = document.getElementById('lc-idle-intro');
+        return !!(intro && !intro.hidden);
+    }
+
     function beginChatFromIdle() {
+        // Lock entry routing — late settings_only must not yank back to Let's chat
+        entryRouted = true;
+        var liveId = serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0;
+        liveId = parseInt(liveId, 10) || 0;
+        if (liveId > 0) {
+            hideIdleIntro();
+            showChatView();
+            updateStatus('Connecting...', agentsOnline > 0);
+            initChat({ resumeConversationId: liveId });
+            return;
+        }
         hideIdleIntro();
         showChatView();
         var box = document.getElementById('lc-panel-messages');
@@ -1280,20 +1523,29 @@
         panel.classList.add(theme === 'light' ? 'lcw-theme-light' : 'lcw-theme-dark');
     }
 
+    function isVisitorWsLive() {
+        return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
+    }
+
     function resetVisitorPollTimers() {
-        // No HTTP polling — WebSocket only. Timers are always cleared.
+        // No HTTP polling while WebSocket is the live path.
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
     }
 
-    function syncCursorFromDom() {
+    function maxDomMessageId() {
         var box = document.getElementById('lc-panel-messages');
-        if (!box) return;
+        if (!box) return 0;
         var maxDom = 0;
         box.querySelectorAll('[data-msg-id]').forEach(function (el) {
             var id = parseInt(el.getAttribute('data-msg-id'), 10) || 0;
             if (id > 0 && id < 100000000 && id > maxDom) maxDom = id;
         });
+        return maxDom;
+    }
+
+    function syncCursorFromDom() {
+        var maxDom = maxDomMessageId();
         // Cursor ahead of painted bubbles = poisoned; pull back so catch-up can fetch
         if (maxDom > 0 && lastMsgId > maxDom) {
             lastMsgId = maxDom;
@@ -1306,18 +1558,32 @@
     var catchupDirty = false;
     var safetySyncTimer = null;
     var liveSyncTimer = null;
+    var wsCatchupTimer = null;
 
-    function scheduleCatchupSync() {
+    /** Catch-up that may run even while WS is connected (missed events / race with history). */
+    function forceMessageCatchup() {
         if (!conversationId) return;
         catchupDirty = true;
         if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
         catchupSyncTimer = setTimeout(function () {
             catchupSyncTimer = null;
-            runCatchupSync();
+            runCatchupSync(true);
+        }, 40);
+    }
+
+    function scheduleCatchupSync() {
+        if (isVisitorWsLive()) return;
+        if (!conversationId) return;
+        catchupDirty = true;
+        if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
+        catchupSyncTimer = setTimeout(function () {
+            catchupSyncTimer = null;
+            runCatchupSync(false);
         }, 50);
     }
 
-    function runCatchupSync() {
+    function runCatchupSync(forceWhileWs) {
+        if (!forceWhileWs && isVisitorWsLive()) return;
         if (!conversationId) return;
         if (catchupInFlight) {
             catchupDirty = true;
@@ -1328,29 +1594,84 @@
         syncCursorFromDom();
         pollMessages(false, function () {
             catchupInFlight = false;
+            // After incremental, if server is still ahead of painted DOM, history-merge once
+            var domMax = maxDomMessageId();
+            if (domMax > 0 && lastMsgId > domMax + 2) {
+                syncCursorFromDom();
+            }
             if (catchupDirty) {
-                scheduleCatchupSync();
+                runCatchupSync(forceWhileWs);
             }
         });
     }
 
-    /** Guarantees agent msgs appear even if WS is a zombie "connected" socket */
+    /** HTTP poll ONLY when WebSocket is down. WS live uses rare safety catch-up. */
     function startLiveMessageSync() {
         stopLiveMessageSync();
-        if (!conversationId || chatClosed) return;
+        if (!conversationId) return;
+        if (isVisitorWsLive()) {
+            stopSafetySync();
+            startWsSafetyCatchup();
+            return;
+        }
+        stopWsSafetyCatchup();
+        var liveSyncTick = 0;
         liveSyncTimer = setInterval(function () {
-            if (!conversationId || chatClosed) {
+            if (!conversationId) {
                 stopLiveMessageSync();
                 return;
             }
-            scheduleCatchupSync();
+            if (isVisitorWsLive()) {
+                stopLiveMessageSync();
+                startWsSafetyCatchup();
+                return;
+            }
+            liveSyncTick += 1;
+            if (messagesNeedHistoryReload()) {
+                lastMsgId = 0;
+                pollMessages(true);
+                return;
+            }
+            if (liveSyncTick % 3 === 0) {
+                scheduleGapFill();
+            } else {
+                scheduleCatchupSync();
+            }
         }, 2000);
+        scheduleGapFill();
     }
 
     function stopLiveMessageSync() {
         if (liveSyncTimer) {
             clearInterval(liveSyncTimer);
             liveSyncTimer = null;
+        }
+    }
+
+    /** While WS is up: infrequent HTTP catch-up so missed agent messages still land. */
+    function startWsSafetyCatchup() {
+        stopWsSafetyCatchup();
+        if (!conversationId) return;
+        wsCatchupTimer = setInterval(function () {
+            if (!conversationId) {
+                stopWsSafetyCatchup();
+                return;
+            }
+            if (!isVisitorWsLive()) {
+                stopWsSafetyCatchup();
+                startLiveMessageSync();
+                return;
+            }
+            forceMessageCatchup();
+        }, 5000);
+        // Immediate sync on (re)connect — closes the race with history wipe / missed events
+        forceMessageCatchup();
+    }
+
+    function stopWsSafetyCatchup() {
+        if (wsCatchupTimer) {
+            clearInterval(wsCatchupTimer);
+            wsCatchupTimer = null;
         }
     }
 
@@ -1402,6 +1723,68 @@
         return (parseInt(cid, 10) || 0) === (parseInt(conversationId, 10) || 0);
     }
 
+    function focusVisitorCompose(options) {
+        options = options || {};
+        var compose = document.getElementById('lc-panel-compose');
+        var input = document.getElementById('lc-input');
+        if (!input || input.disabled || input.readOnly) return;
+        if (!isOpen) return;
+        if (compose && (compose.style.display === 'none' || compose.hidden)) return;
+        if (conversationId && !chatClosed) {
+            hideIdleIntro();
+            setComposeEnabled(true);
+        }
+
+        function applyFocus() {
+            if (!input || input.disabled || input.readOnly) return;
+            if (!isOpen) return;
+            try {
+                input.focus({ preventScroll: false });
+                var pos = (input.value || '').length;
+                if (typeof input.setSelectionRange === 'function') {
+                    input.setSelectionRange(pos, pos);
+                }
+            } catch (eFocus) {}
+        }
+
+        var delay = typeof options.delay === 'number' ? options.delay : 120;
+        requestAnimationFrame(function () {
+            requestAnimationFrame(applyFocus);
+        });
+        setTimeout(applyFocus, delay);
+        setTimeout(applyFocus, delay + 180);
+    }
+
+    var ackReceiptTimer = null;
+    var ackReceiptInFlight = false;
+    /** Tell server visitor saw agent messages → agent blue ticks (read receipts). */
+    function ackAgentMessagesSeen() {
+        if (!conversationId || chatClosed) return;
+        if (!isOpen) return;
+        var panel = document.getElementById('lc-panel');
+        if (panel && panel.style.display === 'none') return;
+        if (ackReceiptTimer) clearTimeout(ackReceiptTimer);
+        ackReceiptTimer = setTimeout(function () {
+            ackReceiptTimer = null;
+            if (ackReceiptInFlight || !conversationId || !isOpen || chatClosed) return;
+            ackReceiptInFlight = true;
+            var url = siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
+                '&last_id=' + encodeURIComponent(String(lastMsgId || 0)) +
+                '&visitor_uid=' + encodeURIComponent(visitorUid) +
+                '&chat_token=' + encodeURIComponent(chatToken || getStoredChatToken() || '') +
+                '&viewing=1';
+            fetch(url, { headers: apiHeaders(), credentials: 'omit' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.success && data.receipts && data.receipts.length) {
+                        applyReceipts(data.receipts);
+                    }
+                })
+                .catch(function () {})
+                .then(function () { ackReceiptInFlight = false; });
+        }, 120);
+    }
+
     function applyRealtimeMessage(payload) {
         if (!payload) return false;
         var myCid = parseInt(conversationId, 10) || 0;
@@ -1415,7 +1798,7 @@
             if (mid < 1 || mid >= 100000000) {
                 return false;
             }
-            if (isAdminOnlySystemMessage(m)) {
+            if (payload.hidden_from_visitor || isAdminOnlySystemMessage(m)) {
                 advanceLastMsgId(mid);
                 return true;
             }
@@ -1442,18 +1825,36 @@
                 }
                 if (isNewIncoming) {
                     setPeerTypingVisible(false);
+                    var openedNow = false;
+                    if (m.sender_type === 'agent') {
+                        notifyIncomingAgentMessage(m);
+                    } else {
+                        playNotifySound();
+                    }
                     if (!isOpen) {
                         if (autoOpenOnMessage) {
-                            openPanel({ silenceFlow: true });
+                            openPanel({
+                                silenceFlow: true,
+                                focusComposeOnOpen: m.sender_type === 'agent'
+                            });
+                            openedNow = true;
                         } else {
                             var badge = document.getElementById('lc-bubble-badge');
                             if (badge) badge.style.display = 'flex';
                         }
                     }
-                    playNotifySound();
+                    if (m.sender_type === 'agent' && !openedNow) {
+                        focusVisitorCompose();
+                    }
+                    if (m.sender_type === 'agent') {
+                        ackAgentMessagesSeen();
+                    }
                 }
             } else {
                 advanceLastMsgId(mid);
+                if (m.sender_type === 'agent') {
+                    ackAgentMessagesSeen();
+                }
             }
             return true;
         }
@@ -1465,18 +1866,34 @@
             realtimeBoundConvId = parseInt(conversationId, 10) || 0;
             resetVisitorPollTimers();
             stopSafetySync();
-            startLiveMessageSync();
-            scheduleCatchupSync();
+            stopLiveMessageSync();
+            // Fill anything missed while socket was down / during history race
+            startWsSafetyCatchup();
         });
         client.on('disconnected', function () {
             resetVisitorPollTimers();
+            stopWsSafetyCatchup();
             startSafetySyncWhileDisconnected();
             startLiveMessageSync();
-            scheduleCatchupSync();
         });
         client.on('message.new', function (payload) {
-            try { applyRealtimeMessage(payload); } catch (e) { /* ignore */ }
-            scheduleCatchupSync();
+            try {
+                if (chatClosed && lastClosedBy !== 'visitor') {
+                    markChatContinuedFromClosed({
+                        status: 'active',
+                        agent: (payload && payload.message && payload.message.agent_name)
+                            ? { name: payload.message.agent_name, avatar: payload.message.agent_avatar }
+                            : null
+                    });
+                }
+                var painted = applyRealtimeMessage(payload);
+                // Payload missing full message (encode fallback) or paint failed → HTTP catch-up
+                if (!painted) {
+                    forceMessageCatchup();
+                }
+            } catch (e) {
+                forceMessageCatchup();
+            }
         });
         client.on('typing', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
@@ -1493,27 +1910,42 @@
         });
         client.on('conversation.updated', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
-            if (payload && payload.status === 'active' && payload.agent && payload.agent.name) {
-                setWaitingState(false);
-                updateHeaderAgent(payload.agent);
-                updateStatus('Chatting with ' + payload.agent.name, true);
-            }
             if (payload && payload.status === 'closed') {
-                stopLiveMessageSync();
-                stopSafetySync();
-                // Don't overwrite visitor-ended action screen with soft continue
+                // Soft-close still keeps listening — agent may rejoin / message
                 if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
+                    stopLiveMessageSync();
+                    stopSafetySync();
                     showEndedState('visitor');
                 } else {
                     showEndedState(payload.closed_by || 'remote');
+                    startLiveMessageSync(); // no-op if WS live; poll only if WS down
                 }
-                scheduleCatchupSync();
+                return;
+            }
+            if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
+                if (chatClosed) {
+                    markChatContinuedFromClosed({
+                        status: payload.status,
+                        agent: payload.agent
+                    });
+                } else if (payload.status === 'waiting') {
+                    updateHeaderAgent(null);
+                    setWaitingState(true);
+                    updateStatus('Connecting to live agent...', agentsOnline > 0);
+                }
+                if (payload.status === 'active' && payload.agent && payload.agent.name) {
+                    setWaitingState(false);
+                    updateHeaderAgent(payload.agent);
+                    updateStatus('Chatting with ' + payload.agent.name, true);
+                } else if (payload.status === 'active') {
+                    setWaitingState(false);
+                }
+                startLiveMessageSync();
                 return;
             }
             if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
                 markChatContinuedFromClosed({ status: 'waiting' });
             }
-            scheduleCatchupSync();
         });
     }
 
@@ -1555,6 +1987,125 @@
         realtimeClient.connect();
         startLiveMessageSync();
         return true;
+    }
+
+    function fetchVisitorPresenceToken() {
+        if (!visitorUid) return Promise.resolve('');
+        return fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid), {
+            credentials: 'omit',
+            headers: apiHeaders()
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.realtime) {
+                    realtimeConfig = data.realtime;
+                }
+                return (data && data.success && data.token) ? data.token : '';
+            })
+            .catch(function () { return ''; });
+    }
+
+    function acceptProactiveInvite(payload) {
+        var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+        if (cid < 1) return;
+        if (proactiveInviteInFlight || chatInitInFlight) return;
+
+        var current = parseInt(conversationId, 10) || 0;
+        if (current === cid) {
+            chatClosed = false;
+            if (!isOpen) openPanel({ silenceFlow: true, focusComposeOnOpen: true });
+            showChatView();
+            // Re-bind / catch join+welcome that may have published before presence heard invite
+            if (typeof initVisitorRealtime === 'function') {
+                loadRealtimeScript(function () { initVisitorRealtime(); });
+            }
+            if (typeof pollMessages === 'function') {
+                try { pollMessages(); } catch (eP) {}
+            }
+            focusVisitorCompose({ delay: 120 });
+            return;
+        }
+
+        // Allow invite even if another conversationId is in memory (closed/stale/waiting)
+        proactiveInviteInFlight = true;
+        chatInitInFlight = true;
+        pendingResumeConvId = cid;
+        serverLiveConversationId = cid;
+        chatClosed = false;
+        entryRouted = true;
+
+        if (!isOpen) {
+            openPanel({ silenceFlow: true, focusComposeOnOpen: true });
+        }
+        showChatView();
+        updateStatus('Connecting...', true);
+        if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+            try { window.LCNotifySound.play({ force: true }); } catch (eS) {}
+        } else {
+            try { playNotifySound(); } catch (eP) {}
+        }
+
+        var payloadInit = {
+            visitor_uid: visitorUid,
+            brand_key: brandKey,
+            name: storedVisitorName(),
+            email: storedVisitorEmail(),
+            page_url: window.location.href,
+            website_url: '',
+            public_ipv4: publicIpv4,
+            chat_token: getStoredChatToken() || chatToken || '',
+            resume_conversation_id: cid
+        };
+        fetch(siteUrl + '/api/widget-init.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payloadInit)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                proactiveInviteInFlight = false;
+                chatInitInFlight = false;
+                if (!data || !data.success) {
+                    handleInitFailure((data && data.error) || 'Could not open chat.');
+                    return;
+                }
+                hideTeaser(true);
+                handleChatStarted(data, { keepMessages: false });
+                focusVisitorCompose({ delay: 160 });
+            })
+            .catch(function () {
+                proactiveInviteInFlight = false;
+                chatInitInFlight = false;
+                handleInitFailure('Connection error. Please try again.');
+            });
+    }
+
+    function initVisitorPresenceRealtime() {
+        if (!visitorUid) return;
+        // Already live on presence channel
+        if (presenceClient && presenceClient.shouldRun
+            && presenceClient.isConnected && presenceClient.isConnected()) {
+            return;
+        }
+        loadRealtimeScript(function () {
+            if (!window.LCRealtime) return;
+            fetchVisitorPresenceToken().then(function (token) {
+                if (!token || realtimeConfig.mode !== 'ws' || !realtimeConfig.wsUrl) return;
+                if (presenceClient && presenceClient.disconnect) {
+                    try { presenceClient.disconnect(); } catch (eD) {}
+                }
+                presenceClient = window.LCRealtime.create({
+                    mode: 'ws',
+                    wsUrl: realtimeConfig.wsUrl,
+                    token: token,
+                    getToken: fetchVisitorPresenceToken
+                });
+                presenceClient.on('chat.invite', function (payload) {
+                    acceptProactiveInvite(payload || {});
+                });
+                presenceClient.connect();
+            });
+        });
     }
 
     function initVisitorRealtime(seedToken) {
@@ -1615,32 +2166,30 @@
     }
 
     function applyWidgetSettings(data) {
-        if (!data || !data.settings) return;
+        if (!data) return;
+        applyVisitorIdentityFromResponse(data);
+        if (!data.settings) return;
         settings = data.settings;
+        serverIdentityComplete = !!data.visitor_identity_complete;
+        var nextName = String(data.visitor_name || '').trim();
+        var nextEmail = String(data.visitor_email || '').trim();
+        // Never wipe a known session identity with empty settings_only payloads.
+        if (nextName) serverVisitorName = nextName;
+        if (nextEmail) serverVisitorEmail = nextEmail;
+        if (serverIdentityComplete || visitorHasKnownIdentity()) {
+            serverIdentityComplete = true;
+        }
+        serverLiveConversationId = (data.conversation_id)
+            ? (parseInt(data.conversation_id, 10) || 0)
+            : 0;
+        serverLiveConversationStatus = String(data.conversation_status || '').toLowerCase();
+        // has_active_chat means waiting|active — keep id even for closed same-day ticket
+        if (!serverLiveConversationId && data.has_active_chat && data.conversation_id) {
+            serverLiveConversationId = parseInt(data.conversation_id, 10) || 0;
+        }
         if (settings.prechat_form_enabled !== undefined) {
             var pf = settings.prechat_form_enabled;
             prechatFormEnabled = pf === true || pf === 1 || pf === '1';
-        }
-        // Form off = do not keep old name/email from previous form sessions
-        if (!prechatFormEnabled) {
-            try {
-                localStorage.removeItem('lc_visitor_name');
-                localStorage.removeItem('lc_visitor_email');
-            } catch (e) {}
-        } else {
-            // Same IP already known on server → skip form next time (seed local cache)
-            var seedName = String(data.visitor_name || '').trim();
-            var seedEmail = String(data.visitor_email || '').trim();
-            if (seedName && seedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(seedEmail)) {
-                try {
-                    if (!(localStorage.getItem('lc_visitor_name') || '').trim()) {
-                        localStorage.setItem('lc_visitor_name', seedName);
-                    }
-                    if (!(localStorage.getItem('lc_visitor_email') || '').trim()) {
-                        localStorage.setItem('lc_visitor_email', seedEmail);
-                    }
-                } catch (eSeed) {}
-            }
         }
         applyTicketFeatureFlags(settings.ticket_display_enabled, settings.ticket_resume_enabled);
         var realtimeChanged = false;
@@ -1668,6 +2217,8 @@
             startLiveMessageSync();
         }
         syncPrechatGateUi();
+        // Always listen for agent "Start chat" invites while browsing
+        initVisitorPresenceRealtime();
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;
@@ -1698,9 +2249,14 @@
                 settings_only: true
             })
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.success && done) {
+        .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+        .then(function (res) {
+            var data = res && res.data;
+            if (data && isWidgetIpBlockedError(data)) {
+                hideWidgetForBlockedIp();
+                return data;
+            }
+            if (data && data.success && done) {
                 done(data);
             }
             return data;
@@ -1710,7 +2266,24 @@
 
     function refreshWidgetSettings() {
         fetchWidgetSettings(function (data) {
+            var prevUid = visitorUid;
             applyWidgetSettings(data);
+            // New IP minted a new visitor — re-run entry (form / idle), do not keep old chat UI.
+            if (data && (data.visitor_uid_rotated || (data.visitor_uid && data.visitor_uid !== prevUid))) {
+                entryRouted = false;
+                routeVisitorEntry(data);
+                return;
+            }
+            // Backup if WS invite was missed / settings slow: resume live waiting|active thread
+            var liveId = (data && data.has_active_chat) ? (parseInt(data.conversation_id, 10) || 0) : 0;
+            var status = String((data && data.conversation_status) || '').toLowerCase();
+            if (liveId > 0 && (status === 'active' || status === 'waiting')
+                && !(parseInt(conversationId, 10) || 0)
+                && !chatInitInFlight && !proactiveInviteInFlight
+                && (isIdleLandingVisible() || !entryRouted)) {
+                entryRouted = true;
+                acceptProactiveInvite({ conversation_id: liveId });
+            }
         });
     }
 
@@ -1722,27 +2295,40 @@
 
     /**
      * Entry rules:
-     * - Same public IP reuses one live thread (server claim) — not a new ticket each visit
-     * - Same IP with known name+email → skip prechat form
-     * - Same-tab continue: sessionStorage conversation id
-     * - Ticket resume: separate form when setting ON
-     * - Form ON → gate identity (unless IP/local known); Form OFF → direct chat
+     * 1) New public IP → new visitor + new chat + show pre-form
+     * 2) Same IP + same calendar day → same chat; date change → new chat
+     * 3) Same/old IP with name+email already on server → skip pre-form
      */
-    function routeVisitorEntry(data) {
+    function routeVisitorEntry(data, options) {
+        options = options || {};
         if (!data || !data.success) return;
         applyWidgetSettings(data);
+        // First successful route wins — later settings fetches must not blink form ↔ idle.
+        // Also: user already clicked Let's chat / started compose — never reset.
+        if (entryRouted) return;
+        if (!isIdleLandingVisible() && (conversationId || chatInitInFlight || chatComposerActive())) {
+            entryRouted = true;
+            return;
+        }
+        entryRouted = true;
 
-        var identityOk = !!data.visitor_identity_complete;
+        // "Start a new chat" — never auto-resume the closed session into a half-built panel.
+        if (options.forceNew) {
+            pendingResumeConvId = null;
+            serverLiveConversationId = 0;
+            serverLiveConversationStatus = '';
+            persistConversationId(null);
+            persistChatToken('');
+            paintFreshChatEntry();
+            scheduleAutoOpenOnLoad();
+            return;
+        }
+
         // sessionStorage already clears when the tab closes — always resume if present.
         // Do NOT wipe on "non-reload" navigations; that was dropping chats on refresh.
         var resumeId = getStoredConversationId() || pendingResumeConvId || null;
-        // Same visitor_uid still has waiting/active on server (sessionStorage lost) → reconnect
-        // so dashboard Active and widget stay in sync. Never IP-based.
-        if (!resumeId && data.has_active_chat && data.conversation_id) {
-            resumeId = parseInt(data.conversation_id, 10) || null;
-        }
+        pendingResumeConvId = resumeId || null;
         if (resumeId) {
-            // Keep token for reconnect; widget-init will re-issue if needed
             try {
                 if (!getStoredChatToken()) {
                     /* ok - server issues a fresh token on resume */
@@ -1750,47 +2336,49 @@
             } catch (eTok) {}
         }
 
+        var liveId = serverLiveConversationId || resumeId || 0;
+        var liveStatus = serverLiveConversationStatus;
+
+        // Already-started chat (waiting queue OR active with agent) → open thread now.
+        // Never flash "Let's chat" over a live conversation on reload.
+        if (liveId > 0 && (liveStatus === 'active' || liveStatus === 'waiting'
+            || (resumeId && liveId === resumeId && liveStatus !== 'closed'))) {
+            pendingResumeConvId = liveId;
+            initChat({ resumeConversationId: liveId });
+            return;
+        }
+
+        if (liveId > 0) {
+            pendingResumeConvId = liveId;
+        }
+
         if (prechatFormEnabled) {
-            var knownIdentity = identityOk || hasStoredVisitorIdentity();
-            if (resumeId && knownIdentity) {
-                pendingResumeConvId = null;
-                showChatView();
-                initChat({ resumeConversationId: resumeId, keepMessages: false });
+            if (visitorHasKnownIdentity()) {
+                showIdleChatReady({ keepResume: true });
                 scheduleAutoOpenOnLoad();
-                return;
-            }
-            if (resumeId && !knownIdentity) {
-                pendingResumeConvId = resumeId;
-            } else {
-                pendingResumeConvId = null;
-            }
-            if (knownIdentity) {
-                showIdleChatReady();
-                scheduleAutoOpenOnLoad();
+                requestBrowserGeo();
                 return;
             }
             showPrechatForm(true);
             scheduleAutoOpenOnLoad();
+            requestBrowserGeo();
             return;
         }
 
-        pendingResumeConvId = null;
-        if (resumeId) {
-            showChatView();
-            initChat({ resumeConversationId: resumeId, keepMessages: false });
-            scheduleAutoOpenOnLoad();
-            return;
-        }
-        showIdleChatReady();
+        showIdleChatReady({ keepResume: true });
         scheduleAutoOpenOnLoad();
+        scheduleWelcomeEngagement();
+        requestBrowserGeo();
     }
 
     /**
      * New visitor / reopen panel with no memory of current chat in this page cycle.
      */
-    function beginNewConversationFlow() {
+    function beginNewConversationFlow(options) {
+        options = options || {};
+        entryRouted = false;
         fetchWidgetSettings(function (data) {
-            routeVisitorEntry(data);
+            routeVisitorEntry(data, options);
         });
     }
 
@@ -1840,7 +2428,24 @@
         syncPrechatGateUi();
     }
 
-    function showIdleChatReady() {
+    function chatComposerActive() {
+        var compose = document.getElementById('lc-panel-compose');
+        if (!compose) return false;
+        var display = compose.style.display;
+        return display !== 'none' && !isIdleLandingVisible();
+    }
+
+    function showIdleChatReady(options) {
+        options = options || {};
+        // Never yank the visitor back to Let's chat after they already entered chat UI
+        if (!options.force && (conversationId || chatInitInFlight || chatComposerActive())) {
+            return;
+        }
+        if (!options.force && entryRouted && !isIdleLandingVisible()) {
+            return;
+        }
+        var keepResume = !!options.keepResume;
+        var keepResumeId = keepResume ? (pendingResumeConvId || serverLiveConversationId || getStoredConversationId() || null) : null;
         chatClosed = false;
         leaveCloseSent = false;
         conversationId = null;
@@ -1852,8 +2457,15 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
-        persistConversationId(null);
-        persistChatToken('');
+        if (!keepResume) {
+            pendingResumeConvId = null;
+            persistConversationId(null);
+            persistChatToken('');
+        } else if (keepResumeId) {
+            pendingResumeConvId = keepResumeId;
+            // Keep session id so refresh still knows the same-day ticket
+            persistConversationId(keepResumeId);
+        }
         try { chatStore().removeItem(LAST_MSG_KEY); } catch (e) {}
         var box = document.getElementById('lc-panel-messages');
         if (box) box.innerHTML = '';
@@ -1865,7 +2477,7 @@
 
     function startDirectChat(options) {
         options = options || {};
-        if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
+        if (prechatFormEnabled && !visitorHasKnownIdentity()) {
             showPrechatForm(true);
             return;
         }
@@ -1874,12 +2486,26 @@
             showIdleChatReady();
             return;
         }
-        if (chatInitInFlight || conversationId) {
+        if (chatInitInFlight || proactiveInviteInFlight || conversationId) {
             return;
         }
         showChatView();
-        updateStatus('Connecting...', agentsOnline > 0);
-        setWaitingState(false);
+        entryRouted = true;
+        chatClosed = false;
+        var firstMsg = options.initialMessage ? String(options.initialMessage) : '';
+        var tempId = '';
+        if (firstMsg) {
+            tempId = 'temp_' + Date.now();
+            appendMessage({
+                _tempId: tempId,
+                sender_type: 'visitor',
+                message: firstMsg,
+                created_at: new Date().toISOString(),
+                delivery_status: 'sent'
+            });
+        }
+        updateStatus('Connecting to live agent...', agentsOnline > 0);
+        setWaitingState(true);
         var payload = {
             visitor_uid: visitorUid,
             brand_key: brandKey,
@@ -1887,10 +2513,11 @@
             email: storedVisitorEmail(),
             page_url: window.location.href,
             website_url: '',
-            public_ipv4: publicIpv4
+            public_ipv4: publicIpv4,
+            chat_token: getStoredChatToken() || chatToken || ''
         };
-        if (options.initialMessage) {
-            payload.initial_message = options.initialMessage;
+        if (firstMsg) {
+            payload.initial_message = firstMsg;
         }
         if (options.resumeConversationId) {
             payload.resume_conversation_id = options.resumeConversationId;
@@ -1905,8 +2532,13 @@
         .then(function (data) {
             chatInitInFlight = false;
             if (!data.success) {
+                if (tempId) {
+                    var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+                    if (pending) pending.remove();
+                }
                 if (data.error === 'Pre-chat form required') {
                     prechatFormEnabled = true;
+                    setWaitingState(false);
                     showPrechatForm(true);
                     return;
                 }
@@ -1914,10 +2546,19 @@
                 return;
             }
             hideTeaser(true);
-            handleChatStarted(data, { keepMessages: false });
+            // Keep optimistic bubble; Connecting stays until agent joins
+            handleChatStarted(data, { keepMessages: !!firstMsg });
+            if (tempId && data.status === 'waiting') {
+                setWaitingState(true);
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
+            }
         })
         .catch(function () {
             chatInitInFlight = false;
+            if (tempId) {
+                var pendingFail = document.querySelector('[data-msg-id="' + tempId + '"]');
+                if (pendingFail) pendingFail.remove();
+            }
             handleInitFailure('Connection error. Please try again.');
         });
     }
@@ -1945,8 +2586,17 @@
         btn.classList.add('is-loading');
         btn.querySelector('.lcw-btn-label').textContent = 'Connecting...';
 
-        localStorage.setItem('lc_visitor_name', name);
-        localStorage.setItem('lc_visitor_email', email);
+        serverVisitorName = name;
+        serverVisitorEmail = email;
+        serverIdentityComplete = true;
+
+        if (chatInitInFlight || proactiveInviteInFlight) {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+            btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
+            return;
+        }
+        chatInitInFlight = true;
 
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
@@ -1960,11 +2610,13 @@
                 page_url: window.location.href,
                 lc_hp: honeypot,
                 public_ipv4: publicIpv4,
+                chat_token: getStoredChatToken() || chatToken || '',
                 resume_conversation_id: pendingResumeConvId || 0
             })
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            chatInitInFlight = false;
             btn.disabled = false;
             btn.classList.remove('is-loading');
             btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
@@ -1978,6 +2630,7 @@
             handleChatStarted(data, { keepMessages: false });
         })
         .catch(function () {
+            chatInitInFlight = false;
             btn.disabled = false;
             btn.classList.remove('is-loading');
             btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
@@ -2116,6 +2769,7 @@
         if (isOpen) {
             var badgeOpen = document.getElementById('lc-bubble-badge');
             if (badgeOpen) badgeOpen.style.display = 'none';
+            ackAgentMessagesSeen();
             return;
         }
         isOpen = true;
@@ -2145,6 +2799,9 @@
                 document.getElementById('lc-panel-ended').style.display = 'flex';
                 document.getElementById('lc-panel-toolbar').style.display = 'flex';
                 document.getElementById('lc-panel-head').style.display = 'none';
+                document.getElementById('lc-panel-messages').style.display = 'none';
+                document.getElementById('lc-panel-compose').style.display = 'none';
+                document.getElementById('lc-panel-prechat').style.display = 'none';
             }
         } else if (conversationId && !chatClosed) {
             // silenceFlow (e.g. auto-open on WS message): never full-reload transcript
@@ -2154,6 +2811,10 @@
         }
         var badge = document.getElementById('lc-bubble-badge');
         if (badge) badge.style.display = 'none';
+        if (options.focusComposeOnOpen) {
+            focusVisitorCompose({ delay: 180 });
+        }
+        ackAgentMessagesSeen();
     }
 
     function togglePanel() {
@@ -2161,17 +2822,186 @@
             minimizePanel();
             return;
         }
+        requestVisitorPushPermission(true);
         openPanel();
     }
 
-    /** First paint on each page: open widget like LiveChat pro widgets */
+    /** First paint: maximize instantly (no artificial delay). */
     function scheduleAutoOpenOnLoad() {
-        if (!autoOpenOnLoad || didAutoOpenOnLoad) return;
+        if (!autoOpenOnLoad) return;
+        if (isOpen) {
+            didAutoOpenOnLoad = true;
+            return;
+        }
+        if (didAutoOpenOnLoad) return;
         didAutoOpenOnLoad = true;
-        // Next frame so DOM + theme CSS are ready
-        setTimeout(function () {
-            openPanel({ silenceFlow: true });
-        }, 80);
+        if (autoOpenTimer) {
+            clearTimeout(autoOpenTimer);
+            autoOpenTimer = null;
+        }
+        openPanel({ silenceFlow: true });
+    }
+
+    function openPanelInstantIdle() {
+        if (!autoOpenOnLoad || didAutoOpenOnLoad || isOpen) return;
+        try {
+            showIdleIntro();
+        } catch (eIdle) {}
+        didAutoOpenOnLoad = true;
+        openPanel({ silenceFlow: true });
+    }
+
+    function welcomeSeenKey() {
+        return 'lc_welcome_seen_' + brandKey + '_' + (visitorUid || 'anon');
+    }
+
+    function hasSeenWelcome() {
+        try {
+            if (localStorage.getItem(welcomeSeenKey()) === '1') return true;
+        } catch (e1) {}
+        try {
+            // Legacy teaser dismiss (brand-wide)
+            if (localStorage.getItem(TEASER_KEY) === '1') return true;
+        } catch (e2) {}
+        return false;
+    }
+
+    function markWelcomeSeen() {
+        try { localStorage.setItem(welcomeSeenKey(), '1'); } catch (e1) {}
+        try { localStorage.setItem(TEASER_KEY, '1'); } catch (e2) {}
+    }
+
+    /** Landing popup + push for every new visitor (chat started or not). */
+    function scheduleWelcomeEngagement() {
+        if (hasSeenWelcome()) return;
+        if (welcomeTimer) clearTimeout(welcomeTimer);
+        welcomeTimer = setTimeout(function () {
+            runWelcomeEngagement();
+        }, 200);
+    }
+
+    function runWelcomeEngagement() {
+        if (hasSeenWelcome()) return;
+        // Panel already maximized — skip teaser popup (was delaying open feel)
+        if (!isOpen) {
+            showTeaser();
+        }
+        offerVisitorPushWelcome();
+    }
+
+    function visitorNotifyTitle() {
+        return (settings && settings.site_name) ? settings.site_name : 'LiveChat';
+    }
+
+    function visitorNotifyBody() {
+        if (agentsOnline > 0) {
+            return 'Need help? Our team is online — chat with us anytime.';
+        }
+        return 'Need help? Leave a message and we\'ll get back to you.';
+    }
+
+    function fireVisitorWelcomeNotification() {
+        notifyVisitorBrowser(visitorNotifyTitle(), visitorNotifyBody(), 'lc-welcome-' + brandKey);
+    }
+
+    function shouldShowBrowserNotification() {
+        if (!window.Notification || Notification.permission !== 'granted') return false;
+        if (document.hidden) return true;
+        if (!isOpen) return true;
+        try {
+            if (typeof document.hasFocus === 'function' && !document.hasFocus()) return true;
+        } catch (eF) {}
+        return false;
+    }
+
+    /** Desktop/OS notification for visitors (agent reply, welcome, etc.). */
+    function notifyVisitorBrowser(title, body, tag) {
+        if (!window.Notification || Notification.permission !== 'granted') return false;
+        try {
+            var n = new Notification(title || visitorNotifyTitle(), {
+                body: body || '',
+                tag: tag || ('lc-msg-' + brandKey + '-' + Date.now()),
+                renotify: true,
+                requireInteraction: false,
+                silent: false
+            });
+            n.onclick = function () {
+                try { window.focus(); } catch (eFocus) {}
+                if (!isOpen) openPanel({ silenceFlow: true, focusComposeOnOpen: true });
+                try { n.close(); } catch (eClose) {}
+            };
+            return true;
+        } catch (eN) {
+            return false;
+        }
+    }
+
+    function notifyIncomingAgentMessage(m) {
+        if (!m || m.sender_type === 'visitor') return;
+        if (m.sender_type === 'system') return;
+        playNotifySound();
+        if (!shouldShowBrowserNotification()) return;
+        var who = (m.agent_name || (currentAgent && currentAgent.name) || 'Agent').trim() || 'Agent';
+        var text = String(m.message || '').replace(/\s+/g, ' ').trim();
+        if (!text && m.attachment) text = 'Sent an attachment';
+        if (!text) text = 'New message';
+        if (text.length > 120) text = text.slice(0, 117) + '…';
+        notifyVisitorBrowser(who, text, 'lc-agent-' + brandKey + '-' + (m.id || Date.now()));
+    }
+
+    function offerVisitorPushWelcome() {
+        if (!window.Notification) return;
+        welcomePushPending = true;
+        if (Notification.permission === 'granted') {
+            if (shouldShowBrowserNotification()) {
+                fireVisitorWelcomeNotification();
+            }
+            welcomePushPending = false;
+            return;
+        }
+        if (Notification.permission === 'denied') {
+            welcomePushPending = false;
+            return;
+        }
+        // No gesture yet — wait for Let's chat / bubble / teaser click
+    }
+
+    function requestVisitorPushPermission(fromGesture) {
+        if (!window.Notification) return;
+        if (Notification.permission === 'granted') {
+            if (fromGesture && welcomePushPending) {
+                fireVisitorWelcomeNotification();
+                welcomePushPending = false;
+            }
+            return;
+        }
+        if (Notification.permission === 'denied') return;
+        // Browsers block permission prompts without a user gesture
+        if (!fromGesture) return;
+        var req = null;
+        try {
+            req = Notification.requestPermission();
+        } catch (eReq) {
+            return;
+        }
+        if (req && typeof req.then === 'function') {
+            req.then(function (perm) {
+                if (perm === 'granted') {
+                    fireVisitorWelcomeNotification();
+                }
+                welcomePushPending = false;
+            }).catch(function () {
+                welcomePushPending = false;
+            });
+        } else {
+            // Older Safari sync API
+            try {
+                if (Notification.permission === 'granted') {
+                    fireVisitorWelcomeNotification();
+                }
+            } catch (eOld) {}
+            welcomePushPending = false;
+        }
     }
 
     function setCloseChatVisible(show) {
@@ -2239,6 +3069,7 @@
         setPeerTypingVisible(false);
         stopLiveMessageSync();
         stopSafetySync();
+        stopWsSafetyCatchup();
         leaveCloseSent = true;
         setWaitingState(false);
         if (pollTimer) {
@@ -2265,7 +3096,7 @@
             document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
             var emailInput = document.getElementById('lc-email-transcript-input');
             if (emailInput && !emailInput.value) {
-                emailInput.value = localStorage.getItem('lc_visitor_email') || '';
+                emailInput.value = storedVisitorEmail() || '';
             }
             var emailPanel = document.getElementById('lc-email-transcript-panel');
             if (emailPanel) emailPanel.hidden = true;
@@ -2304,6 +3135,9 @@
         if (box) {
             try { box.scrollTop = box.scrollHeight; } catch (e) {}
         }
+        // Keep receiving agent messages after soft close (inactivity / agent end)
+        startLiveMessageSync();
+        scheduleGapFill();
     }
 
     function markChatContinuedFromClosed(data) {
@@ -2320,8 +3154,15 @@
             updateStatus('Connecting to live agent...', agentsOnline > 0);
         } else {
             setWaitingState(false);
+            if (data && data.agent) {
+                updateHeaderAgent(data.agent);
+                if (data.agent.name) {
+                    updateStatus('Chatting with ' + data.agent.name, true);
+                }
+            }
         }
         startLiveMessageSync();
+        scheduleGapFill();
         if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
             loadRealtimeScript(function () { initVisitorRealtime(); });
         }
@@ -2384,7 +3225,7 @@
         }
         var input = document.getElementById('lc-menu-transcript-input');
         if (input && !input.value) {
-            input.value = localStorage.getItem('lc_visitor_email') || '';
+            input.value = storedVisitorEmail() || '';
         }
         setEmailTranscriptStatus('', false, 'menu');
         syncTranscriptSentUi('menu');
@@ -2582,7 +3423,7 @@
         if (open) {
             var input = document.getElementById(ids.input);
             if (input && !input.value) {
-                input.value = localStorage.getItem('lc_visitor_email') || '';
+                input.value = storedVisitorEmail() || '';
             }
             setEmailTranscriptStatus('', false, which);
             setTimeout(function () {
@@ -2606,7 +3447,7 @@
             var v = (el.value || '').trim();
             if (isValidTranscriptEmail(v)) {
                 transcriptEmailForClose = v.toLowerCase();
-                try { localStorage.setItem('lc_visitor_email', transcriptEmailForClose); } catch (e) {}
+                serverVisitorEmail = transcriptEmailForClose || serverVisitorEmail;
                 return;
             }
         }
@@ -2765,7 +3606,7 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data && data.success) {
-                try { localStorage.setItem('lc_visitor_email', data.email || email); } catch (e) {}
+                serverVisitorEmail = String(data.email || email || serverVisitorEmail || '').trim();
                 transcriptEmailForClose = (data.email || email || '').toLowerCase();
                 if (input) input.value = data.email || email;
                 if (data.deferred) {
@@ -2800,9 +3641,10 @@
         chatClosed = false;
         lastClosedBy = '';
         leaveCloseSent = false;
-        document.getElementById('lc-panel-ended').style.display = 'none';
-        setComposeEnabled(true);
-        setCloseChatVisible(true);
+        var ended = document.getElementById('lc-panel-ended');
+        if (ended) ended.style.display = 'none';
+        // Do not enable compose here — caller must show idle / prechat / chat view.
+        // Enabling compose alone left toolbar + empty black panel ("Start new chat" break).
     }
 
     function endChat() {
@@ -2849,32 +3691,91 @@
     }
 
     function startNewChat() {
+        // Intentional new session from ended screen — never leave a half-reset panel.
         hideEndedState();
+        hideEmojiPicker();
+        if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
+        if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
+        stopOwnTyping();
+        setPeerTypingVisible(false);
+        stopLiveMessageSync();
+        stopSafetySync();
+        stopWsSafetyCatchup();
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        if (realtimeClient && typeof realtimeClient.disconnect === 'function') {
+            try { realtimeClient.disconnect(); } catch (eRt) {}
+        }
+        realtimeBoundConvId = 0;
+
         conversationId = null;
         chatToken = '';
-        persistConversationId(null);
-        persistChatToken('');
+        pendingResumeConvId = null;
+        serverLiveConversationId = 0;
+        serverLiveConversationStatus = '';
+        chatClosed = false;
+        leaveCloseSent = false;
+        lastClosedBy = '';
+        chatInitInFlight = false;
+        fullHistoryMode = false;
+        ticketResumeAwaitingAgent = false;
+        pendingHistoryWipe = false;
+        lastMsgId = 0;
+        lastDateLabel = '';
         currentAgent = { name: '', avatar: null };
         currentReference = '';
         updateHeaderAgent(null);
+        persistConversationId(null);
+        persistChatToken('');
+        try { chatStore().removeItem(LAST_MSG_KEY); } catch (eClear) {}
+
         var refWrap = document.getElementById('lc-panel-ref');
         var endedRef = document.getElementById('lc-ended-ref');
         if (refWrap) refWrap.hidden = true;
         if (endedRef) endedRef.hidden = true;
         hideTicketResumePanel(true);
-        fullHistoryMode = false;
-        ticketResumeAwaitingAgent = false;
         resetTranscriptSentState();
-        conversationId = null;
-        lastMsgId = 0;
-        lastDateLabel = '';
         setWaitingState(false);
-        document.getElementById('lc-panel-messages').innerHTML = '';
-        document.getElementById('lc-prechat-name').value = localStorage.getItem('lc_visitor_name') || '';
-        document.getElementById('lc-prechat-email').value = localStorage.getItem('lc_visitor_email') || '';
-        document.getElementById('lc-prechat-message').value = '';
+
+        var msgBox = document.getElementById('lc-panel-messages');
+        if (msgBox) msgBox.innerHTML = '';
+        var msgEl = document.getElementById('lc-prechat-message');
+        if (msgEl) msgEl.value = '';
         showPrechatError('');
-        beginNewConversationFlow();
+
+        // Keep name/email from this session — "Start new chat" is not a new visitor.
+        if (visitorHasKnownIdentity()) {
+            serverIdentityComplete = true;
+            entryRouted = true;
+            paintFreshChatEntry();
+            // Soft settings sync only — do not re-route (that caused form → idle blink).
+            fetchWidgetSettings(function (data) {
+                if (!data || !data.success) return;
+                var rotated = !!data.visitor_uid_rotated;
+                applyWidgetSettings(data);
+                // Form only if IP actually rotated to a visitor with no profile.
+                if (rotated && prechatFormEnabled && !visitorHasKnownIdentity()) {
+                    showPrechatForm(true);
+                }
+            });
+            return;
+        }
+
+        // Identity unknown: wait for one settings response, then paint once (no speculative form).
+        entryRouted = false;
+        updateStatus('Starting...', agentsOnline > 0);
+        document.getElementById('lc-panel').classList.add('lcw-chat-active');
+        document.getElementById('lc-panel').classList.remove('lcw-mode-prechat', 'lcw-mode-idle');
+        document.getElementById('lc-panel-prechat').style.display = 'none';
+        document.getElementById('lc-panel-ended').style.display = 'none';
+        document.getElementById('lc-panel-messages').style.display = 'flex';
+        document.getElementById('lc-panel-compose').style.display = 'none';
+        document.getElementById('lc-panel-head').style.display = 'flex';
+        document.getElementById('lc-panel-toolbar').style.display = 'none';
+        setComposeEnabled(false);
+        beginNewConversationFlow({ forceNew: true });
     }
 
 
@@ -2882,12 +3783,18 @@
     var GEO_ASKED_KEY = 'lc_browser_geo_asked_' + brandKey;
     var geoRequestInFlight = false;
 
+    function clearBrowserGeoAskState() {
+        try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignore) {}
+        try { localStorage.removeItem(GEO_ASKED_KEY); } catch (ignore2) {}
+        try { sessionStorage.removeItem(GEO_SENT_KEY); } catch (ignore3) {}
+    }
+
     function markGeoAsked(state) {
         try {
             sessionStorage.setItem(GEO_ASKED_KEY, state || '1');
         } catch (ignore) {}
         try {
-            // Persist deny across refreshes so we don't spam the prompt
+            // Persist only final outcomes — never lock on "pending"
             if (state === 'denied' || state === '1') {
                 localStorage.setItem(GEO_ASKED_KEY, state || '1');
             }
@@ -2896,14 +3803,18 @@
 
     function wasGeoAsked() {
         try {
-            if (sessionStorage.getItem(GEO_ASKED_KEY)) return true;
-        } catch (ignore) {}
-        try {
-            if (localStorage.getItem(GEO_ASKED_KEY)) return true;
-        } catch (ignore2) {}
-        try {
             if (sessionStorage.getItem(GEO_SENT_KEY) === '1') return true;
-        } catch (ignore3) {}
+        } catch (ignoreSent) {}
+        var sessionState = '';
+        try {
+            sessionState = String(sessionStorage.getItem(GEO_ASKED_KEY) || '');
+        } catch (ignore) {}
+        // pending = in-flight only — allow retry if previous attempt stalled
+        if (sessionState === '1' || sessionState === 'denied') return true;
+        try {
+            var ls = String(localStorage.getItem(GEO_ASKED_KEY) || '');
+            if (ls === '1' || ls === 'denied') return true;
+        } catch (ignore2) {}
         return false;
     }
 
@@ -2916,6 +3827,9 @@
         }
 
         function askPosition() {
+            if (geoRequestInFlight || wasGeoAsked()) {
+                return;
+            }
             geoRequestInFlight = true;
             markGeoAsked('pending');
             navigator.geolocation.getCurrentPosition(
@@ -2945,15 +3859,22 @@
                         markGeoAsked(data && data.success ? '1' : '1');
                     })
                     .catch(function () {
-                        markGeoAsked('1');
+                        // Soft fail — allow one more try later this session
+                        try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignoreClr) {}
+                        geoRequestInFlight = false;
                     });
                 },
-                function () {
-                    // User denied / timed out — never re-prompt this visitor
+                function (err) {
                     geoRequestInFlight = false;
-                    markGeoAsked('denied');
+                    var code = err && typeof err.code === 'number' ? err.code : 0;
+                    // 1 = PERMISSION_DENIED — don't spam. Timeout/unavailable → retry later.
+                    if (code === 1) {
+                        markGeoAsked('denied');
+                        return;
+                    }
+                    try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignoreClr2) {}
                 },
-                { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         }
 
@@ -2969,7 +3890,6 @@
                     return;
                 }
                 if (status.state === 'granted' || status.state === 'prompt') {
-                    // Only ask once even if state is "prompt"
                     askPosition();
                 }
             }).catch(function () {
@@ -3014,6 +3934,7 @@
                     document.getElementById('lc-panel-messages').innerHTML = '';
                 }
                 pollMessages(true);
+                // Refresh of a closed chat: do not auto-pop "Connecting"
                 return;
             }
         }
@@ -3029,11 +3950,24 @@
         if (!options.keepMessages) {
             lastMsgId = 0;
             lastDateLabel = '';
-            document.getElementById('lc-panel-messages').innerHTML = '';
+            // Don't wipe bubbles until history poll succeeds (avoids blank Admin-Agent screen)
+            pendingHistoryWipe = true;
         }
-        if (ticketResumeAwaitingAgent || data.status === 'waiting') {
+        var isResume = !!(options.resumeConversationId);
+        if (isResume) {
+            // Reload: show loading until transcript paints — not "Waiting for agent" on blank screen
+            pendingResumeStatus = {
+                status: data.status,
+                agent: data.agent,
+                agent_name: data.agent_name,
+                agent_id: data.agent_id,
+                is_assigned: data.is_assigned,
+                agents_online: data.agents_online
+            };
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
+        } else if (ticketResumeAwaitingAgent || data.status === 'waiting') {
             updateHeaderAgent(null);
-            setWaitingState(true);
+            setWaitingState(true, { soft: false });
             updateStatus('Connecting to live agent...', (data.agents_online || 0) > 0);
         } else {
             updateHeaderAgent(data.agent || null);
@@ -3043,7 +3977,11 @@
             }
         }
         resetVisitorPollTimers();
-        pollMessages(true);
+        pollMessages(true, function () {
+            if (isResume || chatHistoryLoading) {
+                hideChatLoading();
+            }
+        });
         startLiveMessageSync();
         var seedToken = data.realtime_token || '';
         loadRealtimeScript(function () {
@@ -3051,18 +3989,23 @@
         });
         requestBrowserGeo();
         capturePublicIpv4();
+        // Refresh resume of active chat: auto-maximize into the thread
+        if (isResume) {
+            scheduleAutoOpenOnLoad();
+            return;
+        }
+        scheduleAutoOpenOnLoad();
     }
 
     function initChat(options) {
         options = options || {};
-        if (chatInitInFlight) {
+        if (chatInitInFlight || proactiveInviteInFlight) {
             return;
         }
         chatInitInFlight = true;
         var resumeConvId = options.resumeConversationId || null;
         if (resumeConvId) {
-            showChatView();
-            updateStatus('Reconnecting...', false);
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
         }
         fetch(siteUrl + '/api/widget-init.php', {
             method: 'POST',
@@ -3075,6 +4018,7 @@
                 page_url: window.location.href,
                 website_url: '',
                 public_ipv4: publicIpv4,
+                chat_token: getStoredChatToken() || chatToken || '',
                 resume_conversation_id: resumeConvId
             })
         })
@@ -3082,6 +4026,11 @@
         .then(function (data) {
             chatInitInFlight = false;
             if (!data.success) {
+                if (isWidgetIpBlockedError(data)) {
+                    hideWidgetForBlockedIp();
+                    return;
+                }
+                hideChatLoading();
                 handleInitFailure(data.error || 'Could not connect');
                 return;
             }
@@ -3207,16 +4156,13 @@
     }
 
     function scheduleTeaser() {
-        if (localStorage.getItem(TEASER_KEY) === '1') return;
-        teaserTimer = setTimeout(function () {
-            if (!isOpen && agentsOnline > 0) showTeaser();
-        }, 4500);
+        scheduleWelcomeEngagement();
     }
 
     function showTeaser() {
         var el = document.getElementById('lc-teaser');
-        if (!el || isOpen) return;
-        var name = settings.site_name || 'Our team';
+        if (!el) return;
+        var name = (settings && settings.site_name) ? settings.site_name : 'Our team';
         document.getElementById('lc-teaser-title').textContent = 'Questions? ' + name + ' is here.';
         document.getElementById('lc-teaser-text').textContent = agentsOnline > 0
             ? 'Our team is online - typical reply within a few minutes.'
@@ -3228,7 +4174,8 @@
         var el = document.getElementById('lc-teaser');
         if (el) el.style.display = 'none';
         if (teaserTimer) { clearTimeout(teaserTimer); teaserTimer = null; }
-        if (persist) localStorage.setItem(TEASER_KEY, '1');
+        if (welcomeTimer) { clearTimeout(welcomeTimer); welcomeTimer = null; }
+        if (persist) markWelcomeSeen();
     }
 
     function setBubbleOnline(online) {
@@ -3282,25 +4229,87 @@
         }
     }
 
-    function setWaitingState(waiting) {
+    function setWaitingState(waiting, opts) {
+        opts = opts || {};
         isWaitingForAgent = waiting;
+        var soft = !!opts.soft;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
         var card = document.getElementById('lc-connecting-card');
         var text = document.getElementById('lc-waiting-text');
         if (text) {
-            text.textContent = waiting ? 'Connecting to live agent...' : text.textContent;
+            text.textContent = waiting
+                ? (soft ? 'Waiting for an agent...' : 'Connecting to live agent...')
+                : text.textContent;
         }
         if (card) {
-            if (waiting && !chatClosed) {
+            // Big spinner card only for a fresh connect — never on page-refresh resume
+            if (waiting && !chatClosed && !soft) {
                 card.hidden = false;
             } else {
                 card.hidden = true;
             }
         }
         if (waiting && !chatClosed) {
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
+            updateStatus(soft ? 'Waiting for an agent...' : 'Connecting to live agent...', agentsOnline > 0);
         }
+    }
+
+    var chatHistoryLoading = false;
+    var pendingResumeStatus = null;
+
+    function showChatLoading(title, sub) {
+        chatHistoryLoading = true;
+        var el = ensureChatLoadingEl();
+        if (el) {
+            el.hidden = false;
+            var t = document.getElementById('lc-chat-loading-title');
+            var s = document.getElementById('lc-chat-loading-sub');
+            if (t) t.textContent = title || 'Loading chat...';
+            if (s) s.textContent = sub || 'Waiting for chat to load';
+        }
+        // Hide waiting bar while transcript is still loading — avoid blank + wrong status
+        var bar = document.getElementById('lc-waiting-bar');
+        if (bar) bar.classList.remove('is-visible');
+        var card = document.getElementById('lc-connecting-card');
+        if (card) card.hidden = true;
+        updateStatus(title || 'Loading chat...', agentsOnline > 0);
+    }
+
+    function hideChatLoading() {
+        chatHistoryLoading = false;
+        var el = document.getElementById('lc-chat-loading');
+        if (el) {
+            el.hidden = true;
+            // Remove from transcript so it doesn't sit between messages
+            if (el.parentNode) {
+                try { el.parentNode.removeChild(el); } catch (eR) {}
+            }
+        }
+        if (pendingResumeStatus) {
+            var st = pendingResumeStatus;
+            pendingResumeStatus = null;
+            applyAgentConnectionState(st);
+            if (st.status === 'waiting' || ticketResumeAwaitingAgent) {
+                setWaitingState(true, { soft: true });
+                updateStatus('Waiting for an agent...', agentsOnline > 0);
+            }
+        }
+    }
+
+    function ensureChatLoadingEl() {
+        var el = document.getElementById('lc-chat-loading');
+        if (el) return el;
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return null;
+        box.insertAdjacentHTML('afterbegin',
+            '<div id="lc-chat-loading" class="lcw-chat-loading" hidden>' +
+            '<div class="lcw-connecting-spinner" aria-hidden="true"></div>' +
+            '<div class="lcw-connecting-copy">' +
+            '<strong id="lc-chat-loading-title">Loading chat...</strong>' +
+            '<span id="lc-chat-loading-sub">Waiting for chat to load</span>' +
+            '</div></div>');
+        return document.getElementById('lc-chat-loading');
     }
 
     function setPeerTypingVisible(show, name) {
@@ -3327,10 +4336,8 @@
             if (draft.length > 280) draft = draft.slice(0, 280);
         }
         var now = Date.now();
-        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 1800) {
-            return;
-        }
-        if (isTyping && draft !== lastTypingDraft && now - lastTypingPostAt < 350) {
+        // Keep heartbeats flowing; only skip identical drafts briefly.
+        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 1200) {
             return;
         }
         lastTypingPostAt = now;
@@ -3398,9 +4405,10 @@
             }, 2000);
         }
         if (typingIdleTimer) clearTimeout(typingIdleTimer);
+        // Mobile typists pause longer between words — keep indicator alive ~6s.
         typingIdleTimer = setTimeout(function () {
             stopOwnTyping();
-        }, 2500);
+        }, 6000);
     }
 
     function playNotifySound(force) {
@@ -3475,6 +4483,10 @@
                 public_ipv4: ip,
                 website_url: ''
             })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (data && data.success) {
+                applyVisitorIdentityFromResponse(data);
+            }
         }).catch(function () {});
     }
 
@@ -3623,6 +4635,9 @@
         if (m.sender_type === 'system' && !ticketDisplayEnabled && isTicketReferenceMessage(m)) {
             return;
         }
+        if (isAdminOnlySystemMessage(m)) {
+            return;
+        }
         if (m.created_at) maybeAppendDateDivider(m.created_at);
 
         var box = document.getElementById('lc-panel-messages');
@@ -3753,8 +4768,13 @@
         var t = String(m.message || '');
         return /Merged\s+\d+\s+earlier chat/i.test(t)
             || /from the same visitor into this thread/i.test(t)
-            || /Visitor returned\. Previous conversation is open again/i.test(t)
-            || /Agent reopened this chat to follow up/i.test(t);
+            || /returned\. Previous conversation is open again/i.test(t)
+            || /Agent reopened this chat to follow up/i.test(t)
+            || /IP blocked/i.test(t)
+            || /visitor IP was blocked/i.test(t)
+            || /moved to history after visitor IP/i.test(t)
+            || /was contacted by an agent/i.test(t)
+            || /transcript requested/i.test(t);
     }
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length) return;
@@ -3769,10 +4789,19 @@
         if (isDocumentReload()) {
             clearReloadNavigation();
         }
-        // Conversation routing: buildWidget ΓåÆ loadWidgetSettings ΓåÆ routeVisitorEntry
-        // Panel auto-open: scheduleAutoOpenOnLoad() from routeVisitorEntry
-        // (Do not start a second chat flow here - that created duplicate conversations.)
         lastMsgId = 0;
+
+        // Instant resume: don't wait for settings_only (geo-slow) to paint Let's chat
+        var storedId = parseInt(getStoredConversationId(), 10) || 0;
+        if (storedId > 0 && !chatInitInFlight && !conversationId) {
+            entryRouted = true;
+            pendingResumeConvId = storedId;
+            hideIdleIntro();
+            showChatView();
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
+            scheduleAutoOpenOnLoad();
+            initChat({ resumeConversationId: storedId });
+        }
     }
 
     function messagesNeedHistoryReload() {
@@ -3791,10 +4820,10 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // Never wipe an already-painted transcript (WS race)
-        if (isHistoryLoad && hasBubbles) {
-            isHistoryLoad = false;
-        } else if (!isHistoryLoad && !hasBubbles) {
+        // If transcript is empty, always do a floor history load.
+        // IMPORTANT: do NOT convert history→incremental when bubbles exist — that
+        // skips gap-fill (missed WS messages between painted ids never arrive).
+        if (!isHistoryLoad && !hasBubbles) {
             isHistoryLoad = true;
         }
 
@@ -3812,7 +4841,7 @@
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
             '&chat_token=' + encodeURIComponent(chatToken || '') +
             '&viewing=' + viewing +
-            ((isHistoryLoad || fullHistoryMode) ? '&full_history=1' : '') +
+            ((fullHistoryMode) ? '&full_history=1' : '') +
             (currentReference ? '&ticket_ref=' + encodeURIComponent(currentReference) : ''), {
                 headers: apiHeaders()
             })
@@ -3826,7 +4855,20 @@
             .then(function (data) {
                 if ((parseInt(conversationId, 10) || 0) !== convAtStart) return;
                 if (isHistoryLoad && gen !== pollGen) return;
-                if (!data || !data.success) return;
+                if (!data || !data.success) {
+                    // Auth/network miss — keep retrying history so agent replies appear
+                    if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                        if (historyRetryTimer) clearTimeout(historyRetryTimer);
+                        historyRetryTimer = setTimeout(function () {
+                            historyRetryTimer = null;
+                            if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                                lastMsgId = 0;
+                                pollMessages(true);
+                            }
+                        }, 1200);
+                    }
+                    return;
+                }
 
                 var serverCursor = parseInt(data.message_cursor, 10) || 0;
                 if (!isHistoryLoad && serverCursor > 0 && lastMsgId > serverCursor) {
@@ -3869,14 +4911,52 @@
 
                 var messages = Array.isArray(data.messages) ? data.messages : [];
                 if (isHistoryLoad) {
-                    // If WS painted while we fetched, merge instead of wipe
-                    if (!messagesNeedHistoryReload()) {
-                        isHistoryLoad = false;
-                    } else {
+                    // Never wipe bubbles that arrived via WS (or optimistic) while this
+                    // poll was in flight — that permanently drops agent replies.
+                    var pollIdMap = {};
+                    var pollMaxId = 0;
+                    messages.forEach(function (pm) {
+                        var pid = parseInt(pm && pm.id, 10) || 0;
+                        if (pid > 0) {
+                            pollIdMap[pid] = true;
+                            if (pid > pollMaxId) pollMaxId = pid;
+                        }
+                    });
+                    var domHasExtras = false;
+                    var histBox = document.getElementById('lc-panel-messages');
+                    if (histBox) {
+                        histBox.querySelectorAll('[data-msg-id]').forEach(function (el) {
+                            var did = parseInt(el.getAttribute('data-msg-id'), 10) || 0;
+                            if (did > 0 && !pollIdMap[did]) {
+                                domHasExtras = true;
+                            }
+                        });
+                    }
+                    if (domHasExtras || (!messagesNeedHistoryReload() && !pendingHistoryWipe)) {
+                        // Merge only — keep live/WS bubbles
+                        pendingHistoryWipe = false;
+                    } else if (pendingHistoryWipe || messagesNeedHistoryReload()) {
                         lastDateLabel = '';
                         lastMsgId = 0;
-                        var histBox = document.getElementById('lc-panel-messages');
-                        if (histBox) histBox.innerHTML = '';
+                        if (histBox) {
+                            // Keep loading shell if present — don't destroy it with wipe
+                            var keepLoad = document.getElementById('lc-chat-loading');
+                            histBox.innerHTML = '';
+                            if (keepLoad) {
+                                histBox.appendChild(keepLoad);
+                            } else if (chatHistoryLoading) {
+                                histBox.insertAdjacentHTML('afterbegin',
+                                    '<div id="lc-chat-loading" class="lcw-chat-loading">' +
+                                    '<div class="lcw-connecting-spinner" aria-hidden="true"></div>' +
+                                    '<div class="lcw-connecting-copy">' +
+                                    '<strong id="lc-chat-loading-title">Loading chat...</strong>' +
+                                    '<span id="lc-chat-loading-sub">Waiting for chat to load</span>' +
+                                    '</div></div>');
+                            }
+                        }
+                        pendingHistoryWipe = false;
+                    } else {
+                        pendingHistoryWipe = false;
                     }
                 }
 
@@ -3892,6 +4972,15 @@
                         return;
                     }
                     if (mid < 1 && !isHistoryLoad) return;
+                    // Swap optimistic temp bubble for the real server message
+                    if (m.sender_type === 'visitor' && m.message) {
+                        document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]').forEach(function (el) {
+                            var body = el.querySelector('.lcw-msg-body');
+                            if (body && body.textContent === m.message) {
+                                el.remove();
+                            }
+                        });
+                    }
                     var isNewIncoming = !isHistoryLoad && m.sender_type !== 'visitor';
                     var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
                     appendMessage(m, { suppressAgentState: suppressAgentState });
@@ -3900,15 +4989,27 @@
                     }
                     if (isNewIncoming) {
                         setPeerTypingVisible(false);
+                        var openedNow = false;
+                        if (m.sender_type === 'agent') {
+                            notifyIncomingAgentMessage(m);
+                        } else {
+                            playNotifySound();
+                        }
                         if (!isOpen) {
                             if (autoOpenOnMessage) {
-                                openPanel({ silenceFlow: true });
+                                openPanel({
+                                    silenceFlow: true,
+                                    focusComposeOnOpen: m.sender_type === 'agent'
+                                });
+                                openedNow = true;
                             } else {
                                 var badge = document.getElementById('lc-bubble-badge');
                                 if (badge) badge.style.display = 'flex';
                             }
                         }
-                        playNotifySound();
+                        if (m.sender_type === 'agent' && !openedNow) {
+                            focusVisitorCompose();
+                        }
                     }
                 });
 
@@ -3924,6 +5025,10 @@
                     }
                 } else {
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
+                }
+                if (viewing === '1') {
+                    // Poll already marked read server-side when viewing=1; nudge again if needed
+                    ackAgentMessagesSeen();
                 }
             })
             .catch(function () {})
@@ -4152,12 +5257,153 @@
         });
     }
 
+    function refreshChatToken() {
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1) {
+            return Promise.resolve('');
+        }
+        return fetch(siteUrl + '/api/widget-init.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                name: storedVisitorName(),
+                email: storedVisitorEmail(),
+                page_url: window.location.href,
+                website_url: '',
+                public_ipv4: publicIpv4,
+                chat_token: getStoredChatToken() || chatToken || '',
+                resume_conversation_id: cid
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success || !data.chat_token) {
+                    return '';
+                }
+                if (data.conversation_id) {
+                    conversationId = parseInt(data.conversation_id, 10) || conversationId;
+                    persistConversationId(conversationId);
+                }
+                chatToken = data.chat_token;
+                persistChatToken(chatToken);
+                if (data.visitor_uid) {
+                    adoptVisitorUid(data.visitor_uid, !!data.visitor_uid_rotated);
+                }
+                return chatToken;
+            })
+            .catch(function () { return ''; });
+    }
+
+    function postVisitorMessage(msg, tempId, wasClosed, sendBtn, isRetry) {
+        return fetch(siteUrl + '/api/visitor-send.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                visitor_uid: visitorUid,
+                chat_token: chatToken || getStoredChatToken() || '',
+                brand_key: brandKey,
+                widget_loaded_at: widgetLoadedAt,
+                lc_hp: readHoneypotField('lc-honeypot'),
+                message: msg
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if ((!data || !data.success) && !isRetry && data && /invalid session/i.test(String(data.error || ''))) {
+                return refreshChatToken().then(function (token) {
+                    if (token) {
+                        // Stale token from double-init / same-IP resume — retry once.
+                        return postVisitorMessage(msg, tempId, wasClosed, sendBtn, true);
+                    }
+                    finishVisitorSend(data, tempId, wasClosed, sendBtn);
+                    return data;
+                });
+            }
+            finishVisitorSend(data, tempId, wasClosed, sendBtn);
+            return data;
+        })
+        .catch(function () {
+            sendBtn.classList.remove('is-sending');
+            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+            if (pending) pending.remove();
+            appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
+        });
+    }
+
+    function finishVisitorSend(data, tempId, wasClosed, sendBtn) {
+        sendBtn.classList.remove('is-sending');
+        var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+        if (data && data.success) {
+            if (wasClosed || data.reopened) {
+                markChatContinuedFromClosed(data);
+            } else if ((data.status || '') === 'waiting') {
+                updateHeaderAgent(null);
+                setWaitingState(true);
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
+                var inputFix = document.getElementById('lc-input');
+                if (inputFix) inputFix.placeholder = 'Write a message...';
+            }
+            if (pending && data.message_id) {
+                pending.setAttribute('data-msg-id', String(data.message_id));
+                pending.classList.remove('lcw-msg-pending');
+                updateVisitorTicks(String(data.message_id), 'sent');
+                advanceLastMsgId(data.message_id);
+            } else if (pending) {
+                pending.classList.remove('lcw-msg-pending');
+                updateVisitorTicks(tempId, 'sent');
+                pollMessages(false);
+            } else {
+                pollMessages(false);
+            }
+            if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
+                loadRealtimeScript(function () { initVisitorRealtime(); });
+            }
+            return;
+        }
+        var failedText = '';
+        if (pending) {
+            var body = pending.querySelector('.lcw-msg-body');
+            failedText = ((body && body.textContent) || '').trim();
+            pending.remove();
+        }
+        if (data && data.error) {
+            showTransientSendError(data.error, failedText);
+        }
+    }
+
+    function showTransientSendError(errorMsg, restoreText) {
+        errorMsg = String(errorMsg || '').trim();
+        if (!errorMsg) return;
+        var isRate = /too many requests|please wait/i.test(errorMsg);
+        var now = Date.now();
+        if (isRate) {
+            sendCooldownUntil = Math.max(sendCooldownUntil, now + 4000);
+            if (restoreText) {
+                var input = document.getElementById('lc-input');
+                if (input && !input.value.trim()) {
+                    input.value = restoreText;
+                    autoResizeTextarea(input);
+                }
+            }
+        }
+        // Don't flood the transcript with the same system error
+        if (errorMsg === lastTransientErrorText && (now - lastTransientErrorAt) < 8000) {
+            return;
+        }
+        lastTransientErrorText = errorMsg;
+        lastTransientErrorAt = now;
+        appendMessage({ sender_type: 'system', message: errorMsg });
+    }
+
     function sendMessage() {
         hideEmojiPicker();
         if (pendingAttachments.length) {
             if (!conversationId) {
-                if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
-                    showPrechatForm();
+                if (prechatFormEnabled && !visitorHasKnownIdentity()) {
+                    showPrechatForm(true);
                     showPrechatError('Please complete the form to start chatting.');
                     return;
                 }
@@ -4172,9 +5418,14 @@
         if (!msg) return;
         stopOwnTyping();
 
+        if (Date.now() < sendCooldownUntil) {
+            showTransientSendError('Too many requests. Please wait a moment.', msg);
+            return;
+        }
+
         if (!conversationId) {
-            if (prechatFormEnabled && !hasStoredVisitorIdentity()) {
-                showPrechatForm();
+            if (prechatFormEnabled && !visitorHasKnownIdentity()) {
+                showPrechatForm(true);
                 showPrechatError('Please complete the form to start chatting.');
                 return;
             }
@@ -4189,84 +5440,57 @@
         autoResizeTextarea(input);
 
         var tempId = 'temp_' + Date.now();
+        // Optimistic: show ticks as sent immediately — no clock while HTTP is in flight.
         appendMessage({
             _tempId: tempId,
             sender_type: 'visitor',
             message: msg,
             created_at: new Date().toISOString(),
-            _pending: true
+            delivery_status: 'sent'
         });
 
         var sendBtn = document.getElementById('lc-send');
         sendBtn.classList.add('is-sending');
         var wasClosed = chatClosed;
 
-        fetch(siteUrl + '/api/visitor-send.php', {
-            method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                conversation_id: conversationId,
-                visitor_uid: visitorUid,
-                chat_token: chatToken,
-                widget_loaded_at: widgetLoadedAt,
-                lc_hp: readHoneypotField('lc-honeypot'),
-                message: msg
-            })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            sendBtn.classList.remove('is-sending');
-            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
-            if (data.success) {
-                if (wasClosed || data.reopened) {
-                    markChatContinuedFromClosed(data);
-                }
-                if (pending && data.message_id) {
-                    pending.setAttribute('data-msg-id', String(data.message_id));
-                    pending.classList.remove('lcw-msg-pending');
-                    updateVisitorTicks(String(data.message_id), 'sent');
-                    advanceLastMsgId(data.message_id);
-                } else if (pending) {
-                    pending.remove();
-                    pollMessages(false);
-                } else {
-                    pollMessages(false);
-                }
-                // Keep visitor socket alive after send
-                if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
-                    loadRealtimeScript(function () { initVisitorRealtime(); });
-                }
-            } else {
-                if (pending) pending.remove();
-                if (data.error) {
-                    appendMessage({ sender_type: 'system', message: data.error });
-                }
-            }
-        })
-        .catch(function () {
-            sendBtn.classList.remove('is-sending');
-            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
-            if (pending) pending.remove();
-            appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
-        });
+        // Prefer stored token if in-memory was cleared by a settings race
+        if (!chatToken) {
+            chatToken = getStoredChatToken() || '';
+        }
+        postVisitorMessage(msg, tempId, wasClosed, sendBtn, false);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            checkWidgetAccess(function () {
-                ensureAttachmentLib(function () {
-                    buildWidget();
-                    resumeChatOnLoad();
-                });
-            });
-        });
+        document.addEventListener('DOMContentLoaded', bootWidget);
     } else {
-        checkWidgetAccess(function () {
-            ensureAttachmentLib(function () {
-                buildWidget();
-                resumeChatOnLoad();
-            });
-        });
+        bootWidget();
+    }
+
+    function bootWidget() {
+        // Paint widget ASAP — do not block on access API or attachment script
+        buildWidget();
+        resumeChatOnLoad();
+        // Presence WS early — agent "Start chat" invite must not wait for settings
+        initVisitorPresenceRealtime();
+        ensureAttachmentLib(function () { /* optional */ });
+        // Soft gate: remove widget if IP/brand blocked
+        fetch(siteUrl + '/api/widget-access.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ brand_key: brandKey, visitor_uid: visitorUid })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data && data.allowed === false) {
+                if (typeof hideWidgetForBlockedIp === 'function') {
+                    hideWidgetForBlockedIp();
+                } else {
+                    var root = document.getElementById('lc-widget-root');
+                    if (root) root.remove();
+                }
+            }
+        })
+        .catch(function () { /* keep widget on network blip */ });
     }
 
     function checkWidgetAccess(callback) {
@@ -4278,6 +5502,8 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data && data.allowed) {
+                callback();
+            } else if (!data || data.allowed !== false) {
                 callback();
             }
         })
