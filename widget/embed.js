@@ -1329,10 +1329,18 @@
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         document.getElementById('lc-panel-ended').style.display = 'none';
         hideIdleIntro();
-        setComposeEnabled(!chatClosed);
+        var isVisitorEnded = chatClosed && (lastClosedBy === 'visitor' || detectClosedByFromMessages() === 'visitor');
+        setComposeEnabled(!isVisitorEnded);
         setCloseChatVisible(!chatClosed);
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn && !chatClosed) closeBtn.style.display = 'inline-flex';
+        if (chatClosed && !isVisitorEnded) {
+            var inputEl = document.getElementById('lc-input');
+            if (inputEl) {
+                inputEl.placeholder = 'Type a message to continue...';
+                inputEl.disabled = false;
+            }
+        }
     }
 
     function hideIdleIntro() {
@@ -2783,9 +2791,13 @@
         hideTeaser(false);
         // Geo is requested once from handleChatStarted — not on every panel open
         if (!options.silenceFlow) {
-            if (!chatClosed) {
+            var isVisitorSelfClosed = chatClosed && (lastClosedBy === 'visitor' || (!lastClosedBy && detectClosedByFromMessages() === 'visitor'));
+            if (!chatClosed || !isVisitorSelfClosed) {
                 if (conversationId) {
                     showChatView();
+                    if (chatClosed) {
+                        showEndedState(lastClosedBy || detectClosedByFromMessages() || 'agent');
+                    }
                     resetVisitorPollTimers();
                     // History only if empty — do not reload on every open (kills "instant" feel)
                     if (messagesNeedHistoryReload()) {
@@ -2803,9 +2815,12 @@
                 document.getElementById('lc-panel-compose').style.display = 'none';
                 document.getElementById('lc-panel-prechat').style.display = 'none';
             }
-        } else if (conversationId && !chatClosed) {
+        } else if (conversationId) {
             // silenceFlow (e.g. auto-open on WS message): never full-reload transcript
             showChatView();
+            if (chatClosed && lastClosedBy !== 'visitor') {
+                showEndedState(lastClosedBy || detectClosedByFromMessages() || 'agent');
+            }
             resetVisitorPollTimers();
             loadRealtimeScript(function () { initVisitorRealtime(); });
         }
@@ -3030,15 +3045,22 @@
     var lastClosedBy = '';
 
     function detectClosedByFromMessages() {
-        if (lastClosedBy) return lastClosedBy;
         var box = document.getElementById('lc-panel-messages');
-        if (!box) return '';
+        if (!box) return lastClosedBy || '';
+        var sysMsgs = box.querySelectorAll('.lcw-msg.lcw-system');
+        for (var i = sysMsgs.length - 1; i >= 0; i--) {
+            var txt = (sysMsgs[i].textContent || '').trim();
+            if (/chat closed by agent/i.test(txt)) return 'agent';
+            if (/closed automatically due to inactivity/i.test(txt)) return 'inactivity';
+            if (/left the page/i.test(txt)) return 'leave';
+            if (/visitor closed the live chat/i.test(txt)) return 'visitor';
+        }
         var blob = (box.innerText || box.textContent || '');
-        if (/visitor closed the live chat/i.test(blob)) return 'visitor';
         if (/chat closed by agent/i.test(blob)) return 'agent';
         if (/closed automatically due to inactivity/i.test(blob)) return 'inactivity';
+        if (/visitor closed the live chat/i.test(blob)) return 'visitor';
         if (/left the page/i.test(blob)) return 'leave';
-        return '';
+        return lastClosedBy || '';
     }
 
     /**
@@ -3050,12 +3072,16 @@
         hideChatLoading();
         var detected = detectClosedByFromMessages();
         reason = reason || detected || 'remote';
-        // Prefer explicit visitor close text in transcript over vague "remote"
+        // Prefer explicit close text in transcript over vague "remote"
         if (!isVisitorSelfCloseReason(reason) && detected === 'visitor') {
             reason = 'visitor';
+        } else if (detected === 'agent' || detected === 'inactivity') {
+            reason = detected;
         }
         if (isVisitorSelfCloseReason(reason)) {
             lastClosedBy = 'visitor';
+        } else {
+            lastClosedBy = reason || 'agent';
         }
         var visitorEnded = isVisitorSelfCloseReason(reason);
 
