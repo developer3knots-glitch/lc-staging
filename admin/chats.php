@@ -22,10 +22,43 @@ require __DIR__ . '/includes/header.php';
                 <i class="ti ti-search"></i>
                 <input type="search" id="lc-inbox-search" placeholder="Search name, email, phone, ticket (incl. closed)..." autocomplete="off" aria-label="Search conversations">
             </div>
+            <?php
+            $requestedTab = (string) ($_GET['tab'] ?? '');
+            $defaultTab = (($agent['role'] ?? '') === 'admin') ? 'all' : 'waiting';
+            if ($requestedTab !== '' && in_array($requestedTab, ['all', 'waiting', 'active'], true)) {
+                if (($agent['role'] ?? '') !== 'admin' && $requestedTab === 'all') {
+                    $defaultTab = 'waiting';
+                } else {
+                    $defaultTab = $requestedTab;
+                }
+            }
+            $isSuperviseReq = !empty($_GET['supervise']);
+            if ($selectedId > 0) {
+                try {
+                    $cStmt = lc_db()->prepare('SELECT status, agent_id FROM conversations WHERE id = ? LIMIT 1');
+                    $cStmt->execute([$selectedId]);
+                    $selConv = $cStmt->fetch(PDO::FETCH_ASSOC);
+                    $cAgentId = (int) ($selConv['agent_id'] ?? 0);
+                    if ($selConv && ($selConv['status'] ?? '') === 'active') {
+                        if ($cAgentId === (int) $agent['id']) {
+                            $defaultTab = 'active';
+                        } elseif ($isSuperviseReq && function_exists('lc_record_agent_supervising')) {
+                            lc_record_agent_supervising($selectedId, (int) $agent['id']);
+                            $defaultTab = 'waiting';
+                        }
+                    }
+                } catch (Throwable $e) {}
+            }
+            ?>
             <div class="lc-chat-tabs lc-chat-tabs-pro" role="tablist">
-                <button type="button" class="lc-chat-tab active" data-tab="all" role="tab">All</button>
-                <button type="button" class="lc-chat-tab" data-tab="waiting" role="tab">Unassigned</button>
-                <button type="button" class="lc-chat-tab" data-tab="active" role="tab">My chats</button>
+                <?php if (($agent['role'] ?? '') === 'admin'): ?>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'all' ? 'active' : '' ?>" data-tab="all" role="tab">All</button>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'waiting' ? 'active' : '' ?>" data-tab="waiting" role="tab">Unassigned</button>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'active' ? 'active' : '' ?>" data-tab="active" role="tab">My chats</button>
+                <?php else: ?>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'waiting' ? 'active' : '' ?>" data-tab="waiting" role="tab">Unassigned</button>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'active' ? 'active' : '' ?>" data-tab="active" role="tab">My chats</button>
+                <?php endif; ?>
             </div>
             <div class="lc-chat-items" id="lc-conversation-list">
                 <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading...</div>
@@ -244,6 +277,7 @@ require __DIR__ . '/includes/header.php';
                     <label class="lc-details-contact-label" for="lc-details-phone-input">Phone</label>
                     <input type="tel" id="lc-details-phone-input" class="lc-details-contact-input" placeholder="Add phone number" autocomplete="off" inputmode="tel">
                     <div class="lc-details-contact-actions">
+                        <div id="lc-details-contact-readonly-note" class="lc-details-contact-readonly-note" style="display:none"><i class="ti ti-lock"></i> <span>View only (Supervising)</span></div>
                         <button type="button" class="lc-btn lc-btn-sm lc-btn-primary" id="lc-details-contact-save">Save contact</button>
                         <span class="lc-details-contact-status" id="lc-details-contact-status" aria-live="polite"></span>
                     </div>

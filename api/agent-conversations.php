@@ -89,6 +89,19 @@ try {
     $stmt = $db->prepare($sql);
     $stmt->execute(array_merge([$agentId], $params));
     $conversations = $stmt->fetchAll();
+    $supervisedConvIds = [];
+    try {
+        if (function_exists('lc_ensure_supervisors_schema')) {
+            lc_ensure_supervisors_schema();
+        }
+        if (function_exists('lc_ensure_conversation_notes_schema')) {
+            lc_ensure_conversation_notes_schema();
+        }
+        $supStmt = $db->prepare("SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL");
+        $supStmt->execute([$agentId]);
+        $supervisedConvIds = array_flip($supStmt->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) {}
+
     foreach ($conversations as &$row) {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
         unset($row['ticket_reference']);
@@ -98,6 +111,9 @@ try {
         if (function_exists('lc_enrich_returning_visitor_flags')) {
             $row = lc_enrich_returning_visitor_flags($row);
         }
+        $assignedAgentId = (int) ($row['agent_id'] ?? 0);
+        $cid = (int) ($row['id'] ?? 0);
+        $row['is_supervising'] = ($assignedAgentId > 0 && $assignedAgentId !== $agentId && ($row['status'] ?? '') === 'active' && isset($supervisedConvIds[$cid]));
     }
     unset($row);
 

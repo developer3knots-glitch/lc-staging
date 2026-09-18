@@ -85,6 +85,7 @@
             return [
                 r.id,
                 r.status,
+                r.can_supervise ? '1' : '0',
                 r.unread || 0,
                 r.last_msg || '',
                 r.last_message_at || '',
@@ -155,7 +156,8 @@
 
     function renderRecentItem(r) {
         var unread = parseInt(r.unread, 10) || 0;
-        var html = '<a href="' + esc(r.chat_url) + '" class="lc-conv-item' + (unread > 0 ? ' has-unread' : '') + '">';
+        var html = '<div class="lc-conv-item' + (unread > 0 ? ' has-unread' : '') + '" data-chat-url="' + esc(r.chat_url) + '">';
+        html += '<a href="' + esc(r.chat_url) + '" class="lc-conv-item-main">';
         html += '<div class="lc-conv-item-av">' + esc(r.visitor_initials || initials(r.visitor_name)) + '</div>';
         html += '<div class="lc-conv-item-body">';
         html += '<div class="lc-conv-item-top"><strong>' + esc(r.visitor_name) + '</strong>' + statusBadge(r.status);
@@ -172,8 +174,17 @@
         html += dateCell(r.started_at || r.last_message_at);
         html += '<span>' + timeCell(r.last_message_at) + '</span>';
         html += '</div></div>';
+        html += '</a>';
+        html += '<div class="lc-conv-item-actions">';
+        if (r.can_supervise && r.supervise_url) {
+            html += '<a href="' + esc(r.supervise_url) + '" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise" title="Supervise this chat">';
+            html += '<i class="ti ti-shield-check"></i> Supervise</a>';
+        }
+        html += '<a href="' + esc(r.chat_url) + '" class="lc-conv-item-arrow-link" aria-label="Open conversation">';
         html += '<i class="ti ti-chevron-right lc-conv-item-arrow"></i>';
         html += '</a>';
+        html += '</div>';
+        html += '</div>';
         return html;
     }
 
@@ -513,6 +524,19 @@
             setStatsScope(btn.getAttribute('data-stats-scope') || 'all');
         });
     });
+
+    var recentFeed = document.getElementById('lc-recent-feed');
+    if (recentFeed) {
+        recentFeed.addEventListener('click', function (e) {
+            if (e.target.closest('.lc-conv-supervise')) return;
+            if (e.target.closest('.lc-conv-item-main')) return;
+            if (e.target.closest('.lc-conv-item-arrow-link')) return;
+            var item = e.target.closest('.lc-conv-item');
+            if (item && item.getAttribute('data-chat-url')) {
+                window.location.href = item.getAttribute('data-chat-url');
+            }
+        });
+    }
 
     bindRealtime();
     refreshDashboard(true);

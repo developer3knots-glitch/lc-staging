@@ -1057,6 +1057,22 @@
 }
 .lcw-join-text strong { color: var(--lcw-ink); font-weight: 700; }
 
+.lcw-leave-event {
+    align-self: center;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--lcw-muted);
+    font-size: 0.74rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--lcw-border);
+    margin: 0.35rem 0;
+    text-align: center;
+}
+.lcw-leave-event strong {
+    color: var(--lcw-ink);
+    font-weight: 600;
+}
+
 /* ????????? Compose ????????? */
 .lcw-compose,
 #lc-panel-compose {

@@ -44,11 +44,39 @@ try {
         $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, UTC_TIMESTAMP()) WHERE id = ?");
         $upd->execute([$myAgentId, $conversationId]);
 
-        // Audit message in chat transcript
-        $auditText = $prevAgentName !== ''
-            ? "{$myAgentName} took over the chat from {$prevAgentName}."
-            : "{$myAgentName} took over the chat.";
-        lc_add_system_message($conversationId, $auditText, true);
+        if (function_exists('lc_ensure_supervisors_schema')) {
+            lc_ensure_supervisors_schema();
+            try {
+                lc_db()->prepare('DELETE FROM conversation_supervisors WHERE conversation_id = ? AND agent_id = ?')->execute([$conversationId, $myAgentId]);
+                if ($prevAgentId > 0 && function_exists('lc_record_agent_supervising')) {
+                    lc_record_agent_supervising($conversationId, $prevAgentId);
+                }
+            } catch (Throwable $e) {}
+        }
+
+        // 1. Jo pehle chat main tha, wo left hoga
+        $leaveMsgId = 0;
+        if ($prevAgentId > 0 && $prevAgentName !== '') {
+            $leaveText = $prevAgentName . ' left the chat.';
+            $insLeave = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+            $insLeave->execute([$conversationId, 'system', $prevAgentId, $leaveText]);
+            $leaveMsgId = (int) lc_db()->lastInsertId();
+        }
+
+        // 2. Jis ne takeover kiya, wo join hoga
+        $joinText = $myAgentName . ' joined the chat.';
+        $insJoin = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+        $insJoin->execute([$conversationId, 'system', $myAgentId, $joinText]);
+        $joinMsgId = (int) lc_db()->lastInsertId();
+
+        lc_touch_conversation($conversationId);
+
+        if ($leaveMsgId > 0 && function_exists('lc_realtime_publish_message')) {
+            lc_realtime_publish_message($conversationId, $leaveMsgId);
+        }
+        if ($joinMsgId > 0 && function_exists('lc_realtime_publish_message')) {
+            lc_realtime_publish_message($conversationId, $joinMsgId);
+        }
 
         if (function_exists('lc_mark_messages_delivered')) {
             lc_mark_messages_delivered($conversationId, 'visitor');

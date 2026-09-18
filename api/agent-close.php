@@ -18,6 +18,25 @@ try {
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Not found'], 404);
     }
+
+    $agentId = (int) ($agent['id'] ?? 0);
+    $assignedAgentId = (int) ($conv['agent_id'] ?? 0);
+    $isAdmin = (string) ($agent['role'] ?? '') === 'admin';
+    $isSupervising = (($conv['status'] ?? '') === 'active') && ($assignedAgentId > 0) && ($assignedAgentId !== $agentId);
+
+    // If an agent is supervising another agent's active chat, closing does NOT close the chat for visitor.
+    // Instead, it removes the chat from the supervising agent's view and stops supervision.
+    if ($isSupervising && !$isAdmin) {
+        if (function_exists('lc_stop_agent_supervising')) {
+            lc_stop_agent_supervising($conversationId, $agentId);
+        }
+        lc_json([
+            'success' => true,
+            'unsupervised' => true,
+            'conversation_id' => $conversationId,
+        ]);
+    }
+
     if (!lc_agent_can_close_conversation($agent, $conv)) {
         // Allow closing a blocked-visitor chat when leaving inbox → History
         $forceBlockedLeave = !empty($input['blocked_leave']);

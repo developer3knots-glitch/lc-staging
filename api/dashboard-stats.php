@@ -78,7 +78,7 @@ try {
     $unread = lc_unread_count_for_agent($agentId);
 
     $recentSql = "
-        SELECT c.id, c.status, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
+        SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
                v.user_agent AS visitor_user_agent,
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
@@ -118,8 +118,12 @@ try {
         $device = function_exists('lc_parse_user_agent')
             ? lc_parse_user_agent((string) ($r['visitor_user_agent'] ?? ''))
             : ['device' => 'Unknown', 'os' => 'Unknown', 'browser' => 'Unknown', 'label' => 'Unknown'];
+        $rAgentId = (int) ($r['agent_id'] ?? 0);
+        $canSupervise = ($r['status'] === 'active' && $rAgentId > 0 && $rAgentId !== $agentId);
         $recentFormatted[] = [
             'id' => (int) $r['id'],
+            'agent_id' => $rAgentId,
+            'can_supervise' => $canSupervise,
             'visitor_name' => $name,
             'visitor_initials' => lc_avatar_initials($name),
             'brand_name' => $r['brand_name'] ?? '',
@@ -135,6 +139,7 @@ try {
             'last_message_at' => $r['last_message_at'] ? lc_to_iso8601($r['last_message_at']) : null,
             'started_at' => !empty($r['started_at']) ? lc_to_iso8601($r['started_at']) : null,
             'chat_url' => lc_admin_url('chats', ['id' => (int) $r['id']]),
+            'supervise_url' => lc_admin_url('chats', ['id' => (int) $r['id'], 'supervise' => 1]),
         ];
     }
 

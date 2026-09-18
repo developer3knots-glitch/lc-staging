@@ -418,7 +418,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=61';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=62';
         document.head.appendChild(link);
     }
 
@@ -4216,7 +4216,20 @@
         if (!m) return false;
         if (m.event === 'agent_join') return true;
         if (m.sender_type !== 'system') return false;
-        return /joined the chat\.?$/i.test(String(m.message || '').trim());
+        return /joined the (?:chat|conversation)\.?$/i.test(String(m.message || '').trim());
+    }
+
+    function isAgentLeaveMessage(m) {
+        if (!m) return false;
+        if (m.event === 'agent_leave') return true;
+        if (m.sender_type !== 'system') return false;
+        return /left the (?:chat|conversation)\.?$/i.test(String(m.message || '').trim());
+    }
+
+    function isTakeoverMessage(m) {
+        if (!m) return false;
+        if (m.sender_type !== 'system') return false;
+        return /took over the chat from/i.test(String(m.message || '').trim());
     }
 
     function applyAgentConnectionState(data) {
@@ -4703,6 +4716,37 @@
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> joined the conversation</div>';
             box.appendChild(div);
+        } else if (isAgentLeaveMessage(m)) {
+            var div = document.createElement('div');
+            div.className = 'lcw-msg lcw-system lcw-leave-event';
+            if (msgKey) div.setAttribute('data-msg-id', msgKey);
+            var leaveMatch = String(m.message || '').match(/^(.+?)\s+left the (?:chat|conversation)\.?$/i);
+            var leaveName = leaveMatch ? leaveMatch[1] : (m.agent_name || 'Agent');
+            div.innerHTML = '<strong>' + esc(leaveName) + '</strong> left the conversation';
+            box.appendChild(div);
+        } else if (isTakeoverMessage(m)) {
+            var takeoverMatch = String(m.message || '').match(/^(.+?)\s+took over the chat from\s+(.+?)\.?$/i);
+            var takerName = takeoverMatch ? takeoverMatch[1] : (m.agent_name || 'Agent');
+            var prevName = takeoverMatch ? takeoverMatch[2] : '';
+            if (prevName) {
+                var leaveDiv = document.createElement('div');
+                leaveDiv.className = 'lcw-msg lcw-system lcw-leave-event';
+                leaveDiv.innerHTML = '<strong>' + esc(prevName) + '</strong> left the conversation';
+                box.appendChild(leaveDiv);
+            }
+            if (!options.suppressAgentState) {
+                setWaitingState(false);
+                var joinAvatar = m.agent_avatar || null;
+                updateHeaderAgent({ name: takerName, avatar: joinAvatar });
+                updateStatus('Chatting with ' + takerName, true);
+            }
+            var joinDiv = document.createElement('div');
+            joinDiv.className = 'lcw-join-event';
+            if (msgKey) joinDiv.setAttribute('data-msg-id', msgKey);
+            var joinAvatar = m.agent_avatar || null;
+            joinDiv.innerHTML = renderAvatar(joinAvatar, takerName, 'lcw-join-avatar') +
+                '<div class="lcw-join-text"><strong>' + esc(takerName) + '</strong> joined the conversation</div>';
+            box.appendChild(joinDiv);
         } else if (m.sender_type === 'agent') {
             if (!options.suppressAgentState) {
                 setWaitingState(false);

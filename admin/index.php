@@ -82,7 +82,7 @@ if (function_exists('lc_merge_same_ip_conversations')) {
 }
 $agentId = (int) $agent['id'];
 $recentSql = "
-    SELECT c.id, c.status, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
+    SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
                v.user_agent AS visitor_user_agent,
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
@@ -366,6 +366,7 @@ require __DIR__ . '/includes/header.php';
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
+                        $superviseUrl = lc_admin_url('chats', ['id' => (int) $r['id'], 'supervise' => 1]);
                         $msg = function_exists('mb_strimwidth') ? mb_strimwidth($r['last_msg'] ?? '-', 0, 72, '...') : substr((string) ($r['last_msg'] ?? '-'), 0, 72);
                         $itemUnread = (int) ($r['unread'] ?? 0);
                         $dayRaw = (string) ($r['started_at'] ?? $r['last_message_at'] ?? '');
@@ -378,31 +379,44 @@ require __DIR__ . '/includes/header.php';
                         $deviceType = strtolower((string) ($deviceInfo['device'] ?? 'unknown'));
                         $deviceIcon = $deviceType === 'mobile' ? 'ti-device-mobile' : ($deviceType === 'tablet' ? 'ti-device-tablet' : ($deviceType === 'desktop' ? 'ti-device-desktop' : 'ti-devices'));
                         $deviceLabel = (string) ($deviceInfo['label'] ?? $deviceInfo['device'] ?? '');
+                        $rAgentId = (int) ($r['agent_id'] ?? 0);
+                        $canSupervise = ($r['status'] === 'active' && $rAgentId > 0 && $rAgentId !== $agentId);
                     ?>
-                    <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>">
-                        <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
-                        <div class="lc-conv-item-body">
-                            <div class="lc-conv-item-top">
-                                <strong><?= lc_sanitize($name) ?></strong>
-                                <?= $statusBadge($r['status']) ?>
-                                <?php if ($itemUnread > 0): ?>
-                                    <span class="lc-badge lc-badge-unread"><?= $itemUnread ?> new</span>
-                                <?php endif; ?>
+                    <div class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>" data-chat-url="<?= lc_sanitize($chatUrl) ?>">
+                        <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item-main">
+                            <div class="lc-conv-item-av"><?= lc_sanitize(lc_avatar_initials($name)) ?></div>
+                            <div class="lc-conv-item-body">
+                                <div class="lc-conv-item-top">
+                                    <strong><?= lc_sanitize($name) ?></strong>
+                                    <?= $statusBadge($r['status']) ?>
+                                    <?php if ($itemUnread > 0): ?>
+                                        <span class="lc-badge lc-badge-unread"><?= $itemUnread ?> new</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
+                                <div class="lc-conv-item-meta">
+                                    <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
+                                    <?php if ($deviceType !== 'unknown' && $deviceLabel !== '' && $deviceLabel !== 'Unknown'): ?>
+                                        <span class="lc-conv-device is-<?= lc_sanitize($deviceType) ?>" title="<?= lc_sanitize($deviceLabel) ?>"><i class="ti <?= lc_sanitize($deviceIcon) ?>"></i> <?= lc_sanitize($deviceInfo['device']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
+                                    <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
+                                    <?php if ($dayLabel !== ''): ?><span class="lc-conv-item-date"><i class="ti ti-calendar"></i> <?= lc_sanitize($dayLabel) ?></span><?php endif; ?>
+                                    <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '-' ?></span>
+                                </div>
                             </div>
-                            <div class="lc-conv-item-msg"><?= lc_sanitize($msg) ?></div>
-                            <div class="lc-conv-item-meta">
-                                <?php if (!empty($r['brand_name'])): ?><span><i class="ti ti-tag"></i> <?= lc_sanitize($r['brand_name']) ?></span><?php endif; ?>
-                                <?php if ($deviceType !== 'unknown' && $deviceLabel !== '' && $deviceLabel !== 'Unknown'): ?>
-                                    <span class="lc-conv-device is-<?= lc_sanitize($deviceType) ?>" title="<?= lc_sanitize($deviceLabel) ?>"><i class="ti <?= lc_sanitize($deviceIcon) ?>"></i> <?= lc_sanitize($deviceInfo['device']) ?></span>
-                                <?php endif; ?>
-                                <?php if (!empty($r['visitor_ip'])): ?><span><i class="ti ti-world"></i> <?= lc_sanitize($r['visitor_ip']) ?></span><?php endif; ?>
-                                <?php if (!empty($r['visitor_country'])): ?><span><i class="ti ti-map-pin"></i> <?= lc_sanitize($r['visitor_country']) ?></span><?php endif; ?>
-                                <?php if ($dayLabel !== ''): ?><span class="lc-conv-item-date"><i class="ti ti-calendar"></i> <?= lc_sanitize($dayLabel) ?></span><?php endif; ?>
-                                <span><?= $r['last_message_at'] ? lc_time_span($r['last_message_at']) : '-' ?></span>
-                            </div>
+                        </a>
+                        <div class="lc-conv-item-actions">
+                            <?php if ($canSupervise): ?>
+                                <a href="<?= lc_sanitize($superviseUrl) ?>" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise" title="Supervise this chat">
+                                    <i class="ti ti-shield-check"></i> Supervise
+                                </a>
+                            <?php endif; ?>
+                            <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item-arrow-link" aria-label="Open conversation">
+                                <i class="ti ti-chevron-right lc-conv-item-arrow"></i>
+                            </a>
                         </div>
-                        <i class="ti ti-chevron-right lc-conv-item-arrow"></i>
-                    </a>
+                    </div>
                     <?php endforeach; endif; ?>
                 </div>
             </div>

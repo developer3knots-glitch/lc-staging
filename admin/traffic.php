@@ -19,7 +19,7 @@ $extraScripts = ['admin-traffic.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="lc-traffic" id="lc-traffic" data-poll-ms="3000" data-page-size="10">
+<div class="lc-traffic" id="lc-traffic" data-poll-ms="3000" data-page-size="10" data-agent-id="<?= (int)$agent['id'] ?>" data-agent-role="<?= lc_sanitize($agent['role'] ?? '') ?>">
     <div class="lc-traffic-head">
         <div class="lc-traffic-head-copy">
             <div class="lc-traffic-kicker">

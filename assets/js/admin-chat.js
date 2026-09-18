@@ -6,8 +6,28 @@
 
     var base = window.LC_BASE_URL;
     var pollMs = window.LC_POLL_INTERVAL || 1500;
+    var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
+    var isAdmin = app.dataset.agentRole === 'admin';
     var selectedId = parseInt(app.dataset.selected, 10) || 0;
-    var currentTab = 'all';
+    var initialTabBtn = document.querySelector('.lc-chat-tab.active');
+    var currentTab = (initialTabBtn && initialTabBtn.dataset.tab) || (isAdmin ? 'all' : 'waiting');
+
+    if (!selectedId) {
+        try {
+            var savedChatId = parseInt(sessionStorage.getItem('lc_last_selected_chat_' + myAgentId), 10) || 0;
+            var savedTab = sessionStorage.getItem('lc_last_tab_' + myAgentId) || '';
+            if (savedChatId > 0) {
+                selectedId = savedChatId;
+                app.dataset.selected = String(savedChatId);
+                if (savedTab) {
+                    currentTab = savedTab;
+                    document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
+                        t.classList.toggle('active', t.dataset.tab === currentTab);
+                    });
+                }
+            }
+        } catch (e) {}
+    }
     var lastMsgId = 0;
     var needsFullHistory = false;
     var priorHistoryLoadingId = 0;
@@ -108,8 +128,6 @@
     var moreMenu = document.getElementById('lc-chat-more-menu');
     var blockIpBtn = document.getElementById('lc-block-ip-btn');
     var blockIpLabel = document.getElementById('lc-block-ip-label');
-    var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
-    var isAdmin = app.dataset.agentRole === 'admin';
     var selectedTransferAgentId = 0;
     var transferAgentsLoaded = false;
     var chatTransferredAway = false;
@@ -122,6 +140,25 @@
     var inboxStableIds = [];
     var inboxSearch = '';
     var currentReference = '';
+
+    function syncBrowserState(id, tab) {
+        try {
+            var u = new URL(window.location.href);
+            if (id > 0) {
+                u.searchParams.set('id', id);
+                sessionStorage.setItem('lc_last_selected_chat_' + myAgentId, String(id));
+            } else {
+                u.searchParams.delete('id');
+                sessionStorage.removeItem('lc_last_selected_chat_' + myAgentId);
+            }
+            if (tab) {
+                u.searchParams.set('tab', tab);
+                sessionStorage.setItem('lc_last_tab_' + myAgentId, tab);
+            }
+            window.history.replaceState({ conversationId: id, tab: tab }, '', u.toString());
+        } catch (e) {}
+    }
+    syncBrowserState(selectedId, currentTab);
     var currentVisitorEmail = '';
     var currentVisitorPhone = '';
     var currentVisitorName = '';
@@ -697,11 +734,37 @@
         return String(s || '').replace(/\D+/g, '');
     }
 
+    function conversationMatchesTab(c, tab) {
+        if (!c) return false;
+        var status = String(c.status || '');
+        var assignedId = parseInt(c.agent_id || 0, 10);
+        var isMine = status === 'active' && assignedId === myAgentId;
+        var isUnassigned = status === 'waiting' || (status === 'active' && assignedId === 0);
+        var isSupervised = status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+
+        if (tab === 'active') {
+            return isMine;
+        }
+        if (tab === 'waiting') {
+            if (isAdmin) {
+                return isUnassigned;
+            }
+            return isUnassigned || isSupervised;
+        }
+        if (tab === 'all') {
+            return true;
+        }
+        return true;
+    }
+
     function filterConversations(list) {
         // Blocked chats stay in inbox only while they are the open chat.
         // Switching away (or refreshing on another chat) sends them to History.
         list = (list || []).filter(function (c) {
             if (!c) return false;
+            if (!inboxSearch && !conversationMatchesTab(c, currentTab)) {
+                return false;
+            }
             if (!c.ip_blocked) return true;
             var id = parseInt(c.id, 10) || 0;
             return !!(selectedId && id === selectedId);
@@ -776,9 +839,14 @@
         } else if (!isViewing && unreadCount > 0) {
             html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
         } else {
-            var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-            var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
-            html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
+            var isOtherAgentActive = status === 'active' && parseInt(c.agent_id || 0, 10) > 0 && parseInt(c.agent_id || 0, 10) !== myAgentId;
+            if (isOtherAgentActive && c.is_supervising) {
+                html += '<span class="lc-badge lc-badge-supervising"><i class="ti ti-shield-check"></i> Supervising</span>';
+            } else {
+                var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
+                var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
+                html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
+            }
         }
         if (c.agent_name && status === 'active' && !c.ip_blocked) {
             html += '<span class="lc-chat-item-agent"><i class="ti ti-user"></i> ' + esc(c.agent_name) + '</span>';
@@ -788,8 +856,9 @@
         }
         html += '</div></div>';
         if (status !== 'closed') {
+            var closeTitle = (status === 'active' && c.agent_id && parseInt(c.agent_id, 10) !== myAgentId && !isAdmin) ? 'Stop supervising' : 'Close chat';
             html += '<button type="button" class="lc-chat-item-close" data-close-id="' + esc(String(c.id)) + '"' +
-                ' title="Close chat" aria-label="Close chat"><i class="ti ti-x" aria-hidden="true"></i></button>';
+                ' title="' + esc(closeTitle) + '" aria-label="' + esc(closeTitle) + '"><i class="ti ti-x" aria-hidden="true"></i></button>';
         }
         html += '</div>';
         return html;
@@ -999,13 +1068,21 @@
             return next;
         });
         if (!found) {
-            // Keep open chat visible in the list (new id → top once via stable order)
-            var seeded = Object.assign({}, c);
-            if (selectedId && id === selectedId) seeded.unread = 0;
-            lastConversations = applyStableInboxOrder([seeded].concat(lastConversations || []));
+            // Only seed if this chat matches currentTab (or if user is searching)
+            if (inboxSearch || conversationMatchesTab(c, currentTab)) {
+                var seeded = Object.assign({}, c);
+                if (selectedId && id === selectedId) seeded.unread = 0;
+                lastConversations = applyStableInboxOrder([seeded].concat(lastConversations || []));
+            }
         } else {
-            // Same set of chats — never reshuffle on status/preview sync
-            lastConversations = applyStableInboxOrder(lastConversations);
+            // If it was found but its status/agent changed so it no longer matches currentTab, remove it from list
+            if (!inboxSearch && !conversationMatchesTab(c, currentTab)) {
+                lastConversations = (lastConversations || []).filter(function (row) {
+                    return (parseInt(row.id, 10) || 0) !== id;
+                });
+            } else {
+                lastConversations = applyStableInboxOrder(lastConversations);
+            }
         }
         var afterKey = inboxListPaintKey(lastConversations);
         if (beforeKey === afterKey) {
@@ -1085,40 +1162,52 @@
     function inboxOrderKey(conversations) {
         var unassigned = [];
         var mine = [];
+        var supervised = [];
         var other = [];
         var closed = [];
         conversations.forEach(function (c) {
-            if (c.status === 'waiting') {
+            var assignedId = parseInt(c.agent_id || 0, 10);
+            var isMine = c.status === 'active' && assignedId === myAgentId;
+            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+            if (c.status === 'waiting' || (c.status === 'active' && assignedId === 0)) {
                 unassigned.push(c.id);
             } else if (c.status === 'closed') {
                 closed.push(c.id);
-            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
+            } else if (isMine) {
                 mine.push(c.id);
+            } else if (isSupervised) {
+                supervised.push(c.id);
             } else {
                 other.push(c.id);
             }
         });
         if (currentTab === 'waiting') {
-            return 'w:' + unassigned.join(',');
+            return 'w:' + unassigned.concat(isAdmin ? [] : supervised).join(',');
         }
         if (currentTab === 'active') {
-            return 'a:' + mine.concat(other).join(',');
+            return 'a:' + mine.join(',');
         }
-        return 'all:' + unassigned.join(',') + '|' + mine.join(',') + '|' + other.join(',') + '|' + closed.join(',');
+        return 'w:' + unassigned.join(',') + '|s:' + supervised.join(',') + '|a:' + mine.join(',') + '|o:' + other.join(',') + '|c:' + closed.join(',');
     }
 
     function buildInboxHtml(conversations) {
         var unassigned = [];
         var mine = [];
+        var supervised = [];
         var other = [];
         var closed = [];
         conversations.forEach(function (c) {
-            if (c.status === 'waiting') {
+            var assignedId = parseInt(c.agent_id || 0, 10);
+            var isMine = c.status === 'active' && assignedId === myAgentId;
+            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+            if (c.status === 'waiting' || (c.status === 'active' && assignedId === 0)) {
                 unassigned.push(c);
             } else if (c.status === 'closed') {
                 closed.push(c);
-            } else if (c.status === 'active' && parseInt(c.agent_id || 0, 10) === myAgentId) {
+            } else if (isMine) {
                 mine.push(c);
+            } else if (isSupervised) {
+                supervised.push(c);
             } else {
                 other.push(c);
             }
@@ -1144,15 +1233,25 @@
 
         var html = '';
         if (currentTab === 'waiting') {
-            html = section('Unassigned', unassigned, 'Newest');
+            html = section('Unassigned', unassigned, 'Incoming');
+            if (!isAdmin && supervised.length) {
+                html += section('Supervising', supervised, 'Live');
+            }
         } else if (currentTab === 'active') {
-            html = section('My chats', mine.concat(other), '');
+            html = section('My chats', mine, 'Active');
         } else {
-            // All: every status, in clear groups
+            // 'all' tab or search fallback
             html += section('Unassigned', unassigned, 'Incoming');
+            if (supervised.length) {
+                html += section('Supervising', supervised, 'Live');
+            }
             html += section('My chats', mine, 'Active');
-            html += section('Assigned', other, 'Active');
-            html += section('Closed', closed, '');
+            if (other.length) {
+                html += section('Active', other, 'Other agents');
+            }
+            if (closed.length) {
+                html += section('Closed', closed, '');
+            }
         }
         if (!html) {
             conversations.forEach(function (c) {
@@ -1675,6 +1774,9 @@
 
     function loadConversations() {
         var url = base + '/api/agent-conversations.php?tab=' + encodeURIComponent(currentTab);
+        if (selectedId) {
+            url += '&selected_id=' + encodeURIComponent(selectedId);
+        }
         if (inboxSearch.length >= 2) {
             url += '&q=' + encodeURIComponent(inboxSearch);
         }
@@ -1857,6 +1959,7 @@
                 loadConversations();
                 if (parseInt(data.agent_id, 10) !== myAgentId) {
                     selectedId = 0;
+                    syncBrowserState(0, currentTab);
                     activeEl.style.display = 'none';
                     emptyEl.style.display = 'flex';
                     messagesEl.innerHTML = '';
@@ -2152,6 +2255,19 @@
         var isAssignedToOther = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId;
         var sendBtn = document.getElementById('lc-send-reply');
 
+        // Contact info CRUD permissions:
+        // Only chatting agent (assignedId === myAgentId) or Admin can update contact details.
+        // Supervising agent can only view.
+        if (isAdmin || (assignedId > 0 && assignedId === myAgentId)) {
+            setContactFieldsReadOnly(false);
+        } else if (isAssignedToOther) {
+            setContactFieldsReadOnly(true, 'View only (Supervise mode)');
+        } else if (isUnassigned) {
+            setContactFieldsReadOnly(true, 'Assign to yourself to edit');
+        } else {
+            setContactFieldsReadOnly(!isAdmin, 'View only');
+        }
+
         if (c.status === 'closed') {
             isSupervising = false;
             chatTransferredAway = false;
@@ -2218,6 +2334,8 @@
                 takeoverBtn.style.display = 'inline-flex';
                 takeoverBtn.hidden = false;
             }
+            var moreCloseBtn = document.getElementById('lc-close-chat');
+            if (moreCloseBtn) moreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Stop supervising';
             setComposeMode('note');
             replyInput.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
@@ -2225,6 +2343,9 @@
             closeTransferPanel();
             return;
         }
+
+        var defaultMoreCloseBtn = document.getElementById('lc-close-chat');
+        if (defaultMoreCloseBtn) defaultMoreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Close chat';
 
         // Active Chatting Agent Mode
         isSupervising = false;
@@ -2389,6 +2510,7 @@
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
+        syncBrowserState(id, currentTab);
         lastMsgId = 0;
         needsFullHistory = true;
         stickToBottom = true;
@@ -2446,8 +2568,17 @@
         if (lastConversations && lastConversations.length) {
             for (var si = 0; si < lastConversations.length; si++) {
                 if ((parseInt(lastConversations[si].id, 10) || 0) === id) {
-                    setVisitorKindBadge(lastConversations[si]);
-                    if (lastConversations[si].ip_blocked) {
+                    var sRow = lastConversations[si];
+                    setVisitorKindBadge(sRow);
+                    var sAid = parseInt(sRow.agent_id || 0, 10);
+                    if (isAdmin || (sAid > 0 && sAid === myAgentId)) {
+                        setContactFieldsReadOnly(false);
+                    } else if (sRow.status === 'active' && sAid > 0 && sAid !== myAgentId) {
+                        setContactFieldsReadOnly(true, 'View only (Supervise mode)');
+                    } else if (sRow.status === 'waiting' || !sAid) {
+                        setContactFieldsReadOnly(true, 'Assign to yourself to edit');
+                    }
+                    if (sRow.ip_blocked) {
                         currentIpBlocked = true;
                         updateBlockIpMenu();
                     }
@@ -2688,6 +2819,7 @@
                 if (!data.success) {
                     if (data.error === 'Forbidden') {
                         selectedId = 0;
+                        syncBrowserState(0, currentTab);
                         activeEl.style.display = 'none';
                         emptyEl.style.display = 'flex';
                         messagesEl.innerHTML = '';
@@ -3013,6 +3145,7 @@
             tab.classList.add('active');
             currentTab = tab.dataset.tab;
             inboxStableIds = [];
+            syncBrowserState(selectedId, currentTab);
             loadConversations();
         });
     });
@@ -3221,6 +3354,41 @@
     var detailsContactSaveBtn = document.getElementById('lc-details-contact-save');
     var detailsContactStatus = document.getElementById('lc-details-contact-status');
 
+    function setContactFieldsReadOnly(readOnly, reason) {
+        if (detailsNameInput) {
+            detailsNameInput.readOnly = !!readOnly;
+            detailsNameInput.classList.toggle('is-readonly', !!readOnly);
+        }
+        if (detailsEmailInput) {
+            detailsEmailInput.readOnly = !!readOnly;
+            detailsEmailInput.classList.toggle('is-readonly', !!readOnly);
+        }
+        if (detailsPhoneInput) {
+            detailsPhoneInput.readOnly = !!readOnly;
+            detailsPhoneInput.classList.toggle('is-readonly', !!readOnly);
+        }
+        if (detailsContactSaveBtn) {
+            detailsContactSaveBtn.style.display = readOnly ? 'none' : 'inline-flex';
+            detailsContactSaveBtn.disabled = !!readOnly;
+        }
+        var noteEl = document.getElementById('lc-details-contact-readonly-note');
+        if (!noteEl && detailsContactSaveBtn && detailsContactSaveBtn.parentNode) {
+            noteEl = document.createElement('div');
+            noteEl.id = 'lc-details-contact-readonly-note';
+            noteEl.className = 'lc-details-contact-readonly-note';
+            detailsContactSaveBtn.parentNode.insertBefore(noteEl, detailsContactSaveBtn);
+        }
+        if (noteEl) {
+            if (readOnly) {
+                noteEl.style.display = 'block';
+                noteEl.innerHTML = '<i class="ti ti-lock"></i> <span>' + (reason || 'View only (Supervising)') + '</span>';
+            } else {
+                noteEl.style.display = 'none';
+                noteEl.innerHTML = '';
+            }
+        }
+    }
+
     function isContactFieldActive() {
         if (contactFieldsDirty) return true;
         var active = document.activeElement;
@@ -3257,6 +3425,10 @@
 
     function saveVisitorContact() {
         if (!selectedId) return;
+        if (!isAdmin && currentAssignedAgentId !== myAgentId) {
+            setContactStatus('Only the assigned agent or admin can update contact details', true);
+            return;
+        }
         var name = detailsNameInput ? detailsNameInput.value.trim() : '';
         var email = detailsEmailInput ? detailsEmailInput.value.trim() : '';
         var phone = detailsPhoneInput ? detailsPhoneInput.value.trim() : '';
@@ -3428,7 +3600,21 @@
     function closeConversationById(conversationId) {
         var id = parseInt(conversationId, 10) || 0;
         if (!id) return;
-        if (!confirm('Close this chat?')) return;
+        var isSupervisedChat = false;
+        if (lastConversations && lastConversations.length) {
+            for (var ci = 0; ci < lastConversations.length; ci++) {
+                if ((parseInt(lastConversations[ci].id, 10) || 0) === id) {
+                    var cRow = lastConversations[ci];
+                    var cAid = parseInt(cRow.agent_id || 0, 10);
+                    if (!isAdmin && cRow.status === 'active' && cAid > 0 && cAid !== myAgentId) {
+                        isSupervisedChat = true;
+                    }
+                    break;
+                }
+            }
+        }
+        var confirmMsg = isSupervisedChat ? 'Stop supervising this chat?' : 'Close this chat?';
+        if (!confirm(confirmMsg)) return;
         closeTransferPanel();
         closeMoreMenu();
         fetch(base + '/api/agent-close.php', {
@@ -3443,6 +3629,7 @@
             }
             if (selectedId === id) {
                 selectedId = 0;
+                syncBrowserState(0, currentTab);
                 if (activeEl) activeEl.style.display = 'none';
                 if (emptyEl) emptyEl.style.display = 'flex';
             }
@@ -4108,6 +4295,37 @@
     if (messagesEl) {
         messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });
     }
+
+    window.addEventListener('popstate', function (e) {
+        var state = e.state || {};
+        var popId = parseInt(state.conversationId, 10) || 0;
+        if (!popId) {
+            try {
+                var params = new URLSearchParams(window.location.search);
+                popId = parseInt(params.get('id'), 10) || 0;
+            } catch (err) {}
+        }
+        var popTab = state.tab;
+        if (!popTab) {
+            try {
+                popTab = (new URLSearchParams(window.location.search)).get('tab') || '';
+            } catch (err) {}
+        }
+        if (popTab && popTab !== currentTab) {
+            currentTab = popTab;
+            document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
+                t.classList.toggle('active', t.dataset.tab === currentTab);
+            });
+            loadConversations();
+        }
+        if (popId > 0 && popId !== selectedId) {
+            openConversation(popId);
+        } else if (!popId && selectedId > 0) {
+            selectedId = 0;
+            if (activeEl) activeEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'flex';
+        }
+    });
 
     if (selectedId) openConversation(selectedId);
 })();

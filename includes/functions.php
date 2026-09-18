@@ -584,9 +584,16 @@ function lc_agent_can_close_conversation(array $agent, array $conv): bool
 function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): array
 {
     $agentId = (int) $agent['id'];
+    $isAdmin = (string) ($agent['role'] ?? '') === 'admin';
     $brandId = lc_agent_brand_id($agent);
     $accountId = lc_agent_account_id($agent);
     $a = $alias;
+    if (function_exists('lc_ensure_supervisors_schema')) {
+        lc_ensure_supervisors_schema();
+    }
+    if (function_exists('lc_ensure_conversation_notes_schema')) {
+        lc_ensure_conversation_notes_schema();
+    }
 
     if ($brandId === null) {
         $accountFilter = '';
@@ -598,43 +605,78 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
             // No workspace - show nothing (never leak other tenants)
             return ['1=0', []];
         }
+
         if ($tab === 'waiting') {
-            return ["{$a}.status = 'waiting'{$accountFilter}", $accountParams];
+            if ($isAdmin) {
+                // Admin: strictly unassigned / incoming chats
+                return [
+                    "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)))" . $accountFilter,
+                    $accountParams,
+                ];
+            }
+            // Agent: unassigned / incoming chats PLUS active chats of other agents being supervised (not dismissed)
+            return [
+                "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id > 0 AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
+                array_merge([$agentId, $agentId], $accountParams),
+            ];
         }
         if ($tab === 'active') {
             return [
-                "{$a}.status = 'active' AND ({$a}.agent_id = ? OR {$a}.agent_id IS NULL){$accountFilter}",
+                "{$a}.status = 'active' AND {$a}.agent_id = ?" . $accountFilter,
                 array_merge([$agentId], $accountParams),
             ];
         }
 
+        if ($isAdmin) {
+            return [
+                "{$a}.status IN ('waiting','active')" . $accountFilter,
+                $accountParams,
+            ];
+        }
+
         return [
-            "{$a}.status IN ('waiting','active'){$accountFilter}",
-            $accountParams,
+            "({$a}.agent_id = ? OR {$a}.status = 'waiting' OR {$a}.agent_id IS NULL OR {$a}.agent_id = 0 OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
+            array_merge([$agentId, $agentId, $agentId], $accountParams),
         ];
     }
 
     // Scoped agent: also enforce account if present
-    $extra = '';
-    $extraParams = [];
+    $extra = " AND {$a}.brand_id = ?";
+    $extraParams = [$brandId];
     if ($accountId > 0) {
-        $extra = " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
-        $extraParams = [$accountId];
+        $extra .= " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
+        $extraParams[] = $accountId;
     }
 
     if ($tab === 'waiting') {
-        return ["{$a}.status = 'waiting' AND {$a}.brand_id = ?{$extra}", array_merge([$brandId], $extraParams)];
+        if ($isAdmin) {
+            return [
+                "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)))" . $extra,
+                $extraParams,
+            ];
+        }
+        return [
+            "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id > 0 AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
+            array_merge([$agentId, $agentId], $extraParams),
+        ];
     }
     if ($tab === 'active') {
         return [
-            "{$a}.status = 'active' AND ({$a}.agent_id = ? OR ({$a}.brand_id = ? AND {$a}.agent_id IS NULL)){$extra}",
-            array_merge([$agentId, $brandId], $extraParams),
+            "{$a}.status = 'active' AND {$a}.agent_id = ?" . $extra,
+            array_merge([$agentId], $extraParams),
+        ];
+    }
+
+    if ($isAdmin) {
+        return [
+            "{$a}.status IN ('waiting','active')" . $extra,
+            $extraParams,
         ];
     }
 
     return [
-        "{$a}.status IN ('waiting','active') AND {$a}.brand_id = ?{$extra}",
-        array_merge([$brandId], $extraParams),
+        "({$a}.agent_id = ? OR {$a}.status = 'waiting' OR {$a}.agent_id IS NULL OR {$a}.agent_id = 0 OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
+        array_merge([$agentId, $agentId, $agentId], $extraParams),
     ];
 }
 
@@ -2293,3 +2335,67 @@ function lc_add_conversation_note(int $conversationId, int $agentId, string $not
         return null;
     }
 }
+
+function lc_ensure_supervisors_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $pdo = lc_db();
+    try {
+        $pdo->exec('
+            CREATE TABLE IF NOT EXISTS conversation_supervisors (
+                conversation_id INT NOT NULL,
+                agent_id INT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                dismissed_at DATETIME DEFAULT NULL,
+                PRIMARY KEY (conversation_id, agent_id),
+                KEY idx_supervisors_agent (agent_id),
+                KEY idx_supervisors_conv (conversation_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ');
+        $cols = $pdo->query("SHOW COLUMNS FROM conversation_supervisors LIKE 'dismissed_at'")->fetchAll();
+        if (empty($cols)) {
+            $pdo->exec('ALTER TABLE conversation_supervisors ADD COLUMN dismissed_at DATETIME DEFAULT NULL');
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_record_agent_supervising(int $conversationId, int $agentId): void
+{
+    if ($conversationId < 1 || $agentId < 1) {
+        return;
+    }
+    lc_ensure_supervisors_schema();
+    try {
+        $stmt = lc_db()->prepare('
+            INSERT INTO conversation_supervisors (conversation_id, agent_id, created_at, updated_at, dismissed_at)
+            VALUES (?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), NULL)
+            ON DUPLICATE KEY UPDATE updated_at = UTC_TIMESTAMP(), dismissed_at = NULL
+        ');
+        $stmt->execute([$conversationId, $agentId]);
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_stop_agent_supervising(int $conversationId, int $agentId): void
+{
+    if ($conversationId < 1 || $agentId < 1) {
+        return;
+    }
+    lc_ensure_supervisors_schema();
+    try {
+        $stmt = lc_db()->prepare('
+            INSERT INTO conversation_supervisors (conversation_id, agent_id, created_at, updated_at, dismissed_at)
+            VALUES (?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP())
+            ON DUPLICATE KEY UPDATE dismissed_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP()
+        ');
+        $stmt->execute([$conversationId, $agentId]);
+    } catch (Throwable $e) {
+    }
+}
+

@@ -39,6 +39,12 @@ try {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
     }
 
+    $isAdmin = (string) ($agent['role'] ?? '') === 'admin';
+    $isAssignedAgent = (int) ($conv['agent_id'] ?? 0) === $agentId;
+    if (!$isAdmin && !$isAssignedAgent) {
+        lc_json(['success' => false, 'error' => 'Only the assigned agent or an admin can update contact details. Supervising agents have view-only access.'], 403);
+    }
+
     $visitorId = (int) ($conv['visitor_id'] ?? 0);
     if ($visitorId < 1) {
         lc_json(['success' => false, 'error' => 'Visitor not found'], 404);

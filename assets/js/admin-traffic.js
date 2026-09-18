@@ -20,6 +20,8 @@
     var tabs = root.querySelectorAll('[data-traffic-tab]');
     var pollMs = Math.max(3000, parseInt(root.getAttribute('data-poll-ms') || '5000', 10) || 5000);
     var pageSize = Math.max(5, parseInt(root.getAttribute('data-page-size') || '10', 10) || 10);
+    var myAgentId = parseInt(root.getAttribute('data-agent-id') || '0', 10) || 0;
+    var isAdmin = (root.getAttribute('data-agent-role') || '') === 'admin';
     var activeTab = 'all';
     var searchQ = '';
     var searchTimer = null;
@@ -95,16 +97,28 @@
         }
         if (row.status === 'chatting' && row.conversation_id) {
             var chatHref = row.chat_url || ('chats.php?id=' + encodeURIComponent(row.conversation_id));
+            var superviseHref = chatHref + (chatHref.indexOf('?') >= 0 ? '&' : '?') + 'supervise=1';
+            var rowAgentId = parseInt(row.agent_id || 0, 10);
+            var isMyChat = rowAgentId > 0 && rowAgentId === myAgentId;
+
+            if (isMyChat) {
+                return (
+                    '<div class="lc-traffic-actions">' +
+                        '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '">' +
+                            '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
+                        '</a>' +
+                    '</div>'
+                );
+            }
+
             return (
                 '<div class="lc-traffic-actions">' +
                     '<a class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-action-btn" ' +
-                        'href="' + esc(chatHref) + '" ' +
+                        'href="' + esc(superviseHref) + '" ' +
                         'title="Supervise this chat">' +
                         '<i class="ti ti-shield-check" aria-hidden="true"></i> Supervise' +
                     '</a>' +
-                    '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '">' +
-                        '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
-                    '</a>' +
+                    (isAdmin ? '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '"><i class="ti ti-message-circle" aria-hidden="true"></i> Open</a>' : '') +
                 '</div>'
             );
         }

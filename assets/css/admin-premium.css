@@ -2584,10 +2584,77 @@ details summary {
     transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-a.lc-conv-item:hover {
+a.lc-conv-item:hover,
+div.lc-conv-item:hover {
     background: #f8fafc;
     border-color: var(--lc-border);
     transform: translateX(2px);
+}
+
+.lc-conv-item-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    text-decoration: none;
+    color: inherit;
+}
+
+.lc-conv-item-main:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+.lc-conv-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-shrink: 0;
+}
+
+.lc-conv-supervise {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.34rem 0.72rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #1e293b;
+    border: 1px solid #cbd5e1;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.lc-conv-supervise:hover {
+    background: #0284c7;
+    color: #fff;
+    border-color: #0284c7;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.28);
+    transform: translateY(-1px);
+}
+
+.lc-conv-supervise i {
+    font-size: 0.95rem;
+}
+
+.lc-conv-item-arrow-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--lc-muted);
+    text-decoration: none;
+    padding: 2px;
+}
+
+.lc-conv-item-arrow-link:hover .lc-conv-item-arrow {
+    opacity: 0.85;
+    color: var(--lc-primary, #0284c7);
 }
 
 .lc-conv-item.has-unread {
@@ -11211,6 +11278,26 @@ body.lc-page-chats .lc-details-hero-av {
     color: #dc2626;
 }
 
+.lc-details-contact-input.is-readonly {
+    background: #f1f5f9;
+    color: #64748b;
+    cursor: default;
+    border-color: #e2e8f0;
+}
+
+.lc-details-contact-readonly-note {
+    width: 100%;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: #64748b;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    box-sizing: border-box;
+    text-align: center;
+}
+
 /* ===== LiveChat-style History (premium table) ===== */
 .lc-history-pro {
     padding: 0 0 1.5rem;
@@ -13761,4 +13848,14 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
 .lc-msg.is-note .lc-msg-time {
     color: #b45309 !important;
     font-size: 0.68rem !important;
+}
+
+.lc-badge-supervising {
+    background: #dbeafe !important;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe !important;
+    font-weight: 700 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.25rem !important;
 }
