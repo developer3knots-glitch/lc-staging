@@ -738,17 +738,17 @@
         if (!c) return false;
         var status = String(c.status || '');
         var assignedId = parseInt(c.agent_id || 0, 10);
+        var cid = parseInt(c.id, 10) || 0;
         var isMine = status === 'active' && assignedId === myAgentId;
         var isUnassigned = status === 'waiting' || (status === 'active' && assignedId === 0);
-        var isSupervised = status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+        var isSupervised = status === 'active' && assignedId > 0 && assignedId !== myAgentId
+            && (!!c.is_supervising || (selectedId > 0 && cid === selectedId));
 
         if (tab === 'active') {
             return isMine;
         }
         if (tab === 'waiting') {
-            if (isAdmin) {
-                return isUnassigned;
-            }
+            // Unassigned queue + chats you are supervising (incl. currently open)
             return isUnassigned || isSupervised;
         }
         if (tab === 'all') {
@@ -1167,8 +1167,10 @@
         var closed = [];
         conversations.forEach(function (c) {
             var assignedId = parseInt(c.agent_id || 0, 10);
+            var cid = parseInt(c.id, 10) || 0;
             var isMine = c.status === 'active' && assignedId === myAgentId;
-            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId
+                && (!!c.is_supervising || (selectedId > 0 && cid === selectedId));
             if (c.status === 'waiting' || (c.status === 'active' && assignedId === 0)) {
                 unassigned.push(c.id);
             } else if (c.status === 'closed') {
@@ -1182,7 +1184,7 @@
             }
         });
         if (currentTab === 'waiting') {
-            return 'w:' + unassigned.concat(isAdmin ? [] : supervised).join(',');
+            return 'w:' + unassigned.concat(supervised).join(',');
         }
         if (currentTab === 'active') {
             return 'a:' + mine.join(',');
@@ -1198,8 +1200,10 @@
         var closed = [];
         conversations.forEach(function (c) {
             var assignedId = parseInt(c.agent_id || 0, 10);
+            var cid = parseInt(c.id, 10) || 0;
             var isMine = c.status === 'active' && assignedId === myAgentId;
-            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId && !!c.is_supervising;
+            var isSupervised = c.status === 'active' && assignedId > 0 && assignedId !== myAgentId
+                && (!!c.is_supervising || (selectedId > 0 && cid === selectedId));
             if (c.status === 'waiting' || (c.status === 'active' && assignedId === 0)) {
                 unassigned.push(c);
             } else if (c.status === 'closed') {
@@ -1234,7 +1238,7 @@
         var html = '';
         if (currentTab === 'waiting') {
             html = section('Unassigned', unassigned, 'Incoming');
-            if (!isAdmin && supervised.length) {
+            if (supervised.length) {
                 html += section('Supervising', supervised, 'Live');
             }
         } else if (currentTab === 'active') {
@@ -2324,6 +2328,16 @@
             isSupervising = true;
             chatTransferredAway = false;
             setUnassignedMode(false);
+            // Keep this chat on the Unassigned tab under "Supervising"
+            if (c) {
+                c.is_supervising = true;
+            }
+            lastConversations = (lastConversations || []).map(function (row) {
+                if ((parseInt(row.id, 10) || 0) !== (parseInt(c && c.id, 10) || selectedId)) {
+                    return row;
+                }
+                return Object.assign({}, row, { is_supervising: true });
+            });
             if (superviseBar) {
                 superviseBar.hidden = false;
                 if (superviseAgentNameEl) {
@@ -2341,6 +2355,10 @@
             if (sendBtn) sendBtn.disabled = false;
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
+            // Persist supervise + refresh left list (selected_id records supervisor server-side)
+            try {
+                paintConversationList(filterConversations(lastConversations));
+            } catch (ePaint) {}
             return;
         }
 

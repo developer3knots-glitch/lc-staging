@@ -10,6 +10,7 @@ $agent = lc_ensure_agent_workspace($agent);
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];
 $searchQ = trim((string) ($_GET['q'] ?? ''));
+$selectedId = (int) ($_GET['selected_id'] ?? 0);
 
 try {
     // Drive warn/close from inbox refresh so idle chats still get swept on Chats page
@@ -31,6 +32,24 @@ try {
     lc_ensure_brands_schema();
     lc_ensure_ticket_schema();
     $db = lc_db();
+
+    // Open chat assigned to someone else → keep supervising so it stays on Unassigned tab
+    // under "Supervising" (not only when opened via ?supervise=1).
+    if ($selectedId > 0 && function_exists('lc_record_agent_supervising')) {
+        try {
+            $selStmt = $db->prepare('SELECT status, agent_id FROM conversations WHERE id = ? LIMIT 1');
+            $selStmt->execute([$selectedId]);
+            $selRow = $selStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $selAgent = (int) ($selRow['agent_id'] ?? 0);
+            if ($selRow
+                && ($selRow['status'] ?? '') === 'active'
+                && $selAgent > 0
+                && $selAgent !== $agentId) {
+                lc_record_agent_supervising($selectedId, $agentId);
+            }
+        } catch (Throwable $e) {
+        }
+    }
 
     // Search finds any status (incl. closed) by name / email / phone / ticket
     $inboxTab = ($searchQ !== '') ? 'all' : $tab;
@@ -101,6 +120,47 @@ try {
         $supStmt->execute([$agentId]);
         $supervisedConvIds = array_flip($supStmt->fetchAll(PDO::FETCH_COLUMN));
     } catch (Throwable $e) {}
+
+    // If the open chat is still missing from the tab query, append it so the
+    // left list never goes empty while Supervise Mode is open in the center.
+    if ($selectedId > 0) {
+        $haveSelected = false;
+        foreach ($conversations as $row) {
+            if ((int) ($row['id'] ?? 0) === $selectedId) {
+                $haveSelected = true;
+                break;
+            }
+        }
+        if (!$haveSelected) {
+            try {
+                $one = $db->prepare("
+                    SELECT c.id, c.status, c.agent_id, c.visitor_id, c.brand_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
+                           c.is_returning, c.prior_chat_count,
+                           v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
+                           v.ip_address AS visitor_ip, v.country AS visitor_country,
+                           a.name AS agent_name, b.name AS brand_name, b.brand_key,
+                           (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
+                           0 AS unread
+                    FROM conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    LEFT JOIN agents a ON a.id = c.agent_id
+                    LEFT JOIN brands b ON b.id = c.brand_id
+                    WHERE c.id = ?
+                    LIMIT 1
+                ");
+                $one->execute([$selectedId]);
+                $extra = $one->fetch(PDO::FETCH_ASSOC);
+                if ($extra) {
+                    $conversations[] = $extra;
+                    $extraAgent = (int) ($extra['agent_id'] ?? 0);
+                    if ($extraAgent > 0 && $extraAgent !== $agentId && ($extra['status'] ?? '') === 'active') {
+                        $supervisedConvIds[$selectedId] = true;
+                    }
+                }
+            } catch (Throwable $e) {
+            }
+        }
+    }
 
     foreach ($conversations as &$row) {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);

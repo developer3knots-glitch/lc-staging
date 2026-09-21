@@ -114,6 +114,9 @@ try {
             && lc_message_hidden_from_visitor((string) ($row['message'] ?? ''))) {
             continue;
         }
+        if (($row['sender_type'] ?? '') === 'system' && function_exists('lc_sanitize_system_message_for_visitor')) {
+            $row['message'] = lc_sanitize_system_message_for_visitor((string) ($row['message'] ?? ''));
+        }
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 

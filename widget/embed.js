@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 131;
+    var LC_WIDGET_BUILD = 132;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -4693,6 +4693,14 @@
         }
         if (isAdminOnlySystemMessage(m)) {
             return;
+        }
+        // Never show ticket / internal transfer notes to the visitor
+        if (m.sender_type === 'system' && /transferred this chat/i.test(String(m.message || ''))) {
+            var transferText = String(m.message || '').trim();
+            var transferMatch = transferText.match(/^(.+?\s+transferred this chat to\s+.+?)(?:\.|\s|$)/i);
+            if (transferMatch) {
+                m = Object.assign({}, m, { message: transferMatch[1].replace(/\.\s*$/, '') + '.' });
+            }
         }
         if (m.created_at) maybeAppendDateDivider(m.created_at);
 

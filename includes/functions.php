@@ -607,14 +607,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         if ($tab === 'waiting') {
-            if ($isAdmin) {
-                // Admin: strictly unassigned / incoming chats
-                return [
-                    "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)))" . $accountFilter,
-                    $accountParams,
-                ];
-            }
-            // Agent: unassigned / incoming chats PLUS active chats of other agents being supervised (not dismissed)
+            // Unassigned / incoming PLUS chats this agent is supervising (any role)
             return [
                 "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id > 0 AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
                 array_merge([$agentId, $agentId], $accountParams),
@@ -649,12 +642,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     if ($tab === 'waiting') {
-        if ($isAdmin) {
-            return [
-                "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)))" . $extra,
-                $extraParams,
-            ];
-        }
+        // Unassigned / incoming PLUS chats this agent is supervising (any role)
         return [
             "({$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id > 0 AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
             array_merge([$agentId, $agentId], $extraParams),
@@ -797,16 +785,9 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     if (function_exists('lc_ensure_attachments_schema')) {
         lc_ensure_attachments_schema();
     }
-    $ticketRef = function_exists('lc_conversation_reference')
-        ? lc_conversation_reference($conversationId, $conv['started_at'] ?? null)
-        : ('#' . $conversationId);
 
-    $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '. Ticket '
-        . $ticketRef
-        . ' continues with full history.';
-    if ($note !== '') {
-        $transferMsg .= ' Note: ' . $note;
-    }
+    // Visitor-facing only — never include ticket ref or internal transfer notes.
+    $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '.';
     $joinMsg = $targetName . ' joined the chat.';
 
     $db = lc_db();
@@ -840,6 +821,14 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
             $db->rollBack();
         }
         return ['ok' => false, 'error' => 'Server error'];
+    }
+
+    // Transfer note is agent-only (Internal Note panel) — never in the visitor transcript.
+    if ($note !== '' && function_exists('lc_add_conversation_note')) {
+        try {
+            lc_add_conversation_note($conversationId, (int) ($actingAgent['id'] ?? 0), 'Transfer note: ' . $note);
+        } catch (Throwable $e) {
+        }
     }
 
     // Notify after commit so publish/schema never breaks the transfer response.
@@ -1059,6 +1048,23 @@ function lc_message_hidden_from_visitor(string $message): bool
         '/Merged \d+ earlier chat|transcript requested|IP blocked|visitor IP was blocked|moved to history after visitor IP|assigned to|transferred to|was contacted by an agent/i',
         $t
     );
+}
+
+/**
+ * Strip ticket / internal transfer note from system lines shown in the visitor widget.
+ * Admin transcript keeps the original DB text for older messages.
+ */
+function lc_sanitize_system_message_for_visitor(string $message): string
+{
+    $t = trim($message);
+    if ($t === '') {
+        return $t;
+    }
+    if (preg_match('/^(.+?\s+transferred this chat to\s+.+?)(?:\.|\s|$)/iu', $t, $m)) {
+        $base = rtrim(trim($m[1]), '.');
+        return $base . '.';
+    }
+    return $t;
 }
 
 /**
