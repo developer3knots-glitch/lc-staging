@@ -1,7 +1,7 @@
 <?php
 /**
  * Live aaPanel host: poll only until Node WS is proxied at /lc-realtime
- * on livechat.3knotsdigital.com. Do not point at erp.*/lc-realtime from this host.
+ * on this same host. Do not point WebSocket at the ERP subdomain from here.
  */
 return [
     'mode' => 'poll',
