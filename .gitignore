@@ -1,16 +1,11 @@
-# Secrets & local install state
-includes/config.php
-install/installed.lock
-.env
-includes/config.realtime.local.php.off
+# Zip archives only
+*.zip
 
-# Alternate git dir (locked .git workaround)
+# Local / secrets (not app source)
+.env
+realtime/server/.env
 .git-real/
 .git-broken-lock/
-
-# Logs
-*.log
-admin/error_log
 
 # User uploads (keep folder structure)
 uploads/*
