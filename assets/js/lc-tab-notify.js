@@ -272,9 +272,13 @@
             }
         });
 
-        var pollMs = parseInt(global.LC_POLL_INTERVAL, 10) || 1500;
+        // Fast poll only when WebSocket is off; WS mode uses a slow safety net.
+        var rt = global.LC_REALTIME || {};
+        var pollMs = (rt.mode === 'ws' && rt.wsUrl)
+            ? 30000
+            : (parseInt(global.LC_POLL_INTERVAL, 10) || 1500);
         pollStats();
-        pollTimer = setInterval(pollStats, pollMs);
+        pollTimer = setInterval(pollStats, Math.max(3000, pollMs));
     }
 
     global.LCTabNotify = {
