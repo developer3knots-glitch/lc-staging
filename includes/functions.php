@@ -106,8 +106,8 @@ function lc_preview(?string $text, int $width = 72): string
 
 /**
  * Public site root URL (never ends with /admin or /superadmin).
- * Recomputes from the current request so old config.php (without "superadmin"
- * in the strip list) cannot double-prefix URLs like /superadmin/superadmin.
+ * Prefers the current request host so multi-domain deploys (e.g. livechat.*
+ * vs erp.*/WSlivechat) do not redirect to a hard-coded canonical URL.
  */
 function lc_base_url(): string
 {
@@ -116,13 +116,11 @@ function lc_base_url(): string
         return $resolved;
     }
 
-    // Canonical production URL when set (https://erp.3knotsdigital.com/WSlivechat)
-    if (defined('LC_PUBLIC_BASE_URL') && LC_PUBLIC_BASE_URL !== '') {
-        $resolved = rtrim((string) LC_PUBLIC_BASE_URL, '/');
-        return $resolved;
-    }
-
     if (PHP_SAPI === 'cli') {
+        if (defined('LC_PUBLIC_BASE_URL') && LC_PUBLIC_BASE_URL !== '') {
+            $resolved = rtrim((string) LC_PUBLIC_BASE_URL, '/');
+            return $resolved;
+        }
         $resolved = defined('LC_BASE_URL') ? rtrim((string) LC_BASE_URL, '/') : '';
         return $resolved;
     }
@@ -134,12 +132,26 @@ function lc_base_url(): string
             $protocol = $fwd;
         }
     }
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
     $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
     $basePath = preg_replace('#/(admin|api|widget|install|superadmin)(/.*)?$#', '', $scriptDir);
     $basePath = rtrim((string) $basePath, '/');
-    $resolved = $protocol . '://' . $host . $basePath;
 
+    if ($host !== '' && $host !== 'localhost' && $host !== '127.0.0.1') {
+        // Production hosts always use HTTPS
+        if (stripos($host, '3knotsdigital.com') !== false) {
+            $protocol = 'https';
+        }
+        $resolved = $protocol . '://' . $host . $basePath;
+        return $resolved;
+    }
+
+    if (defined('LC_PUBLIC_BASE_URL') && LC_PUBLIC_BASE_URL !== '') {
+        $resolved = rtrim((string) LC_PUBLIC_BASE_URL, '/');
+        return $resolved;
+    }
+
+    $resolved = defined('LC_BASE_URL') ? rtrim((string) LC_BASE_URL, '/') : ($protocol . '://localhost' . $basePath);
     return $resolved;
 }
 
