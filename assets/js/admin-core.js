@@ -151,7 +151,7 @@
         var swReg = null;
         var DEDUPE_MS = 45000;
         var POLL_MS = 4000;
-        var trafficUrl = base + '/admin/traffic';
+        var trafficUrl = base + '/admin/traffic.php';
 
         function esc(s) {
             return String(s == null ? '' : s)
@@ -342,7 +342,7 @@
                 el.classList.remove('is-visible');
             }, 10000);
             el.onclick = function () {
-                window.location.href = chatUrl || (base + '/admin/chats');
+                window.location.href = chatUrl || (base + '/admin/chats.php');
             };
         }
 
@@ -441,7 +441,7 @@
             var detail = payload.page_path || payload.ip || '';
             var chatUrl = cid
                 ? (base + '/admin/chats?id=' + cid)
-                : (base + '/admin/chats');
+                : (base + '/admin/chats.php');
             showIncomingToast(name, detail, chatUrl);
             fireBrowserPush(name, detail, dedupeKey, {
                 title: 'Incoming chat',

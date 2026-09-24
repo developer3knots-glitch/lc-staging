@@ -157,26 +157,25 @@ function lc_base_url(): string
 }
 
 /**
- * Build a public URL without the .php extension.
+ * Build a public URL. Always includes .php so Nginx/aaPanel works
+ * without extensionless rewrite (Apache .htaccess is ignored there).
  *
  * @param array<string, scalar|null> $query
  */
 function lc_url(string $path = '', array $query = []): string
 {
     $path = trim(str_replace('\\', '/', $path), '/');
-    if ($path !== '') {
-        if (substr($path, -4) === '.php') {
-            $path = substr($path, 0, -4);
-        }
-        if ($path === 'index' || substr($path, -6) === '/index') {
-            $path = $path === 'index' ? '' : substr($path, 0, -6);
+    if ($path === '' || $path === 'index') {
+        $path = 'index.php';
+    } elseif (substr($path, -4) !== '.php') {
+        if (substr($path, -6) === '/index') {
+            $path .= '.php';
+        } else {
+            $path .= '.php';
         }
     }
 
-    $url = rtrim(lc_base_url(), '/');
-    if ($path !== '') {
-        $url .= '/' . $path;
-    }
+    $url = rtrim(lc_base_url(), '/') . '/' . $path;
 
     $query = array_filter($query, static function ($value) {
         return $value !== null && $value !== '';
@@ -200,7 +199,7 @@ function lc_admin_url(string $page = '', array $query = []): string
         $page = substr($page, 0, -4);
     }
     if ($page === '' || $page === 'index') {
-        return lc_url('admin', $query);
+        return lc_url('admin/index', $query);
     }
 
     return lc_url('admin/' . $page, $query);
@@ -218,7 +217,7 @@ function lc_superadmin_url(string $page = '', array $query = []): string
         $page = substr($page, 0, -4);
     }
     if ($page === '' || $page === 'index') {
-        return lc_url('superadmin', $query);
+        return lc_url('superadmin/index', $query);
     }
 
     return lc_url('superadmin/' . $page, $query);

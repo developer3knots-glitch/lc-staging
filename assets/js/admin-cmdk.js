@@ -33,7 +33,7 @@
     function defaultCommands() {
         var status = currentStatus();
         var cmds = [];
-        var homeHref = (nav[0] && nav[0].href) || (base + '/admin/');
+        var homeHref = (nav[0] && nav[0].href) || (base + '/admin/index.php');
         var canned = null;
         var traffic = null;
         var chats = null;
