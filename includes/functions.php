@@ -106,8 +106,9 @@ function lc_preview(?string $text, int $width = 72): string
 
 /**
  * Public site root URL (never ends with /admin or /superadmin).
- * Prefers the current request host so multi-domain deploys (e.g. livechat.*
- * vs erp.*/WSlivechat) do not redirect to a hard-coded canonical URL.
+ * Prefers the current request host so multi-domain deploys
+ * (livechat subdomain vs erp path install) do not redirect
+ * to a hard-coded canonical URL.
  */
 function lc_base_url(): string
 {
