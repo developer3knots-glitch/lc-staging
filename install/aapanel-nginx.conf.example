@@ -1,0 +1,6 @@
+# Paste into aaPanel → Website → site → Config → rewrite (or URL rewrite).
+# Extensionless PHP: /admin/login → /admin/login.php
+
+location / {
+    try_files $uri $uri.php $uri/ =404;
+}
