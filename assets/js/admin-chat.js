@@ -2823,7 +2823,8 @@
         updateBlockIpMenu();
     }
 
-    function pollMessages() {
+    function pollMessages(opts) {
+        opts = opts || {};
         if (!selectedId) return;
         var conversationId = selectedId;
         var isFirstLoadReq = needsFullHistory;
@@ -3018,7 +3019,9 @@
                 } else {
                     paintIncremental();
                 }
-                loadPageJourney(false);
+                if (!opts.skipJourney) {
+                    loadPageJourney(false);
+                }
                 setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
             })
             .catch(function (err) {
@@ -4089,16 +4092,21 @@
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
         if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
+        if (window.__lcJourneyTimer) clearInterval(window.__lcJourneyTimer);
         pollTimer = null;
         listTimer = null;
         window.__lcReceiptTimer = null;
+        window.__lcJourneyTimer = null;
 
         if (isRealtimeWsLive()) {
-            // WS owns live bubbles — but receipt ticks are easy to miss once.
-            // Light poll keeps agent blue ticks in sync without inbox thrash.
+            // WS owns live messages. Rare poll only for read-receipt ticks.
             window.__lcReceiptTimer = setInterval(function () {
-                if (selectedId) pollMessages();
-            }, 4000);
+                if (selectedId) pollMessages({ skipJourney: true });
+            }, 15000);
+            // Page journey is not realtime-critical — slow separate timer.
+            window.__lcJourneyTimer = setInterval(function () {
+                if (selectedId) loadPageJourney(false);
+            }, 30000);
             return;
         }
 
