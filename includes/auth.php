@@ -73,17 +73,39 @@ function lc_require_admin(): array
 
 function lc_login_agent(string $email, string $password): bool
 {
-    $stmt = lc_db()->prepare('SELECT * FROM agents WHERE email = ? AND is_active = 1 LIMIT 1');
-    $stmt->execute([$email]);
-    $agent = $stmt->fetch();
-    if (!$agent || !password_verify($password, $agent['password'])) {
+    $email = trim(strtolower($email));
+    $password = (string) $password;
+    if ($email === '' || $password === '') {
         return false;
     }
-    $_SESSION['agent_id'] = $agent['id'];
+
+    try {
+        $stmt = lc_db()->prepare('SELECT * FROM agents WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $agent = $stmt->fetch();
+    } catch (Throwable $e) {
+        $stmt = lc_db()->prepare('SELECT * FROM agents WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $agent = $stmt->fetch();
+    }
+
+    if (!$agent) {
+        return false;
+    }
+    if (isset($agent['is_active']) && (int) $agent['is_active'] !== 1) {
+        return false;
+    }
+
+    $hash = trim((string) ($agent['password'] ?? ''));
+    if ($hash === '' || !password_verify($password, $hash)) {
+        return false;
+    }
+
+    $_SESSION['agent_id'] = (int) $agent['id'];
     $_SESSION['agent_name'] = $agent['name'];
     $_SESSION['agent_role'] = $agent['role'];
     $upd = lc_db()->prepare("UPDATE agents SET status = 'online', last_seen = NOW() WHERE id = ?");
-    $upd->execute([$agent['id']]);
+    $upd->execute([(int) $agent['id']]);
     if (function_exists('lc_drain_waiting_queue_for_agent')) {
         lc_drain_waiting_queue_for_agent((int) $agent['id']);
     }
@@ -91,7 +113,7 @@ function lc_login_agent(string $email, string $password): bool
 }
 
 /**
- * Public signup ╬ô├ç├╢ creates an isolated workspace (account + admin + default brand).
+ * Public signup — creates an isolated workspace (account + admin + default brand).
  * @return array{success: bool, error?: string, account_id?: int, agent_id?: int}
  */
 function lc_register_agent(string $name, string $email, string $password, string $companyName = ''): array

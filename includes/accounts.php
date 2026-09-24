@@ -508,9 +508,12 @@ function lc_register_workspace(string $companyName, string $adminName, string $e
         $accountId = (int) $db->lastInsertId();
 
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        $insAgent = $db->prepare("INSERT INTO agents (account_id, name, email, password, role, status, brand_id) VALUES (?, ?, ?, ?, 'admin', 'offline', NULL)");
+        $insAgent = $db->prepare("INSERT INTO agents (account_id, name, email, `password`, role, status, brand_id, is_active) VALUES (?, ?, ?, ?, 'admin', 'offline', NULL, 1)");
         $insAgent->execute([$accountId, $adminName, $email, $hash]);
         $agentId = (int) $db->lastInsertId();
+        if ($agentId < 1) {
+            throw new RuntimeException('Agent insert failed');
+        }
 
         $db->prepare('UPDATE accounts SET owner_agent_id = ? WHERE id = ?')->execute([$agentId, $accountId]);
 

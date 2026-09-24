@@ -40,6 +40,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $signupValues['company_name']
         );
         if (!empty($result['success'])) {
+            // Sign in immediately so Nginx/extensionless quirks cannot strand a fresh account.
+            if (lc_login_agent($signupValues['email'], $password)) {
+                header('Location: ' . lc_admin_url());
+                exit;
+            }
             header('Location: ' . lc_admin_url('login', ['registered' => '1']));
             exit;
         }
