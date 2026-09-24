@@ -115,6 +115,19 @@ function lc_realtime_client_config(?int $brandId = null): array
         $mode = 'poll';
     }
 
+    // Never open a WS to a different host than this page (stops livechat.* → erp 503 loops).
+    if ($mode === 'ws' && $wsUrl !== '') {
+        $reqHost = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        if ($reqHost !== '') {
+            $reqHost = strtolower(explode(':', $reqHost)[0]);
+            $wsHost = strtolower((string) (parse_url($wsUrl, PHP_URL_HOST) ?: ''));
+            if ($wsHost !== '' && $wsHost !== $reqHost) {
+                $mode = 'poll';
+                $wsUrl = '';
+            }
+        }
+    }
+
     return [
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
