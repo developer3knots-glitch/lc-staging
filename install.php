@@ -1,4 +1,4 @@
-<?php
+<?php   
 /**
  * One-time installer — visit /livechat/install.php
  */
