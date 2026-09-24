@@ -234,15 +234,78 @@ try {
 
     $agentPublic = lc_agent_public((string) ($agent['name'] ?? 'Agent'), $agent['avatar'] ?? null);
 
-    // 1) Invite FIRST — visitor presence channel (fastest path to open widget)
-    if ($visitorUid !== '' && function_exists('lc_realtime_publish')) {
-        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), 'chat.invite', [
+    // Seed transcript for the visitor widget (paint immediately on chat.invite —
+    // do not wait for widget-init + poll, which left a blank Admin header).
+    $seedMessages = [];
+    try {
+        $seedStmt = $db->prepare("
+            SELECT m.id, m.sender_type, m.sender_id, m.message, m.created_at,
+                   a.name AS agent_name, a.avatar AS agent_avatar
+            FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
+            WHERE m.conversation_id = ?
+            ORDER BY m.id ASC
+            LIMIT 20
+        ");
+        $seedStmt->execute([$convId]);
+        while ($srow = $seedStmt->fetch(PDO::FETCH_ASSOC)) {
+            $text = (string) ($srow['message'] ?? '');
+            if ($text !== '' && function_exists('lc_message_hidden_from_visitor')
+                && lc_message_hidden_from_visitor($text)) {
+                continue;
+            }
+            $seedMessages[] = [
+                'id' => (int) ($srow['id'] ?? 0),
+                'sender_type' => (string) ($srow['sender_type'] ?? 'system'),
+                'message' => $text,
+                'created_at' => (string) ($srow['created_at'] ?? ''),
+                'agent_name' => $srow['agent_name'] ?? null,
+                'agent_avatar' => function_exists('lc_agent_public') && !empty($srow['agent_name'])
+                    ? (lc_agent_public((string) $srow['agent_name'], $srow['agent_avatar'] ?? null)['avatar'] ?? null)
+                    : null,
+            ];
+        }
+    } catch (Throwable $e) {
+        $seedMessages = [];
+    }
+
+    // 1) Invite FIRST — fan out to this visitor_uid AND any other uids on the same
+    // public IP today (widget localStorage uid often differs from Traffic visitor row).
+    $inviteUids = [];
+    if ($visitorUid !== '') {
+        $inviteUids[$visitorUid] = true;
+    }
+    if ($ip !== '' && function_exists('lc_ip_usable_for_identity') && lc_ip_usable_for_identity($ip)) {
+        try {
+            $uidStmt = $db->prepare("
+                SELECT DISTINCT visitor_uid FROM visitors
+                WHERE ip_address = ?
+                  AND visitor_uid IS NOT NULL AND TRIM(visitor_uid) != ''
+                  AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY)
+                LIMIT 20
+            ");
+            $uidStmt->execute([$ip]);
+            while ($u = $uidStmt->fetchColumn()) {
+                $u = trim((string) $u);
+                if ($u !== '') {
+                    $inviteUids[$u] = true;
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    }
+    if (function_exists('lc_realtime_publish')) {
+        $invitePayload = [
             'conversation_id' => $convId,
             'brand_id' => $brandId,
             'brand_key' => (string) ($brand['brand_key'] ?? ''),
             'agent' => $agentPublic,
             'proactive' => true,
-        ], 250);
+            'messages' => $seedMessages,
+        ];
+        foreach (array_keys($inviteUids) as $uid) {
+            lc_realtime_publish(lc_realtime_channel_visitor($uid), 'chat.invite', $invitePayload, 250);
+        }
     }
 
     // 2) Conversation / inbox status
@@ -253,6 +316,18 @@ try {
     ]);
 
     // 3) Deferred system messages (visitor now joining / already invited)
+    // Also publish welcome so late subscribers still get transcript over WS.
+    if ($created) {
+        try {
+            $welcomeId = (int) ($db->query(
+                "SELECT id FROM messages WHERE conversation_id = {$convId} AND sender_type = 'system' ORDER BY id ASC LIMIT 1"
+            )->fetchColumn() ?: 0);
+            if ($welcomeId > 0 && !in_array($welcomeId, $pendingPublishIds, true)) {
+                array_unshift($pendingPublishIds, $welcomeId);
+            }
+        } catch (Throwable $e) {
+        }
+    }
     if (function_exists('lc_realtime_publish_message')) {
         foreach ($pendingPublishIds as $mid) {
             lc_realtime_publish_message($convId, (int) $mid);

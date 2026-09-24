@@ -2274,6 +2274,17 @@
 #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-join-text strong {
     color: #f9fafb;
 }
+#lc-panel.lcw-theme-dark.lcw-chat-active .lcw-leave-event,
+#lc-panel.lcw-theme-dark.lcw-chat-active .lcw-system.lcw-leave-event {
+    background: transparent;
+    border: none;
+    color: #d1d5db;
+}
+#lc-panel.lcw-theme-dark.lcw-chat-active .lcw-leave-event strong,
+#lc-panel.lcw-theme-dark.lcw-chat-active .lcw-system.lcw-leave-event strong {
+    color: #f9fafb;
+    font-weight: 700;
+}
 
 .lcw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .lcw-ref-hidden { display: none !important; }

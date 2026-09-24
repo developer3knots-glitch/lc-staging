@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 132;
+    var LC_WIDGET_BUILD = 135;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -418,7 +418,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=62';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=63';
         document.head.appendChild(link);
     }
 
@@ -2018,17 +2018,28 @@
         if (cid < 1) return;
         if (proactiveInviteInFlight || chatInitInFlight) return;
 
+        var inviteAgent = (payload && payload.agent && payload.agent.name) ? payload.agent : null;
+        var seedMsgs = (payload && Array.isArray(payload.messages)) ? payload.messages : [];
+
         var current = parseInt(conversationId, 10) || 0;
         if (current === cid) {
             chatClosed = false;
             if (!isOpen) openPanel({ silenceFlow: true, focusComposeOnOpen: true });
             showChatView();
+            if (inviteAgent) {
+                updateHeaderAgent(inviteAgent);
+                updateStatus('Chatting with ' + inviteAgent.name, true);
+                setWaitingState(false);
+            }
+            seedMsgs.forEach(function (m) {
+                try { appendMessage(m, { suppressAgentState: true }); } catch (eSeed) {}
+            });
             // Re-bind / catch join+welcome that may have published before presence heard invite
             if (typeof initVisitorRealtime === 'function') {
                 loadRealtimeScript(function () { initVisitorRealtime(); });
             }
             if (typeof pollMessages === 'function') {
-                try { pollMessages(); } catch (eP) {}
+                try { pollMessages(true); } catch (eP) {}
             }
             focusVisitorCompose({ delay: 120 });
             return;
@@ -2046,7 +2057,21 @@
             openPanel({ silenceFlow: true, focusComposeOnOpen: true });
         }
         showChatView();
-        updateStatus('Connecting...', true);
+        // Paint immediately so visitor never sees blank Admin header
+        if (inviteAgent) {
+            updateHeaderAgent(inviteAgent);
+            updateStatus('Chatting with ' + inviteAgent.name, true);
+            setWaitingState(false);
+        } else {
+            updateStatus('Connecting...', true);
+        }
+        showChatLoading('Connecting...', 'Agent is joining');
+        seedMsgs.forEach(function (m) {
+            try { appendMessage(m, { suppressAgentState: !!inviteAgent }); } catch (eSeed2) {}
+        });
+        if (seedMsgs.length) {
+            hideChatLoading();
+        }
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             try { window.LCNotifySound.play({ force: true }); } catch (eS) {}
         } else {
@@ -2078,8 +2103,30 @@
                     return;
                 }
                 hideTeaser(true);
-                handleChatStarted(data, { keepMessages: false });
+                // Keep seeded bubbles; treat as resume so loading/status stay coherent
+                handleChatStarted(data, {
+                    keepMessages: true,
+                    resumeConversationId: cid,
+                    fromProactiveInvite: true
+                });
+                // Belt-and-suspenders: paint init messages if handle missed them
+                if (Array.isArray(data.messages) && data.messages.length && messagesNeedHistoryReload()) {
+                    data.messages.forEach(function (m) {
+                        try { appendMessage(m, { suppressAgentState: true }); } catch (eM) {}
+                    });
+                }
+                if (inviteAgent && !(data.agent && data.agent.name)) {
+                    updateHeaderAgent(inviteAgent);
+                    updateStatus('Chatting with ' + inviteAgent.name, true);
+                    setWaitingState(false);
+                }
+                hideChatLoading();
                 focusVisitorCompose({ delay: 160 });
+                // Force one history catch-up over WS gaps
+                try {
+                    lastMsgId = 0;
+                    pollMessages(true);
+                } catch (ePoll) {}
             })
             .catch(function () {
                 proactiveInviteInFlight = false;
@@ -3980,8 +4027,41 @@
             // Don't wipe bubbles until history poll succeeds (avoids blank Admin-Agent screen)
             pendingHistoryWipe = true;
         }
+        // Always reset cursor on proactive Start-chat so we never skip transcript
+        if (options.fromProactiveInvite || options.resumeConversationId) {
+            lastMsgId = 0;
+            try { persistLastMsgId(0); } catch (eLm) {}
+        }
+
+        // Paint transcript from widget-init immediately (no blank wait for poll/WS)
+        var bootMsgs = Array.isArray(data.messages) ? data.messages : [];
+        if (bootMsgs.length) {
+            hideChatLoading();
+            bootMsgs.forEach(function (m) {
+                try {
+                    appendMessage(m, {
+                        suppressAgentState: !!(data.agent && data.agent.name) || data.status === 'active'
+                    });
+                    var mid = parseInt(m && m.id, 10) || 0;
+                    if (mid > 0) advanceLastMsgId(mid);
+                } catch (eBoot) {}
+            });
+            pendingHistoryWipe = false;
+        }
+
         var isResume = !!(options.resumeConversationId);
-        if (isResume) {
+        if (isResume && options.fromProactiveInvite && !messagesNeedHistoryReload()) {
+            // Seeded invite transcript already painted — don't flash blank loading
+            pendingResumeStatus = null;
+            hideChatLoading();
+            if (data.status === 'waiting') {
+                setWaitingState(true, { soft: false });
+                updateStatus('Connecting to live agent...', (data.agents_online || 0) > 0);
+            } else {
+                updateHeaderAgent(data.agent || null);
+                applyAgentConnectionState(data);
+            }
+        } else if (isResume) {
             // Reload: show loading until transcript paints — not "Waiting for agent" on blank screen
             pendingResumeStatus = {
                 status: data.status,
@@ -5031,7 +5111,7 @@
                     if (domHasExtras || (!messagesNeedHistoryReload() && !pendingHistoryWipe)) {
                         // Merge only — keep live/WS bubbles
                         pendingHistoryWipe = false;
-                    } else if (pendingHistoryWipe || messagesNeedHistoryReload()) {
+                    } else if ((pendingHistoryWipe || messagesNeedHistoryReload()) && messages.length > 0) {
                         lastDateLabel = '';
                         lastMsgId = 0;
                         if (histBox) {
@@ -5051,6 +5131,19 @@
                             }
                         }
                         pendingHistoryWipe = false;
+                    } else if (pendingHistoryWipe && messages.length === 0) {
+                        // Empty history response — never wipe seeded/WS bubbles (blank Admin screen)
+                        pendingHistoryWipe = false;
+                        if (messagesNeedHistoryReload() && conversationId && !chatClosed) {
+                            if (historyRetryTimer) clearTimeout(historyRetryTimer);
+                            historyRetryTimer = setTimeout(function () {
+                                historyRetryTimer = null;
+                                if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                                    lastMsgId = 0;
+                                    pollMessages(true);
+                                }
+                            }, 800);
+                        }
                     } else {
                         pendingHistoryWipe = false;
                     }

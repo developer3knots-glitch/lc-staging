@@ -221,20 +221,38 @@ try {
     }
 
     $conv = null;
-    // Same-tab resume only for TODAY's chat (IP+date rule).
+    // Same-tab / proactive resume: attach to this conversation even when Traffic
+    // visitor_id differs from the browser uid (IP claim / multi-tab).
     if ($resumeConvId > 0 && !$visitorUidRotated) {
         $stmt = $db->prepare("
-            SELECT id, status FROM conversations
-            WHERE id = ? AND visitor_id = ? AND brand_id = ?
+            SELECT id, status, visitor_id FROM conversations
+            WHERE id = ? AND brand_id = ?
               AND status IN ('waiting','active')
               AND DATE(started_at) = CURDATE()
             LIMIT 1
         ");
-        $stmt->execute([$resumeConvId, $visitorId, $brandId]);
-        $conv = $stmt->fetch();
+        $stmt->execute([$resumeConvId, $brandId]);
+        $resumeRow = $stmt->fetch() ?: null;
+        if ($resumeRow) {
+            $ownerVid = (int) ($resumeRow['visitor_id'] ?? 0);
+            if ($ownerVid === $visitorId || $ownerVid < 1) {
+                $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
+            } else {
+                // Rebind Traffic-started chat onto this browser visitor
+                try {
+                    $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ? AND DATE(started_at) = CURDATE()')
+                        ->execute([$visitorId, $resumeConvId]);
+                    if (function_exists('lc_record_visitor_ip') && lc_ip_usable_for_identity($ip)) {
+                        lc_record_visitor_ip($visitorId, $ip);
+                    }
+                } catch (Throwable $e) {
+                }
+                $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
+            }
+        }
         if (!$conv) {
-            $dayChk = $db->prepare("SELECT id, started_at, status FROM conversations WHERE id = ? AND visitor_id = ? AND brand_id = ? AND DATE(started_at) = CURDATE() LIMIT 1");
-            $dayChk->execute([$resumeConvId, $visitorId, $brandId]);
+            $dayChk = $db->prepare("SELECT id, started_at, status FROM conversations WHERE id = ? AND brand_id = ? AND DATE(started_at) = CURDATE() LIMIT 1");
+            $dayChk->execute([$resumeConvId, $brandId]);
             $dayRow = $dayChk->fetch();
             if ($dayRow && ($dayRow['status'] ?? '') === 'closed') {
                 $reopened = lc_reopen_recent_visitor_close($resumeConvId, $visitorId);
@@ -429,6 +447,46 @@ try {
         }
     }
 
+    // Recent transcript for resume / proactive Start-chat — widget paints without
+    // waiting on a separate poll (blank Admin header bug).
+    $initMessages = [];
+    try {
+        $mStmt = $db->prepare("
+            SELECT m.id, m.sender_type, m.sender_id, m.message, m.created_at,
+                   a.name AS agent_name, a.avatar AS agent_avatar
+            FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
+            WHERE m.conversation_id = ?
+            ORDER BY m.id ASC
+            LIMIT 40
+        ");
+        $mStmt->execute([$convId]);
+        while ($mrow = $mStmt->fetch(PDO::FETCH_ASSOC)) {
+            $text = (string) ($mrow['message'] ?? '');
+            if ($text !== '' && function_exists('lc_message_hidden_from_visitor')
+                && lc_message_hidden_from_visitor($text)) {
+                continue;
+            }
+            if ($text !== '' && function_exists('lc_sanitize_system_message_for_visitor')
+                && ($mrow['sender_type'] ?? '') === 'system') {
+                $text = lc_sanitize_system_message_for_visitor($text);
+            }
+            $agentName = trim((string) ($mrow['agent_name'] ?? ''));
+            $initMessages[] = [
+                'id' => (int) ($mrow['id'] ?? 0),
+                'sender_type' => (string) ($mrow['sender_type'] ?? 'system'),
+                'message' => $text,
+                'created_at' => (string) ($mrow['created_at'] ?? ''),
+                'agent_name' => $agentName !== '' ? $agentName : null,
+                'agent_avatar' => ($agentName !== '' && function_exists('lc_agent_public'))
+                    ? (lc_agent_public($agentName, $mrow['agent_avatar'] ?? null)['avatar'] ?? null)
+                    : null,
+            ];
+        }
+    } catch (Throwable $e) {
+        $initMessages = [];
+    }
+
     lc_json([
         'success' => true,
         'conversation_id' => $convId,
@@ -444,6 +502,7 @@ try {
         'status' => $status,
         'agents_online' => $online,
         'agent' => $agentInfo,
+        'messages' => $initMessages,
         'settings' => $brandSettings,
         'attachments' => lc_attachment_public_config(),
         'visitor_ip' => $visitorInfo['ip_address'] ?? $ip,
