@@ -38,7 +38,7 @@ define('LC_BASE_PATH', dirname(__DIR__));
 define('LC_DB_HOST', 'localhost');
 define('LC_DB_NAME', 'livechat');
 define('LC_DB_USER', 'livechat');
-define('LC_DB_PASS', ''); // set on server (aaPanel DB password)
+define('LC_DB_PASS', 'cBRDPFXKLJ54Frca');
 define('LC_DB_CHARSET', 'utf8mb4');
 
 define('LC_SESSION_NAME', 'livechat_session');
