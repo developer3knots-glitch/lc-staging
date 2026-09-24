@@ -1,12 +1,12 @@
 /**
  * LiveChat Widget - embed on any website
- * <script src="https://erp.3knotsdigital.com/WSlivechat/widget/embed.js" data-site="https://erp.3knotsdigital.com/WSlivechat"></script>
+ * <script src="https://livechat.3knotsdigital.com/widget/embed.js" data-site="https://livechat.3knotsdigital.com"></script>
  */
 (function () {
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 135;
+    var LC_WIDGET_BUILD = 136;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';

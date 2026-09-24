@@ -20,8 +20,22 @@ require_once __DIR__ . '/ip-resume.php';
 
 function lc_cors_headers(): void
 {
-    // CORS is set in api/.htaccess (Header always set). Do not send them again here —
-    // duplicate Access-Control-Allow-Origin: *,* is rejected by browsers.
+    // Apache may already set these via api/.htaccess. Nginx/aaPanel does not —
+    // without these headers the browser blocks embeds on other domains.
+    if (!headers_sent()) {
+        $already = false;
+        foreach (headers_list() as $h) {
+            if (stripos($h, 'Access-Control-Allow-Origin:') === 0) {
+                $already = true;
+                break;
+            }
+        }
+        if (!$already) {
+            header('Access-Control-Allow-Origin: *');
+            header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+            header('Access-Control-Allow-Headers: Content-Type, ngrok-skip-browser-warning');
+        }
+    }
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
         http_response_code(204);
         exit;
