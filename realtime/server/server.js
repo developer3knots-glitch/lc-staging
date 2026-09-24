@@ -136,7 +136,7 @@ const requestHandler = async function (req, res) {
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/health') {
+  if ((req.method === 'GET' || req.method === 'HEAD') && (req.url === '/health' || req.url.startsWith('/health?'))) {
     const channels = [];
     channelSubs.forEach(function (set, name) {
       let live = 0;
@@ -145,8 +145,16 @@ const requestHandler = async function (req, res) {
       });
       channels.push({ channel: name, subscribers: set.size, live: live });
     });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, channels: channels.length, detail: channels }));
+    const body = JSON.stringify({ ok: true, channels: channels.length, detail: channels });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    });
+    if (req.method === 'HEAD') {
+      res.end();
+    } else {
+      res.end(body);
+    }
     return;
   }
 
