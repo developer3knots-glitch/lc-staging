@@ -44,8 +44,8 @@ define('LC_DB_CHARSET', 'utf8mb4');
 define('LC_SESSION_NAME', 'livechat_session');
 define('LC_POLL_INTERVAL', 1500);
 
-// aaPanel: use poll until Node WS is proxied on this host
-define('LC_REALTIME_MODE', 'poll');
+// aaPanel: Node realtime on :6001, Nginx path /lc-realtime
+define('LC_REALTIME_MODE', 'ws');
 define('LC_REALTIME_WS_URL', 'wss://livechat.3knotsdigital.com/lc-realtime');
 define('LC_REALTIME_PUBLISH_URL', 'http://127.0.0.1:6001/publish');
 define('LC_REALTIME_SECRET', 'local-dev-realtime-secret');
