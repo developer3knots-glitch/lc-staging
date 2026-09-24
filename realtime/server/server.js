@@ -111,7 +111,10 @@ function readJson(req) {
 }
 
 const requestHandler = async function (req, res) {
-  if (req.method === 'POST' && req.url === '/publish') {
+  // Nginx location /lc-realtime + proxy_pass .../ can produce //health — normalize.
+  const urlPath = String(req.url || '/').split('?')[0].replace(/\/{2,}/g, '/') || '/';
+
+  if (req.method === 'POST' && urlPath === '/publish') {
     if (req.headers['x-lc-secret'] !== SECRET) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
@@ -136,7 +139,7 @@ const requestHandler = async function (req, res) {
     return;
   }
 
-  if ((req.method === 'GET' || req.method === 'HEAD') && (req.url === '/health' || req.url.startsWith('/health?'))) {
+  if ((req.method === 'GET' || req.method === 'HEAD') && urlPath === '/health') {
     const channels = [];
     channelSubs.forEach(function (set, name) {
       let live = 0;
