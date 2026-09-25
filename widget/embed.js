@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 136;
+    var LC_WIDGET_BUILD = 137;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -1656,10 +1656,12 @@
         }
     }
 
-    /** While WS is up: infrequent HTTP catch-up so missed agent messages still land. */
+    /** While WS is up: rare HTTP catch-up only (not a second live channel). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 60000;
+        if (ms < 30000) ms = 30000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -1671,16 +1673,9 @@
                 return;
             }
             forceMessageCatchup();
-        }, 5000);
-        // Immediate sync on (re)connect — closes the race with history wipe / missed events
+        }, ms);
+        // One catch-up on connect — then rely on WS events
         forceMessageCatchup();
-    }
-
-    function stopWsSafetyCatchup() {
-        if (wsCatchupTimer) {
-            clearInterval(wsCatchupTimer);
-            wsCatchupTimer = null;
-        }
     }
 
     /** Extra catch-up only while WS is down */
@@ -1697,7 +1692,14 @@
                 return;
             }
             scheduleCatchupSync();
-        }, 1000);
+        }, 3000);
+    }
+
+    function stopWsSafetyCatchup() {
+        if (wsCatchupTimer) {
+            clearInterval(wsCatchupTimer);
+            wsCatchupTimer = null;
+        }
     }
 
     function stopSafetySync() {
@@ -1993,7 +1995,9 @@
         });
         bindVisitorRealtimeHandlers(realtimeClient);
         realtimeClient.connect();
-        startLiveMessageSync();
+        // Do not start fast HTTP poll while WS handshake is in progress.
+        stopLiveMessageSync();
+        startSafetySyncWhileDisconnected();
         return true;
     }
 

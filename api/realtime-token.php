@@ -28,7 +28,8 @@ try {
             ');
             $stmt->execute([$conversationId, $visitorUid]);
             if (!$stmt->fetch()) {
-                lc_json(['success' => false, 'error' => 'Not found'], 404);
+                // HTTP 200 so nginx custom 404 pages do not replace JSON (breaks widget token refresh).
+                lc_json(['success' => false, 'error' => 'Not found', 'realtime' => lc_realtime_client_config()]);
             }
             lc_json([
                 'success' => true,
