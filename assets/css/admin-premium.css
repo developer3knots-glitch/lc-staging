@@ -8026,22 +8026,31 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     font-size: 0.78rem;
 }
 
-/* 3-column LiveChat desk — conversation-first */
+/* 3-column LiveChat desk — left 25% | chat 50% | right 25% */
 .lc-chat-layout-pro.lc-chat-desk {
-    --lc-inbox-w: 250px;
-    --lc-details-w: 240px;
-    grid-template-columns: var(--lc-inbox-w) minmax(0, 1fr) var(--lc-details-w);
+    --lc-inbox-w: 25%;
+    --lc-details-w: 25%;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
     background: #f1f5f9;
 }
 
 .lc-chat-layout-pro.lc-chat-desk .lc-chat-inbox-pro {
+    width: 100%;
+    max-width: none;
     background: #f8fafc;
     border-right: 1px solid #e2e8f0;
 }
 
 .lc-chat-layout-pro.lc-chat-desk .lc-chat-panel-pro {
+    width: 100%;
+    max-width: none;
     background: #fff;
     border-right: 1px solid #e2e8f0;
+}
+
+.lc-chat-layout-pro.lc-chat-desk .lc-chat-details {
+    width: 100%;
+    max-width: none;
 }
 
 .lc-chat-details-toggle {
@@ -8341,19 +8350,7 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     font-size: 0.72rem;
 }
 
-@media (min-width: 1600px) {
-    .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: 280px;
-        --lc-details-w: 270px;
-    }
-}
-
 @media (max-width: 1480px) {
-    .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: 230px;
-        --lc-details-w: 220px;
-    }
-
     .lc-details-hero {
         padding: 0.85rem 0.75rem 0.7rem;
     }
@@ -8376,12 +8373,23 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     }
 }
 
-/* Laptops / small desktops: 2-column + details drawer */
-@media (max-width: 1360px) {
+/* Keep 25% | 50% | 25% through laptop widths including 1400px */
+@media (max-width: 1400px) {
     .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: 240px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+    }
+}
+
+/* Smaller laptops / tablets: 2-column + details drawer */
+@media (max-width: 1100px) {
+    .lc-chat-layout-pro.lc-chat-desk {
+        --lc-inbox-w: min(240px, 32vw);
         --lc-details-w: min(320px, 86vw);
         grid-template-columns: var(--lc-inbox-w) minmax(0, 1fr);
+    }
+
+    .lc-chat-layout-pro.lc-chat-desk .lc-chat-inbox-pro {
+        width: var(--lc-inbox-w);
     }
 
     .lc-chat-details-toggle {
@@ -8436,12 +8444,6 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
         display: flex;
         flex-wrap: wrap;
         gap: 0.35rem;
-    }
-}
-
-@media (max-width: 1100px) {
-    .lc-chat-layout-pro.lc-chat-desk {
-        --lc-inbox-w: min(220px, 28vw);
     }
 
     .lc-chat-inbox-search-wrap input {

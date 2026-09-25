@@ -668,7 +668,7 @@
     var detailsBackdrop = document.getElementById('lc-details-backdrop');
 
     function isDetailsDrawerMode() {
-        return window.matchMedia && window.matchMedia('(max-width: 1360px)').matches;
+        return window.matchMedia && window.matchMedia('(max-width: 1100px)').matches;
     }
 
     function setDetailsDrawerOpen(open) {
