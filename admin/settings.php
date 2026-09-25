@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $poll = max(800, min(5000, $poll));
             lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             lc_set_account_setting($accountId, 'poll_interval_ms', (string) $poll);
+            lc_set_account_setting($accountId, 'poll_disabled', isset($_POST['poll_disabled']) ? '1' : '0');
             $prechatOn = isset($_POST['prechat_form_enabled']) ? '1' : '0';
             lc_set_account_setting($accountId, 'prechat_form_enabled', $prechatOn);
             // Keep global fallback in sync (brands without account_id / legacy installs)
@@ -182,6 +183,7 @@ $allCountries = lc_country_list();
 asort($allCountries);
 
 $pollMs = (int) lc_account_setting($accountId, 'poll_interval_ms', '1500');
+$pollDisabled = lc_account_setting($accountId, 'poll_disabled', '0') === '1';
 $autoAssign = lc_account_setting($accountId, 'auto_assign', '0') === '1';
 $inactivityCloseEnabled = lc_account_setting($accountId, 'inactivity_close_enabled', '1') === '1';
 $inactivityCloseMinutes = (int) lc_account_setting($accountId, 'inactivity_close_minutes', '15');
@@ -229,8 +231,8 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="lc-hero-metrics lc-hero-metrics-4">
             <div class="lc-hero-metric">
-                <span class="lc-hero-metric-val"><?= $pollMs ?></span>
-                <span class="lc-hero-metric-label">Poll (ms)</span>
+                <span class="lc-hero-metric-val"><?= $pollDisabled ? 'Off' : $pollMs ?></span>
+                <span class="lc-hero-metric-label"><?= $pollDisabled ? 'Poll disabled' : 'Poll (ms)' ?></span>
             </div>
             <div class="lc-hero-metric is-accent">
                 <span class="lc-hero-metric-val"><?= count($blockedCountries) ?></span>
@@ -270,12 +272,25 @@ require __DIR__ . '/includes/header.php';
                                 <div class="lc-settings-tile-icon blue"><i class="ti ti-refresh"></i></div>
                                 <div class="lc-settings-tile-body">
                                     <label for="lc-poll-interval">Poll interval (ms)</label>
-                                    <p class="lc-settings-tile-hint">How fast the inbox refreshes. Lower = faster, more server load.</p>
-                                    <input type="range" id="lc-poll-interval-range" min="800" max="5000" step="100" value="<?= $pollMs ?>">
+                                    <p class="lc-settings-tile-hint">How fast the inbox refreshes when HTTP poll is on. Lower = faster, more server load.</p>
+                                    <input type="range" id="lc-poll-interval-range" min="800" max="5000" step="100" value="<?= $pollMs ?>"<?= $pollDisabled ? ' disabled' : '' ?>>
                                     <div class="lc-settings-range-val">
                                         <input type="number" name="poll_interval_ms" id="lc-poll-interval" min="800" max="5000" value="<?= $pollMs ?>">
                                         <span>ms</span>
                                     </div>
+                                </div>
+                            </div>
+                            <div class="lc-settings-tile">
+                                <div class="lc-settings-tile-icon red"><i class="ti ti-player-pause"></i></div>
+                                <div class="lc-settings-tile-body">
+                                    <label class="lc-settings-toggle">
+                                        <input type="checkbox" name="poll_disabled" id="lc-poll-disabled" <?= $pollDisabled ? 'checked' : '' ?>>
+                                        <span class="lc-settings-toggle-ui"></span>
+                                        <span class="lc-settings-toggle-text">
+                                            <strong>Disable HTTP polling</strong>
+                                            <small>Stops repeated <code>agent-poll.php</code> calls. Use only with WebSocket (WS) live — messages then come via realtime only.</small>
+                                        </span>
+                                    </label>
                                 </div>
                             </div>
                                                         <div class="lc-settings-tile">

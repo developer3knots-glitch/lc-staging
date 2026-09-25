@@ -6,6 +6,7 @@
 
     var base = window.LC_BASE_URL;
     var pollMs = window.LC_POLL_INTERVAL || 1500;
+    var pollDisabled = !!window.LC_POLL_DISABLED;
     var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
     var isAdmin = app.dataset.agentRole === 'admin';
     var selectedId = parseInt(app.dataset.selected, 10) || 0;
@@ -4212,6 +4213,14 @@
         window.__lcReceiptTimer = null;
         window.__lcJourneyTimer = null;
 
+        // Manual: Settings → Disable HTTP polling — no agent-poll / list intervals
+        if (pollDisabled) {
+            window.__lcJourneyTimer = setInterval(function () {
+                if (selectedId) loadPageJourney(false);
+            }, 60000);
+            return;
+        }
+
         if (isRealtimeWsLive()) {
             // Fast safety net — WS should deliver instantly; this catches dropped publishes
             pollTimer = setInterval(function () {
@@ -4318,6 +4327,7 @@
                 token: token,
                 getToken: fetchAgentToken,
                 fallbackPoll: function () {
+                    if (pollDisabled) return;
                     if (selectedId) pollMessages();
                     loadConversations();
                 }

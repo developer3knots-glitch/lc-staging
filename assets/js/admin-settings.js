@@ -69,6 +69,12 @@
 
     var pollRange = document.getElementById('lc-poll-interval-range');
     var pollInput = document.getElementById('lc-poll-interval');
+    var pollDisabledCb = document.getElementById('lc-poll-disabled');
+    function syncPollControls() {
+        var off = !!(pollDisabledCb && pollDisabledCb.checked);
+        if (pollRange) pollRange.disabled = off;
+        if (pollInput) pollInput.classList.toggle('is-muted', off);
+    }
     if (pollRange && pollInput) {
         pollRange.addEventListener('input', function () {
             pollInput.value = pollRange.value;
@@ -78,6 +84,10 @@
             pollInput.value = val;
             pollRange.value = val;
         });
+    }
+    if (pollDisabledCb) {
+        pollDisabledCb.addEventListener('change', syncPollControls);
+        syncPollControls();
     }
 
     var navLinks = document.querySelectorAll('.lc-settings-nav-link');
