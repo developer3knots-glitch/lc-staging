@@ -75,16 +75,21 @@
             var old = this.ws;
             this.ws = null;
             try {
-                old.onopen = null;
                 old.onmessage = null;
                 old.onerror = null;
-                old.onclose = suppressReconnect
-                    ? function () {}
-                    : old.onclose;
-                if (suppressReconnect) {
-                    old.onclose = function () {};
+                old.onclose = function () {};
+                // Closing a CONNECTING socket triggers Chrome:
+                // "WebSocket is closed before the connection is established"
+                if (old.readyState === 0) {
+                    old.onopen = function () {
+                        try { old.close(); } catch (e2) { /* ignore */ }
+                    };
+                } else {
+                    old.onopen = null;
+                    if (old.readyState === 1) {
+                        old.close();
+                    }
                 }
-                old.close();
             } catch (e) { /* ignore */ }
         }
     };

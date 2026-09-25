@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 137;
+    var LC_WIDGET_BUILD = 138;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -1977,7 +1977,19 @@
         if (realtimeClient && realtimeClient.opts && realtimeClient.opts.wsUrl === url
             && realtimeBoundConvId === bindForConv
             && realtimeClient.shouldRun) {
+            if (!token && realtimeClient.opts.token) {
+                // keep existing token
+            } else if (token) {
+                realtimeClient.opts.token = token;
+            }
             startLiveMessageSync();
+            return true;
+        }
+        // Avoid disconnect mid-handshake — reuse driver if same URL
+        if (realtimeClient && realtimeClient.opts && realtimeClient.opts.wsUrl === url
+            && realtimeClient.shouldRun && realtimeClient._opening) {
+            realtimeBoundConvId = bindForConv;
+            if (token) realtimeClient.opts.token = token;
             return true;
         }
         if (realtimeClient && realtimeClient.disconnect) realtimeClient.disconnect();
@@ -1994,6 +2006,7 @@
             }
         });
         bindVisitorRealtimeHandlers(realtimeClient);
+        realtimeBoundConvId = bindForConv;
         realtimeClient.connect();
         // Do not start fast HTTP poll while WS handshake is in progress.
         stopLiveMessageSync();
@@ -2217,7 +2230,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=5';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=6';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
