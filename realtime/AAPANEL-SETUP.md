@@ -78,6 +78,14 @@ Save → Reload Nginx.
 3. No more `erp.../lc-realtime` 503 errors
 4. Send a message — should appear instantly (poll backup still exists if WS drops)
 
+After pulling code that changes `realtime/server/server.js`, restart Node:
+
+```bash
+cd /www/wwwroot/livechat.3knotsdigital.com/realtime/server
+pm2 restart livechat-realtime
+# or: pm2 restart all
+```
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -86,3 +94,4 @@ Save → Reload Nginx.
 | WS 404 | Nginx location missing / wrong site config |
 | auth.error | Secret mismatch PHP vs Node `.env` |
 | Messages slow | Still on poll — check `window.LC_REALTIME` in console (`mode` should be `ws`) |
+| Transfer lag | Confirm WS 101 + `pm2 restart` after server.js pull |

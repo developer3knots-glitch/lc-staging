@@ -92,11 +92,13 @@ try {
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => 'active',
                 'agent_id' => $myAgentId,
+                'previous_agent_id' => $prevAgentId,
                 'agent' => [
                     'id' => $myAgentId,
                     'name' => $myAgentName,
                     'avatar' => $agent['avatar'] ?? null,
                 ],
+                'taken_over' => true,
             ]);
         }
     }

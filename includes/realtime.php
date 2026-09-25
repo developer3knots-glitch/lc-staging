@@ -132,8 +132,8 @@ function lc_realtime_client_config(?int $brandId = null): array
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
         'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
-        // WS connected = almost no polling (safety net only). Disconnect resumes fast poll.
-        'backupPollMs' => 60000,
+        // WS connected = light safety catch-up (not once-a-minute)
+        'backupPollMs' => 4000,
     ];
 }
 
@@ -383,6 +383,24 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
         . "Connection: close\r\n\r\n"
         . $payload;
     $ok = @fwrite($fp, $req) !== false;
+    // Brief drain so Node can finish reading before we close (avoids dropped publishes)
+    if ($ok) {
+        stream_set_blocking($fp, false);
+        $deadline = microtime(true) + 0.08;
+        while (microtime(true) < $deadline) {
+            $read = [$fp];
+            $write = null;
+            $except = null;
+            $n = @stream_select($read, $write, $except, 0, 20000);
+            if ($n === false || $n < 1) {
+                break;
+            }
+            $chunk = @fread($fp, 2048);
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+        }
+    }
     @fclose($fp);
 
     return $ok;
@@ -397,11 +415,12 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $conv = lc_get_conversation($conversationId);
 
     $brandId = (int) ($conv['brand_id'] ?? 0);
-    $agentId = (int) ($conv['agent_id'] ?? 0);
-    $fanoutEvents = ['message.new', 'typing', 'message.receipts'];
+    $agentId = (int) ($conv['agent_id'] ?? ($data['agent_id'] ?? 0));
+    $previousAgentId = (int) ($data['previous_agent_id'] ?? 0);
+    $fanoutEvents = ['message.new', 'typing', 'message.receipts', 'conversation.updated'];
     $isFanout = in_array($event, $fanoutEvents, true);
 
-    // Peer-critical first (open chat windows) — short timeouts
+    // Peer-critical first (open chat windows subscribed to conv:ID)
     lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 180);
 
     if ($conv && $isFanout) {
@@ -423,13 +442,17 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         return;
     }
 
+    // Assigned agent + previous agent (transfer / takeover) get the event directly
     if ($agentId > 0 && $isFanout) {
         lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 180);
+    }
+    if ($previousAgentId > 0 && $previousAgentId !== $agentId && $isFanout) {
+        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 180);
     }
 
     // Inbox list noise last — even shorter
     if ($brandId > 0) {
-        if ($isFanout) {
+        if ($isFanout && $event !== 'conversation.updated') {
             lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload, 120);
         }
         if ($event !== 'typing' && $event !== 'message.receipts') {
@@ -438,6 +461,9 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     }
     if ($agentId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
         lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload, 120);
+    }
+    if ($previousAgentId > 0 && $previousAgentId !== $agentId && $event !== 'typing' && $event !== 'message.receipts') {
+        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), 'inbox.changed', $payload, 120);
     }
 }
 

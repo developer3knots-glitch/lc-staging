@@ -1656,12 +1656,13 @@
         }
     }
 
-    /** While WS is up: rare HTTP catch-up only (not a second live channel). */
+    /** While WS is up: light HTTP catch-up (safety net if a publish was dropped). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 60000;
-        if (ms < 30000) ms = 30000;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 4000;
+        if (ms < 3000) ms = 3000;
+        if (ms > 15000) ms = 15000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2230,7 +2231,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=6';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=7';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -2272,7 +2273,7 @@
             realtimeConfig = data.realtime;
             // Do not clamp backup down — WS should carry live traffic
             if (!realtimeConfig.backupPollMs) {
-                realtimeConfig.backupPollMs = 60000;
+                realtimeConfig.backupPollMs = 4000;
             }
         }
         // Only reconnect when mode/URL actually changed — never flap on settings sync

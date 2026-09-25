@@ -192,12 +192,41 @@ function wireWebSocket(server) {
         ws._lcClaims = claims;
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
-        ws.send(JSON.stringify({ type: 'auth.ok', channels }));
+        ws.send(JSON.stringify({ type: 'auth.ok', channels: Array.from(ws._lcChannels || []) }));
         return;
       }
 
       if (!ws._lcAuthed) {
         ws.close();
+        return;
+      }
+
+      // Dynamic channel join (open chat → conv:ID) — agents/visitors already authed
+      if (msg.type === 'subscribe') {
+        const ch = String(msg.channel || '');
+        if (/^(conv|agent|brand|visitor):/.test(ch)) {
+          subscribe(ws, ch);
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
+          }
+        }
+        return;
+      }
+
+      if (msg.type === 'unsubscribe') {
+        const ch = String(msg.channel || '');
+        if (ch && ws._lcChannels && ws._lcChannels.has(ch)) {
+          const set = channelSubs.get(ch);
+          if (set) {
+            set.delete(ws);
+            if (!set.size) channelSubs.delete(ch);
+          }
+          ws._lcChannels.delete(ch);
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'unsubscribed', channel: ch }));
+          }
+        }
+        return;
       }
     });
 

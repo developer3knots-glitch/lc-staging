@@ -2047,6 +2047,7 @@
                 loadConversations();
                 if (parseInt(data.agent_id, 10) !== myAgentId) {
                     selectedId = 0;
+                    syncRealtimeConversationChannel(0);
                     syncBrowserState(0, currentTab);
                     activeEl.style.display = 'none';
                     emptyEl.style.display = 'flex';
@@ -2618,6 +2619,7 @@
         setPeerTypingVisible(false);
         selectedId = id;
         syncBrowserState(id, currentTab);
+        syncRealtimeConversationChannel(id);
         lastMsgId = 0;
         needsFullHistory = true;
         stickToBottom = true;
@@ -4183,6 +4185,23 @@
         return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
     }
 
+    var subscribedConvChannel = '';
+    function syncRealtimeConversationChannel(conversationId) {
+        conversationId = parseInt(conversationId, 10) || 0;
+        var next = conversationId > 0 ? ('conv:' + conversationId) : '';
+        if (!realtimeClient || typeof realtimeClient.subscribe !== 'function') {
+            subscribedConvChannel = next;
+            return;
+        }
+        if (subscribedConvChannel && subscribedConvChannel !== next) {
+            try { realtimeClient.unsubscribe(subscribedConvChannel); } catch (eUn) {}
+        }
+        subscribedConvChannel = next;
+        if (next && isRealtimeWsLive()) {
+            try { realtimeClient.subscribe(next); } catch (eSub) {}
+        }
+    }
+
     function resetPollTimers() {
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
@@ -4194,11 +4213,13 @@
         window.__lcJourneyTimer = null;
 
         if (isRealtimeWsLive()) {
-            // WS owns live messages. Rare poll only for read-receipt ticks.
-            window.__lcReceiptTimer = setInterval(function () {
+            // Fast safety net — WS should deliver instantly; this catches dropped publishes
+            pollTimer = setInterval(function () {
                 if (selectedId) pollMessages({ skipJourney: true });
-            }, 15000);
-            // Page journey is not realtime-critical — slow separate timer.
+            }, 3000);
+            listTimer = setInterval(function () {
+                loadConversations();
+            }, 5000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 30000);
@@ -4208,10 +4229,10 @@
         // Fallback when WS is down or mode=poll
         pollTimer = setInterval(function () {
             if (selectedId) pollMessages();
-        }, Math.max(2000, pollMs || 1500));
+        }, Math.max(1500, pollMs || 1500));
         listTimer = setInterval(function () {
             loadConversations();
-        }, 15000);
+        }, 8000);
     }
 
     function appendLiveMessage(m) {
@@ -4303,8 +4324,11 @@
             });
             realtimeClient.on('connected', function () {
                 resetPollTimers();
+                // Re-join open conversation after reconnect
+                if (selectedId) syncRealtimeConversationChannel(selectedId);
                 // Pick up any read receipts missed while socket was down
                 if (selectedId) pollMessages();
+                loadConversations();
             });
             realtimeClient.on('disconnected', function () {
                 resetPollTimers(); // switches to poll fallback
@@ -4333,6 +4357,13 @@
             });
             realtimeClient.on('inbox.changed', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (payload && (payload.transferred || payload.taken_over)) {
+                    loadConversations();
+                    if (selectedId && cid === selectedId) {
+                        pollMessages();
+                    }
+                    return;
+                }
                 if (selectedId && cid === selectedId) {
                     if (payload && payload.message && payload.message.id) {
                         appendLiveMessage(payload.message);
@@ -4372,6 +4403,10 @@
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                // Transfer / takeover: refresh inbox immediately for both agents
+                if (payload && (payload.transferred || payload.taken_over)) {
+                    loadConversations();
+                }
                 if (selectedId && cid === selectedId) {
                     var newAgent = parseInt(payload && payload.agent_id, 10) || 0;
                     if (newAgent > 0 && newAgent !== myAgentId && currentAssignedAgentId === myAgentId) {
@@ -4401,8 +4436,9 @@
                         setUnassignedMode(true);
                     }
                     pollMessages();
+                } else if (!(payload && (payload.transferred || payload.taken_over))) {
+                    loadConversations();
                 }
-                loadConversations();
             });
             realtimeClient.connect();
         });

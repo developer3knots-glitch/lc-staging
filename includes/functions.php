@@ -801,6 +801,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     $actingName = trim((string) ($actingAgent['name'] ?? '')) ?: 'Agent';
     $targetName = trim((string) ($target['name'] ?? '')) ?: 'Agent';
     $note = trim($note);
+    $previousAgentId = (int) ($conv['agent_id'] ?? 0);
 
     // Resolve ticket + warm schema BEFORE the transaction. MySQL DDL (ALTER) inside
     // a transaction implicitly commits — then commit() throws and the API returns
@@ -873,6 +874,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => 'active',
                 'agent_id' => $targetAgentId,
+                'previous_agent_id' => $previousAgentId,
                 'agent' => $agentInfo,
                 'transferred' => true,
             ]);

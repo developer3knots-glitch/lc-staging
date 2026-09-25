@@ -24,6 +24,9 @@
         return this;
     };
 
+    PollDriver.prototype.subscribe = function () { return false; };
+    PollDriver.prototype.unsubscribe = function () { return false; };
+
     PollDriver.prototype.connect = function () {
         this.connected = false;
         emitAll(this.handlers, 'disconnected', { mode: 'poll' });
@@ -58,6 +61,28 @@
 
     WebSocketDriver.prototype.isConnected = function () {
         return !!(this.connected && this.ws && this.ws.readyState === 1);
+    };
+
+    WebSocketDriver.prototype.subscribe = function (channel) {
+        channel = String(channel || '');
+        if (!channel || !this.isConnected()) return false;
+        try {
+            this.ws.send(JSON.stringify({ type: 'subscribe', channel: channel }));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
+
+    WebSocketDriver.prototype.unsubscribe = function (channel) {
+        channel = String(channel || '');
+        if (!channel || !this.ws || this.ws.readyState !== 1) return false;
+        try {
+            this.ws.send(JSON.stringify({ type: 'unsubscribe', channel: channel }));
+            return true;
+        } catch (e) {
+            return false;
+        }
     };
 
     WebSocketDriver.prototype.connect = function () {
