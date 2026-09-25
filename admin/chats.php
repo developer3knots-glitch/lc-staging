@@ -193,15 +193,35 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-supervise-bar" id="lc-supervise-bar" hidden>
-                    <div class="lc-supervise-bar-left">
-                        <span class="lc-supervise-badge"><i class="ti ti-shield-check"></i> Supervise Mode</span>
-                        <span class="lc-supervise-bar-text">Chat assigned to <strong id="lc-supervise-agent-name">Agent</strong>. You can view all live messages and write internal notes.</span>
+                    <div class="lc-supervise-bar-compact" id="lc-supervise-bar-main">
+                        <span class="lc-supervise-badge" title="You are supervising this chat">
+                            <i class="ti ti-shield-check"></i> Supervising
+                        </span>
+                        <span class="lc-supervise-bar-agent" id="lc-supervise-agent-label">
+                            <strong id="lc-supervise-agent-name">Agent</strong>
+                        </span>
+                        <div class="lc-supervise-bar-actions">
+                            <div class="lc-supervise-menu" id="lc-supervise-menu">
+                                <button type="button" class="lc-supervise-menu-btn" id="lc-supervise-menu-toggle" aria-expanded="false" aria-haspopup="true" title="Supervise actions">
+                                    <i class="ti ti-dots"></i>
+                                </button>
+                                <div class="lc-supervise-menu-panel" id="lc-supervise-menu-panel" hidden>
+                                    <p class="lc-supervise-menu-note">Assigned to <strong id="lc-supervise-menu-agent">Agent</strong>. View live messages and write internal notes.</p>
+                                    <button type="button" class="lc-supervise-menu-item lc-supervise-menu-item-warn" id="lc-supervise-takeover-btn">
+                                        <i class="ti ti-arrow-right-circle"></i> Take Over Chat
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" class="lc-supervise-min-btn" id="lc-supervise-minimize-btn" title="Minimize" aria-label="Minimize supervise bar">
+                                <i class="ti ti-chevron-up"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="lc-supervise-bar-actions">
-                        <button type="button" class="lc-btn lc-btn-warning lc-btn-sm" id="lc-supervise-takeover-btn">
-                            <i class="ti ti-arrow-right-circle"></i> Take Over Chat
-                        </button>
-                    </div>
+                    <button type="button" class="lc-supervise-chip" id="lc-supervise-chip" hidden title="Expand supervise mode">
+                        <i class="ti ti-shield-check"></i>
+                        <span>Supervising</span>
+                        <i class="ti ti-chevron-down"></i>
+                    </button>
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">

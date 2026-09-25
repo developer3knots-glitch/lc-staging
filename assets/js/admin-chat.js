@@ -85,7 +85,42 @@
     var takeoverBtn = document.getElementById('lc-takeover-chat');
     var superviseBar = document.getElementById('lc-supervise-bar');
     var superviseAgentNameEl = document.getElementById('lc-supervise-agent-name');
+    var superviseMenuAgentEl = document.getElementById('lc-supervise-menu-agent');
     var superviseTakeoverBtn = document.getElementById('lc-supervise-takeover-btn');
+    var superviseMenuToggle = document.getElementById('lc-supervise-menu-toggle');
+    var superviseMenuPanel = document.getElementById('lc-supervise-menu-panel');
+    var superviseMinimizeBtn = document.getElementById('lc-supervise-minimize-btn');
+    var superviseChip = document.getElementById('lc-supervise-chip');
+    var SUPERVISE_MIN_KEY = 'lc_supervise_bar_minimized';
+
+    function setSuperviseAgentLabel(name) {
+        var label = name || 'Agent';
+        if (superviseAgentNameEl) superviseAgentNameEl.textContent = label;
+        if (superviseMenuAgentEl) superviseMenuAgentEl.textContent = label;
+    }
+
+    function closeSuperviseMenu() {
+        if (superviseMenuPanel) superviseMenuPanel.hidden = true;
+        if (superviseMenuToggle) superviseMenuToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function setSuperviseBarMinimized(min) {
+        if (!superviseBar) return;
+        superviseBar.classList.toggle('is-minimized', !!min);
+        if (superviseChip) superviseChip.hidden = !min;
+        try {
+            localStorage.setItem(SUPERVISE_MIN_KEY, min ? '1' : '0');
+        } catch (e) { /* ignore */ }
+        closeSuperviseMenu();
+    }
+
+    function restoreSuperviseBarMinimized() {
+        var min = false;
+        try {
+            min = localStorage.getItem(SUPERVISE_MIN_KEY) === '1';
+        } catch (e) { /* ignore */ }
+        setSuperviseBarMinimized(min);
+    }
     var composeModeBar = document.getElementById('lc-compose-mode-bar');
     var modeTabReply = document.getElementById('lc-mode-tab-reply');
     var modeTabNote = document.getElementById('lc-mode-tab-note');
@@ -2202,8 +2237,34 @@
     }
 
     if (superviseTakeoverBtn) {
-        superviseTakeoverBtn.addEventListener('click', takeoverSelectedChat);
+        superviseTakeoverBtn.addEventListener('click', function () {
+            closeSuperviseMenu();
+            takeoverSelectedChat();
+        });
     }
+    if (superviseMenuToggle && superviseMenuPanel) {
+        superviseMenuToggle.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var open = superviseMenuPanel.hidden;
+            superviseMenuPanel.hidden = !open;
+            superviseMenuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+    }
+    if (superviseMinimizeBtn) {
+        superviseMinimizeBtn.addEventListener('click', function () {
+            setSuperviseBarMinimized(true);
+        });
+    }
+    if (superviseChip) {
+        superviseChip.addEventListener('click', function () {
+            setSuperviseBarMinimized(false);
+        });
+    }
+    document.addEventListener('click', function (e) {
+        if (!superviseMenuPanel || superviseMenuPanel.hidden) return;
+        if (e.target.closest && e.target.closest('#lc-supervise-menu')) return;
+        closeSuperviseMenu();
+    });
 
     function takeoverSelectedChat() {
         if (!selectedId) return;
@@ -2340,9 +2401,8 @@
             });
             if (superviseBar) {
                 superviseBar.hidden = false;
-                if (superviseAgentNameEl) {
-                    superviseAgentNameEl.textContent = c.agent_name || 'Agent';
-                }
+                setSuperviseAgentLabel(c.agent_name || 'Agent');
+                restoreSuperviseBarMinimized();
             }
             if (takeoverBtn) {
                 takeoverBtn.style.display = 'inline-flex';
