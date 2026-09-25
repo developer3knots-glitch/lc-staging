@@ -231,39 +231,44 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
-                    <div class="lc-compose-mode-bar" id="lc-compose-mode-bar">
-                        <div class="lc-compose-mode-tabs" role="tablist">
-                            <button type="button" class="lc-compose-mode-tab is-active" id="lc-mode-tab-reply" role="tab" aria-selected="true" title="Send message to customer">
-                                <i class="ti ti-message-dots"></i> <span>Reply to customer</span>
-                            </button>
-                            <button type="button" class="lc-compose-mode-tab" id="lc-mode-tab-note" role="tab" aria-selected="false" title="Send internal note (agents only)">
-                                <i class="ti ti-lock"></i> <span>Internal Note</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
-                        <div class="lc-chat-canned-bar">
-                            <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
-                                <i class="ti ti-bolt"></i>
-                                <span>Canned replies</span>
-                                <i class="ti ti-chevron-up lc-chat-canned-chevron" aria-hidden="true"></i>
-                            </button>
-                            <div class="lc-chat-canned-panel" id="lc-canned-panel" hidden>
-                                <input type="search" class="lc-chat-canned-search" id="lc-canned-search-live" placeholder="Search replies..." autocomplete="off" aria-label="Search canned replies">
-                                <div class="lc-chat-canned-list" id="lc-canned-list-live" role="listbox" aria-label="Canned replies"></div>
-                                <select id="lc-canned-select" class="lc-canned-select-hidden" aria-hidden="true" tabindex="-1"><option value="">Select a reply...</option></select>
+                    <div class="lc-compose-shell">
+                        <div class="lc-compose-toolbar" id="lc-compose-mode-bar">
+                            <div class="lc-compose-mode-tabs" role="tablist" aria-label="Compose mode">
+                                <button type="button" class="lc-compose-mode-tab is-active" id="lc-mode-tab-reply" role="tab" aria-selected="true" title="Send message to customer">
+                                    <i class="ti ti-message-dots" aria-hidden="true"></i>
+                                    <span>Reply</span>
+                                </button>
+                                <button type="button" class="lc-compose-mode-tab" id="lc-mode-tab-note" role="tab" aria-selected="false" title="Send internal note (agents only)">
+                                    <i class="ti ti-lock" aria-hidden="true"></i>
+                                    <span>Note</span>
+                                </button>
+                            </div>
+                            <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
+                                <div class="lc-chat-canned-bar">
+                                    <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
+                                        <i class="ti ti-bolt" aria-hidden="true"></i>
+                                        <span>Canned</span>
+                                    </button>
+                                    <div class="lc-chat-canned-panel" id="lc-canned-panel" hidden>
+                                        <input type="search" class="lc-chat-canned-search" id="lc-canned-search-live" placeholder="Search replies..." autocomplete="off" aria-label="Search canned replies">
+                                        <div class="lc-chat-canned-list" id="lc-canned-list-live" role="listbox" aria-label="Canned replies"></div>
+                                        <select id="lc-canned-select" class="lc-canned-select-hidden" aria-hidden="true" tabindex="-1"><option value="">Select a reply...</option></select>
+                                    </div>
+                                </div>
+                                <a class="lc-chat-canned-manage" href="<?= lc_sanitize(lc_admin_url('canned')) ?>" title="Manage canned replies"><i class="ti ti-settings" aria-hidden="true"></i></a>
                             </div>
                         </div>
-                        <a class="lc-chat-canned-manage" href="<?= lc_sanitize(lc_admin_url('canned')) ?>" title="Manage canned replies"><i class="ti ti-settings"></i></a>
+                        <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
+                        <div class="lc-chat-compose-inner">
+                            <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
+                            <textarea id="lc-reply-input" rows="1" placeholder="Type a message…"></textarea>
+                            <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
+                            <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
+                        </div>
+                        <div class="lc-compose-footer">
+                            <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line</p>
+                        </div>
                     </div>
-                    <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
-                    <div class="lc-chat-compose-inner">
-                        <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
-                        <textarea id="lc-reply-input" rows="1" placeholder="Type a message..."></textarea>
-                        <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
-                        <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
-                    </div>
-                    <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send <span class="lc-meta-sep" aria-hidden="true"></span> <kbd>Shift+Enter</kbd> new line</p>
                 </div>
             </div>
         </div>
