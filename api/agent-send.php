@@ -51,17 +51,6 @@ try {
         }
     }
 
-    // Mark prior visitor messages as read by this agent
-    if (function_exists('lc_mark_messages_delivered')) {
-        lc_mark_messages_delivered($conversationId, 'visitor');
-    }
-    if (function_exists('lc_mark_messages_read')) {
-        lc_mark_messages_read($conversationId, 'visitor');
-    }
-    if (function_exists('lc_realtime_publish_message_receipts')) {
-        lc_realtime_publish_message_receipts($conversationId, 'visitor');
-    }
-
     $ins = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'agent', $agentId, $message]);
     lc_clear_typing($conversationId, 'agent');
@@ -70,19 +59,35 @@ try {
     $messageId = (int) lc_db()->lastInsertId();
     $pendingPublishIds[] = $messageId;
 
-    // Return immediately — realtime fanout after response (clears pending UI delay)
+    // Push to peers BEFORE HTTP response — fire-and-forget, near-zero delay on WS
+    if (function_exists('lc_realtime_publish_message')) {
+        foreach ($pendingPublishIds as $mid) {
+            lc_realtime_publish_message($conversationId, (int) $mid);
+        }
+    }
+
+    // Receipts after message (don't block the bubble path)
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $pendingPublishIds): void {
-            if (!function_exists('lc_realtime_publish_message')) {
-                return;
+        lc_realtime_defer(static function () use ($conversationId): void {
+            if (function_exists('lc_mark_messages_delivered')) {
+                lc_mark_messages_delivered($conversationId, 'visitor');
             }
-            foreach ($pendingPublishIds as $mid) {
-                lc_realtime_publish_message($conversationId, (int) $mid);
+            if (function_exists('lc_mark_messages_read')) {
+                lc_mark_messages_read($conversationId, 'visitor');
+            }
+            if (function_exists('lc_realtime_publish_message_receipts')) {
+                lc_realtime_publish_message_receipts($conversationId, 'visitor');
             }
         });
     } else {
-        foreach ($pendingPublishIds as $mid) {
-            lc_realtime_publish_message($conversationId, (int) $mid);
+        if (function_exists('lc_mark_messages_delivered')) {
+            lc_mark_messages_delivered($conversationId, 'visitor');
+        }
+        if (function_exists('lc_mark_messages_read')) {
+            lc_mark_messages_read($conversationId, 'visitor');
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'visitor');
         }
     }
 

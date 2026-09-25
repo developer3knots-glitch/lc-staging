@@ -351,7 +351,7 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
 }
 
 /**
- * Non-blocking POST to realtime /publish — returns as soon as bytes are written.
+ * Non-blocking POST to realtime /publish — write and close (no drain wait).
  */
 function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
 {
@@ -370,11 +370,11 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
 
     $errno = 0;
     $errstr = '';
-    $fp = @fsockopen($target, $port, $errno, $errstr, 0.2);
+    $fp = @fsockopen($target, $port, $errno, $errstr, 0.15);
     if ($fp === false) {
         return false;
     }
-    stream_set_timeout($fp, 0, 200000);
+    stream_set_timeout($fp, 0, 100000);
     $req = "POST {$path} HTTP/1.1\r\n"
         . "Host: {$host}\r\n"
         . "Content-Type: application/json\r\n"
@@ -383,34 +383,21 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
         . "Connection: close\r\n\r\n"
         . $payload;
     $ok = @fwrite($fp, $req) !== false;
-    // Brief drain so Node can finish reading before we close (avoids dropped publishes)
-    if ($ok) {
-        stream_set_blocking($fp, false);
-        $deadline = microtime(true) + 0.08;
-        while (microtime(true) < $deadline) {
-            $read = [$fp];
-            $write = null;
-            $except = null;
-            $n = @stream_select($read, $write, $except, 0, 20000);
-            if ($n === false || $n < 1) {
-                break;
-            }
-            $chunk = @fread($fp, 2048);
-            if ($chunk === false || $chunk === '') {
-                break;
-            }
-        }
-    }
     @fclose($fp);
 
     return $ok;
 }
 
-function lc_realtime_publish_conversation_event(int $conversationId, string $event, array $data = []): void
+/**
+ * @param array{peers_only?:bool,inbox_only?:bool} $opts
+ */
+function lc_realtime_publish_conversation_event(int $conversationId, string $event, array $data = [], array $opts = []): void
 {
     if ($conversationId < 1) {
         return;
     }
+    $peersOnly = !empty($opts['peers_only']);
+    $inboxOnly = !empty($opts['inbox_only']);
     $payload = array_merge(['conversation_id' => $conversationId], $data);
     $conv = lc_get_conversation($conversationId);
 
@@ -420,50 +407,55 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $fanoutEvents = ['message.new', 'typing', 'message.receipts', 'conversation.updated'];
     $isFanout = in_array($event, $fanoutEvents, true);
 
-    // Peer-critical first (open chat windows subscribed to conv:ID)
-    lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 180);
+    if (!$inboxOnly) {
+        // Peer-critical first (open chat windows subscribed to conv:ID)
+        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 120);
 
-    if ($conv && $isFanout) {
-        $visitorId = (int) ($conv['visitor_id'] ?? 0);
-        if ($visitorId > 0 && $event !== 'message.receipts') {
-            try {
-                $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
-                $vStmt->execute([$visitorId]);
-                $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
-                if ($visitorUid !== '') {
-                    lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 180);
+        if ($conv && $isFanout) {
+            $visitorId = (int) ($conv['visitor_id'] ?? 0);
+            if ($visitorId > 0 && $event !== 'message.receipts') {
+                try {
+                    $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                    $vStmt->execute([$visitorId]);
+                    $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+                    if ($visitorUid !== '') {
+                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 120);
+                    }
+                } catch (Throwable $e) {
                 }
-            } catch (Throwable $e) {
             }
         }
-    }
 
-    if (!$conv) {
+        if ($conv) {
+            if ($agentId > 0 && $isFanout) {
+                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 120);
+            }
+            if ($previousAgentId > 0 && $previousAgentId !== $agentId && $isFanout) {
+                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 120);
+            }
+        }
+
+        if ($peersOnly || !$conv) {
+            return;
+        }
+    } elseif (!$conv) {
         return;
     }
 
-    // Assigned agent + previous agent (transfer / takeover) get the event directly
-    if ($agentId > 0 && $isFanout) {
-        lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 180);
-    }
-    if ($previousAgentId > 0 && $previousAgentId !== $agentId && $isFanout) {
-        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 180);
-    }
-
-    // Inbox list noise last — even shorter
+    // Inbox list noise
     if ($brandId > 0) {
         if ($isFanout && $event !== 'conversation.updated') {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload, 120);
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload, 80);
         }
         if ($event !== 'typing' && $event !== 'message.receipts') {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload, 120);
+            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload, 80);
         }
     }
     if ($agentId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
-        lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload, 120);
+        lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload, 80);
     }
     if ($previousAgentId > 0 && $previousAgentId !== $agentId && $event !== 'typing' && $event !== 'message.receipts') {
-        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), 'inbox.changed', $payload, 120);
+        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), 'inbox.changed', $payload, 80);
     }
 }
 
@@ -472,7 +464,13 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
     if ($conversationId < 1 || $messageId < 1) {
         return;
     }
-    lc_ensure_attachments_schema();
+    if (function_exists('lc_ensure_attachments_schema')) {
+        static $schemaOk = false;
+        if (!$schemaOk) {
+            lc_ensure_attachments_schema();
+            $schemaOk = true;
+        }
+    }
 
     $stmt = lc_db()->prepare('
         SELECT ' . lc_attachment_message_select_sql() . ',
@@ -486,12 +484,12 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
     $stmt->execute([$messageId, $conversationId]);
     $row = $stmt->fetch();
     if (!$row) {
-        lc_realtime_publish_conversation_event($conversationId, 'message.new', ['message_id' => $messageId]);
+        lc_realtime_publish_conversation_event($conversationId, 'message.new', ['message_id' => $messageId], ['peers_only' => true]);
 
         return;
     }
 
-    lc_realtime_publish_conversation_event($conversationId, 'message.new', [
+    $msgPayload = [
         'message_id' => $messageId,
         'message' => lc_format_message_row($row),
         'hidden_from_visitor' => (
@@ -499,7 +497,19 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
             && function_exists('lc_message_hidden_from_visitor')
             && lc_message_hidden_from_visitor((string) ($row['message'] ?? ''))
         ),
-    ]);
+    ];
+
+    // Live bubbles first (conv / visitor / agent)
+    lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['peers_only' => true]);
+
+    // Inbox list / badges a tick later (no duplicate peer events)
+    if (function_exists('lc_realtime_defer')) {
+        lc_realtime_defer(static function () use ($conversationId, $msgPayload): void {
+            lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['inbox_only' => true]);
+        });
+    } else {
+        lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['inbox_only' => true]);
+    }
 }
 
 function lc_realtime_publish_typing(int $conversationId, string $role, bool $typing, array $extra = []): void

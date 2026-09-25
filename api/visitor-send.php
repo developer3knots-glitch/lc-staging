@@ -92,14 +92,14 @@ try {
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
 
-    // Respond first — clock clears as soon as JSON flushes. Fanout in shutdown only.
-    // Never run geo/IP APIs here (even deferred): on Apache/XAMPP they still block
-    // the TCP response until the whole PHP request ends.
+    // Push to peers immediately (before JSON) so agent/visitor see bubble with no WS lag
+    if (function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, $messageId);
+    }
+
+    // Status / incoming-chat fanout after response
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $messageId, $publishStatus, $publishReopened): void {
-            if (function_exists('lc_realtime_publish_message')) {
-                lc_realtime_publish_message($conversationId, $messageId);
-            }
+        lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened): void {
             if (function_exists('lc_realtime_publish_conversation_event')) {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => $publishStatus,
@@ -111,7 +111,6 @@ try {
             }
         });
     } else {
-        lc_realtime_publish_message($conversationId, $messageId);
         if (function_exists('lc_realtime_publish_conversation_event')) {
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => $publishStatus,
