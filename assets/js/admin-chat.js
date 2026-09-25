@@ -116,9 +116,11 @@
     }
 
     function restoreSuperviseBarMinimized() {
-        var min = false;
+        // Default: minimized. Only expand when user previously chose expanded ('0').
+        var min = true;
         try {
-            min = localStorage.getItem(SUPERVISE_MIN_KEY) === '1';
+            var stored = localStorage.getItem(SUPERVISE_MIN_KEY);
+            if (stored === '0') min = false;
         } catch (e) { /* ignore */ }
         setSuperviseBarMinimized(min);
     }
