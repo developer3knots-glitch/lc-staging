@@ -13841,23 +13841,6 @@ body.lc-supervise-open {
     box-shadow: 0 1px 3px rgba(245, 158, 11, 0.2);
 }
 
-.lc-compose-mode-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.73rem;
-    color: #b45309;
-    font-weight: 600;
-    background: #fef3c7;
-    padding: 0.2rem 0.55rem;
-    border-radius: 6px;
-}
-
-.lc-compose-mode-tag[hidden],
-[hidden].lc-compose-mode-tag {
-    display: none !important;
-}
-
 /* When composer is in Note mode (Supervise or manual note) */
 .lc-chat-compose.is-note-mode {
     border-color: #fcd34d !important;

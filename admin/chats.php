@@ -234,9 +234,6 @@ require __DIR__ . '/includes/header.php';
                                 <i class="ti ti-lock"></i> <span>Internal Note</span>
                             </button>
                         </div>
-                        <div class="lc-compose-mode-tag" id="lc-compose-mode-tag" hidden>
-                            <i class="ti ti-lock"></i> Note visible only to agents
-                        </div>
                     </div>
                     <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
                         <div class="lc-chat-canned-bar">

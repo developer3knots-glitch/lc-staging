@@ -124,7 +124,6 @@
     var composeModeBar = document.getElementById('lc-compose-mode-bar');
     var modeTabReply = document.getElementById('lc-mode-tab-reply');
     var modeTabNote = document.getElementById('lc-mode-tab-note');
-    var composeModeTag = document.getElementById('lc-compose-mode-tag');
     var composeMode = 'reply'; // 'reply' | 'note'
     var isSupervising = false;
     var currentAssignedAgentId = 0;
@@ -2189,14 +2188,6 @@
         }
         if (composeBox) {
             composeBox.classList.toggle('is-note-mode', composeMode === 'note');
-        }
-        if (composeModeTag) {
-            if (composeMode === 'note') {
-                composeModeTag.removeAttribute('hidden');
-            } else {
-                composeModeTag.setAttribute('hidden', 'hidden');
-            }
-            composeModeTag.hidden = (composeMode !== 'note');
         }
         var sendBtn = document.getElementById('lc-send-reply');
         if (composeMode === 'note') {
