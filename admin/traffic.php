@@ -86,11 +86,11 @@ require __DIR__ . '/includes/header.php';
                         <th>Email</th>
                         <th>Status</th>
                         <th>Country</th>
-                        <th>Device</th>
+                        <th class="lc-traffic-th-actions">Actions</th>
                         <th>Agent</th>
                         <th>Time on site</th>
                         <th>Current page</th>
-                        <th class="lc-traffic-th-actions">Actions</th>
+                        <th>Device</th>
                     </tr>
                 </thead>
                 <tbody id="lc-traffic-body">

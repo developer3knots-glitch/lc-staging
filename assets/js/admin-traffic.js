@@ -325,11 +325,11 @@
                     '<td class="lc-traffic-email">' + (email ? esc(email) : '<span class="lc-traffic-muted">—</span>') + '</td>' +
                     '<td>' + activityCell(row) + '</td>' +
                     '<td>' + countryLabel(row) + '</td>' +
-                    '<td>' + deviceCell(row) + '</td>' +
+                    '<td class="lc-traffic-td-actions">' + actionCell(row) + '</td>' +
                     '<td>' + agentCell(row.agent_name) + '</td>' +
                     '<td><span class="lc-traffic-time">' + esc(time) + '</span></td>' +
                     '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
-                    '<td class="lc-traffic-td-actions">' + actionCell(row) + '</td>' +
+                    '<td>' + deviceCell(row) + '</td>' +
                 '</tr>'
             );
         }).join('');

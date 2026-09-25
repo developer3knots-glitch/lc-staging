@@ -4790,7 +4790,7 @@ body.lc-avatar-modal-open {
 
 .lc-traffic-th-actions,
 .lc-traffic-td-actions {
-    text-align: right;
+    text-align: left;
 }
 
 .lc-traffic-table td {
