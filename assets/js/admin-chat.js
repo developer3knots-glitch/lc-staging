@@ -663,6 +663,56 @@
         }
     }
 
+    var detailsToggleBtn = document.getElementById('lc-details-toggle');
+    var detailsCloseBtn = document.getElementById('lc-details-close');
+    var detailsBackdrop = document.getElementById('lc-details-backdrop');
+
+    function isDetailsDrawerMode() {
+        return window.matchMedia && window.matchMedia('(max-width: 1360px)').matches;
+    }
+
+    function setDetailsDrawerOpen(open) {
+        document.body.classList.toggle('lc-details-drawer-open', !!open);
+        if (detailsToggleBtn) {
+            detailsToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        if (detailsBackdrop) {
+            detailsBackdrop.hidden = !open;
+        }
+    }
+
+    function toggleDetailsDrawer() {
+        if (!isDetailsDrawerMode()) return;
+        setDetailsDrawerOpen(!document.body.classList.contains('lc-details-drawer-open'));
+    }
+
+    if (detailsToggleBtn) {
+        detailsToggleBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            toggleDetailsDrawer();
+        });
+    }
+    if (detailsCloseBtn) {
+        detailsCloseBtn.addEventListener('click', function () {
+            setDetailsDrawerOpen(false);
+        });
+    }
+    if (detailsBackdrop) {
+        detailsBackdrop.addEventListener('click', function () {
+            setDetailsDrawerOpen(false);
+        });
+    }
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && document.body.classList.contains('lc-details-drawer-open')) {
+            setDetailsDrawerOpen(false);
+        }
+    });
+    window.addEventListener('resize', function () {
+        if (!isDetailsDrawerMode()) {
+            setDetailsDrawerOpen(false);
+        }
+    });
+
         function renderDetailsRail(c, extraNote) {
         if (!c) {
             showDetailsPanel(false);

@@ -95,6 +95,10 @@ require __DIR__ . '/includes/header.php';
                     <div class="lc-chat-header-actions">
                         <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none" hidden aria-hidden="true">Assign to me</button>
                         <button type="button" class="lc-btn lc-btn-warning lc-btn-sm" id="lc-takeover-chat" style="display:none" hidden><i class="ti ti-arrow-right-circle" aria-hidden="true"></i> Take Over</button>
+                        <button type="button" class="lc-chat-details-toggle" id="lc-details-toggle" title="Customer details" aria-label="Customer details" aria-expanded="false" aria-controls="lc-chat-details">
+                            <i class="ti ti-user-circle"></i>
+                            <span>Details</span>
+                        </button>
                         <div class="lc-chat-more-wrap" id="lc-chat-more-wrap">
                             <button type="button" class="lc-chat-more-btn" id="lc-chat-more-btn" aria-label="Chat actions" aria-haspopup="true" aria-expanded="false" title="More actions">
                                 <i class="ti ti-dots-vertical"></i>
@@ -262,6 +266,7 @@ require __DIR__ . '/includes/header.php';
             </div>
         </div>
 
+        <div class="lc-details-backdrop" id="lc-details-backdrop" hidden></div>
         <aside class="lc-chat-details lc-details-rail" id="lc-chat-details" aria-label="Customer details">
             <div class="lc-chat-details-empty" id="lc-chat-details-empty">
                 <i class="ti ti-user-circle"></i>
@@ -273,6 +278,9 @@ require __DIR__ . '/includes/header.php';
                         <button type="button" class="lc-details-rail-tab is-active" aria-label="Customer profile"><i class="ti ti-user"></i></button>
                         <button type="button" class="lc-details-rail-tab" aria-label="Add tab" disabled><i class="ti ti-plus"></i></button>
                     </div>
+                    <button type="button" class="lc-details-drawer-close" id="lc-details-close" title="Close details" aria-label="Close details">
+                        <i class="ti ti-x"></i>
+                    </button>
                 </div>
 
                 <div class="lc-details-hero">
