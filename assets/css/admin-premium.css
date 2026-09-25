@@ -6912,6 +6912,18 @@ body.lc-page-chats .lc-chat-item-idline {
     background: #fef2f2;
 }
 
+.lc-chat-more-takeover {
+    color: #b45309;
+}
+
+.lc-chat-more-takeover i {
+    color: #d97706;
+}
+
+.lc-chat-more-takeover:hover {
+    background: #fffbeb;
+}
+
 .lc-chat-more-block.is-blocked {
     color: #15803d;
 }

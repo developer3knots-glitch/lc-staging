@@ -94,7 +94,6 @@ require __DIR__ . '/includes/header.php';
                     </div>
                     <div class="lc-chat-header-actions">
                         <button type="button" class="lc-btn lc-btn-primary lc-btn-sm" id="lc-accept-chat" style="display:none" hidden aria-hidden="true">Assign to me</button>
-                        <button type="button" class="lc-btn lc-btn-warning lc-btn-sm" id="lc-takeover-chat" style="display:none" hidden><i class="ti ti-arrow-right-circle" aria-hidden="true"></i> Take Over</button>
                         <button type="button" class="lc-chat-details-toggle" id="lc-details-toggle" title="Customer details" aria-label="Customer details" aria-expanded="false" aria-controls="lc-chat-details">
                             <i class="ti ti-user-circle"></i>
                             <span>Details</span>
@@ -109,6 +108,9 @@ require __DIR__ . '/includes/header.php';
                                         <i class="ti ti-arrows-exchange"></i> Transfer
                                     </button>
                                 </div>
+                                <button type="button" class="lc-chat-more-item lc-chat-more-takeover" id="lc-takeover-chat" role="menuitem" hidden>
+                                    <i class="ti ti-arrow-right-circle"></i> Take over chat
+                                </button>
                                 <button type="button" class="lc-chat-more-item" id="lc-email-transcript-btn" role="menuitem">
                                     <i class="ti ti-mail"></i> Email chat to customer
                                 </button>

@@ -2307,6 +2307,12 @@
         closeSuperviseMenu();
     });
 
+    function setTakeoverMenuVisible(show) {
+        if (!takeoverBtn) return;
+        takeoverBtn.hidden = !show;
+        takeoverBtn.style.display = show ? 'flex' : 'none';
+    }
+
     function takeoverSelectedChat() {
         if (!selectedId) return;
         if (!confirm('Take over this chat? You will chat directly with the customer.')) return;
@@ -2328,10 +2334,7 @@
             chatTransferredAway = false;
             currentAssignedAgentId = myAgentId;
             if (superviseBar) superviseBar.hidden = true;
-            if (takeoverBtn) {
-                takeoverBtn.style.display = 'none';
-                takeoverBtn.hidden = true;
-            }
+            setTakeoverMenuVisible(false);
             setComposeMode('reply');
             if (replyInput) {
                 replyInput.disabled = false;
@@ -2378,10 +2381,7 @@
             isSupervising = false;
             chatTransferredAway = false;
             if (superviseBar) superviseBar.hidden = true;
-            if (takeoverBtn) {
-                takeoverBtn.style.display = 'none';
-                takeoverBtn.hidden = true;
-            }
+            setTakeoverMenuVisible(false);
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
             replyInput.placeholder = 'Chat closed - visitor ended this conversation';
@@ -2395,10 +2395,7 @@
             isSupervising = false;
             chatTransferredAway = false;
             if (superviseBar) superviseBar.hidden = true;
-            if (takeoverBtn) {
-                takeoverBtn.style.display = 'none';
-                takeoverBtn.hidden = true;
-            }
+            setTakeoverMenuVisible(false);
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
             replyInput.placeholder = 'IP blocked — messaging disabled';
@@ -2412,10 +2409,7 @@
             isSupervising = false;
             chatTransferredAway = false;
             if (superviseBar) superviseBar.hidden = true;
-            if (takeoverBtn) {
-                takeoverBtn.style.display = 'none';
-                takeoverBtn.hidden = true;
-            }
+            setTakeoverMenuVisible(false);
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
             replyInput.placeholder = 'Assign to yourself to reply';
@@ -2445,10 +2439,7 @@
                 setSuperviseAgentLabel(c.agent_name || 'Agent');
                 restoreSuperviseBarMinimized();
             }
-            if (takeoverBtn) {
-                takeoverBtn.style.display = 'inline-flex';
-                takeoverBtn.hidden = false;
-            }
+            setTakeoverMenuVisible(true);
             var moreCloseBtn = document.getElementById('lc-close-chat');
             if (moreCloseBtn) moreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Stop supervising';
             setComposeMode('note');
@@ -2471,10 +2462,7 @@
         chatTransferredAway = false;
         setUnassignedMode(false);
         if (superviseBar) superviseBar.hidden = true;
-        if (takeoverBtn) {
-            takeoverBtn.style.display = 'none';
-            takeoverBtn.hidden = true;
-        }
+        setTakeoverMenuVisible(false);
         if (composeMode !== 'note') {
             setComposeMode('reply');
         }
@@ -3080,7 +3068,7 @@
                     replyInput.placeholder = 'Chat closed - visitor ended this conversation';
                     if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
                     if (acceptBtn) acceptBtn.style.display = 'none';
-                    if (takeoverBtn) takeoverBtn.style.display = 'none';
+                    setTakeoverMenuVisible(false);
                     setUnassignedMode(false);
                     if (transferWrap) transferWrap.style.display = 'none';
                     closeTransferPanel();
@@ -3374,7 +3362,13 @@
     }
 
     if (acceptBtn) acceptBtn.addEventListener('click', assignChatToMe);
-    if (takeoverBtn) takeoverBtn.addEventListener('click', takeoverSelectedChat);
+    if (takeoverBtn) {
+        takeoverBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            closeMoreMenu();
+            takeoverSelectedChat();
+        });
+    }
     if (assignToMeBtn) assignToMeBtn.addEventListener('click', assignChatToMe);
     if (archiveChatBtn) archiveChatBtn.addEventListener('click', archiveSelectedChat);
 
