@@ -1773,13 +1773,12 @@
     var ackHeartbeatTimer = null;
     var ackVisibilityBound = false;
 
-    /** Panel open + tab not in background. (Unfocused-but-visible window still counts as viewing.) */
+    /** Chat panel open = can receive. Read only while this tab is in the foreground. */
     function isVisitorActivelyViewingChat() {
         if (!isOpen || chatClosed) return false;
         var panel = document.getElementById('lc-panel');
         if (!panel || panel.style.display === 'none') return false;
         try {
-            // Same-window other tab / minimized → hidden. Side-by-side other window often stays visible.
             if (document.visibilityState === 'hidden') return false;
         } catch (eVis) {}
         return true;

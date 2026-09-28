@@ -1530,7 +1530,7 @@
         return r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
     }
 
-    /** Apply tick status. Never downgrade (sent → delivered → read only). */
+    /** WhatsApp-style: only upgrade sent -> delivered -> read. */
     function setAgentMsgTickStatus(msgEl, status) {
         if (!msgEl || !msgEl.classList.contains('agent')) return;
         status = status || 'sent';
@@ -1549,11 +1549,38 @@
         }
     }
 
+    function maxNumericAgentMsgIdInDom() {
+        var maxDom = 0;
+        if (!messagesEl) return 0;
+        messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (node) {
+            var id = parseInt(node.getAttribute('data-id'), 10) || 0;
+            if (id > maxDom) maxDom = id;
+        });
+        return maxDom;
+    }
+
+    /**
+     * Find agent bubble for a real message id. If still on temp_*, promote the newest
+     * temp bubble when this id is newer than anything already in the DOM (send race).
+     */
+    function resolveAgentMsgEl(rid) {
+        if (!messagesEl || rid < 1) return null;
+        var el = messagesEl.querySelector('.lc-msg.agent[data-id="' + rid + '"]');
+        if (el) return el;
+        var temps = messagesEl.querySelectorAll('.lc-msg.agent[data-id^="temp_"]');
+        if (!temps.length) return null;
+        if (rid > maxNumericAgentMsgIdInDom()) {
+            var t = temps[temps.length - 1];
+            t.setAttribute('data-id', String(rid));
+            return t;
+        }
+        return null;
+    }
+
     function cascadeAgentTicksFromHighWater() {
         if (!messagesEl) return;
         messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
             var raw = String(msgEl.getAttribute('data-id') || '');
-            // Never paint optimistic temp bubbles as read — visitor may have left
             if (raw.indexOf('temp_') === 0) return;
             var mid = parseInt(raw, 10) || 0;
             if (mid < 1) return;
@@ -1569,15 +1596,18 @@
         if (!receipts || !receipts.length || !messagesEl) return;
         var maxRead = maxKnownReadAgentMsgId;
         var maxDel = maxKnownDeliveredAgentMsgId;
-        receipts.forEach(function (r) {
+        // Highest ids first so temp promote binds the newest send correctly
+        var sorted = receipts.slice().sort(function (a, b) {
+            return (parseInt(b && b.id, 10) || 0) - (parseInt(a && a.id, 10) || 0);
+        });
+        sorted.forEach(function (r) {
             var rid = parseInt(r && r.id, 10) || 0;
             if (rid < 1) return;
             var status = receiptStatusOf(r);
             if (status === 'read' && rid > maxRead) maxRead = rid;
             if ((status === 'read' || status === 'delivered') && rid > maxDel) maxDel = rid;
-            var msgEl = messagesEl.querySelector('.lc-msg[data-id="' + rid + '"]');
+            var msgEl = resolveAgentMsgEl(rid);
             if (!msgEl) {
-                // Agent bubble still has optimistic temp id — apply when id is promoted
                 var prev = pendingReceiptsById[rid];
                 if (!prev || receiptRank(status) >= receiptRank(receiptStatusOf(prev))) {
                     pendingReceiptsById[rid] = r;
@@ -1585,7 +1615,6 @@
                 return;
             }
             delete pendingReceiptsById[rid];
-            // Upgrade only — never let a stale "sent" snapshot wipe a live "read"
             setAgentMsgTickStatus(msgEl, status);
         });
         maxKnownReadAgentMsgId = Math.max(maxKnownReadAgentMsgId, maxRead);
@@ -1599,29 +1628,41 @@
         if (pendingReceiptsById[messageId]) {
             applyReceipts([pendingReceiptsById[messageId]]);
         }
-        // Do NOT re-apply stale lastAgentReceipts (looks like "stuck until reload")
         if (maxKnownReadAgentMsgId > 0 || maxKnownDeliveredAgentMsgId > 0) {
             cascadeAgentTicksFromHighWater();
+        }
+        if (typeof window.__lcSyncReceiptsNow === 'function') {
+            window.__lcSyncReceiptsNow();
         }
         scheduleReceiptSyncBursts();
     }
 
-    /** Optimistic: visitor message implies earlier agent messages were seen */
+    /** Visitor replied -> prior agent bubbles were seen (same as WhatsApp). */
     function markPriorAgentTicksRead(beforeMsgId) {
         beforeMsgId = parseInt(beforeMsgId, 10) || 0;
         if (!messagesEl) return;
         var bumpTo = 0;
-        messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
+        var nodes = messagesEl.querySelectorAll('.lc-msg');
+        var reachedVisitor = beforeMsgId < 1;
+        // Walk top→bottom: everything before this visitor message was on screen
+        for (var i = 0; i < nodes.length; i++) {
+            var msgEl = nodes[i];
             var raw = String(msgEl.getAttribute('data-id') || '');
-            // Don't paint unsent/temp bubbles as read
-            if (raw.indexOf('temp_') === 0) return;
             var mid = parseInt(raw, 10) || 0;
-            if (mid < 1 || (beforeMsgId > 0 && mid >= beforeMsgId)) return;
-            if (mid > bumpTo) bumpTo = mid;
+            if (!reachedVisitor && beforeMsgId > 0 && mid === beforeMsgId) {
+                reachedVisitor = true;
+                continue;
+            }
+            if (reachedVisitor && beforeMsgId > 0) continue;
+            if (!msgEl.classList.contains('agent')) continue;
             setAgentMsgTickStatus(msgEl, 'read');
-        });
+            if (mid > bumpTo) bumpTo = mid;
+        }
         if (bumpTo > maxKnownReadAgentMsgId) maxKnownReadAgentMsgId = bumpTo;
         if (bumpTo > maxKnownDeliveredAgentMsgId) maxKnownDeliveredAgentMsgId = bumpTo;
+        if (typeof window.__lcSyncReceiptsNow === 'function') {
+            window.__lcSyncReceiptsNow();
+        }
     }
 
     var receiptSyncTimers = [];
@@ -1632,7 +1673,7 @@
     function scheduleReceiptSyncBursts() {
         if (!selectedId) return;
         clearReceiptSyncBursts();
-        [200, 800, 2000].forEach(function (ms) {
+        [150, 500, 1200, 2500].forEach(function (ms) {
             receiptSyncTimers.push(setTimeout(function () {
                 if (selectedId && typeof window.__lcSyncReceiptsNow === 'function') {
                     window.__lcSyncReceiptsNow();
