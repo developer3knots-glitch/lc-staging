@@ -2670,14 +2670,18 @@
     function closeCannedPanel() {
         if (cannedPanel) cannedPanel.hidden = true;
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'false');
+        if (cannedSearchLive) cannedSearchLive.value = '';
+        if (cannedListLive) cannedListLive.innerHTML = '';
     }
 
     function openCannedPanel() {
         if (!cannedPanel) return;
         cannedPanel.hidden = false;
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'true');
+        if (cannedSearchLive) cannedSearchLive.value = '';
+        // Only search field until user types — no full list dump
+        renderCannedListLive('');
         loadCanned();
-        renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
         if (cannedSearchLive) {
             setTimeout(function () { cannedSearchLive.focus(); }, 0);
         }
@@ -2692,14 +2696,20 @@
     function renderCannedListLive(query) {
         if (!cannedListLive) return;
         var q = String(query || '').trim().toLowerCase();
+        // Empty search → hide all replies (search-only UX)
+        if (!q) {
+            cannedListLive.innerHTML = cannedRepliesCache.length
+                ? '<div class="lc-chat-canned-empty">Type to search replies…</div>'
+                : '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
+            return;
+        }
         var html = '';
         var shown = 0;
         cannedRepliesCache.forEach(function (r, idx) {
             if (!r) return;
-            if (q) {
-                var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
-                if (hay.indexOf(q) === -1) return;
-            }
+            // Match against title + full message body
+            var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
+            if (hay.indexOf(q) === -1) return;
             shown += 1;
             var title = esc(r.title || 'Reply');
             var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 90));
@@ -2709,9 +2719,7 @@
                 + '</button>';
         });
         if (!shown) {
-            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">'
-                + (cannedRepliesCache.length ? 'No matching replies' : 'No canned replies yet — add some in Canned Replies')
-                + '</div>';
+            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">No matching replies</div>';
             return;
         }
         cannedListLive.innerHTML = html;
