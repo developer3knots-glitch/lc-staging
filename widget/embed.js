@@ -1768,6 +1768,7 @@
 
     var ackReceiptTimer = null;
     var ackReceiptInFlight = false;
+    var ackReceiptQueued = false;
     var ackHeartbeatTimer = null;
 
     function stopAckHeartbeat() {
@@ -1787,7 +1788,7 @@
                 return;
             }
             ackAgentMessagesSeen();
-        }, 2000);
+        }, 1500);
         ackAgentMessagesSeen();
     }
 
@@ -1797,11 +1798,20 @@
         if (!isOpen) return;
         var panel = document.getElementById('lc-panel');
         if (panel && panel.style.display === 'none') return;
+        if (ackReceiptInFlight) {
+            ackReceiptQueued = true;
+            return;
+        }
         if (ackReceiptTimer) clearTimeout(ackReceiptTimer);
         ackReceiptTimer = setTimeout(function () {
             ackReceiptTimer = null;
-            if (ackReceiptInFlight || !conversationId || !isOpen || chatClosed) return;
+            if (!conversationId || !isOpen || chatClosed) return;
+            if (ackReceiptInFlight) {
+                ackReceiptQueued = true;
+                return;
+            }
             ackReceiptInFlight = true;
+            ackReceiptQueued = false;
             fetch(siteUrl + '/api/visitor-ack.php', {
                 method: 'POST',
                 headers: Object.assign({ 'Content-Type': 'application/json' }, apiHeaders()),
@@ -1820,8 +1830,14 @@
                     }
                 })
                 .catch(function () {})
-                .then(function () { ackReceiptInFlight = false; });
-        }, 80);
+                .then(function () {
+                    ackReceiptInFlight = false;
+                    if (ackReceiptQueued) {
+                        ackReceiptQueued = false;
+                        ackAgentMessagesSeen();
+                    }
+                });
+        }, 40);
     }
 
     function applyRealtimeMessage(payload) {

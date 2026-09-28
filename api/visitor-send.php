@@ -105,7 +105,8 @@ try {
     if (function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
-    if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
+    // Always push agent ticks (even if PDO rowCount is 0) so desk UI catches up
+    if (function_exists('lc_realtime_publish_message_receipts')) {
         lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 

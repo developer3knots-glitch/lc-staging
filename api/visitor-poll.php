@@ -125,8 +125,8 @@ try {
     if ($isViewing) {
         $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
     }
-    // Publish ticks immediately so agent UI updates even when HTTP poll is disabled
-    if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
+    // Always push ticks (PDO rowCount can be 0 even after a successful mark)
+    if (function_exists('lc_realtime_publish_message_receipts')) {
         lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 

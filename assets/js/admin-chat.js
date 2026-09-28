@@ -1508,33 +1508,93 @@
 
     var pendingReceiptsById = {};
     var lastAgentReceipts = null;
+    var maxKnownReadAgentMsgId = 0;
+    var maxKnownDeliveredAgentMsgId = 0;
+
+    function receiptRank(status) {
+        if (status === 'read') return 3;
+        if (status === 'delivered') return 2;
+        if (status === 'pending') return 0;
+        return 1; // sent
+    }
+
+    function tickStatusFromEl(el) {
+        if (!el) return 'sent';
+        if (el.classList.contains('is-read')) return 'read';
+        if (el.classList.contains('is-delivered')) return 'delivered';
+        return 'sent';
+    }
+
+    function receiptStatusOf(r) {
+        if (!r) return 'sent';
+        return r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
+    }
+
+    /** Never downgrade ticks (sent → delivered → read). */
+    function setAgentMsgTickStatus(msgEl, status) {
+        if (!msgEl || !msgEl.classList.contains('agent')) return;
+        status = status || 'sent';
+        var ticks = msgEl.querySelector('.lc-msg-ticks');
+        if (ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
+            return;
+        }
+        var wrap = document.createElement('div');
+        wrap.innerHTML = msgTicksHtml(status);
+        if (!wrap.firstChild) return;
+        if (ticks) {
+            ticks.replaceWith(wrap.firstChild);
+        } else {
+            var foot = msgEl.querySelector('.lc-msg-foot');
+            if (foot) foot.appendChild(wrap.firstChild);
+        }
+    }
+
+    function cascadeAgentTicksFromHighWater() {
+        if (!messagesEl) return;
+        messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
+            var raw = String(msgEl.getAttribute('data-id') || '');
+            if (raw.indexOf('temp_') === 0) {
+                // Optimistic bubble: if anything later is already read, this was seen too
+                if (maxKnownReadAgentMsgId > 0) setAgentMsgTickStatus(msgEl, 'read');
+                else if (maxKnownDeliveredAgentMsgId > 0) setAgentMsgTickStatus(msgEl, 'delivered');
+                return;
+            }
+            var mid = parseInt(raw, 10) || 0;
+            if (mid < 1) return;
+            if (maxKnownReadAgentMsgId > 0 && mid <= maxKnownReadAgentMsgId) {
+                setAgentMsgTickStatus(msgEl, 'read');
+            } else if (maxKnownDeliveredAgentMsgId > 0 && mid <= maxKnownDeliveredAgentMsgId) {
+                setAgentMsgTickStatus(msgEl, 'delivered');
+            }
+        });
+    }
 
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length || !messagesEl) return;
+        var maxRead = maxKnownReadAgentMsgId;
+        var maxDel = maxKnownDeliveredAgentMsgId;
         receipts.forEach(function (r) {
             var rid = parseInt(r && r.id, 10) || 0;
             if (rid < 1) return;
+            var status = receiptStatusOf(r);
+            if (status === 'read' && rid > maxRead) maxRead = rid;
+            if ((status === 'read' || status === 'delivered') && rid > maxDel) maxDel = rid;
             var msgEl = messagesEl.querySelector('.lc-msg[data-id="' + rid + '"]');
             if (!msgEl) {
                 // Agent bubble still has optimistic temp id — apply when id is promoted
-                pendingReceiptsById[rid] = r;
+                var prev = pendingReceiptsById[rid];
+                if (!prev || receiptRank(status) >= receiptRank(receiptStatusOf(prev))) {
+                    pendingReceiptsById[rid] = r;
+                }
                 return;
             }
             delete pendingReceiptsById[rid];
-            var el = msgEl.querySelector('.lc-msg-ticks');
-            if (!el) {
-                var foot = msgEl.querySelector('.lc-msg-foot');
-                if (!foot || !msgEl.classList.contains('agent')) return;
-                var status0 = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
-                foot.insertAdjacentHTML('beforeend', msgTicksHtml(status0));
-                return;
-            }
-            var status = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
-            var wrap = document.createElement('div');
-            wrap.innerHTML = msgTicksHtml(status);
-            var next = wrap.firstChild;
-            if (next) el.replaceWith(next);
+            setAgentMsgTickStatus(msgEl, status);
         });
+        maxKnownReadAgentMsgId = Math.max(maxKnownReadAgentMsgId, maxRead);
+        maxKnownDeliveredAgentMsgId = Math.max(maxKnownDeliveredAgentMsgId, maxDel);
+        // WhatsApp-style: anything at/under the highest read id is read
+        cascadeAgentTicksFromHighWater();
     }
 
     function flushPendingReceiptForId(messageId) {
@@ -1542,31 +1602,51 @@
         if (messageId < 1) return;
         if (pendingReceiptsById[messageId]) {
             applyReceipts([pendingReceiptsById[messageId]]);
-            return;
-        }
-        if (lastAgentReceipts && lastAgentReceipts.length) {
+        } else if (lastAgentReceipts && lastAgentReceipts.length) {
             applyReceipts(lastAgentReceipts);
         }
+        // High-water cascade covers promote-before-receipt races
+        if (maxKnownReadAgentMsgId > 0 || maxKnownDeliveredAgentMsgId > 0) {
+            cascadeAgentTicksFromHighWater();
+        }
+        // Pull fresh ticks from server shortly after id promotion
+        scheduleReceiptSyncBursts();
     }
 
     /** Optimistic: visitor message implies earlier agent messages were seen */
     function markPriorAgentTicksRead(beforeMsgId) {
         beforeMsgId = parseInt(beforeMsgId, 10) || 0;
         if (!messagesEl) return;
+        var bumpTo = 0;
         messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
-            var mid = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
-            if (mid < 1 || (beforeMsgId > 0 && mid >= beforeMsgId)) return;
-            if (String(msgEl.getAttribute('data-id') || '').indexOf('temp_') === 0) return;
-            var ticks = msgEl.querySelector('.lc-msg-ticks');
-            if (ticks && ticks.classList.contains('is-read')) return;
-            var wrap = document.createElement('div');
-            wrap.innerHTML = msgTicksHtml('read');
-            if (ticks && wrap.firstChild) {
-                ticks.replaceWith(wrap.firstChild);
-            } else {
-                var foot = msgEl.querySelector('.lc-msg-foot');
-                if (foot && wrap.firstChild) foot.appendChild(wrap.firstChild);
+            var raw = String(msgEl.getAttribute('data-id') || '');
+            if (raw.indexOf('temp_') === 0) {
+                setAgentMsgTickStatus(msgEl, 'read');
+                return;
             }
+            var mid = parseInt(raw, 10) || 0;
+            if (mid < 1 || (beforeMsgId > 0 && mid >= beforeMsgId)) return;
+            if (mid > bumpTo) bumpTo = mid;
+            setAgentMsgTickStatus(msgEl, 'read');
+        });
+        if (bumpTo > maxKnownReadAgentMsgId) maxKnownReadAgentMsgId = bumpTo;
+        if (bumpTo > maxKnownDeliveredAgentMsgId) maxKnownDeliveredAgentMsgId = bumpTo;
+    }
+
+    var receiptSyncTimers = [];
+    function clearReceiptSyncBursts() {
+        receiptSyncTimers.forEach(function (t) { clearTimeout(t); });
+        receiptSyncTimers = [];
+    }
+    function scheduleReceiptSyncBursts() {
+        if (!selectedId) return;
+        clearReceiptSyncBursts();
+        [200, 800, 2000].forEach(function (ms) {
+            receiptSyncTimers.push(setTimeout(function () {
+                if (selectedId && typeof window.__lcSyncReceiptsNow === 'function') {
+                    window.__lcSyncReceiptsNow();
+                }
+            }, ms));
         });
     }
 
@@ -2666,6 +2746,11 @@
         lastMsgId = 0;
         needsFullHistory = true;
         stickToBottom = true;
+        pendingReceiptsById = {};
+        lastAgentReceipts = null;
+        maxKnownReadAgentMsgId = 0;
+        maxKnownDeliveredAgentMsgId = 0;
+        clearReceiptSyncBursts();
         messagesEl.innerHTML = '';
         emptyEl.style.display = 'none';
         activeEl.style.display = 'flex';
@@ -2739,6 +2824,7 @@
             }
         }
         pollMessages();
+        scheduleReceiptSyncBursts();
         updateHeaderAvatar(visitorNameEl.textContent);
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
@@ -3265,6 +3351,7 @@
                 } else if (!tempEl) {
                     pollMessages();
                 }
+                scheduleReceiptSyncBursts();
                 // Keep inbox order stable & correct: agent reply also counts as newest
                 bumpConversationActivity(sendConvId, msg);
                 loadConversations();
@@ -4260,7 +4347,8 @@
         function syncReceiptsOnly() {
             if (!selectedId) return;
             fetch(base + '/api/agent-receipts.php?conversation_id=' + encodeURIComponent(selectedId), {
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                cache: 'no-store'
             })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -4271,14 +4359,17 @@
                 })
                 .catch(function () {});
         }
+        window.__lcSyncReceiptsNow = syncReceiptsOnly;
 
-        // Manual: Settings → Disable HTTP polling — still sync ticks (tiny payload)
+        // Always sync ticks on a short interval (WS can drop receipt events)
+        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1500);
+        if (selectedId) syncReceiptsOnly();
+
+        // Manual: Settings → Disable HTTP polling — ticks + rare journey only
         if (pollDisabled) {
-            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 60000);
-            if (selectedId) syncReceiptsOnly();
             return;
         }
 
@@ -4290,12 +4381,9 @@
             listTimer = setInterval(function () {
                 loadConversations();
             }, 5000);
-            // Dedicated tick sync — don't wait for full poll
-            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 30000);
-            if (selectedId) syncReceiptsOnly();
             return;
         }
 
@@ -4341,13 +4429,8 @@
                     }
                 }
                 if (m.delivery_status || m.is_read) {
-                    var ticks = matched.querySelector('.lc-msg-ticks');
-                    if (ticks && typeof msgTicksHtml === 'function') {
-                        var status = m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent'));
-                        var wrap = document.createElement('div');
-                        wrap.innerHTML = msgTicksHtml(status);
-                        if (wrap.firstChild) ticks.replaceWith(wrap.firstChild);
-                    }
+                    var status = m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent'));
+                    setAgentMsgTickStatus(matched, status);
                 }
                 if (mid > lastMsgId) lastMsgId = mid;
                 flushPendingReceiptForId(mid);
