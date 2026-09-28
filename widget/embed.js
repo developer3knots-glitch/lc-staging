@@ -1769,7 +1769,21 @@
     var ackReceiptTimer = null;
     var ackReceiptInFlight = false;
     var ackReceiptQueued = false;
+    var ackReceiptQueuedDeliveredOnly = false;
     var ackHeartbeatTimer = null;
+    var ackVisibilityBound = false;
+
+    /** Panel open + this browser tab actually visible (not background tab). */
+    function isVisitorActivelyViewingChat() {
+        if (!isOpen || chatClosed) return false;
+        var panel = document.getElementById('lc-panel');
+        if (!panel || panel.style.display === 'none') return false;
+        try {
+            if (typeof document.hidden === 'boolean' && document.hidden) return false;
+            if (document.visibilityState && document.visibilityState !== 'visible') return false;
+        } catch (eVis) {}
+        return true;
+    }
 
     function stopAckHeartbeat() {
         if (ackHeartbeatTimer) {
@@ -1778,37 +1792,73 @@
         }
     }
 
+    function bindAckVisibility() {
+        if (ackVisibilityBound) return;
+        ackVisibilityBound = true;
+        document.addEventListener('visibilitychange', function () {
+            if (!conversationId || chatClosed) return;
+            if (document.visibilityState === 'visible' && isOpen) {
+                // Tab focused again with chat open → now it's actually read
+                startAckHeartbeat();
+                ackAgentMessagesSeen();
+            } else {
+                // Background tab / hidden: stop claiming "read"; delivered-only is enough
+                stopAckHeartbeat();
+                if (conversationId && !chatClosed) {
+                    ackAgentMessagesSeen(true);
+                }
+            }
+        });
+    }
+
     function startAckHeartbeat() {
         stopAckHeartbeat();
+        bindAckVisibility();
         if (!conversationId || !isOpen || chatClosed) return;
-        // Keep pushing read ticks while panel is open (WS receipts can race / drop)
+        // Only while panel is open; viewing flag still checks tab visibility
         ackHeartbeatTimer = setInterval(function () {
             if (!isOpen || chatClosed || !conversationId) {
                 stopAckHeartbeat();
                 return;
             }
-            ackAgentMessagesSeen();
+            // Hidden tab → delivered only (no blue ticks)
+            ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
         }, 1500);
-        ackAgentMessagesSeen();
+        ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
     }
 
-    /** Tell server visitor saw agent messages → agent blue ticks (read receipts). */
-    function ackAgentMessagesSeen() {
+    /**
+     * Tell server visitor got / saw agent messages.
+     * @param {boolean} [deliveredOnly] - true = double grey ticks only (not blue read)
+     */
+    function ackAgentMessagesSeen(deliveredOnly) {
         if (!conversationId || chatClosed) return;
-        if (!isOpen) return;
-        var panel = document.getElementById('lc-panel');
-        if (panel && panel.style.display === 'none') return;
+        var viewing = 0;
+        if (!deliveredOnly && isVisitorActivelyViewingChat()) {
+            viewing = 1;
+        } else if (!deliveredOnly && !isOpen) {
+            // Panel closed: message may still have arrived → delivered only
+            viewing = 0;
+        }
+        // Always allow delivered ack (panel open or closed). Read only when viewing=1.
         if (ackReceiptInFlight) {
             ackReceiptQueued = true;
+            ackReceiptQueuedDeliveredOnly = !!deliveredOnly || viewing !== 1;
             return;
         }
         if (ackReceiptTimer) clearTimeout(ackReceiptTimer);
+        var viewingToSend = viewing;
         ackReceiptTimer = setTimeout(function () {
             ackReceiptTimer = null;
-            if (!conversationId || !isOpen || chatClosed) return;
+            if (!conversationId || chatClosed) return;
             if (ackReceiptInFlight) {
                 ackReceiptQueued = true;
+                ackReceiptQueuedDeliveredOnly = viewingToSend !== 1;
                 return;
+            }
+            // Re-check at send time — tab may have been hidden during debounce
+            if (viewingToSend === 1 && !isVisitorActivelyViewingChat()) {
+                viewingToSend = 0;
             }
             ackReceiptInFlight = true;
             ackReceiptQueued = false;
@@ -1820,7 +1870,7 @@
                     conversation_id: conversationId,
                     visitor_uid: visitorUid,
                     chat_token: chatToken || getStoredChatToken() || '',
-                    viewing: 1
+                    viewing: viewingToSend
                 })
             })
                 .then(function (r) { return r.json(); })
@@ -1833,8 +1883,10 @@
                 .then(function () {
                     ackReceiptInFlight = false;
                     if (ackReceiptQueued) {
+                        var againDeliveredOnly = !!ackReceiptQueuedDeliveredOnly;
                         ackReceiptQueued = false;
-                        ackAgentMessagesSeen();
+                        ackReceiptQueuedDeliveredOnly = false;
+                        ackAgentMessagesSeen(againDeliveredOnly);
                     }
                 });
         }, 40);
@@ -1902,13 +1954,14 @@
                         focusVisitorCompose();
                     }
                     if (m.sender_type === 'agent') {
-                        ackAgentMessagesSeen();
+                        // Background tab / closed panel → delivered only, not blue "read"
+                        ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
                     }
                 }
             } else {
                 advanceLastMsgId(mid);
                 if (m.sender_type === 'agent') {
-                    ackAgentMessagesSeen();
+                    ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
                 }
             }
             return true;
@@ -5071,8 +5124,7 @@
         }
 
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
-        var viewing = (isOpen && document.getElementById('lc-panel') &&
-            document.getElementById('lc-panel').style.display !== 'none') ? '1' : '0';
+        var viewing = isVisitorActivelyViewingChat() ? '1' : '0';
 
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
             '&last_id=' + fetchLastId +

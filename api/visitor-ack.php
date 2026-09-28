@@ -20,7 +20,7 @@ if (!is_array($input)) {
 $conversationId = (int) ($input['conversation_id'] ?? 0);
 $visitorUid = trim((string) ($input['visitor_uid'] ?? ''));
 $chatToken = trim((string) ($input['chat_token'] ?? ''));
-$isViewing = !isset($input['viewing']) || (string) $input['viewing'] === '1';
+$isViewing = isset($input['viewing']) && (string) $input['viewing'] === '1';
 
 if ($conversationId < 1 || $visitorUid === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
