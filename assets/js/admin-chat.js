@@ -252,6 +252,14 @@
 
     function postOwnTyping(isTyping) {
         if (!selectedId) return;
+        // Internal notes must never show "typing…" to the visitor
+        if (composeMode === 'note') {
+            if (ownTypingActive) {
+                isTyping = false;
+            } else {
+                return;
+            }
+        }
         var now = Date.now();
         // Throttle true heartbeats; always allow false
         if (isTyping && now - lastTypingPostAt < 1800) {
@@ -292,6 +300,11 @@
 
     function onAgentComposeActivity() {
         if (!selectedId || !replyInput || replyInput.disabled) return;
+        // Notes are agent-only — never broadcast typing to visitor
+        if (composeMode === 'note') {
+            stopOwnTyping();
+            return;
+        }
         var hasText = (replyInput.value || '').trim().length > 0;
         if (!hasText) {
             stopOwnTyping();
@@ -300,7 +313,7 @@
         postOwnTyping(true);
         if (!typingHeartbeatTimer) {
             typingHeartbeatTimer = setInterval(function () {
-                if (!selectedId || !replyInput || !(replyInput.value || '').trim()) {
+                if (!selectedId || !replyInput || !(replyInput.value || '').trim() || composeMode === 'note') {
                     stopOwnTyping();
                     return;
                 }
@@ -2402,6 +2415,10 @@
         }
         if (composeBox) {
             composeBox.classList.toggle('is-note-mode', composeMode === 'note');
+        }
+        // Switching to Note must clear visitor "typing…" immediately
+        if (composeMode === 'note') {
+            stopOwnTyping();
         }
         var sendBtn = document.getElementById('lc-send-reply');
         if (composeMode === 'note') {
