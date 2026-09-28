@@ -1779,12 +1779,17 @@
             ackReceiptTimer = null;
             if (ackReceiptInFlight || !conversationId || !isOpen || chatClosed) return;
             ackReceiptInFlight = true;
-            var url = siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
-                '&last_id=' + encodeURIComponent(String(lastMsgId || 0)) +
-                '&visitor_uid=' + encodeURIComponent(visitorUid) +
-                '&chat_token=' + encodeURIComponent(chatToken || getStoredChatToken() || '') +
-                '&viewing=1';
-            fetch(url, { headers: apiHeaders(), credentials: 'omit' })
+            fetch(siteUrl + '/api/visitor-ack.php', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, apiHeaders()),
+                credentials: 'omit',
+                body: JSON.stringify({
+                    conversation_id: conversationId,
+                    visitor_uid: visitorUid,
+                    chat_token: chatToken || getStoredChatToken() || '',
+                    viewing: 1
+                })
+            })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (data && data.success && data.receipts && data.receipts.length) {
@@ -1793,7 +1798,7 @@
                 })
                 .catch(function () {})
                 .then(function () { ackReceiptInFlight = false; });
-        }, 120);
+        }, 80);
     }
 
     function applyRealtimeMessage(payload) {

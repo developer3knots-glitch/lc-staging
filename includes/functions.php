@@ -2068,7 +2068,8 @@ function lc_ensure_message_receipts_schema(): void
 
 function lc_message_delivery_status(array $row): string
 {
-    if (!empty($row['read_at']) || !empty($row['is_read'])) {
+    $isRead = !empty($row['read_at']) || (int) ($row['is_read'] ?? 0) === 1;
+    if ($isRead) {
         return 'read';
     }
     if (!empty($row['delivered_at'])) {

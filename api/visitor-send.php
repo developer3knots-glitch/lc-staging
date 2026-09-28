@@ -92,9 +92,21 @@ try {
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
 
+    // Visitor is actively chatting → agent msgs are seen (fixes read ticks when WS skips poll)
+    $receiptChanged = 0;
+    if (function_exists('lc_mark_messages_delivered')) {
+        $receiptChanged += lc_mark_messages_delivered($conversationId, 'agent');
+    }
+    if (function_exists('lc_mark_messages_read')) {
+        $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
+    }
+
     // Push to peers immediately (before JSON) so agent/visitor see bubble with no WS lag
     if (function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
+    }
+    if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
+        lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 
     // Status / incoming-chat fanout after response

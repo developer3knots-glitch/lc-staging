@@ -125,14 +125,9 @@ try {
     if ($isViewing) {
         $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
     }
+    // Publish ticks immediately so agent UI updates even when HTTP poll is disabled
     if ($receiptChanged > 0 && function_exists('lc_realtime_publish_message_receipts')) {
-        if (function_exists('lc_realtime_defer')) {
-            lc_realtime_defer(static function () use ($conversationId): void {
-                lc_realtime_publish_message_receipts($conversationId, 'agent');
-            });
-        } else {
-            lc_realtime_publish_message_receipts($conversationId, 'agent');
-        }
+        lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');

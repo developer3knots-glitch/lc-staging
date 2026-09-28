@@ -1530,6 +1530,27 @@
         });
     }
 
+    /** Optimistic: visitor message implies earlier agent messages were seen */
+    function markPriorAgentTicksRead(beforeMsgId) {
+        beforeMsgId = parseInt(beforeMsgId, 10) || 0;
+        if (!messagesEl) return;
+        messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
+            var mid = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
+            if (mid < 1 || (beforeMsgId > 0 && mid >= beforeMsgId)) return;
+            if (String(msgEl.getAttribute('data-id') || '').indexOf('temp_') === 0) return;
+            var ticks = msgEl.querySelector('.lc-msg-ticks');
+            if (ticks && ticks.classList.contains('is-read')) return;
+            var wrap = document.createElement('div');
+            wrap.innerHTML = msgTicksHtml('read');
+            if (ticks && wrap.firstChild) {
+                ticks.replaceWith(wrap.firstChild);
+            } else {
+                var foot = msgEl.querySelector('.lc-msg-foot');
+                if (foot && wrap.firstChild) foot.appendChild(wrap.firstChild);
+            }
+        });
+    }
+
     function isMessagesNearBottom(threshold) {
         if (!messagesEl) return true;
         var gap = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
@@ -4351,6 +4372,10 @@
                 if (selectedId && cid === selectedId) {
                     if (payload && payload.message && payload.message.id) {
                         appendLiveMessage(payload.message);
+                        // Visitor replied while chat open → prior agent bubbles are seen
+                        if (payload.message.sender_type === 'visitor') {
+                            markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
+                        }
                     } else {
                         pollMessages();
                     }
