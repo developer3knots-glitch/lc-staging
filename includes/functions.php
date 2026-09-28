@@ -2150,6 +2150,37 @@ function lc_realtime_publish_message_receipts(int $conversationId, string $ownSe
     if (!$receipts) {
         return;
     }
+    $payload = [
+        'conversation_id' => $conversationId,
+        'for' => $ownSenderType,
+        'receipts' => $receipts,
+    ];
+    // Direct peer channels first (don't wait on full fanout)
+    if (function_exists('lc_realtime_publish')) {
+        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), 'message.receipts', $payload, 120);
+        if ($ownSenderType === 'agent') {
+            $conv = lc_get_conversation($conversationId);
+            $agentId = (int) ($conv['agent_id'] ?? 0);
+            if ($agentId > 0) {
+                lc_realtime_publish(lc_realtime_channel_agent($agentId), 'message.receipts', $payload, 120);
+            }
+        } elseif ($ownSenderType === 'visitor') {
+            $conv = lc_get_conversation($conversationId);
+            $visitorId = (int) ($conv['visitor_id'] ?? 0);
+            if ($visitorId > 0) {
+                try {
+                    $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                    $vStmt->execute([$visitorId]);
+                    $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+                    if ($visitorUid !== '') {
+                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), 'message.receipts', $payload, 120);
+                    }
+                } catch (Throwable $e) {
+                }
+            }
+        }
+        return;
+    }
     lc_realtime_publish_conversation_event($conversationId, 'message.receipts', [
         'for' => $ownSenderType,
         'receipts' => $receipts,

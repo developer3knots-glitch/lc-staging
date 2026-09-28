@@ -1506,16 +1506,23 @@
         return '<span class="lc-msg-ticks is-sent" title="Sent" aria-label="Sent" style="color:rgba(255,255,255,0.55)!important">' + tickSvg(false, 'rgba(255,255,255,0.55)') + '</span>';
     }
 
+    var pendingReceiptsById = {};
+    var lastAgentReceipts = null;
+
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length || !messagesEl) return;
         receipts.forEach(function (r) {
             var rid = parseInt(r && r.id, 10) || 0;
             if (rid < 1) return;
             var msgEl = messagesEl.querySelector('.lc-msg[data-id="' + rid + '"]');
-            if (!msgEl) return;
+            if (!msgEl) {
+                // Agent bubble still has optimistic temp id — apply when id is promoted
+                pendingReceiptsById[rid] = r;
+                return;
+            }
+            delete pendingReceiptsById[rid];
             var el = msgEl.querySelector('.lc-msg-ticks');
             if (!el) {
-                // Older bubble missing ticks node — inject into foot
                 var foot = msgEl.querySelector('.lc-msg-foot');
                 if (!foot || !msgEl.classList.contains('agent')) return;
                 var status0 = r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
@@ -1528,6 +1535,18 @@
             var next = wrap.firstChild;
             if (next) el.replaceWith(next);
         });
+    }
+
+    function flushPendingReceiptForId(messageId) {
+        messageId = parseInt(messageId, 10) || 0;
+        if (messageId < 1) return;
+        if (pendingReceiptsById[messageId]) {
+            applyReceipts([pendingReceiptsById[messageId]]);
+            return;
+        }
+        if (lastAgentReceipts && lastAgentReceipts.length) {
+            applyReceipts(lastAgentReceipts);
+        }
     }
 
     /** Optimistic: visitor message implies earlier agent messages were seen */
@@ -3239,8 +3258,10 @@
                 if (tempEl && mid > 0) {
                     tempEl.setAttribute('data-id', String(mid));
                     if (mid > lastMsgId) lastMsgId = mid;
+                    flushPendingReceiptForId(mid);
                 } else if (!tempEl && mid > 0) {
                     if (mid > lastMsgId) lastMsgId = mid;
+                    flushPendingReceiptForId(mid);
                 } else if (!tempEl) {
                     pollMessages();
                 }
@@ -4309,6 +4330,7 @@
                     }
                 }
                 if (mid > lastMsgId) lastMsgId = mid;
+                flushPendingReceiptForId(mid);
                 return;
             }
         }
@@ -4424,11 +4446,11 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!selectedId || cid !== selectedId) return;
                 if (payload && payload.for && payload.for !== 'agent') return;
-                if (payload && payload.receipts) {
+                if (payload && payload.receipts && payload.receipts.length) {
+                    lastAgentReceipts = payload.receipts;
                     applyReceipts(payload.receipts);
-                } else {
-                    // Event without body — refresh ticks from API
-                    pollMessages();
+                } else if (!pollDisabled) {
+                    pollMessages({ skipJourney: true });
                 }
             });
             realtimeClient.on('conversation.note', function (payload) {

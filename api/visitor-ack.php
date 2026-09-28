@@ -52,8 +52,8 @@ try {
         $changed += lc_mark_messages_read($conversationId, 'agent');
     }
 
-    // Push to agent immediately (not deferred) so ticks update while poll may be off
-    if ($changed > 0 && function_exists('lc_realtime_publish_message_receipts')) {
+    // Always push current ticks (even if DB unchanged) so agent UI catches up over WS
+    if (function_exists('lc_realtime_publish_message_receipts')) {
         lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 
