@@ -1530,12 +1530,13 @@
         return r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
     }
 
-    /** Never downgrade ticks (sent → delivered → read). */
-    function setAgentMsgTickStatus(msgEl, status) {
+    /** Apply tick status. force=true = server receipt wins (may correct false optimistic read). */
+    function setAgentMsgTickStatus(msgEl, status, opts) {
         if (!msgEl || !msgEl.classList.contains('agent')) return;
+        opts = opts || {};
         status = status || 'sent';
         var ticks = msgEl.querySelector('.lc-msg-ticks');
-        if (ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
+        if (!opts.force && ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
             return;
         }
         var wrap = document.createElement('div');
@@ -1553,12 +1554,8 @@
         if (!messagesEl) return;
         messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
             var raw = String(msgEl.getAttribute('data-id') || '');
-            if (raw.indexOf('temp_') === 0) {
-                // Optimistic bubble: if anything later is already read, this was seen too
-                if (maxKnownReadAgentMsgId > 0) setAgentMsgTickStatus(msgEl, 'read');
-                else if (maxKnownDeliveredAgentMsgId > 0) setAgentMsgTickStatus(msgEl, 'delivered');
-                return;
-            }
+            // Never paint optimistic temp bubbles as read — visitor may have left
+            if (raw.indexOf('temp_') === 0) return;
             var mid = parseInt(raw, 10) || 0;
             if (mid < 1) return;
             if (maxKnownReadAgentMsgId > 0 && mid <= maxKnownReadAgentMsgId) {
@@ -1589,7 +1586,8 @@
                 return;
             }
             delete pendingReceiptsById[rid];
-            setAgentMsgTickStatus(msgEl, status);
+            // Server is source of truth — correct false blue ticks from optimistic cascade
+            setAgentMsgTickStatus(msgEl, status, { force: true });
         });
         maxKnownReadAgentMsgId = Math.max(maxKnownReadAgentMsgId, maxRead);
         maxKnownDeliveredAgentMsgId = Math.max(maxKnownDeliveredAgentMsgId, maxDel);
@@ -1620,10 +1618,8 @@
         var bumpTo = 0;
         messagesEl.querySelectorAll('.lc-msg.agent').forEach(function (msgEl) {
             var raw = String(msgEl.getAttribute('data-id') || '');
-            if (raw.indexOf('temp_') === 0) {
-                setAgentMsgTickStatus(msgEl, 'read');
-                return;
-            }
+            // Don't paint unsent/temp bubbles as read
+            if (raw.indexOf('temp_') === 0) return;
             var mid = parseInt(raw, 10) || 0;
             if (mid < 1 || (beforeMsgId > 0 && mid >= beforeMsgId)) return;
             if (mid > bumpTo) bumpTo = mid;
