@@ -1773,14 +1773,14 @@
     var ackHeartbeatTimer = null;
     var ackVisibilityBound = false;
 
-    /** Panel open + this browser tab actually visible (not background tab). */
+    /** Panel open + tab not in background. (Unfocused-but-visible window still counts as viewing.) */
     function isVisitorActivelyViewingChat() {
         if (!isOpen || chatClosed) return false;
         var panel = document.getElementById('lc-panel');
         if (!panel || panel.style.display === 'none') return false;
         try {
-            if (typeof document.hidden === 'boolean' && document.hidden) return false;
-            if (document.visibilityState && document.visibilityState !== 'visible') return false;
+            // Same-window other tab / minimized → hidden. Side-by-side other window often stays visible.
+            if (document.visibilityState === 'hidden') return false;
         } catch (eVis) {}
         return true;
     }
@@ -1798,16 +1798,19 @@
         document.addEventListener('visibilitychange', function () {
             if (!conversationId || chatClosed) return;
             if (document.visibilityState === 'visible' && isOpen) {
-                // Tab focused again with chat open → now it's actually read
                 startAckHeartbeat();
                 ackAgentMessagesSeen();
-            } else {
-                // Background tab / hidden: stop claiming "read"; delivered-only is enough
+            } else if (document.visibilityState === 'hidden') {
                 stopAckHeartbeat();
                 if (conversationId && !chatClosed) {
                     ackAgentMessagesSeen(true);
                 }
             }
+        });
+        // Clicking back to the visitor window should flush read ticks immediately
+        window.addEventListener('focus', function () {
+            if (!conversationId || chatClosed || !isOpen) return;
+            ackAgentMessagesSeen();
         });
     }
 

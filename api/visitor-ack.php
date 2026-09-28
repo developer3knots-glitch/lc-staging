@@ -52,16 +52,9 @@ try {
         $changed += lc_mark_messages_read($conversationId, 'agent');
     }
 
-    // Always push current ticks (even if DB unchanged) so agent UI catches up over WS.
-    // Defer so the HTTP ack returns instantly and the next ack is never blocked on publish.
+    // Always push current ticks immediately so agent desk updates without reload
     if (function_exists('lc_realtime_publish_message_receipts')) {
-        if (function_exists('lc_realtime_defer')) {
-            lc_realtime_defer(static function () use ($conversationId): void {
-                lc_realtime_publish_message_receipts($conversationId, 'agent');
-            });
-        } else {
-            lc_realtime_publish_message_receipts($conversationId, 'agent');
-        }
+        lc_realtime_publish_message_receipts($conversationId, 'agent');
     }
 
     lc_json([

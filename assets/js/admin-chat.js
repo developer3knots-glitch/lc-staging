@@ -1530,13 +1530,12 @@
         return r.delivery_status || (r.is_read ? 'read' : (r.is_delivered ? 'delivered' : 'sent'));
     }
 
-    /** Apply tick status. force=true = server receipt wins (may correct false optimistic read). */
-    function setAgentMsgTickStatus(msgEl, status, opts) {
+    /** Apply tick status. Never downgrade (sent → delivered → read only). */
+    function setAgentMsgTickStatus(msgEl, status) {
         if (!msgEl || !msgEl.classList.contains('agent')) return;
-        opts = opts || {};
         status = status || 'sent';
         var ticks = msgEl.querySelector('.lc-msg-ticks');
-        if (!opts.force && ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
+        if (ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
             return;
         }
         var wrap = document.createElement('div');
@@ -1586,12 +1585,11 @@
                 return;
             }
             delete pendingReceiptsById[rid];
-            // Server is source of truth — correct false blue ticks from optimistic cascade
-            setAgentMsgTickStatus(msgEl, status, { force: true });
+            // Upgrade only — never let a stale "sent" snapshot wipe a live "read"
+            setAgentMsgTickStatus(msgEl, status);
         });
         maxKnownReadAgentMsgId = Math.max(maxKnownReadAgentMsgId, maxRead);
         maxKnownDeliveredAgentMsgId = Math.max(maxKnownDeliveredAgentMsgId, maxDel);
-        // WhatsApp-style: anything at/under the highest read id is read
         cascadeAgentTicksFromHighWater();
     }
 
@@ -1600,14 +1598,11 @@
         if (messageId < 1) return;
         if (pendingReceiptsById[messageId]) {
             applyReceipts([pendingReceiptsById[messageId]]);
-        } else if (lastAgentReceipts && lastAgentReceipts.length) {
-            applyReceipts(lastAgentReceipts);
         }
-        // High-water cascade covers promote-before-receipt races
+        // Do NOT re-apply stale lastAgentReceipts (looks like "stuck until reload")
         if (maxKnownReadAgentMsgId > 0 || maxKnownDeliveredAgentMsgId > 0) {
             cascadeAgentTicksFromHighWater();
         }
-        // Pull fresh ticks from server shortly after id promotion
         scheduleReceiptSyncBursts();
     }
 
@@ -4357,8 +4352,8 @@
         }
         window.__lcSyncReceiptsNow = syncReceiptsOnly;
 
-        // Always sync ticks on a short interval (WS can drop receipt events)
-        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1500);
+        // Fast tick sync — must update without full page reload
+        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
 
         // Manual: Settings → Disable HTTP polling — ticks + rare journey only
