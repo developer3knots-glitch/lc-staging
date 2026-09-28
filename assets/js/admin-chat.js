@@ -469,10 +469,14 @@
         }, 6500);
         if (window.Notification && Notification.permission === 'granted') {
             try {
-                new Notification('Returning visitor', {
+                var retN = new Notification('Returning visitor', {
                     body: (name || 'Visitor') + ' started a chat again',
-                    tag: 'lc-return-visitor'
+                    tag: 'lc-return-visitor',
+                    requireInteraction: false
                 });
+                setTimeout(function () {
+                    try { retN.close(); } catch (eAuto) {}
+                }, 10000);
             } catch (e) { /* ignore */ }
         }
     }
@@ -2060,12 +2064,16 @@
                                 var n = new Notification('Incoming chat', {
                                     body: (returningName || 'A visitor') + ' is waiting in the queue',
                                     tag: 'lc-inbox-waiting',
-                                    renotify: true
+                                    renotify: true,
+                                    requireInteraction: false
                                 });
                                 n.onclick = function () {
                                     try { window.focus(); } catch (eF) {}
                                     try { n.close(); } catch (eC) {}
                                 };
+                                setTimeout(function () {
+                                    try { n.close(); } catch (eAuto) {}
+                                }, 10000);
                             } catch (eN) { /* ignore */ }
                         }
                     }

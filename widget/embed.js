@@ -3110,6 +3110,10 @@
                 if (!isOpen) openPanel({ silenceFlow: true, focusComposeOnOpen: true });
                 try { n.close(); } catch (eClose) {}
             };
+            // Auto-dismiss Chrome/desktop toast after 10s
+            setTimeout(function () {
+                try { n.close(); } catch (eAuto) {}
+            }, 10000);
             return true;
         } catch (eN) {
             return false;

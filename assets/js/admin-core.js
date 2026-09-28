@@ -360,15 +360,33 @@
                 body: body,
                 tag: tag,
                 renotify: true,
-                requireInteraction: true,
+                requireInteraction: false,
                 silent: false,
                 data: { url: targetUrl }
             };
 
+            function autoCloseSwNotification(reg, closeTag) {
+                if (!reg || typeof reg.getNotifications !== 'function') return;
+                setTimeout(function () {
+                    try {
+                        reg.getNotifications({ tag: closeTag }).then(function (list) {
+                            (list || []).forEach(function (item) {
+                                try { item.close(); } catch (eC) {}
+                            });
+                        }).catch(function () {});
+                    } catch (eGet) { /* ignore */ }
+                }, 10000);
+            }
+
             var showViaSw = function (reg) {
                 if (!reg || typeof reg.showNotification !== 'function') return false;
                 try {
-                    reg.showNotification(title, opts);
+                    var shown = reg.showNotification(title, opts);
+                    if (shown && typeof shown.then === 'function') {
+                        shown.then(function () { autoCloseSwNotification(reg, tag); }).catch(function () {});
+                    } else {
+                        autoCloseSwNotification(reg, tag);
+                    }
                     return true;
                 } catch (eSw) {
                     return false;
@@ -396,6 +414,9 @@
                     window.location.href = targetUrl || trafficUrl;
                     try { n.close(); } catch (eC) {}
                 };
+                setTimeout(function () {
+                    try { n.close(); } catch (eAuto) {}
+                }, 10000);
             } catch (eN) { /* ignore */ }
         }
 
