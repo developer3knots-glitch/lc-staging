@@ -4257,11 +4257,28 @@
         window.__lcReceiptTimer = null;
         window.__lcJourneyTimer = null;
 
-        // Manual: Settings → Disable HTTP polling — no agent-poll / list intervals
+        function syncReceiptsOnly() {
+            if (!selectedId) return;
+            fetch(base + '/api/agent-receipts.php?conversation_id=' + encodeURIComponent(selectedId), {
+                credentials: 'same-origin'
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success || !data.receipts) return;
+                    if ((parseInt(data.conversation_id, 10) || 0) !== selectedId) return;
+                    lastAgentReceipts = data.receipts;
+                    applyReceipts(data.receipts);
+                })
+                .catch(function () {});
+        }
+
+        // Manual: Settings → Disable HTTP polling — still sync ticks (tiny payload)
         if (pollDisabled) {
+            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 60000);
+            if (selectedId) syncReceiptsOnly();
             return;
         }
 
@@ -4273,9 +4290,12 @@
             listTimer = setInterval(function () {
                 loadConversations();
             }, 5000);
+            // Dedicated tick sync — don't wait for full poll
+            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 30000);
+            if (selectedId) syncReceiptsOnly();
             return;
         }
 
@@ -4341,6 +4361,7 @@
         if (m.sender_type === 'visitor') {
             playIncomingSound();
             setPeerTypingVisible(false);
+            markPriorAgentTicksRead(mid);
         }
     }
 
@@ -4426,6 +4447,9 @@
                 if (selectedId && cid === selectedId) {
                     if (payload && payload.message && payload.message.id) {
                         appendLiveMessage(payload.message);
+                        if (payload.message.sender_type === 'visitor') {
+                            markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
+                        }
                     }
                     clearLocalUnread(cid);
                     return;

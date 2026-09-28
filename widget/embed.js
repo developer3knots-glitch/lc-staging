@@ -1768,6 +1768,29 @@
 
     var ackReceiptTimer = null;
     var ackReceiptInFlight = false;
+    var ackHeartbeatTimer = null;
+
+    function stopAckHeartbeat() {
+        if (ackHeartbeatTimer) {
+            clearInterval(ackHeartbeatTimer);
+            ackHeartbeatTimer = null;
+        }
+    }
+
+    function startAckHeartbeat() {
+        stopAckHeartbeat();
+        if (!conversationId || !isOpen || chatClosed) return;
+        // Keep pushing read ticks while panel is open (WS receipts can race / drop)
+        ackHeartbeatTimer = setInterval(function () {
+            if (!isOpen || chatClosed || !conversationId) {
+                stopAckHeartbeat();
+                return;
+            }
+            ackAgentMessagesSeen();
+        }, 2000);
+        ackAgentMessagesSeen();
+    }
+
     /** Tell server visitor saw agent messages → agent blue ticks (read receipts). */
     function ackAgentMessagesSeen() {
         if (!conversationId || chatClosed) return;
@@ -2825,6 +2848,7 @@
     function minimizePanel() {
         if (!isOpen) return;
         isOpen = false;
+        stopAckHeartbeat();
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
@@ -2847,7 +2871,7 @@
         if (isOpen) {
             var badgeOpen = document.getElementById('lc-bubble-badge');
             if (badgeOpen) badgeOpen.style.display = 'none';
-            ackAgentMessagesSeen();
+            startAckHeartbeat();
             return;
         }
         isOpen = true;
@@ -2899,7 +2923,7 @@
         if (options.focusComposeOnOpen) {
             focusVisitorCompose({ delay: 180 });
         }
-        ackAgentMessagesSeen();
+        startAckHeartbeat();
     }
 
     function togglePanel() {
