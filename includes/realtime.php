@@ -133,7 +133,7 @@ function lc_realtime_client_config(?int $brandId = null): array
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
         'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
         // Match admin ~3s safety net so agent→visitor does not wait 8–15s on a missed WS frame
-        'backupPollMs' => 2000,
+        'backupPollMs' => 1000,
     ];
 }
 
@@ -267,6 +267,16 @@ function lc_realtime_visitor_presence_token(string $visitorUid): string
 
 function lc_realtime_publish(string $channel, string $event, array $data = [], int $timeoutMs = 300): void
 {
+    lc_realtime_publish_channels([$channel], $event, $data, $timeoutMs);
+}
+
+/**
+ * One HTTP hop → Node fans out to many WS channels (cuts agent→visitor sequential curl delay).
+ *
+ * @param list<string> $channels
+ */
+function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200): void
+{
     if (lc_realtime_mode() !== 'ws') {
         return;
     }
@@ -275,21 +285,34 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
         return;
     }
 
+    $clean = [];
+    foreach ($channels as $ch) {
+        $ch = trim((string) $ch);
+        if ($ch !== '' && !isset($clean[$ch])) {
+            $clean[$ch] = true;
+        }
+    }
+    $channelList = array_keys($clean);
+    if ($channelList === [] || $event === '') {
+        return;
+    }
+
     $payload = json_encode([
-        'channel' => $channel,
+        'channels' => $channelList,
+        'channel' => $channelList[0],
         'event' => $event,
         'data' => $data,
         'ts' => time(),
     ], JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0));
     if ($payload === false) {
-        // Retry without nested message object (avatar/utf8 can break encode)
         $fallbackData = $data;
         if (isset($fallbackData['message']) && is_array($fallbackData['message'])) {
             $fallbackData['message_id'] = (int) ($fallbackData['message']['id'] ?? ($fallbackData['message_id'] ?? 0));
             unset($fallbackData['message']);
         }
         $payload = json_encode([
-            'channel' => $channel,
+            'channels' => $channelList,
+            'channel' => $channelList[0],
             'event' => $event,
             'data' => $fallbackData,
             'ts' => time(),
@@ -304,10 +327,9 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
         'X-LC-Secret: ' . lc_realtime_secret(),
     ];
 
-    // Confirmed curl first — F&F often drops the body before Node finishes reading,
-    // which makes peers fall back to 3–4s HTTP poll (messages arrive in a batch).
-    $timeoutMs = max(80, min(400, $timeoutMs));
-    $connectMs = max(40, min(150, (int) floor($timeoutMs * 0.5)));
+    // Single confirmed curl — multi-channel, keep tight for localhost Node
+    $timeoutMs = max(60, min(250, $timeoutMs));
+    $connectMs = max(30, min(100, (int) floor($timeoutMs * 0.5)));
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
@@ -333,7 +355,6 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
             if ($code >= 200 && $code < 300) {
                 return;
             }
-            // 5xx / timeout → try fire-and-forget; 4xx (bad secret) stop
             if ($code >= 400 && $code < 500) {
                 return;
             }
@@ -424,58 +445,64 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $isFanout = in_array($event, $fanoutEvents, true);
 
     if (!$inboxOnly) {
-        // Extra fanout (visitor:/agent:) — visitor: first so agent→visitor is not behind conv curl
-        $doExtraFanout = static function () use ($conversationId, $event, $payload, $conv, $isFanout, $agentId, $previousAgentId): void {
-            if (!$conv || !$isFanout) {
-                return;
-            }
-            $visitorId = (int) ($conv['visitor_id'] ?? 0);
-            if ($visitorId > 0 && $event !== 'message.receipts') {
+        $peerChannels = [lc_realtime_channel_conversation($conversationId)];
+        if ($conv && $isFanout) {
+            $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
+            if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0 && $event !== 'message.receipts') {
                 try {
                     $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
-                    $vStmt->execute([$visitorId]);
+                    $vStmt->execute([(int) $conv['visitor_id']]);
                     $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
-                    if ($visitorUid !== '') {
-                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 120);
-                    }
                 } catch (Throwable $e) {
+                    $visitorUid = '';
                 }
             }
+            if ($visitorUid !== '' && $event !== 'message.receipts') {
+                // visitor: first in list — Node still fans all in one shot
+                array_unshift($peerChannels, lc_realtime_channel_visitor($visitorUid));
+            }
             if ($agentId > 0) {
-                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 120);
+                $peerChannels[] = lc_realtime_channel_agent($agentId);
             }
             if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
-                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 120);
+                $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
             }
-        };
-
-        if ($peersOnly) {
-            // Visitor sockets often hold visitor:UID; hit that before conv:ID
-            $doExtraFanout();
-            lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 150);
-            return;
         }
 
-        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 200);
-        $doExtraFanout();
+        // ONE curl for all peer channels (was 3–4 sequential publishes)
+        lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 120 : 180);
+
+        if ($peersOnly) {
+            return;
+        }
     } elseif (!$conv) {
         return;
     }
 
-    // Inbox list noise
-    if ($brandId > 0) {
-        if ($isFanout && $event !== 'conversation.updated') {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), $event, $payload, 80);
+    // Inbox list noise — single multi-channel hop
+    if (!$peersOnly) {
+        $inboxChannels = [];
+        if ($brandId > 0) {
+            if ($isFanout && $event !== 'conversation.updated') {
+                $inboxChannels[] = lc_realtime_channel_brand_inbox($brandId);
+            }
         }
-        if ($event !== 'typing' && $event !== 'message.receipts') {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'inbox.changed', $payload, 80);
+        if ($inboxChannels !== [] && $isFanout && $event !== 'conversation.updated') {
+            lc_realtime_publish_channels($inboxChannels, $event, $payload, 80);
         }
-    }
-    if ($agentId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
-        lc_realtime_publish(lc_realtime_channel_agent($agentId), 'inbox.changed', $payload, 80);
-    }
-    if ($previousAgentId > 0 && $previousAgentId !== $agentId && $event !== 'typing' && $event !== 'message.receipts') {
-        lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), 'inbox.changed', $payload, 80);
+        $changedChannels = [];
+        if ($brandId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
+            $changedChannels[] = lc_realtime_channel_brand_inbox($brandId);
+        }
+        if ($agentId > 0 && $event !== 'typing' && $event !== 'message.receipts') {
+            $changedChannels[] = lc_realtime_channel_agent($agentId);
+        }
+        if ($previousAgentId > 0 && $previousAgentId !== $agentId && $event !== 'typing' && $event !== 'message.receipts') {
+            $changedChannels[] = lc_realtime_channel_agent($previousAgentId);
+        }
+        if ($changedChannels !== []) {
+            lc_realtime_publish_channels($changedChannels, 'inbox.changed', $payload, 80);
+        }
     }
 }
 

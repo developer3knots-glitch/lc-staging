@@ -93,5 +93,5 @@ pm2 restart livechat-realtime
 | WS 502/503 | Node not running → `pm2 status` / `pm2 logs livechat-realtime` |
 | WS 404 | Nginx location missing / wrong site config |
 | auth.error | Secret mismatch PHP vs Node `.env` |
-| Messages slow | Still on poll — check `window.LC_REALTIME` in console (`mode` should be `ws`) |
+| Messages slow | Still on poll — check `window.LC_REALTIME` (`mode: ws`). After pull: **`pm2 restart livechat-realtime`** (multi-channel `/publish` needs Node restart) |
 | Transfer lag | Confirm WS 101 + `pm2 restart` after server.js pull |

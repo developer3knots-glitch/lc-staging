@@ -4552,7 +4552,7 @@
             // Fast safety net — WS should deliver instantly; this catches dropped publishes
             pollTimer = setInterval(function () {
                 if (selectedId) pollMessages({ skipJourney: true });
-            }, 3000);
+            }, 1500);
             listTimer = setInterval(function () {
                 loadConversations();
             }, 5000);

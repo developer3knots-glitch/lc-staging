@@ -99,6 +99,18 @@ function publish(channel, event, data) {
   return n;
 }
 
+function publishMany(channels, event, data) {
+  let total = 0;
+  const seen = {};
+  (channels || []).forEach(function (ch) {
+    const name = String(ch || '');
+    if (!name || seen[name]) return;
+    seen[name] = true;
+    total += publish(name, event, data);
+  });
+  return total;
+}
+
 function readJson(req) {
   return new Promise(function (resolve, reject) {
     let raw = '';
@@ -122,16 +134,21 @@ const requestHandler = async function (req, res) {
     }
     try {
       const body = await readJson(req);
-      const channel = String(body.channel || '');
       const event = String(body.event || '');
-      if (!channel || !event) {
+      const channels = Array.isArray(body.channels)
+        ? body.channels.map(function (c) { return String(c || ''); }).filter(Boolean)
+        : [];
+      if (body.channel) {
+        channels.unshift(String(body.channel));
+      }
+      if (!channels.length || !event) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Invalid payload' }));
         return;
       }
-      const delivered = publish(channel, event, body.data || {});
+      const delivered = publishMany(channels, event, body.data || {});
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, delivered }));
+      res.end(JSON.stringify({ ok: true, delivered, channels: channels.length }));
     } catch (e) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Bad JSON' }));

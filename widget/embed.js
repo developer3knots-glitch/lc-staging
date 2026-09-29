@@ -1673,7 +1673,7 @@
         }
         stopWsSafetyCatchup();
         var liveSyncTick = 0;
-        liveSyncTimer = setInterval(function () {
+            liveSyncTimer = setInterval(function () {
             if (!conversationId) {
                 stopLiveMessageSync();
                 return;
@@ -1694,7 +1694,7 @@
             } else {
                 scheduleCatchupSync();
             }
-        }, 2000);
+        }, 1000);
         scheduleGapFill();
     }
 
@@ -1705,14 +1705,14 @@
         }
     }
 
-    /** While WS is up: fast HTTP safety net (admin uses ~3s — visitor must not wait 8–15s). */
+    /** While WS is up: ~1s HTTP safety (WS should be instant; this only covers drops). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 2000;
-        if (ms < 1500) ms = 1500;
-        if (ms > 4000) ms = 4000;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 1000;
+        if (ms < 800) ms = 800;
+        if (ms > 2000) ms = 2000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
