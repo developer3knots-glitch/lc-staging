@@ -3516,6 +3516,48 @@
         setTimeout(onAgentComposeActivity, 0);
     });
 
+    function applyAssignSuccess(convId, agentId) {
+        var aid = parseInt(agentId || myAgentId, 10) || myAgentId;
+        syncConversationListStatus({
+            id: convId,
+            status: 'active',
+            agent_id: aid
+        });
+        currentAssignedAgentId = aid;
+        setUnassignedMode(false);
+        if (replyInput) {
+            replyInput.disabled = false;
+            replyInput.placeholder = 'Type a message...';
+            setTimeout(function () { replyInput.focus(); }, 200);
+        }
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (sendBtn) sendBtn.disabled = false;
+        pollMessages();
+        loadConversations();
+    }
+
+    function verifyAssignedToMe(convId) {
+        return fetch(base + '/api/agent-poll.php?conversation_id=' + encodeURIComponent(convId) + '&last_id=0', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (r) {
+            return r.text().then(function (text) {
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (e1) { data = null; }
+                return data;
+            });
+        }).then(function (data) {
+            if (!data || data.success === false) return null;
+            var conv = data.conversation || {};
+            var aid = parseInt(data.assigned_agent_id || conv.agent_id || 0, 10) || 0;
+            var st = String(conv.status || data.status || '').toLowerCase();
+            if ((data.is_assigned || aid === myAgentId) && st === 'active') {
+                return { agent_id: aid || myAgentId, status: 'active' };
+            }
+            return null;
+        }).catch(function () { return null; });
+    }
+
     function assignChatToMe(e) {
         if (e) {
             try { e.preventDefault(); e.stopPropagation(); } catch (e0) {}
@@ -3541,14 +3583,26 @@
                 return { ok: r.ok, status: r.status, data: data, raw: (text || '').slice(0, 180) };
             });
         }).then(function (res) {
-            if (btn) {
-                btn.dataset.busy = '0';
-                btn.disabled = false;
+            if (selectedId !== convId) {
+                if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+                if (acceptBtn) acceptBtn.disabled = false;
+                return;
             }
-            if (acceptBtn) acceptBtn.disabled = false;
-            if (selectedId !== convId) return;
             var data = res && res.data;
-            if (!data || data.success === false) {
+            if (data && data.success) {
+                if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+                if (acceptBtn) acceptBtn.disabled = false;
+                applyAssignSuccess(convId, data.agent_id || myAgentId);
+                return;
+            }
+            // Server may have claimed already but returned HTML/empty — verify before alerting
+            return verifyAssignedToMe(convId).then(function (ok) {
+                if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+                if (acceptBtn) acceptBtn.disabled = false;
+                if (ok) {
+                    applyAssignSuccess(convId, ok.agent_id || myAgentId);
+                    return;
+                }
                 var err = (data && data.error)
                     || ('Could not assign chat'
                         + (res && res.status ? ' (HTTP ' + res.status + ')' : '')
@@ -3556,33 +3610,19 @@
                 alert(err);
                 pollMessages();
                 loadConversations();
-                return;
-            }
-            syncConversationListStatus({
-                id: convId,
-                status: 'active',
-                agent_id: (data.agent_id || myAgentId)
             });
-            currentAssignedAgentId = parseInt(data.agent_id || myAgentId, 10) || myAgentId;
-            setUnassignedMode(false);
-            if (replyInput) {
-                replyInput.disabled = false;
-                replyInput.placeholder = 'Type a message...';
-                setTimeout(function () { replyInput.focus(); }, 200);
-            }
-            var sendBtn = document.getElementById('lc-send-reply');
-            if (sendBtn) sendBtn.disabled = false;
-            pollMessages();
-            loadConversations();
         }).catch(function (err) {
-            if (btn) {
-                btn.dataset.busy = '0';
-                btn.disabled = false;
-            }
-            if (acceptBtn) acceptBtn.disabled = false;
-            alert('Could not assign chat: ' + (err && err.message ? err.message : 'network error'));
-            pollMessages();
-            loadConversations();
+            verifyAssignedToMe(convId).then(function (ok) {
+                if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
+                if (acceptBtn) acceptBtn.disabled = false;
+                if (ok) {
+                    applyAssignSuccess(convId, ok.agent_id || myAgentId);
+                    return;
+                }
+                alert('Could not assign chat: ' + (err && err.message ? err.message : 'network error'));
+                pollMessages();
+                loadConversations();
+            });
         });
     }
 

@@ -44,13 +44,21 @@ function lc_cors_headers(): void
 
 function lc_json(array $data, int $code = 200): void
 {
-    http_response_code($code);
-    header('Content-Type: application/json; charset=utf-8');
-    header('Connection: close');
+    // Drop any prior notices/BOM so fetch().json() / JSON.parse never fails
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    if (!headers_sent()) {
+        http_response_code($code);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Connection: close');
+    }
     $body = json_encode($data);
     if ($body === false) {
         $body = '{"success":false,"error":"Server error"}';
-        http_response_code(500);
+        if (!headers_sent()) {
+            http_response_code(500);
+        }
     }
     // Content-Length lets Apache/nginx release the client before shutdown work
     // (realtime fanout) — critical so the widget clock clears immediately.
@@ -65,9 +73,6 @@ function lc_json(array $data, int $code = 200): void
     } else {
         if (function_exists('session_write_close')) {
             @session_write_close();
-        }
-        while (ob_get_level() > 0) {
-            @ob_end_flush();
         }
         @flush();
     }
