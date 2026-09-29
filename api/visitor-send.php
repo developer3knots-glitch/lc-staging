@@ -100,15 +100,8 @@ try {
             if (function_exists('lc_realtime_publish_message')) {
                 lc_realtime_publish_message($conversationId, $publishMessageId);
             }
-            if (function_exists('lc_mark_messages_delivered')) {
-                lc_mark_messages_delivered($conversationId, 'agent');
-            }
-            if (function_exists('lc_mark_messages_read')) {
-                lc_mark_messages_read($conversationId, 'agent');
-            }
-            if (function_exists('lc_realtime_publish_message_receipts')) {
-                lc_realtime_publish_message_receipts($conversationId, 'agent');
-            }
+            // Do NOT mark all agent msgs read here — that caused false blue ticks
+            // when the visitor never painted those bubbles. Client ack handles read.
             if (function_exists('lc_realtime_publish_conversation_event')) {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => $publishStatus,
@@ -122,15 +115,6 @@ try {
     } else {
         if (function_exists('lc_realtime_publish_message')) {
             lc_realtime_publish_message($conversationId, $messageId);
-        }
-        if (function_exists('lc_mark_messages_delivered')) {
-            lc_mark_messages_delivered($conversationId, 'agent');
-        }
-        if (function_exists('lc_mark_messages_read')) {
-            lc_mark_messages_read($conversationId, 'agent');
-        }
-        if (function_exists('lc_realtime_publish_message_receipts')) {
-            lc_realtime_publish_message_receipts($conversationId, 'agent');
         }
         if (function_exists('lc_realtime_publish_conversation_event')) {
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [

@@ -1534,9 +1534,7 @@
     }
 
     function isVisitorWsLive() {
-        var chatLive = !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
-        var presenceLive = !!(presenceClient && typeof presenceClient.isConnected === 'function' && presenceClient.isConnected());
-        return chatLive || presenceLive;
+        return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
     }
 
     function resetVisitorPollTimers() {
@@ -2030,8 +2028,8 @@
             resetVisitorPollTimers();
             stopSafetySync();
             stopLiveMessageSync();
-            // One-shot catch-up after reconnect only — live path is WebSocket
-            forceMessageCatchup();
+            // WS is live — keep a rare safety catch-up only (not the live path)
+            startWsSafetyCatchup();
         });
         client.on('disconnected', function () {
             resetVisitorPollTimers();
@@ -2051,9 +2049,12 @@
                 }
                 var painted = applyRealtimeMessage(payload);
                 if (!painted) {
+                    // WS event without full body / paint fail → gap-fill once
+                    scheduleGapFill();
                     forceMessageCatchup();
                 }
             } catch (e) {
+                scheduleGapFill();
                 forceMessageCatchup();
             }
         });
@@ -2335,19 +2336,29 @@
         });
     }
 
+    function tearDownPresenceClient() {
+        if (!presenceClient) return;
+        try {
+            if (typeof presenceClient.disconnect === 'function') presenceClient.disconnect();
+        } catch (e) {}
+        presenceClient = null;
+    }
+
     function initVisitorPresenceRealtime() {
         if (!visitorUid) return;
-        // Already live on presence channel
+        // While a conversation is open, chat socket owns WS (single connection)
+        if (parseInt(conversationId, 10) > 0) return;
         if (presenceClient && presenceClient.shouldRun
             && presenceClient.isConnected && presenceClient.isConnected()) {
             bindPresenceMessageFallback(presenceClient);
-            ensureVisitorConvChannel();
             return;
         }
         loadRealtimeScript(function () {
             if (!window.LCRealtime) return;
+            if (parseInt(conversationId, 10) > 0) return;
             fetchVisitorPresenceToken().then(function (token) {
                 if (!token || realtimeConfig.mode !== 'ws' || !realtimeConfig.wsUrl) return;
+                if (parseInt(conversationId, 10) > 0) return;
                 if (presenceClient && presenceClient.disconnect) {
                     try { presenceClient.disconnect(); } catch (eD) {}
                 }
@@ -2372,7 +2383,8 @@
         var bindForConv = parseInt(conversationId, 10) || 0;
         if (bindForConv < 1) return;
 
-        // Always join conv on every live socket (presence + chat)
+        // One WebSocket only: drop presence so conv:ID always arrives on the chat client
+        tearDownPresenceClient();
         ensureVisitorConvChannel();
 
         if (realtimeConfig.mode === 'ws' && realtimeConfig.wsUrl
@@ -2383,8 +2395,8 @@
             if (realtimeClient.isConnected && realtimeClient.isConnected()) {
                 stopSafetySync();
                 ensureVisitorConvChannel();
+                startWsSafetyCatchup();
             }
-            startLiveMessageSync();
             return;
         }
 
@@ -2419,7 +2431,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=8';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=9';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -3446,11 +3458,12 @@
                 }
             }
         }
-        startLiveMessageSync();
+        // Reset cursor + force history merge so agent msgs after continue are not skipped
+        lastMsgId = contiguousPollAfterId() || 0;
+        persistLastMsgId(lastMsgId);
         scheduleGapFill();
-        if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
-            loadRealtimeScript(function () { initVisitorRealtime(); });
-        }
+        forceMessageCatchup();
+        loadRealtimeScript(function () { initVisitorRealtime(); });
     }
 
     function loadVisitorSoundPref() {

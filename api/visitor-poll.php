@@ -120,14 +120,36 @@ try {
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
 
-    // Delivered on any poll; read only while the chat panel is open (WhatsApp-style)
-    $receiptChanged = lc_mark_messages_delivered($conversationId, 'agent');
-    if ($isViewing) {
-        $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
+    // Delivered/read ONLY for messages actually returned to the widget.
+    // Never mark unread agent bubbles the visitor never received (false blue ticks).
+    $returnedIds = [];
+    foreach ($messages as $mRow) {
+        $rid = (int) ($mRow['id'] ?? 0);
+        if ($rid > 0) {
+            $returnedIds[] = $rid;
+        }
     }
-    // Always push ticks (PDO rowCount can be 0 even after a successful mark)
-    if (function_exists('lc_realtime_publish_message_receipts')) {
-        lc_realtime_publish_message_receipts($conversationId, 'agent');
+    if ($returnedIds && function_exists('lc_mark_message_ids_delivered')) {
+        lc_mark_message_ids_delivered($returnedIds);
+        if ($isViewing && function_exists('lc_mark_message_ids_read')) {
+            lc_mark_message_ids_read($returnedIds);
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'agent');
+        }
+    } elseif ($returnedIds) {
+        // Fallback: mark by id list via targeted UPDATE
+        try {
+            $in = implode(',', array_map('intval', $returnedIds));
+            lc_db()->exec("UPDATE messages SET delivered_at = COALESCE(delivered_at, NOW()) WHERE id IN ({$in}) AND sender_type = 'agent'");
+            if ($isViewing) {
+                lc_db()->exec("UPDATE messages SET delivered_at = COALESCE(delivered_at, NOW()), read_at = COALESCE(read_at, NOW()), is_read = 1 WHERE id IN ({$in}) AND sender_type = 'agent'");
+            }
+        } catch (Throwable $e) {
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'agent');
+        }
     }
 
     $receipts = lc_fetch_message_receipts($conversationId, 'visitor');
