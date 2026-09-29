@@ -5621,25 +5621,53 @@
                 message: msg
             })
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
+        .then(function (r) {
+            return r.text().then(function (text) {
+                var data = null;
+                try {
+                    data = text ? JSON.parse(text) : null;
+                } catch (eParse) {
+                    data = null;
+                }
+                return { ok: r.ok, data: data };
+            });
+        })
+        .then(function (res) {
+            var data = res && res.data;
             if ((!data || !data.success) && !isRetry && data && /invalid session/i.test(String(data.error || ''))) {
                 return refreshChatToken().then(function (token) {
                     if (token) {
-                        // Stale token from double-init / same-IP resume — retry once.
                         return postVisitorMessage(msg, tempId, wasClosed, sendBtn, true);
                     }
                     finishVisitorSend(data, tempId, wasClosed, sendBtn);
                     return data;
                 });
             }
-            finishVisitorSend(data, tempId, wasClosed, sendBtn);
+            if (data && data.success) {
+                finishVisitorSend(data, tempId, wasClosed, sendBtn);
+                return data;
+            }
+            // Empty/HTML body but optimistic bubble still there — recover quietly
+            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+            if (!data && pending) {
+                pending.classList.remove('lcw-msg-pending');
+                if (sendBtn) sendBtn.classList.remove('is-sending');
+                pollMessages(false);
+                return data;
+            }
+            finishVisitorSend(data || { success: false, error: 'Could not send. Please try again.' }, tempId, wasClosed, sendBtn);
             return data;
         })
         .catch(function () {
-            sendBtn.classList.remove('is-sending');
+            if (sendBtn) sendBtn.classList.remove('is-sending');
             var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
-            if (pending) pending.remove();
+            if (pending) {
+                // Keep bubble — message often already saved; confirm via poll
+                pending.classList.remove('lcw-msg-pending');
+                pollMessages(false);
+                return;
+            }
+            // Only show error if nothing was painted for this send
             appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
         });
     }

@@ -548,17 +548,19 @@ function lc_realtime_publish_typing(int $conversationId, string $role, bool $typ
 
 /**
  * Run work after the HTTP response is sent (keeps visitor/agent APIs snappy).
+ * Nested defer() calls during drain are also executed (publish may queue inbox fanout).
  */
 function lc_realtime_defer(callable $fn): void
 {
     static $registered = false;
     static $queue = [];
+    static $draining = false;
     $queue[] = $fn;
     if ($registered) {
         return;
     }
     $registered = true;
-    register_shutdown_function(static function () use (&$queue): void {
+    register_shutdown_function(static function () use (&$queue, &$draining): void {
         if (function_exists('fastcgi_finish_request')) {
             @fastcgi_finish_request();
         } elseif (function_exists('litespeed_finish_request')) {
@@ -570,14 +572,16 @@ function lc_realtime_defer(callable $fn): void
             @ob_end_flush();
             @flush();
         }
-        foreach ($queue as $cb) {
+        $draining = true;
+        while ($queue) {
+            $cb = array_shift($queue);
             try {
                 $cb();
             } catch (Throwable $e) {
                 // never break the request after response
             }
         }
-        $queue = [];
+        $draining = false;
     });
 }
 

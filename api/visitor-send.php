@@ -91,16 +91,15 @@ try {
 
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
+    $publishMessageId = $messageId;
 
-    // Push bubble to peers FIRST — receipts must not delay live delivery
-    if (function_exists('lc_realtime_publish_message')) {
-        lc_realtime_publish_message($conversationId, $messageId);
-    }
-
-    // Visitor is actively chatting → agent msgs are seen (fixes read ticks when WS skips poll)
-    $receiptChanged = 0;
+    // Respond FIRST — never block the widget on Node publish (was causing
+    // "Could not send" while the row was already saved).
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId): void {
+        lc_realtime_defer(static function () use ($conversationId, $publishMessageId, $publishStatus, $publishReopened): void {
+            if (function_exists('lc_realtime_publish_message')) {
+                lc_realtime_publish_message($conversationId, $publishMessageId);
+            }
             if (function_exists('lc_mark_messages_delivered')) {
                 lc_mark_messages_delivered($conversationId, 'agent');
             }
@@ -110,22 +109,6 @@ try {
             if (function_exists('lc_realtime_publish_message_receipts')) {
                 lc_realtime_publish_message_receipts($conversationId, 'agent');
             }
-        });
-    } else {
-        if (function_exists('lc_mark_messages_delivered')) {
-            $receiptChanged += lc_mark_messages_delivered($conversationId, 'agent');
-        }
-        if (function_exists('lc_mark_messages_read')) {
-            $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
-        }
-        if (function_exists('lc_realtime_publish_message_receipts')) {
-            lc_realtime_publish_message_receipts($conversationId, 'agent');
-        }
-    }
-
-    // Status / incoming-chat fanout after response
-    if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened): void {
             if (function_exists('lc_realtime_publish_conversation_event')) {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => $publishStatus,
@@ -137,6 +120,18 @@ try {
             }
         });
     } else {
+        if (function_exists('lc_realtime_publish_message')) {
+            lc_realtime_publish_message($conversationId, $messageId);
+        }
+        if (function_exists('lc_mark_messages_delivered')) {
+            lc_mark_messages_delivered($conversationId, 'agent');
+        }
+        if (function_exists('lc_mark_messages_read')) {
+            lc_mark_messages_read($conversationId, 'agent');
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'agent');
+        }
         if (function_exists('lc_realtime_publish_conversation_event')) {
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => $publishStatus,
