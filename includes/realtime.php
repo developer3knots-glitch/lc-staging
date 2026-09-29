@@ -470,7 +470,12 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         }
 
         // ONE curl for all peer channels (was 3–4 sequential publishes)
-        lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 120 : 180);
+        // Brand inbox is on every agent JWT — include it here so visitor→agent
+        // is not stuck waiting for deferred inbox_only (or missing agent_id).
+        if ($peersOnly && $event === 'message.new' && $brandId > 0) {
+            $peerChannels[] = lc_realtime_channel_brand_inbox($brandId);
+        }
+        lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 100 : 160);
 
         if ($peersOnly) {
             return;

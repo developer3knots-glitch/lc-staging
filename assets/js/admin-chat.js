@@ -4504,7 +4504,8 @@
             try { realtimeClient.unsubscribe(subscribedConvChannel); } catch (eUn) {}
         }
         subscribedConvChannel = next;
-        if (next && isRealtimeWsLive()) {
+        // Always queue subscribe into _wantChannels (even before auth) so reconnect joins conv:
+        if (next) {
             try { realtimeClient.subscribe(next); } catch (eSub) {}
         }
     }
@@ -4549,13 +4550,13 @@
         }
 
         if (isRealtimeWsLive()) {
-            // Fast safety net — WS should deliver instantly; this catches dropped publishes
+            // Tight safety net — brand/agent/conv WS should be instant
             pollTimer = setInterval(function () {
                 if (selectedId) pollMessages({ skipJourney: true });
-            }, 1500);
+            }, 800);
             listTimer = setInterval(function () {
                 loadConversations();
-            }, 5000);
+            }, 4000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 30000);
