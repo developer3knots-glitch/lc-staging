@@ -934,36 +934,37 @@ function lc_reopen_closed_for_visitor_continue(int $conversationId, int $visitor
     }
     try {
         $db = lc_db();
-        $stmt = $db->prepare('SELECT id, status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
+        $stmt = $db->prepare('SELECT id, status, agent_id FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
         $stmt->execute([$conversationId, $visitorId]);
         $row = $stmt->fetch();
         if (!$row) {
             return false;
         }
-        if (($row['status'] ?? '') !== 'closed') {
-            // Already open — treat as success so visitor can keep messaging
+        $status = (string) ($row['status'] ?? '');
+        if ($status === 'closed') {
+            $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ? AND status = 'closed'");
+            $upd->execute([$conversationId]);
+            if ($upd->rowCount() < 1) {
+                $check = $db->prepare('SELECT status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
+                $check->execute([$conversationId, $visitorId]);
+                $st = (string) ($check->fetchColumn() ?: '');
+                return $st === 'waiting' || $st === 'active';
+            }
+            if (function_exists('lc_add_system_message')) {
+                lc_add_system_message(
+                    $conversationId,
+                    lc_system_note_for_visitor($conversationId, 'continued this conversation.'),
+                    false
+                );
+            }
             return true;
         }
-        $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ? AND status = 'closed'");
-        $upd->execute([$conversationId]);
-        if ($upd->rowCount() < 1) {
-            // Concurrent update — re-check
-            $check = $db->prepare('SELECT status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
-            $check->execute([$conversationId, $visitorId]);
-            $st = (string) ($check->fetchColumn() ?: '');
-            return $st === 'waiting' || $st === 'active';
+
+        // Already open: if waiting but stale agent_id left behind after a close race, clear it
+        if ($status === 'waiting' && (int) ($row['agent_id'] ?? 0) > 0) {
+            $db->prepare('UPDATE conversations SET agent_id = NULL WHERE id = ? AND status = \'waiting\'')
+                ->execute([$conversationId]);
         }
-        // No realtime here — caller (visitor-send / upload / widget-init) publishes
-        // after the visitor message is stored so the send HTTP response stays fast.
-        if (function_exists('lc_add_system_message')) {
-            lc_add_system_message(
-                $conversationId,
-                lc_system_note_for_visitor($conversationId, 'continued this conversation.'),
-                false
-            );
-        }
-        // Do not auto-assign here — visitor-send assigns after the new message is stored
-        // so inactivity cannot race-close an empty reopen.
         return true;
     } catch (Throwable $e) {
         return false;

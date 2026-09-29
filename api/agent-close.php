@@ -60,7 +60,13 @@ try {
         }
     }
 
-    $upd = lc_db()->prepare("UPDATE conversations SET status = 'closed', closed_at = UTC_TIMESTAMP() WHERE id = ? AND status != 'closed'");
+    $upd = lc_db()->prepare("
+        UPDATE conversations
+        SET status = 'closed',
+            closed_at = UTC_TIMESTAMP(),
+            agent_id = NULL
+        WHERE id = ? AND status != 'closed'
+    ");
     $upd->execute([$conversationId]);
 
     $closeNote = !empty($input['blocked_leave'])
@@ -71,6 +77,7 @@ try {
         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
             'status' => 'closed',
             'closed_by' => 'agent',
+            'agent_id' => 0,
         ]);
     }
 
@@ -80,5 +87,5 @@ try {
         'status' => 'closed',
     ]);
 } catch (Throwable $e) {
-    lc_json(['success' => false, 'error' => 'Server error'], 500);
+    lc_json(['success' => false, 'error' => 'Server error: ' . $e->getMessage()], 500);
 }

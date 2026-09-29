@@ -3516,40 +3516,54 @@
         setTimeout(onAgentComposeActivity, 0);
     });
 
-    function assignChatToMe() {
+    function assignChatToMe(e) {
+        if (e) {
+            try { e.preventDefault(); e.stopPropagation(); } catch (e0) {}
+        }
         if (!selectedId) return;
         var convId = selectedId;
         var btn = assignToMeBtn;
-        if (btn) btn.disabled = true;
+        if (btn && btn.dataset.busy === '1') return;
+        if (btn) {
+            btn.dataset.busy = '1';
+            btn.disabled = true;
+        }
         if (acceptBtn) acceptBtn.disabled = true;
         fetch(base + '/api/agent-accept.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: convId })
         }).then(function (r) {
             return r.text().then(function (text) {
                 var data = null;
-                try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
-                return { ok: r.ok, data: data };
+                try { data = text ? JSON.parse(text) : null; } catch (eParse) { data = null; }
+                return { ok: r.ok, status: r.status, data: data, raw: (text || '').slice(0, 180) };
             });
         }).then(function (res) {
-            if (btn) btn.disabled = false;
+            if (btn) {
+                btn.dataset.busy = '0';
+                btn.disabled = false;
+            }
             if (acceptBtn) acceptBtn.disabled = false;
             if (selectedId !== convId) return;
             var data = res && res.data;
             if (!data || data.success === false) {
-                alert((data && data.error) || 'Could not assign chat');
+                var err = (data && data.error)
+                    || ('Could not assign chat'
+                        + (res && res.status ? ' (HTTP ' + res.status + ')' : '')
+                        + (res && res.raw && !data ? ': ' + res.raw : ''));
+                alert(err);
                 pollMessages();
                 loadConversations();
                 return;
             }
-            // Switch UI out of unassigned mode immediately
             syncConversationListStatus({
                 id: convId,
                 status: 'active',
                 agent_id: (data.agent_id || myAgentId)
             });
+            currentAssignedAgentId = parseInt(data.agent_id || myAgentId, 10) || myAgentId;
             setUnassignedMode(false);
             if (replyInput) {
                 replyInput.disabled = false;
@@ -3560,35 +3574,44 @@
             if (sendBtn) sendBtn.disabled = false;
             pollMessages();
             loadConversations();
-        }).catch(function () {
-            if (btn) btn.disabled = false;
+        }).catch(function (err) {
+            if (btn) {
+                btn.dataset.busy = '0';
+                btn.disabled = false;
+            }
             if (acceptBtn) acceptBtn.disabled = false;
-            alert('Could not assign chat');
+            alert('Could not assign chat: ' + (err && err.message ? err.message : 'network error'));
             pollMessages();
             loadConversations();
         });
     }
 
-    function archiveSelectedChat() {
+    function archiveSelectedChat(e) {
+        if (e) {
+            try { e.preventDefault(); e.stopPropagation(); } catch (e0) {}
+        }
         if (!selectedId) return;
         if (!confirm('Close & archive this chat?')) return;
         var convId = selectedId;
         fetch(base + '/api/agent-close.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: convId })
         }).then(function (r) {
             return r.text().then(function (text) {
                 var data = null;
-                try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
-                return { ok: r.ok, data: data };
+                try { data = text ? JSON.parse(text) : null; } catch (eParse) { data = null; }
+                return { ok: r.ok, status: r.status, data: data, raw: (text || '').slice(0, 180) };
             });
         }).then(function (res) {
             if (selectedId !== convId) return;
             var data = res && res.data;
             if (!data || data.success === false) {
-                alert((data && data.error) || 'Could not archive chat');
+                var err = (data && data.error)
+                    || ('Could not archive chat'
+                        + (res && res.status ? ' (HTTP ' + res.status + ')' : ''));
+                alert(err);
                 pollMessages();
                 loadConversations();
                 return;
@@ -3597,11 +3620,11 @@
                 loadConversations();
                 return;
             }
-            syncConversationListStatus({ id: convId, status: 'closed' });
+            syncConversationListStatus({ id: convId, status: 'closed', agent_id: 0 });
             pollMessages();
             loadConversations();
-        }).catch(function () {
-            alert('Could not archive chat');
+        }).catch(function (err) {
+            alert('Could not archive chat: ' + (err && err.message ? err.message : 'network error'));
             pollMessages();
             loadConversations();
         });
