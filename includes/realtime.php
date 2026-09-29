@@ -299,42 +299,48 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
         return;
     }
 
-    // Fire-and-forget: write request and close — never wait on Node (send UI delay).
-    if (lc_realtime_publish_fire_and_forget($url, $payload)) {
-        return;
-    }
-
     $headers = [
         'Content-Type: application/json',
         'X-LC-Secret: ' . lc_realtime_secret(),
     ];
 
-    $timeoutMs = max(50, min(200, $timeoutMs));
-    $connectMs = max(30, min(100, (int) floor($timeoutMs * 0.5)));
+    // Confirmed curl first — F&F often drops the body before Node finishes reading,
+    // which makes peers fall back to 3–4s HTTP poll (messages arrive in a batch).
+    $timeoutMs = max(80, min(400, $timeoutMs));
+    $connectMs = max(40, min(150, (int) floor($timeoutMs * 0.5)));
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        if ($ch === false) {
-            return;
+        if ($ch !== false) {
+            $curlOpts = [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_NOSIGNAL => 1,
+            ];
+            if (defined('CURLOPT_TIMEOUT_MS')) {
+                $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
+                $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
+            } else {
+                $curlOpts[CURLOPT_TIMEOUT] = 1;
+                $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
+            }
+            curl_setopt_array($ch, $curlOpts);
+            $body = curl_exec($ch);
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code >= 200 && $code < 300) {
+                return;
+            }
+            // Fall through to F&F / streams if curl timed out with empty code
+            if ($code > 0) {
+                return; // Node rejected (4xx) — do not retry forever
+            }
         }
-        $curlOpts = [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_NOSIGNAL => 1,
-        ];
-        if (defined('CURLOPT_TIMEOUT_MS')) {
-            $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
-            $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
-        } else {
-            $curlOpts[CURLOPT_TIMEOUT] = 1;
-            $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
-        }
-        curl_setopt_array($ch, $curlOpts);
-        curl_exec($ch);
-        curl_close($ch);
+    }
 
+    if (lc_realtime_publish_fire_and_forget($url, $payload)) {
         return;
     }
 
@@ -351,7 +357,7 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
 }
 
 /**
- * Non-blocking POST to realtime /publish — write and close (no drain wait).
+ * Best-effort POST when curl is unavailable — write full body + short drain.
  */
 function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
 {
@@ -370,11 +376,11 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
 
     $errno = 0;
     $errstr = '';
-    $fp = @fsockopen($target, $port, $errno, $errstr, 0.15);
+    $fp = @fsockopen($target, $port, $errno, $errstr, 0.2);
     if ($fp === false) {
         return false;
     }
-    stream_set_timeout($fp, 0, 100000);
+    stream_set_timeout($fp, 0, 250000);
     $req = "POST {$path} HTTP/1.1\r\n"
         . "Host: {$host}\r\n"
         . "Content-Type: application/json\r\n"
@@ -382,14 +388,20 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
         . 'Content-Length: ' . strlen($payload) . "\r\n"
         . "Connection: close\r\n\r\n"
         . $payload;
-    $ok = @fwrite($fp, $req) !== false;
-    if ($ok) {
-        // Brief drain so Node receives the full POST before we close the socket
-        @fread($fp, 512);
+    $written = 0;
+    $len = strlen($req);
+    while ($written < $len) {
+        $n = @fwrite($fp, substr($req, $written));
+        if ($n === false || $n === 0) {
+            @fclose($fp);
+            return false;
+        }
+        $written += $n;
     }
+    @fread($fp, 512);
     @fclose($fp);
 
-    return $ok;
+    return true;
 }
 
 /**
@@ -413,9 +425,13 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
 
     if (!$inboxOnly) {
         // Peer-critical first (open chat windows subscribed to conv:ID)
-        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 120);
+        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 200);
 
-        if ($conv && $isFanout) {
+        // Extra fanout (visitor:/agent:) after conv — open chats already got the bubble
+        $doExtraFanout = static function () use ($conversationId, $event, $payload, $conv, $isFanout, $agentId, $previousAgentId): void {
+            if (!$conv || !$isFanout) {
+                return;
+            }
             $visitorId = (int) ($conv['visitor_id'] ?? 0);
             if ($visitorId > 0 && $event !== 'message.receipts') {
                 try {
@@ -423,25 +439,31 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
                     $vStmt->execute([$visitorId]);
                     $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
                     if ($visitorUid !== '') {
-                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 120);
+                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 150);
                     }
                 } catch (Throwable $e) {
                 }
             }
-        }
-
-        if ($conv) {
-            if ($agentId > 0 && $isFanout) {
-                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 120);
+            if ($agentId > 0) {
+                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 150);
             }
-            if ($previousAgentId > 0 && $previousAgentId !== $agentId && $isFanout) {
-                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 120);
+            if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
+                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 150);
             }
-        }
+        };
 
-        if ($peersOnly || !$conv) {
+        if ($peersOnly) {
+            // message.new hot path: one confirmed conv publish, then async extra channels
+            if ($event === 'message.new' && function_exists('lc_realtime_defer')) {
+                lc_realtime_defer($doExtraFanout);
+            } else {
+                $doExtraFanout();
+            }
+
             return;
         }
+
+        $doExtraFanout();
     } elseif (!$conv) {
         return;
     }
