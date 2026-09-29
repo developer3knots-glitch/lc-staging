@@ -1371,9 +1371,11 @@
 
     function syncConversationItemEl(el, c) {
         var active = c.id == selectedId;
+        var status = String(c.status || '');
         el.classList.toggle('active', active);
-        el.classList.toggle('is-waiting', c.status === 'waiting');
-        el.dataset.status = c.status;
+        el.classList.toggle('is-waiting', status === 'waiting');
+        el.dataset.status = status;
+        el.dataset.sig = conversationItemSignature(c);
 
         var name = c.visitor_name || 'Visitor';
         var strong = el.querySelector('.lc-chat-item-top strong');
@@ -1391,6 +1393,33 @@
             preview.textContent = c.last_message || ' - ';
         }
 
+        // Keep status badge in sync (ACTIVE → closed on auto-close)
+        var chip = null;
+        el.querySelectorAll('.lc-badge').forEach(function (b) {
+            if (b.classList.contains('lc-badge-active')
+                || b.classList.contains('lc-badge-waiting')
+                || b.classList.contains('lc-badge-closed')) {
+                chip = b;
+            }
+        });
+        if (chip && status) {
+            var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
+            var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
+            chip.className = 'lc-badge lc-badge-' + badgeCls;
+            chip.textContent = statusLabel;
+        } else if (!chip && status === 'closed') {
+            var foot = el.querySelector('.lc-chat-item-foot');
+            var activeChip = el.querySelector('.lc-badge-active');
+            var inject = document.createElement('span');
+            inject.className = 'lc-badge lc-badge-closed';
+            inject.textContent = 'closed';
+            if (activeChip && activeChip.parentNode) {
+                activeChip.parentNode.replaceChild(inject, activeChip);
+            } else if (foot) {
+                foot.appendChild(inject);
+            }
+        }
+
         var rel = relativeTime(c.last_message_at || c.started_at);
         var timeEl = el.querySelector('.lc-chat-item-time');
         if (rel) {
@@ -1405,6 +1434,44 @@
         } else if (timeEl) {
             timeEl.remove();
         }
+    }
+
+    function isCloseSystemMessage(m) {
+        if (!m || (m.sender_type && m.sender_type !== 'system')) {
+            // still allow plain text check when sender missing
+            if (m && m.sender_type && m.sender_type !== 'system') return false;
+        }
+        var t = String((m && (m.message || m.body)) || '');
+        if (!t) return false;
+        return /chat closed automatically due to inactivity/i.test(t)
+            || /^chat closed by agent/i.test(t)
+            || /ip blocked — chat moved to history/i.test(t);
+    }
+
+    function applyConversationClosedLocally(cid, closedBy) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid) return;
+        syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
+        if (selectedId !== cid) return;
+        if (replyInput) {
+            replyInput.disabled = true;
+            replyInput.value = '';
+            replyInput.placeholder = closedBy === 'inactivity'
+                ? 'Chat closed due to inactivity'
+                : 'Chat closed - visitor ended this conversation';
+        }
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (sendBtn) sendBtn.disabled = true;
+        setUnassignedMode(false);
+        setPeerTypingVisible(false);
+        stopOwnTyping();
+        if (typeof clearPendingAttachment === 'function') {
+            try { clearPendingAttachment(); } catch (eClr) {}
+        }
+        setTakeoverMenuVisible(false);
+        if (transferWrap) transferWrap.style.display = 'none';
+        closeTransferPanel();
+        closeMoreMenu();
     }
 
     function paintConversationList(conversations) {
@@ -3199,9 +3266,13 @@
                 function paintIncremental() {
                     var added = 0;
                     var playSound = false;
+                    var sawClose = false;
                     (data.messages || []).forEach(function (m) {
                         var mid = parseInt(m.id, 10) || 0;
                         if (mid < 1) return;
+                        if (isCloseSystemMessage(m)) {
+                            sawClose = true;
+                        }
                         if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
                             if (mid > lastMsgId) lastMsgId = mid;
                             return;
@@ -3242,6 +3313,9 @@
                     if (playSound) {
                         playIncomingSound();
                         setPeerTypingVisible(false);
+                    }
+                    if (sawClose) {
+                        applyConversationClosedLocally(conversationId, 'inactivity');
                     }
                 }
 
@@ -4676,6 +4750,10 @@
                         if (payload.message.sender_type === 'visitor') {
                             markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
                         }
+                        if (isCloseSystemMessage(payload.message)) {
+                            var by = /inactivity/i.test(String(payload.message.message || '')) ? 'inactivity' : 'agent';
+                            applyConversationClosedLocally(cid, by);
+                        }
                     } else {
                         pollMessages();
                     }
@@ -4683,6 +4761,9 @@
                     return;
                 }
                 // Other chat: update "N new" + preview in place — no list jump
+                if (cid && payload && payload.message && isCloseSystemMessage(payload.message)) {
+                    syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
+                }
                 if (cid && patchInboxRowActivity(cid, payload && payload.message)) {
                     playIncomingSound();
                     return;
@@ -4747,25 +4828,22 @@
                 if (payload && (payload.transferred || payload.taken_over)) {
                     loadConversations();
                 }
+                if (payload && payload.status === 'closed' && cid) {
+                    applyConversationClosedLocally(cid, payload.closed_by || 'agent');
+                    if (selectedId && cid === selectedId) {
+                        pollMessages({ skipJourney: true });
+                    } else if (!(payload && (payload.transferred || payload.taken_over))) {
+                        loadConversations();
+                    }
+                    return;
+                }
                 if (selectedId && cid === selectedId) {
                     var newAgent = parseInt(payload && payload.agent_id, 10) || 0;
                     if (newAgent > 0 && newAgent !== myAgentId && currentAssignedAgentId === myAgentId) {
                         var taker = (payload.agent && payload.agent.name) || 'Another agent';
                         alert(taker + ' took over this chat. You are now in Supervise Mode.');
                     }
-                    if (payload && payload.status === 'closed') {
-                        syncConversationListStatus({ id: cid, status: 'closed' });
-                        if (replyInput) {
-                            replyInput.disabled = true;
-                            replyInput.value = '';
-                            replyInput.placeholder = 'Chat closed - visitor ended this conversation';
-                        }
-                        var sendBtn = document.getElementById('lc-send-reply');
-                        if (sendBtn) sendBtn.disabled = true;
-                        setUnassignedMode(false);
-                        setPeerTypingVisible(false);
-                        stopOwnTyping();
-                    } else if (payload && payload.status === 'waiting') {
+                    if (payload && payload.status === 'waiting') {
                         syncConversationListStatus({ id: cid, status: 'waiting', agent_id: 0 });
                         if (replyInput) {
                             replyInput.disabled = true;

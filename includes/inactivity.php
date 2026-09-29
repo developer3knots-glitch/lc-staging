@@ -210,7 +210,7 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
         }
 
         if ($idle >= $closeSec) {
-            $db->prepare("UPDATE conversations SET status = 'closed', closed_at = COALESCE(closed_at, NOW()) WHERE id = ? AND status IN ('waiting','active')")
+            $db->prepare("UPDATE conversations SET status = 'closed', agent_id = NULL, closed_at = COALESCE(closed_at, NOW()) WHERE id = ? AND status IN ('waiting','active')")
                 ->execute([$conversationId]);
             $dup = $db->prepare("
                 SELECT id FROM messages
@@ -239,6 +239,7 @@ function lc_apply_inactivity_to_conversation(int $conversationId, ?array $conv =
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => 'closed',
                     'closed_by' => 'inactivity',
+                    'agent_id' => 0,
                 ]);
             }
             return 'closed';
