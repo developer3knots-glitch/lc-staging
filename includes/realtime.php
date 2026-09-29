@@ -453,13 +453,9 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         };
 
         if ($peersOnly) {
-            // message.new hot path: one confirmed conv publish, then async extra channels
-            if ($event === 'message.new' && function_exists('lc_realtime_defer')) {
-                lc_realtime_defer($doExtraFanout);
-            } else {
-                $doExtraFanout();
-            }
-
+            // Always fan out visitor:/agent: immediately — presence sockets may be
+            // the only live visitor connection (chat conv subscribe can lag).
+            $doExtraFanout();
             return;
         }
 

@@ -1656,13 +1656,13 @@
         }
     }
 
-    /** While WS is up: light HTTP catch-up (safety net if a publish was dropped). */
+    /** While WS is up: HTTP catch-up must stay aggressive — missed publishes are common. */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 4000;
-        if (ms < 3000) ms = 3000;
-        if (ms > 15000) ms = 15000;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 1500;
+        if (ms < 1200) ms = 1200;
+        if (ms > 5000) ms = 5000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -1675,7 +1675,6 @@
             }
             forceMessageCatchup();
         }, ms);
-        // One catch-up on connect — then rely on WS events
         forceMessageCatchup();
     }
 
@@ -2252,11 +2251,34 @@
             });
     }
 
+    function bindPresenceMessageFallback(client) {
+        if (!client || client._lcMsgFallbackBound) return;
+        client._lcMsgFallbackBound = true;
+        client.on('message.new', function (payload) {
+            if (!conversationId) return;
+            try {
+                if (!applyRealtimeMessage(payload)) {
+                    forceMessageCatchup();
+                }
+            } catch (eMsg) {
+                forceMessageCatchup();
+            }
+        });
+        client.on('message.receipts', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            if (payload && payload.for && payload.for !== 'visitor') return;
+            if (payload && payload.receipts) {
+                applyReceipts(payload.receipts);
+            }
+        });
+    }
+
     function initVisitorPresenceRealtime() {
         if (!visitorUid) return;
         // Already live on presence channel
         if (presenceClient && presenceClient.shouldRun
             && presenceClient.isConnected && presenceClient.isConnected()) {
+            bindPresenceMessageFallback(presenceClient);
             return;
         }
         loadRealtimeScript(function () {
@@ -2275,6 +2297,7 @@
                 presenceClient.on('chat.invite', function (payload) {
                     acceptProactiveInvite(payload || {});
                 });
+                bindPresenceMessageFallback(presenceClient);
                 presenceClient.connect();
             });
         });
@@ -2371,7 +2394,7 @@
             realtimeConfig = data.realtime;
             // Do not clamp backup down — WS should carry live traffic
             if (!realtimeConfig.backupPollMs) {
-                realtimeConfig.backupPollMs = 4000;
+                realtimeConfig.backupPollMs = 1500;
             }
         }
         // Only reconnect when mode/URL actually changed — never flap on settings sync
@@ -5697,6 +5720,8 @@
             } else {
                 pollMessages(false);
             }
+            // Pull any agent replies that arrived while this send was in flight
+            forceMessageCatchup();
             if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
                 loadRealtimeScript(function () { initVisitorRealtime(); });
             }

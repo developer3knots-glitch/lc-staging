@@ -61,14 +61,16 @@ try {
     $pendingPublishIds[] = $messageId;
     $publishIds = $pendingPublishIds;
 
-    // Respond first — publish in shutdown so agent UI never blocks on Node
+    // Publish bubbles NOW (before JSON) so visitor WS gets them even if shutdown is flaky.
+    // Keep this fast: confirmed curl to localhost; receipts stay deferred.
+    if (function_exists('lc_realtime_publish_message')) {
+        foreach ($publishIds as $mid) {
+            lc_realtime_publish_message($conversationId, (int) $mid);
+        }
+    }
+
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $publishIds): void {
-            if (function_exists('lc_realtime_publish_message')) {
-                foreach ($publishIds as $mid) {
-                    lc_realtime_publish_message($conversationId, (int) $mid);
-                }
-            }
+        lc_realtime_defer(static function () use ($conversationId): void {
             if (function_exists('lc_mark_messages_delivered')) {
                 lc_mark_messages_delivered($conversationId, 'visitor');
             }
@@ -80,11 +82,6 @@ try {
             }
         });
     } else {
-        if (function_exists('lc_realtime_publish_message')) {
-            foreach ($publishIds as $mid) {
-                lc_realtime_publish_message($conversationId, (int) $mid);
-            }
-        }
         if (function_exists('lc_mark_messages_delivered')) {
             lc_mark_messages_delivered($conversationId, 'visitor');
         }
