@@ -3518,6 +3518,7 @@
 
     function assignChatToMe() {
         if (!selectedId) return;
+        var convId = selectedId;
         var btn = assignToMeBtn;
         if (btn) btn.disabled = true;
         if (acceptBtn) acceptBtn.disabled = true;
@@ -3525,44 +3526,85 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function (r) { return r.json(); }).then(function (data) {
+            body: JSON.stringify({ conversation_id: convId })
+        }).then(function (r) {
+            return r.text().then(function (text) {
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+                return { ok: r.ok, data: data };
+            });
+        }).then(function (res) {
             if (btn) btn.disabled = false;
             if (acceptBtn) acceptBtn.disabled = false;
-            if (data && data.success === false) {
-                alert(data.error || 'Could not assign chat');
+            if (selectedId !== convId) return;
+            var data = res && res.data;
+            if (!data || data.success === false) {
+                alert((data && data.error) || 'Could not assign chat');
+                pollMessages();
+                loadConversations();
                 return;
             }
+            // Switch UI out of unassigned mode immediately
+            syncConversationListStatus({
+                id: convId,
+                status: 'active',
+                agent_id: (data.agent_id || myAgentId)
+            });
+            setUnassignedMode(false);
+            if (replyInput) {
+                replyInput.disabled = false;
+                replyInput.placeholder = 'Type a message...';
+                setTimeout(function () { replyInput.focus(); }, 200);
+            }
+            var sendBtn = document.getElementById('lc-send-reply');
+            if (sendBtn) sendBtn.disabled = false;
             pollMessages();
             loadConversations();
-            if (replyInput) {
-                setTimeout(function () {
-                    replyInput.focus();
-                }, 200);
-            }
         }).catch(function () {
             if (btn) btn.disabled = false;
             if (acceptBtn) acceptBtn.disabled = false;
             alert('Could not assign chat');
+            pollMessages();
+            loadConversations();
         });
     }
 
     function archiveSelectedChat() {
         if (!selectedId) return;
         if (!confirm('Close & archive this chat?')) return;
+        var convId = selectedId;
         fetch(base + '/api/agent-close.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data && data.success === false) {
-                alert(data.error || 'Could not archive chat');
+            body: JSON.stringify({ conversation_id: convId })
+        }).then(function (r) {
+            return r.text().then(function (text) {
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+                return { ok: r.ok, data: data };
+            });
+        }).then(function (res) {
+            if (selectedId !== convId) return;
+            var data = res && res.data;
+            if (!data || data.success === false) {
+                alert((data && data.error) || 'Could not archive chat');
+                pollMessages();
+                loadConversations();
                 return;
             }
+            if (data.unsupervised) {
+                loadConversations();
+                return;
+            }
+            syncConversationListStatus({ id: convId, status: 'closed' });
             pollMessages();
             loadConversations();
-        }).catch(function () { alert('Could not archive chat'); });
+        }).catch(function () {
+            alert('Could not archive chat');
+            pollMessages();
+            loadConversations();
+        });
     }
 
     if (acceptBtn) acceptBtn.addEventListener('click', assignChatToMe);

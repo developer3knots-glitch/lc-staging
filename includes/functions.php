@@ -583,12 +583,14 @@ function lc_agent_can_handle_conversation(array $agent, array $conv): bool
 
     $agentId = (int) $agent['id'];
     $assignedId = (int) ($conv['agent_id'] ?? 0);
+    $status = (string) ($conv['status'] ?? '');
 
     if ($assignedId === $agentId) {
         return true;
     }
 
-    if (($conv['status'] ?? '') === 'waiting' && $assignedId === 0) {
+    // Unassigned inbox (waiting OR active with no agent) — any workspace agent may claim/close
+    if ($assignedId === 0 && ($status === 'waiting' || $status === 'active')) {
         return lc_agent_can_access_conversation($agent, $conv);
     }
 

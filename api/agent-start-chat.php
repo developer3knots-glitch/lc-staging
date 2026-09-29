@@ -10,6 +10,9 @@ $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
+if (function_exists('lc_release_session')) {
+    lc_release_session();
+}
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $visitorId = (int) ($input['visitor_id'] ?? 0);

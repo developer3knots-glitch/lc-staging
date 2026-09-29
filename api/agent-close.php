@@ -5,6 +5,9 @@ $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
+if (function_exists('lc_release_session')) {
+    lc_release_session();
+}
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $conversationId = (int) ($input['conversation_id'] ?? 0);
@@ -21,11 +24,20 @@ try {
 
     $agentId = (int) ($agent['id'] ?? 0);
     $assignedAgentId = (int) ($conv['agent_id'] ?? 0);
+    $status = (string) ($conv['status'] ?? '');
     $isAdmin = (string) ($agent['role'] ?? '') === 'admin';
-    $isSupervising = (($conv['status'] ?? '') === 'active') && ($assignedAgentId > 0) && ($assignedAgentId !== $agentId);
+    $isSupervising = ($status === 'active') && ($assignedAgentId > 0) && ($assignedAgentId !== $agentId);
 
-    // If an agent is supervising another agent's active chat, closing does NOT close the chat for visitor.
-    // Instead, it removes the chat from the supervising agent's view and stops supervision.
+    // Already closed — archive click is idempotent
+    if ($status === 'closed') {
+        lc_json([
+            'success' => true,
+            'already_closed' => true,
+            'conversation_id' => $conversationId,
+        ]);
+    }
+
+    // Supervising another agent's active chat: leave supervision, do not close for visitor
     if ($isSupervising && !$isAdmin) {
         if (function_exists('lc_stop_agent_supervising')) {
             lc_stop_agent_supervising($conversationId, $agentId);
@@ -38,7 +50,6 @@ try {
     }
 
     if (!lc_agent_can_close_conversation($agent, $conv)) {
-        // Allow closing a blocked-visitor chat when leaving inbox → History
         $forceBlockedLeave = !empty($input['blocked_leave']);
         $visitorIp = trim((string) ($conv['visitor_ip'] ?? ''));
         $accountId = function_exists('lc_agent_account_id') ? lc_agent_account_id($agent) : 0;
@@ -49,18 +60,25 @@ try {
         }
     }
 
-    $upd = lc_db()->prepare("UPDATE conversations SET status = 'closed', closed_at = UTC_TIMESTAMP() WHERE id = ?");
+    $upd = lc_db()->prepare("UPDATE conversations SET status = 'closed', closed_at = UTC_TIMESTAMP() WHERE id = ? AND status != 'closed'");
     $upd->execute([$conversationId]);
-    // Never tell the visitor they were blocked — agent-only note (hidden from widget).
+
     $closeNote = !empty($input['blocked_leave'])
         ? 'IP blocked — chat moved to history.'
         : 'Chat closed by agent.';
-    lc_add_system_message($conversationId, $closeNote);
-    lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+    if ($upd->rowCount() > 0) {
+        lc_add_system_message($conversationId, $closeNote);
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+            'status' => 'closed',
+            'closed_by' => 'agent',
+        ]);
+    }
+
+    lc_json([
+        'success' => true,
+        'conversation_id' => $conversationId,
         'status' => 'closed',
-        'closed_by' => 'agent',
     ]);
-    lc_json(['success' => true]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }
