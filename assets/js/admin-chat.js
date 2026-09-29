@@ -2497,10 +2497,32 @@
         return html;
     }
 
+    function reconcileTempInlineNote(note) {
+        if (!messagesEl || !note) return null;
+        var want = String(note.note || '').trim();
+        if (!want) return null;
+        var temps = messagesEl.querySelectorAll('.lc-msg.is-note[data-note-id^="temp_note_"]');
+        for (var i = 0; i < temps.length; i++) {
+            var body = temps[i].querySelector('.lc-msg-body');
+            var text = body ? (body.textContent || '').trim() : '';
+            if (text !== want) continue;
+            var realId = String(note.id || '');
+            if (realId) temps[i].setAttribute('data-note-id', realId);
+            var author = temps[i].querySelector('.lc-msg-note-author');
+            if (author && note.agent_name) author.textContent = note.agent_name;
+            return temps[i];
+        }
+        return null;
+    }
+
     function appendInlineNote(note) {
         if (!messagesEl || !note) return;
         var noteIdStr = String(note.id || '');
         if (noteIdStr && messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + noteIdStr + '"]')) {
+            return;
+        }
+        // Optimistic "You" bubble still has temp_note_* id when WS/poll arrives with real id
+        if (noteIdStr.indexOf('temp_note_') !== 0 && reconcileTempInlineNote(note)) {
             return;
         }
         messagesEl.insertAdjacentHTML('beforeend', renderInlineNote(note));
@@ -2513,8 +2535,23 @@
         if (notesListEl) {
             var emptyEl = notesListEl.querySelector('.lc-details-notes-empty');
             if (emptyEl) emptyEl.remove();
-            if (note.id && notesListEl.querySelector('.lc-rail-note[data-id="' + note.id + '"]')) {
+            var noteIdStr = String(note.id || '');
+            if (noteIdStr && notesListEl.querySelector('.lc-rail-note[data-id="' + noteIdStr + '"]')) {
                 return;
+            }
+            // Upgrade optimistic rail note (temp id / "You") instead of duplicating
+            if (noteIdStr.indexOf('temp_note_') !== 0) {
+                var want = String(note.note || '').trim();
+                var temps = notesListEl.querySelectorAll('.lc-rail-note[data-id^="temp_note_"]');
+                for (var i = 0; i < temps.length; i++) {
+                    var body = temps[i].querySelector('.lc-rail-note-body');
+                    var text = body ? (body.textContent || '').trim() : '';
+                    if (text !== want) continue;
+                    temps[i].setAttribute('data-id', noteIdStr);
+                    var agentEl = temps[i].querySelector('.lc-rail-note-agent');
+                    if (agentEl && note.agent_name) agentEl.textContent = note.agent_name;
+                    return;
+                }
             }
             notesListEl.insertAdjacentHTML('beforeend', renderChatNoteItem(note));
             notesListEl.scrollTop = notesListEl.scrollHeight;
@@ -3370,13 +3407,9 @@
                             }
                         }
                     });
-                    // Also render any incremental notes inline
+                    // Also render any incremental notes inline (reconciles temp "You" bubbles)
                     (data.notes || []).forEach(function (n) {
-                        var nid = String(n.id || '');
-                        if (nid && !messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + nid + '"]')) {
-                            messagesEl.insertAdjacentHTML('beforeend', renderInlineNote(n));
-                            added += 1;
-                        }
+                        appendInlineNote(n);
                     });
                     if (data.receipts) applyReceipts(data.receipts);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
@@ -3506,11 +3539,14 @@
             }).then(function (r) { return r.json(); }).then(function (data) {
                 if (selectedId !== noteConvId) return;
                 if (data && data.success && data.note) {
-                    var tempEl = messagesEl ? messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + tempNoteId + '"]') : null;
-                    if (tempEl) {
-                        tempEl.setAttribute('data-note-id', String(data.note.id));
-                    }
+                    // Prefer reconcile (covers WS-already-painted real id) over blind temp rename
+                    appendInlineNote(data.note);
                     appendConversationNote(data.note);
+                    // Drop orphan temp if WS already added the real bubble
+                    var orphan = messagesEl ? messagesEl.querySelector('.lc-msg.is-note[data-note-id="' + tempNoteId + '"]') : null;
+                    if (orphan) orphan.remove();
+                    var railOrphan = notesListEl ? notesListEl.querySelector('.lc-rail-note[data-id="' + tempNoteId + '"]') : null;
+                    if (railOrphan) railOrphan.remove();
                 } else {
                     alert((data && data.error) || 'Unable to save note');
                 }
