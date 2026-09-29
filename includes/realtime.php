@@ -333,9 +333,9 @@ function lc_realtime_publish(string $channel, string $event, array $data = [], i
             if ($code >= 200 && $code < 300) {
                 return;
             }
-            // Fall through to F&F / streams if curl timed out with empty code
-            if ($code > 0) {
-                return; // Node rejected (4xx) — do not retry forever
+            // 5xx / timeout → try fire-and-forget; 4xx (bad secret) stop
+            if ($code >= 400 && $code < 500) {
+                return;
             }
         }
     }

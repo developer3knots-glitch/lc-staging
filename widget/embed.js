@@ -874,12 +874,10 @@
     function advanceLastMsgId(id) {
         id = parseInt(id, 10) || 0;
         if (id < 1 || id >= 100000000) return;
-        // Never jump the cursor over holes — that permanently hides agent replies
-        // when the visitor sends again (own id skips missed agent ids).
         if (lastMsgId > 0 && id > lastMsgId + 1) {
             scheduleGapFill();
             forceMessageCatchup();
-            return;
+            // Still advance after paint paths call this — holes filled by gap-fill
         }
         if (id > lastMsgId) {
             lastMsgId = id;
@@ -1534,7 +1532,16 @@
     }
 
     function isVisitorWsLive() {
-        return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
+        if (!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected())) {
+            return false;
+        }
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1) return true;
+        // Must be on this conversation channel — bare 101 is not enough
+        if (typeof realtimeClient.hasChannel === 'function') {
+            return realtimeClient.hasChannel('conv:' + cid);
+        }
+        return true;
     }
 
     function resetVisitorPollTimers() {
@@ -1939,6 +1946,7 @@
         var cid = parseInt(payload.conversation_id, 10) || 0;
         if (cid > 0 && cid !== myCid) return false;
 
+        // Full message object (normal WS publish)
         if (payload.message && payload.message.id) {
             var m = payload.message;
             var mid = parseInt(m.id, 10) || 0;
@@ -1994,7 +2002,6 @@
                         focusVisitorCompose();
                     }
                     if (m.sender_type === 'agent') {
-                        // Background tab / closed panel → delivered only, not blue "read"
                         ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
                     }
                 }
@@ -2004,6 +2011,14 @@
                     ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
                 }
             }
+            return true;
+        }
+
+        // message_id only (encode fallback) — trigger history gap-fill
+        var onlyId = parseInt(payload.message_id, 10) || 0;
+        if (onlyId > 0 && onlyId < 100000000) {
+            scheduleGapFill();
+            forceMessageCatchup();
             return true;
         }
         return false;
@@ -2431,7 +2446,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=9';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=10';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -2490,8 +2505,13 @@
             startLiveMessageSync();
         }
         syncPrechatGateUi();
-        // Always listen for agent "Start chat" invites while browsing
-        initVisitorPresenceRealtime();
+        // Presence invites only while browsing — never while a chat socket owns the WS
+        if (!(parseInt(conversationId, 10) > 0)) {
+            initVisitorPresenceRealtime();
+        } else {
+            tearDownPresenceClient();
+            ensureVisitorConvChannel();
+        }
         var name = settings.site_name || 'LiveChat';
         document.getElementById('lc-panel-title').textContent = name;
         document.getElementById('lc-toolbar-brand').textContent = name;

@@ -501,6 +501,10 @@
 
         function initRealtime() {
             var cfg = window.LC_REALTIME || {};
+            // Chats page owns its own WS via admin-chat.js — avoid a second socket
+            if (window.LC_CHAT_PAGE) {
+                return;
+            }
             if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) {
                 startPollFallback(POLL_MS);
                 return;

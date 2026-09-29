@@ -7,6 +7,7 @@ $activeNav = 'chats';
 $extraScripts = ['lc-chat-attachments.js', 'admin-chat.js'];
 require __DIR__ . '/includes/header.php';
 ?>
+<script>window.LC_CHAT_PAGE = true;</script>
 
 <div class="lc-chats-pro">
     <div class="lc-chat-layout lc-chat-layout-pro lc-chat-desk" id="lc-chat-app" data-agent-id="<?= (int)$agent['id'] ?>" data-agent-role="<?= lc_sanitize($agent['role']) ?>" data-selected="<?= $selectedId ?>">

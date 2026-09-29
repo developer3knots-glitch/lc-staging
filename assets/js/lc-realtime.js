@@ -52,6 +52,7 @@
         this.shouldRun = false;
         this._opening = false;
         this._wantChannels = {};
+        this._authedChannels = {};
     }
 
     WebSocketDriver.prototype.on = function (event, fn) {
@@ -62,6 +63,13 @@
 
     WebSocketDriver.prototype.isConnected = function () {
         return !!(this.connected && this.ws && this.ws.readyState === 1);
+    };
+
+    WebSocketDriver.prototype.hasChannel = function (channel) {
+        channel = String(channel || '');
+        if (!channel) return false;
+        return !!(this._authedChannels && this._authedChannels[channel])
+            || !!(this._wantChannels && this._wantChannels[channel] && this.isConnected());
     };
 
     WebSocketDriver.prototype.subscribe = function (channel) {
@@ -206,7 +214,9 @@
 
                 self.ws.onopen = function () {
                     try {
-                        self.ws.send(JSON.stringify({ type: 'auth', token: token }));
+                        // Always use latest opts.token (may have been refreshed mid-handshake)
+                        var authToken = self.opts.token || token || '';
+                        self.ws.send(JSON.stringify({ type: 'auth', token: authToken }));
                     } catch (e) {
                         self.scheduleReconnect();
                         finish();
@@ -222,6 +232,10 @@
                         self.connected = true;
                         self.retries = 0;
                         self._lastPongAt = Date.now();
+                        self._authedChannels = {};
+                        (msg.channels || []).forEach(function (ch) {
+                            self._authedChannels[String(ch)] = true;
+                        });
                         // Re-join dynamic channels (e.g. conv:ID) after every auth/reconnect
                         self._flushWantedChannels();
                         emitAll(self.handlers, 'connected', { mode: 'ws', channels: msg.channels || [] });
@@ -238,6 +252,11 @@
                             try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
                         }, 15000);
                         finish();
+                        return;
+                    }
+
+                    if (msg.type === 'subscribed') {
+                        if (msg.channel) self._authedChannels[String(msg.channel)] = true;
                         return;
                     }
 
