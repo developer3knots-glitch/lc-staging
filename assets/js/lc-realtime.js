@@ -51,6 +51,7 @@
         this.retries = 0;
         this.shouldRun = false;
         this._opening = false;
+        this._wantChannels = {};
     }
 
     WebSocketDriver.prototype.on = function (event, fn) {
@@ -65,7 +66,9 @@
 
     WebSocketDriver.prototype.subscribe = function (channel) {
         channel = String(channel || '');
-        if (!channel || !this.isConnected()) return false;
+        if (!channel) return false;
+        this._wantChannels[channel] = true;
+        if (!this.isConnected()) return false;
         try {
             this.ws.send(JSON.stringify({ type: 'subscribe', channel: channel }));
             return true;
@@ -76,13 +79,25 @@
 
     WebSocketDriver.prototype.unsubscribe = function (channel) {
         channel = String(channel || '');
-        if (!channel || !this.ws || this.ws.readyState !== 1) return false;
+        if (!channel) return false;
+        delete this._wantChannels[channel];
+        if (!this.ws || this.ws.readyState !== 1) return false;
         try {
             this.ws.send(JSON.stringify({ type: 'unsubscribe', channel: channel }));
             return true;
         } catch (e) {
             return false;
         }
+    };
+
+    WebSocketDriver.prototype._flushWantedChannels = function () {
+        var self = this;
+        if (!self.isConnected()) return;
+        Object.keys(self._wantChannels).forEach(function (ch) {
+            try {
+                self.ws.send(JSON.stringify({ type: 'subscribe', channel: ch }));
+            } catch (e) { /* ignore */ }
+        });
     };
 
     WebSocketDriver.prototype.connect = function () {
@@ -207,6 +222,8 @@
                         self.connected = true;
                         self.retries = 0;
                         self._lastPongAt = Date.now();
+                        // Re-join dynamic channels (e.g. conv:ID) after every auth/reconnect
+                        self._flushWantedChannels();
                         emitAll(self.handlers, 'connected', { mode: 'ws', channels: msg.channels || [] });
                         if (self.pingTimer) clearInterval(self.pingTimer);
                         self.pingTimer = setInterval(function () {

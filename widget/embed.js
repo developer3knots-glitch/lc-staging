@@ -1534,7 +1534,9 @@
     }
 
     function isVisitorWsLive() {
-        return !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
+        var chatLive = !!(realtimeClient && typeof realtimeClient.isConnected === 'function' && realtimeClient.isConnected());
+        var presenceLive = !!(presenceClient && typeof presenceClient.isConnected === 'function' && presenceClient.isConnected());
+        return chatLive || presenceLive;
     }
 
     function resetVisitorPollTimers() {
@@ -1693,23 +1695,25 @@
         }
     }
 
-    /** While WS is up: HTTP catch-up must stay aggressive — missed publishes are common. */
+    /** While WS is up: rare HTTP safety only (live path is WebSocket). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 1500;
-        if (ms < 1200) ms = 1200;
-        if (ms > 5000) ms = 5000;
+        ensureVisitorConvChannel();
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 8000;
+        if (ms < 5000) ms = 5000;
+        if (ms > 15000) ms = 15000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
                 return;
             }
-            if (!isVisitorWsLive()) {
+            if (!isVisitorWsLive() && !(presenceClient && presenceClient.isConnected && presenceClient.isConnected())) {
                 stopWsSafetyCatchup();
                 startLiveMessageSync();
                 return;
             }
+            ensureVisitorConvChannel();
             forceMessageCatchup();
         }, ms);
         forceMessageCatchup();
@@ -2007,14 +2011,27 @@
         return false;
     }
 
+    function ensureVisitorConvChannel() {
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1) return;
+        var ch = 'conv:' + cid;
+        if (realtimeClient && typeof realtimeClient.subscribe === 'function') {
+            try { realtimeClient.subscribe(ch); } catch (e1) {}
+        }
+        if (presenceClient && typeof presenceClient.subscribe === 'function') {
+            try { presenceClient.subscribe(ch); } catch (e2) {}
+        }
+    }
+
     function bindVisitorRealtimeHandlers(client) {
         client.on('connected', function () {
             realtimeBoundConvId = parseInt(conversationId, 10) || 0;
+            ensureVisitorConvChannel();
             resetVisitorPollTimers();
             stopSafetySync();
             stopLiveMessageSync();
-            // Fill anything missed while socket was down / during history race
-            startWsSafetyCatchup();
+            // One-shot catch-up after reconnect only — live path is WebSocket
+            forceMessageCatchup();
         });
         client.on('disconnected', function () {
             resetVisitorPollTimers();
@@ -2033,7 +2050,6 @@
                     });
                 }
                 var painted = applyRealtimeMessage(payload);
-                // Payload missing full message (encode fallback) or paint failed → HTTP catch-up
                 if (!painted) {
                     forceMessageCatchup();
                 }
@@ -2291,6 +2307,9 @@
     function bindPresenceMessageFallback(client) {
         if (!client || client._lcMsgFallbackBound) return;
         client._lcMsgFallbackBound = true;
+        client.on('connected', function () {
+            ensureVisitorConvChannel();
+        });
         client.on('message.new', function (payload) {
             if (!conversationId) return;
             try {
@@ -2308,6 +2327,12 @@
                 applyReceipts(payload.receipts);
             }
         });
+        client.on('typing', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            if ((payload.role || '') === 'agent') {
+                setPeerTypingVisible(!!payload.typing, payload.name || '');
+            }
+        });
     }
 
     function initVisitorPresenceRealtime() {
@@ -2316,6 +2341,7 @@
         if (presenceClient && presenceClient.shouldRun
             && presenceClient.isConnected && presenceClient.isConnected()) {
             bindPresenceMessageFallback(presenceClient);
+            ensureVisitorConvChannel();
             return;
         }
         loadRealtimeScript(function () {
@@ -2346,6 +2372,9 @@
         var bindForConv = parseInt(conversationId, 10) || 0;
         if (bindForConv < 1) return;
 
+        // Always join conv on every live socket (presence + chat)
+        ensureVisitorConvChannel();
+
         if (realtimeConfig.mode === 'ws' && realtimeConfig.wsUrl
             && realtimeClient
             && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
@@ -2353,6 +2382,7 @@
             && (realtimeClient.isConnected && realtimeClient.isConnected() || realtimeClient.shouldRun)) {
             if (realtimeClient.isConnected && realtimeClient.isConnected()) {
                 stopSafetySync();
+                ensureVisitorConvChannel();
             }
             startLiveMessageSync();
             return;
@@ -2389,7 +2419,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=7';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=8';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
