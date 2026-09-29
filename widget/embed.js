@@ -1537,9 +1537,14 @@
         }
         var cid = parseInt(conversationId, 10) || 0;
         if (cid < 1) return true;
-        // Must be on this conversation channel — bare 101 is not enough
+        // Must be server-acked on conv: OR visitor: — otherwise keep HTTP catch-up
         if (typeof realtimeClient.hasChannel === 'function') {
-            return realtimeClient.hasChannel('conv:' + cid);
+            var onConv = realtimeClient.hasChannel('conv:' + cid);
+            var vCh = visitorUid
+                ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64))
+                : '';
+            var onVisitor = vCh ? realtimeClient.hasChannel(vCh) : false;
+            return !!(onConv || onVisitor);
         }
         return true;
     }
@@ -1700,14 +1705,14 @@
         }
     }
 
-    /** While WS is up: rare HTTP safety only (live path is WebSocket). */
+    /** While WS is up: fast HTTP safety net (admin uses ~3s — visitor must not wait 8–15s). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 8000;
-        if (ms < 5000) ms = 5000;
-        if (ms > 15000) ms = 15000;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 2000;
+        if (ms < 1500) ms = 1500;
+        if (ms > 4000) ms = 4000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2028,11 +2033,18 @@
         var cid = parseInt(conversationId, 10) || 0;
         if (cid < 1) return;
         var ch = 'conv:' + cid;
+        var vCh = visitorUid ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)) : '';
         if (realtimeClient && typeof realtimeClient.subscribe === 'function') {
             try { realtimeClient.subscribe(ch); } catch (e1) {}
+            if (vCh) {
+                try { realtimeClient.subscribe(vCh); } catch (e1b) {}
+            }
         }
         if (presenceClient && typeof presenceClient.subscribe === 'function') {
             try { presenceClient.subscribe(ch); } catch (e2) {}
+            if (vCh) {
+                try { presenceClient.subscribe(vCh); } catch (e2b) {}
+            }
         }
     }
 
@@ -2446,7 +2458,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=10';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=11';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

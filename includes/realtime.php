@@ -132,8 +132,8 @@ function lc_realtime_client_config(?int $brandId = null): array
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
         'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
-        // WS connected = light safety catch-up (not once-a-minute)
-        'backupPollMs' => 4000,
+        // Match admin ~3s safety net so agent→visitor does not wait 8–15s on a missed WS frame
+        'backupPollMs' => 2000,
     ];
 }
 
@@ -424,10 +424,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $isFanout = in_array($event, $fanoutEvents, true);
 
     if (!$inboxOnly) {
-        // Peer-critical first (open chat windows subscribed to conv:ID)
-        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 200);
-
-        // Extra fanout (visitor:/agent:) after conv — open chats already got the bubble
+        // Extra fanout (visitor:/agent:) — visitor: first so agent→visitor is not behind conv curl
         $doExtraFanout = static function () use ($conversationId, $event, $payload, $conv, $isFanout, $agentId, $previousAgentId): void {
             if (!$conv || !$isFanout) {
                 return;
@@ -439,26 +436,27 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
                     $vStmt->execute([$visitorId]);
                     $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
                     if ($visitorUid !== '') {
-                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 150);
+                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), $event, $payload, 120);
                     }
                 } catch (Throwable $e) {
                 }
             }
             if ($agentId > 0) {
-                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 150);
+                lc_realtime_publish(lc_realtime_channel_agent($agentId), $event, $payload, 120);
             }
             if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
-                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 150);
+                lc_realtime_publish(lc_realtime_channel_agent($previousAgentId), $event, $payload, 120);
             }
         };
 
         if ($peersOnly) {
-            // Always fan out visitor:/agent: immediately — presence sockets may be
-            // the only live visitor connection (chat conv subscribe can lag).
+            // Visitor sockets often hold visitor:UID; hit that before conv:ID
             $doExtraFanout();
+            lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 150);
             return;
         }
 
+        lc_realtime_publish(lc_realtime_channel_conversation($conversationId), $event, $payload, 200);
         $doExtraFanout();
     } elseif (!$conv) {
         return;

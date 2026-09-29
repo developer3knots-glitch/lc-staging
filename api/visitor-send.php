@@ -93,13 +93,17 @@ try {
     $publishReopened = $reopened;
     $publishMessageId = $messageId;
 
-    // Respond FIRST — never block the widget on Node publish (was causing
-    // "Could not send" while the row was already saved).
+    // Bubble to agents NOW (before JSON) — same path as agent-send → visitor.
+    // Keep inbox/status events deferred so the widget never times out on send.
+    if (function_exists('lc_realtime_publish_message')) {
+        try {
+            lc_realtime_publish_message($conversationId, $publishMessageId);
+        } catch (Throwable $ePub) {
+        }
+    }
+
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $publishMessageId, $publishStatus, $publishReopened): void {
-            if (function_exists('lc_realtime_publish_message')) {
-                lc_realtime_publish_message($conversationId, $publishMessageId);
-            }
+        lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened): void {
             // Do NOT mark all agent msgs read here — that caused false blue ticks
             // when the visitor never painted those bubbles. Client ack handles read.
             if (function_exists('lc_realtime_publish_conversation_event')) {
@@ -113,9 +117,6 @@ try {
             }
         });
     } else {
-        if (function_exists('lc_realtime_publish_message')) {
-            lc_realtime_publish_message($conversationId, $messageId);
-        }
         if (function_exists('lc_realtime_publish_conversation_event')) {
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => $publishStatus,

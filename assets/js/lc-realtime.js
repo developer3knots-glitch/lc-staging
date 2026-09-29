@@ -68,8 +68,9 @@
     WebSocketDriver.prototype.hasChannel = function (channel) {
         channel = String(channel || '');
         if (!channel) return false;
-        return !!(this._authedChannels && this._authedChannels[channel])
-            || !!(this._wantChannels && this._wantChannels[channel] && this.isConnected());
+        // Only trust server-acked channels — wantChannels+connected was a false
+        // "live" signal that disabled visitor catch-up while messages never arrived.
+        return !!(this._authedChannels && this._authedChannels[channel]);
     };
 
     WebSocketDriver.prototype.subscribe = function (channel) {
