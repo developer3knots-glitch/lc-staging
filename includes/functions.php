@@ -956,10 +956,10 @@ function lc_reopen_closed_for_visitor_continue(int $conversationId, int $visitor
                 return $st === 'waiting' || $st === 'active';
             }
             if (function_exists('lc_add_system_message')) {
-                lc_add_system_message(
+                $noteId = lc_add_system_message(
                     $conversationId,
                     lc_system_note_for_visitor($conversationId, 'continued this conversation.'),
-                    false
+                    true
                 );
             }
             return true;

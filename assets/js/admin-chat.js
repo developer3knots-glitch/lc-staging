@@ -1438,7 +1438,6 @@
 
     function isCloseSystemMessage(m) {
         if (!m || (m.sender_type && m.sender_type !== 'system')) {
-            // still allow plain text check when sender missing
             if (m && m.sender_type && m.sender_type !== 'system') return false;
         }
         var t = String((m && (m.message || m.body)) || '');
@@ -1446,6 +1445,13 @@
         return /chat closed automatically due to inactivity/i.test(t)
             || /^chat closed by agent/i.test(t)
             || /ip blocked — chat moved to history/i.test(t);
+    }
+
+    function isContinueSystemMessage(m) {
+        if (!m) return false;
+        var t = String(m.message || m.body || '');
+        return /continued this conversation/i.test(t)
+            || /resumed this conversation/i.test(t);
     }
 
     function applyConversationClosedLocally(cid, closedBy) {
@@ -1472,6 +1478,70 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         closeMoreMenu();
+    }
+
+    /** Visitor continued after close → Incoming (waiting) so agent can Assign again */
+    function conversationRowStatus(cid) {
+        cid = parseInt(cid, 10) || 0;
+        for (var i = 0; i < (lastConversations || []).length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) === cid) {
+                return String(lastConversations[i].status || '');
+            }
+        }
+        return '';
+    }
+
+    function uiLooksClosedForSelected() {
+        if (!replyInput) return false;
+        var ph = String(replyInput.placeholder || '');
+        return /chat closed/i.test(ph);
+    }
+
+    function applyConversationWaitingLocally(cid, opts) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid) return;
+        opts = opts || {};
+        var prev = conversationRowStatus(cid);
+        var force = !!opts.force;
+        // Only promote closed → waiting (don't steal active assigned chats)
+        if (!force) {
+            if (prev === 'active' || prev === 'waiting') {
+                if (selectedId === cid && prev === 'waiting') {
+                    setUnassignedMode(true);
+                }
+                return;
+            }
+            if (prev !== 'closed' && !(selectedId === cid && uiLooksClosedForSelected())) {
+                return;
+            }
+        }
+        syncConversationListStatus({
+            id: cid,
+            status: 'waiting',
+            agent_id: 0,
+            last_message: opts.last_message || undefined,
+            last_message_at: opts.last_message_at || undefined
+        });
+        if (selectedId !== cid) {
+            loadConversations();
+            return;
+        }
+        currentAssignedAgentId = 0;
+        isSupervising = false;
+        chatTransferredAway = false;
+        if (superviseBar) superviseBar.hidden = true;
+        setTakeoverMenuVisible(false);
+        if (replyInput) {
+            replyInput.disabled = true;
+            replyInput.placeholder = 'Assign to yourself to reply';
+        }
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (sendBtn) sendBtn.disabled = true;
+        setUnassignedMode(true);
+        if (transferWrap) transferWrap.style.display = 'none';
+        closeTransferPanel();
+        setPeerTypingVisible(false);
+        loadConversations();
     }
 
     function paintConversationList(conversations) {
@@ -3267,11 +3337,15 @@
                     var added = 0;
                     var playSound = false;
                     var sawClose = false;
+                    var sawContinueOrVisitor = false;
                     (data.messages || []).forEach(function (m) {
                         var mid = parseInt(m.id, 10) || 0;
                         if (mid < 1) return;
                         if (isCloseSystemMessage(m)) {
                             sawClose = true;
+                        }
+                        if (isContinueSystemMessage(m) || (m.sender_type === 'visitor')) {
+                            sawContinueOrVisitor = true;
                         }
                         if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
                             if (mid > lastMsgId) lastMsgId = mid;
@@ -3314,7 +3388,8 @@
                         playIncomingSound();
                         setPeerTypingVisible(false);
                     }
-                    if (sawClose) {
+                    // Never re-lock from a stale close bubble if visitor already continued
+                    if (sawClose && !sawContinueOrVisitor && c && c.status === 'closed') {
                         applyConversationClosedLocally(conversationId, 'inactivity');
                     }
                 }
@@ -4743,15 +4818,23 @@
             });
             realtimeClient.on('message.new', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                var msg = payload && payload.message;
                 if (selectedId && cid === selectedId) {
-                    if (payload && payload.message && payload.message.id) {
-                        appendLiveMessage(payload.message);
-                        // Visitor replied while chat open → prior agent bubbles are seen
-                        if (payload.message.sender_type === 'visitor') {
-                            markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
-                        }
-                        if (isCloseSystemMessage(payload.message)) {
-                            var by = /inactivity/i.test(String(payload.message.message || '')) ? 'inactivity' : 'agent';
+                    if (msg && msg.id) {
+                        appendLiveMessage(msg);
+                        if (msg.sender_type === 'visitor') {
+                            markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
+                            if (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed') {
+                                applyConversationWaitingLocally(cid, {
+                                    force: true,
+                                    last_message: msg.message || '',
+                                    last_message_at: msg.created_at || undefined
+                                });
+                            }
+                        } else if (isContinueSystemMessage(msg)) {
+                            applyConversationWaitingLocally(cid, { force: true });
+                        } else if (isCloseSystemMessage(msg)) {
+                            var by = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
                             applyConversationClosedLocally(cid, by);
                         }
                     } else {
@@ -4760,16 +4843,20 @@
                     clearLocalUnread(cid);
                     return;
                 }
-                // Other chat: update "N new" + preview in place — no list jump
-                if (cid && payload && payload.message && isCloseSystemMessage(payload.message)) {
+                if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
+                    applyConversationWaitingLocally(cid, {
+                        force: true,
+                        last_message: msg.message || undefined,
+                        last_message_at: msg.created_at || undefined
+                    });
+                } else if (cid && msg && isCloseSystemMessage(msg)) {
                     syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
                 }
-                if (cid && patchInboxRowActivity(cid, payload && payload.message)) {
+                if (cid && patchInboxRowActivity(cid, msg)) {
                     playIncomingSound();
                     return;
                 }
-                // Prefer patch; only full list reload if we cannot patch from payload
-                if (!cid || !(payload && payload.message)) {
+                if (!cid || !msg) {
                     loadConversations();
                 }
             });
@@ -4824,7 +4911,6 @@
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                // Transfer / takeover: refresh inbox immediately for both agents
                 if (payload && (payload.transferred || payload.taken_over)) {
                     loadConversations();
                 }
@@ -4837,21 +4923,28 @@
                     }
                     return;
                 }
+                if (payload && (payload.status === 'waiting' || payload.reopened_by === 'visitor') && cid) {
+                    applyConversationWaitingLocally(cid, { force: true });
+                    if (selectedId && cid === selectedId) {
+                        pollMessages({ skipJourney: true });
+                    }
+                    return;
+                }
                 if (selectedId && cid === selectedId) {
                     var newAgent = parseInt(payload && payload.agent_id, 10) || 0;
                     if (newAgent > 0 && newAgent !== myAgentId && currentAssignedAgentId === myAgentId) {
                         var taker = (payload.agent && payload.agent.name) || 'Another agent';
                         alert(taker + ' took over this chat. You are now in Supervise Mode.');
                     }
-                    if (payload && payload.status === 'waiting') {
-                        syncConversationListStatus({ id: cid, status: 'waiting', agent_id: 0 });
+                    if (payload && payload.status === 'active' && newAgent === myAgentId) {
+                        syncConversationListStatus({ id: cid, status: 'active', agent_id: newAgent });
+                        setUnassignedMode(false);
                         if (replyInput) {
-                            replyInput.disabled = true;
-                            replyInput.placeholder = 'Assign to yourself to reply';
+                            replyInput.disabled = false;
+                            replyInput.placeholder = 'Type a message...';
                         }
-                        var sendWaitingBtn = document.getElementById('lc-send-reply');
-                        if (sendWaitingBtn) sendWaitingBtn.disabled = true;
-                        setUnassignedMode(true);
+                        var sendActiveBtn = document.getElementById('lc-send-reply');
+                        if (sendActiveBtn) sendActiveBtn.disabled = false;
                     }
                     pollMessages();
                 } else if (!(payload && (payload.transferred || payload.taken_over))) {

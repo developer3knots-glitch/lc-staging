@@ -65,6 +65,18 @@ try {
         }
         $status = 'waiting';
         $conv['agent_id'] = 0;
+
+        // Tell agents IMMEDIATELY — do not defer (UI was stuck on CLOSED)
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            try {
+                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                    'status' => 'waiting',
+                    'agent_id' => 0,
+                    'reopened_by' => 'visitor',
+                ]);
+            } catch (Throwable $eRe) {
+            }
+        }
     }
 
     $visitorId = (int) $conv['visitor_id'];
@@ -80,7 +92,7 @@ try {
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
 
-    // Publish to agents IMMEDIATELY — before assign / status fanout (those were the delay).
+    // Publish bubble to agents NOW
     $plain = function_exists('lc_plain_text') ? lc_plain_text($message) : $message;
     $msgPayload = [
         'message_id' => $messageId,
@@ -106,7 +118,7 @@ try {
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
 
-    // Queue / assign / inbox AFTER the bubble is already on the wire
+    // Assign / inbox AFTER the bubble (and after reopen event already sent)
     if (function_exists('lc_realtime_defer')) {
         lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened, $msgPayload): void {
             try {
@@ -116,17 +128,26 @@ try {
                     $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
                         ->execute([$conversationId]);
                     $status = 'waiting';
+                    if (function_exists('lc_realtime_publish_conversation_event')) {
+                        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                            'status' => 'waiting',
+                            'agent_id' => 0,
+                            'reopened_by' => 'visitor',
+                        ]);
+                    }
                 }
                 if ($status === 'waiting' && function_exists('lc_assign_agent')) {
                     lc_assign_agent($conversationId);
                     $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $status);
                 }
                 if (function_exists('lc_realtime_publish_conversation_event')) {
-                    lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                        'status' => $status,
-                        'reopened_by' => $publishReopened ? 'visitor' : null,
-                    ]);
-                    // inbox.changed / brand badge (message.new already sent on peers+brand)
+                    // Refresh status for agents (waiting or auto-assigned active)
+                    if (!$publishReopened || $status !== 'waiting') {
+                        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                            'status' => $status,
+                            'reopened_by' => $publishReopened ? 'visitor' : null,
+                        ]);
+                    }
                     lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
                         'inbox_only' => true,
                     ]);
@@ -144,10 +165,12 @@ try {
             $publishStatus = $status;
         }
         if (function_exists('lc_realtime_publish_conversation_event')) {
-            lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                'status' => $publishStatus,
-                'reopened_by' => $publishReopened ? 'visitor' : null,
-            ]);
+            if (!$reopened || $publishStatus !== 'waiting') {
+                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+                    'status' => $publishStatus,
+                    'reopened_by' => $reopened ? 'visitor' : null,
+                ]);
+            }
             lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
                 'inbox_only' => true,
             ]);
