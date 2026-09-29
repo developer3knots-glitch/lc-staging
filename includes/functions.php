@@ -1007,6 +1007,10 @@ function lc_find_resumable_conversation(int $visitorId, int $brandId): ?array
 /**
  * First message id the visitor should see for the *current* chat session.
  * Earlier closed rounds in the same ticket stay on the agent timeline only.
+ *
+ * Important: when the latest marker is a CLOSE and nothing was sent after it
+ * (soft-closed "type to continue"), floor must still include that session's
+ * transcript — otherwise the widget paints a blank black panel.
  */
 function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
 {
@@ -1015,7 +1019,7 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
     }
     try {
         $db = lc_db();
-        // Latest end-of-session marker (visitor/agent/auto close, leave, merge notice optional)
+        // Latest end-of-session / continue marker
         $stmt = $db->prepare("
             SELECT id, message, sender_type
             FROM messages
@@ -1063,11 +1067,57 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
             return max(1, $markerId);
         }
 
-        // Close/end marker → current session starts at the next message
+        // Close/end marker
         $next = $db->prepare('SELECT id FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 1');
         $next->execute([$conversationId, $markerId]);
         $nextId = (int) ($next->fetchColumn() ?: 0);
-        return $nextId > 0 ? $nextId : ($markerId + 1);
+        if ($nextId > 0) {
+            // New activity after close → current session starts there
+            return $nextId;
+        }
+
+        // Soft-closed with no messages after close → show THIS closed round
+        // (from previous boundary through the close), not an empty panel.
+        $prev = $db->prepare("
+            SELECT id, message
+            FROM messages
+            WHERE conversation_id = ?
+              AND id < ?
+              AND sender_type = 'system'
+              AND (
+                    message LIKE '%closed the live chat%'
+                 OR message LIKE '%Chat closed%'
+                 OR message LIKE '%Chat ended%'
+                 OR message LIKE '%left the page%'
+                 OR message LIKE '%due to inactivity%'
+                 OR message LIKE '%ended this chat%'
+                 OR message LIKE 'Merged %earlier chat%'
+                 OR message LIKE '%continued this conversation%'
+                 OR message LIKE '%returned. Previous conversation%'
+                 OR message LIKE 'Visitor continued this conversation%'
+                 OR message LIKE 'Visitor returned%'
+              )
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $prev->execute([$conversationId, $markerId]);
+        $prevRow = $prev->fetch();
+        if (!$prevRow) {
+            return 0;
+        }
+        $prevId = (int) ($prevRow['id'] ?? 0);
+        $prevText = (string) ($prevRow['message'] ?? '');
+        if (stripos($prevText, 'continued this conversation') !== false
+            || stripos($prevText, 'returned. Previous conversation') !== false
+            || stripos($prevText, 'Visitor continued') !== false
+            || stripos($prevText, 'Visitor returned') !== false) {
+            return max(1, $prevId);
+        }
+        // Previous marker was also a close → session starts just after it
+        $afterPrev = $db->prepare('SELECT id FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 1');
+        $afterPrev->execute([$conversationId, $prevId]);
+        $startId = (int) ($afterPrev->fetchColumn() ?: 0);
+        return $startId > 0 ? $startId : max(1, $prevId + 1);
     } catch (Throwable $e) {
         return 0;
     }

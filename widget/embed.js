@@ -4257,14 +4257,26 @@
             if (Date.now() < resumeGraceUntil) {
                 chatClosed = false;
             } else {
+                // Soft-close: keep compose, load transcript — never wipe first (blank black panel)
                 showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
                 if (!options.keepMessages) {
                     lastMsgId = 0;
                     lastDateLabel = '';
-                    document.getElementById('lc-panel-messages').innerHTML = '';
+                    pendingHistoryWipe = true;
+                }
+                // Paint any boot messages from widget-init before poll
+                var closedBoot = Array.isArray(data.messages) ? data.messages : [];
+                if (closedBoot.length) {
+                    closedBoot.forEach(function (m) {
+                        try {
+                            appendMessage(m, { suppressAgentState: true });
+                            var mid = parseInt(m && m.id, 10) || 0;
+                            if (mid > 0) advanceLastMsgId(mid);
+                        } catch (eBootC) {}
+                    });
+                    pendingHistoryWipe = false;
                 }
                 pollMessages(true);
-                // Refresh of a closed chat: do not auto-pop "Connecting"
                 return;
             }
         }
@@ -5296,12 +5308,13 @@
                 if (isHistoryLoad && gen !== pollGen) return;
                 if (!data || !data.success) {
                     hideChatLoading();
-                    // Auth/network miss — keep retrying history so agent replies appear
-                    if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                    // Auth/network miss — keep retrying history so transcript appears
+                    // (including soft-closed "type to continue" — empty panel is worse)
+                    if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                         if (historyRetryTimer) clearTimeout(historyRetryTimer);
                         historyRetryTimer = setTimeout(function () {
                             historyRetryTimer = null;
-                            if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                            if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                                 lastMsgId = 0;
                                 pollMessages(true);
                             }
@@ -5402,11 +5415,11 @@
                     } else if (pendingHistoryWipe && messages.length === 0) {
                         // Empty history response — never wipe seeded/WS bubbles (blank Admin screen)
                         pendingHistoryWipe = false;
-                        if (messagesNeedHistoryReload() && conversationId && !chatClosed) {
+                        if (messagesNeedHistoryReload() && conversationId && lastClosedBy !== 'visitor') {
                             if (historyRetryTimer) clearTimeout(historyRetryTimer);
                             historyRetryTimer = setTimeout(function () {
                                 historyRetryTimer = null;
-                                if (conversationId && !chatClosed && messagesNeedHistoryReload()) {
+                                if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                                     lastMsgId = 0;
                                     pollMessages(true);
                                 }
