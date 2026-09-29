@@ -8,6 +8,7 @@ $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
+lc_release_session();
 
 $conversationId = (int) ($_GET['conversation_id'] ?? 0);
 $lastId = (int) ($_GET['last_id'] ?? 0);

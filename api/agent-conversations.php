@@ -6,6 +6,7 @@ if (!$agent) {
 }
 lc_ensure_accounts_schema();
 $agent = lc_ensure_agent_workspace($agent);
+lc_release_session();
 
 $tab = $_GET['tab'] ?? 'all';
 $agentId = (int) $agent['id'];

@@ -92,22 +92,35 @@ try {
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
 
-    // Visitor is actively chatting → agent msgs are seen (fixes read ticks when WS skips poll)
-    $receiptChanged = 0;
-    if (function_exists('lc_mark_messages_delivered')) {
-        $receiptChanged += lc_mark_messages_delivered($conversationId, 'agent');
-    }
-    if (function_exists('lc_mark_messages_read')) {
-        $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
-    }
-
-    // Push to peers immediately (before JSON) so agent/visitor see bubble with no WS lag
+    // Push bubble to peers FIRST — receipts must not delay live delivery
     if (function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
-    // Always push agent ticks (even if PDO rowCount is 0) so desk UI catches up
-    if (function_exists('lc_realtime_publish_message_receipts')) {
-        lc_realtime_publish_message_receipts($conversationId, 'agent');
+
+    // Visitor is actively chatting → agent msgs are seen (fixes read ticks when WS skips poll)
+    $receiptChanged = 0;
+    if (function_exists('lc_realtime_defer')) {
+        lc_realtime_defer(static function () use ($conversationId): void {
+            if (function_exists('lc_mark_messages_delivered')) {
+                lc_mark_messages_delivered($conversationId, 'agent');
+            }
+            if (function_exists('lc_mark_messages_read')) {
+                lc_mark_messages_read($conversationId, 'agent');
+            }
+            if (function_exists('lc_realtime_publish_message_receipts')) {
+                lc_realtime_publish_message_receipts($conversationId, 'agent');
+            }
+        });
+    } else {
+        if (function_exists('lc_mark_messages_delivered')) {
+            $receiptChanged += lc_mark_messages_delivered($conversationId, 'agent');
+        }
+        if (function_exists('lc_mark_messages_read')) {
+            $receiptChanged += lc_mark_messages_read($conversationId, 'agent');
+        }
+        if (function_exists('lc_realtime_publish_message_receipts')) {
+            lc_realtime_publish_message_receipts($conversationId, 'agent');
+        }
     }
 
     // Status / incoming-chat fanout after response

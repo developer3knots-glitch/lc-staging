@@ -5,6 +5,7 @@ $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
 }
+lc_release_session();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $conversationId = (int) ($input['conversation_id'] ?? 0);

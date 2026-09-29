@@ -2289,10 +2289,9 @@
         if (realtimeConfig.mode === 'ws' && realtimeConfig.wsUrl
             && realtimeClient
             && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
-            && (realtimeBoundConvId === bindForConv || (realtimeClient.shouldRun && realtimeBoundConvId === 0))
+            && realtimeBoundConvId === bindForConv
             && (realtimeClient.isConnected && realtimeClient.isConnected() || realtimeClient.shouldRun)) {
             if (realtimeClient.isConnected && realtimeClient.isConnected()) {
-                realtimeBoundConvId = bindForConv;
                 stopSafetySync();
             }
             startLiveMessageSync();

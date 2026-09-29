@@ -57,6 +57,9 @@ try {
     if (!$agent) {
         lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
     }
+    if (function_exists('lc_release_session')) {
+        lc_release_session();
+    }
 
     lc_json([
         'success' => true,

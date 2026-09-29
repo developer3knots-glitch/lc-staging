@@ -3314,10 +3314,17 @@
             });
     }
 
-    var agentSendInFlight = false;
+    var agentSendInFlight = 0;
+    var inboxRefreshTimer = null;
+    function scheduleInboxRefresh() {
+        if (inboxRefreshTimer) clearTimeout(inboxRefreshTimer);
+        inboxRefreshTimer = setTimeout(function () {
+            inboxRefreshTimer = null;
+            loadConversations();
+        }, 400);
+    }
 
     function sendReply() {
-        if (agentSendInFlight) return;
         if (pendingAttachments.length) {
             sendPendingAttachment();
             return;
@@ -3370,9 +3377,9 @@
 
         var sendConvId = selectedId;
         var tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-        agentSendInFlight = true;
+        agentSendInFlight += 1;
         var sendBtn = document.getElementById('lc-send-reply');
-        if (sendBtn) sendBtn.disabled = true;
+        // Keep compose enabled so Enter×N pipelines instantly
 
         // Optimistic paint — don't wait for HTTP/poll
         if (messagesEl) {
@@ -3419,7 +3426,7 @@
                 scheduleReceiptSyncBursts();
                 // Keep inbox order stable & correct: agent reply also counts as newest
                 bumpConversationActivity(sendConvId, msg);
-                loadConversations();
+                scheduleInboxRefresh();
                 return;
             }
             if (tempEl) tempEl.remove();
@@ -3429,10 +3436,8 @@
             if (tempEl) tempEl.remove();
             alert('Unable to send message');
         }).finally(function () {
-            agentSendInFlight = false;
+            agentSendInFlight = Math.max(0, agentSendInFlight - 1);
             if (sendBtn && selectedId === sendConvId) {
-                var canCompose = replyInput && !replyInput.disabled;
-                // Re-enable only if chat still accepts replies
                 if (replyInput && !replyInput.disabled) {
                     sendBtn.disabled = false;
                 }
@@ -4469,21 +4474,19 @@
             if (mid > lastMsgId) lastMsgId = mid;
             return;
         }
-        // Replace optimistic temp bubble for our own agent reply
+        // Replace optimistic temp bubble for our own agent reply (exact text only —
+        // never steal the newest temp; rapid 1/2/3 would otherwise paint wrong).
         if (m.sender_type === 'agent' && m.message) {
             var temps = messagesEl.querySelectorAll('.lc-msg[data-id^="temp_"]');
             var matched = null;
+            var want = String(m.message).trim();
             for (var i = 0; i < temps.length; i++) {
                 var body = temps[i].querySelector('.lc-msg-body');
                 var text = body ? (body.textContent || '').trim() : '';
-                if (text === String(m.message).trim()) {
+                if (text === want) {
                     matched = temps[i];
                     break;
                 }
-            }
-            // If exact text match missing, reuse the newest temp agent bubble
-            if (!matched && temps.length) {
-                matched = temps[temps.length - 1];
             }
             if (matched) {
                 matched.setAttribute('data-id', String(mid));

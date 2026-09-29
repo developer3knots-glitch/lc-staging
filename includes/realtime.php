@@ -383,6 +383,10 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
         . "Connection: close\r\n\r\n"
         . $payload;
     $ok = @fwrite($fp, $req) !== false;
+    if ($ok) {
+        // Brief drain so Node receives the full POST before we close the socket
+        @fread($fp, 512);
+    }
     @fclose($fp);
 
     return $ok;

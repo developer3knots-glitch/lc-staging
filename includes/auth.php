@@ -33,6 +33,17 @@ function lc_auth_agent(): ?array
     }
 }
 
+/**
+ * Release PHP session lock after auth so concurrent agent APIs (send/poll/receipts)
+ * do not serialize behind each other — critical for rapid message delivery.
+ */
+function lc_release_session(): void
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        @session_write_close();
+    }
+}
+
 function lc_require_auth(): array
 {
     lc_admin_auto_clear_all_chats_once();
