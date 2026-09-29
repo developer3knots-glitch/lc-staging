@@ -874,10 +874,12 @@
     function advanceLastMsgId(id) {
         id = parseInt(id, 10) || 0;
         if (id < 1 || id >= 100000000) return;
-        // Cursor jumped over missing ids → force catch-up (even while WS is live)
+        // Never jump the cursor over holes — that permanently hides agent replies
+        // when the visitor sends again (own id skips missed agent ids).
         if (lastMsgId > 0 && id > lastMsgId + 1) {
             scheduleGapFill();
             forceMessageCatchup();
+            return;
         }
         if (id > lastMsgId) {
             lastMsgId = id;
@@ -1552,10 +1554,45 @@
         return maxDom;
     }
 
+    /**
+     * Highest painted id with NO holes below it in the DOM.
+     * Critical: visitor's own new message id must not skip unpainted agent msgs
+     * (e.g. painted [50, 102] → return 50 so poll fetches 51..101).
+     */
+    function contiguousPollAfterId() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return 0;
+        var ids = [];
+        box.querySelectorAll('[data-msg-id]').forEach(function (el) {
+            var id = parseInt(el.getAttribute('data-msg-id'), 10) || 0;
+            if (id > 0 && id < 100000000) ids.push(id);
+        });
+        if (!ids.length) return 0;
+        ids.sort(function (a, b) { return a - b; });
+        // Dedupe
+        var uniq = [];
+        for (var i = 0; i < ids.length; i++) {
+            if (!uniq.length || uniq[uniq.length - 1] !== ids[i]) uniq.push(ids[i]);
+        }
+        var cursor = uniq[0];
+        for (var j = 1; j < uniq.length; j++) {
+            if (uniq[j] > cursor + 1) {
+                // Hole — poll from here so missing agent bubbles are fetched
+                return cursor;
+            }
+            cursor = uniq[j];
+        }
+        return cursor;
+    }
+
     function syncCursorFromDom() {
+        var contiguous = contiguousPollAfterId();
         var maxDom = maxDomMessageId();
-        // Cursor ahead of painted bubbles = poisoned; pull back so catch-up can fetch
-        if (maxDom > 0 && lastMsgId > maxDom) {
+        // Prefer contiguous (gap-safe). Never keep lastMsgId past a DOM hole.
+        if (contiguous > 0 && lastMsgId > contiguous) {
+            lastMsgId = contiguous;
+            persistLastMsgId(lastMsgId);
+        } else if (maxDom > 0 && lastMsgId > maxDom) {
             lastMsgId = maxDom;
             persistLastMsgId(lastMsgId);
         }
@@ -5151,6 +5188,15 @@
             lastMsgId = 0;
         }
 
+        // Incremental: poll after contiguous painted id (not lastMsgId — that can
+        // sit on the visitor's own newest bubble and skip unpainted agent msgs).
+        if (!isHistoryLoad) {
+            syncCursorFromDom();
+            var afterPainted = contiguousPollAfterId();
+            if (afterPainted > 0) {
+                lastMsgId = afterPainted;
+            }
+        }
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
         var viewing = isVisitorActivelyViewingChat() ? '1' : '0';
 
@@ -5197,6 +5243,10 @@
                     pollMessages(true, done);
                     done = null;
                     return;
+                }
+                // Server has messages beyond what DOM shows (skipped agent bubbles)
+                if (!isHistoryLoad && serverCursor > 0 && serverCursor > maxDomMessageId()) {
+                    scheduleGapFill();
                 }
 
                 if (data.ticket_display_enabled !== undefined) {
@@ -5712,7 +5762,13 @@
                 pending.setAttribute('data-msg-id', String(data.message_id));
                 pending.classList.remove('lcw-msg-pending');
                 updateVisitorTicks(String(data.message_id), 'sent');
-                advanceLastMsgId(data.message_id);
+                // Do not blindly advance over holes — gap-fill pulls missed agent msgs
+                var ownId = parseInt(data.message_id, 10) || 0;
+                if (ownId > 0 && lastMsgId > 0 && ownId > lastMsgId + 1) {
+                    scheduleGapFill();
+                } else {
+                    advanceLastMsgId(ownId);
+                }
             } else if (pending) {
                 pending.classList.remove('lcw-msg-pending');
                 updateVisitorTicks(tempId, 'sent');
@@ -5721,6 +5777,7 @@
                 pollMessages(false);
             }
             // Pull any agent replies that arrived while this send was in flight
+            scheduleGapFill();
             forceMessageCatchup();
             if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
                 loadRealtimeScript(function () { initVisitorRealtime(); });
