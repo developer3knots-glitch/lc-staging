@@ -514,6 +514,15 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
             $changedChannels[] = lc_realtime_channel_agent($previousAgentId);
         }
         if ($changedChannels !== []) {
+            // Active supervisors also need inbox.changed for poll catch-up
+            if ($event === 'message.new' && function_exists('lc_conversation_active_supervisor_ids')) {
+                foreach (lc_conversation_active_supervisor_ids($conversationId) as $supId) {
+                    if ($supId > 0 && $supId !== $agentId && $supId !== $previousAgentId) {
+                        $changedChannels[] = lc_realtime_channel_agent($supId);
+                    }
+                }
+            }
+            $changedChannels = array_values(array_unique($changedChannels));
             lc_realtime_publish_channels($changedChannels, 'inbox.changed', $payload, 80);
         }
     }

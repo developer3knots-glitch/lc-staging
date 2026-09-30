@@ -30,6 +30,8 @@
         } catch (e) {}
     }
     var lastMsgId = 0;
+    var messageGapFillTimer = null;
+    var messageGapFillBusy = false;
     var needsFullHistory = false;
     var priorHistoryLoadingId = 0;
 
@@ -3360,14 +3362,15 @@
                     messagesEl.innerHTML = html;
                     needsFullHistory = false;
                     loadPriorThreads(selectedId);
-                    if (typeof data.message_cursor === 'number' && data.message_cursor > lastMsgId) {
-                        lastMsgId = data.message_cursor;
-                    }
+                    // Never jump lastMsgId to message_cursor — that skips unpainted rows
+                    // (supervisor then never sees attending-agent replies via poll).
+                    lastMsgId = maxPaintedMessageId() || lastMsgId;
                     if (data.receipts) applyReceipts(data.receipts);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     // Land on current chat (bottom), not with scrollIntoView (causes page jump)
                     stickToBottom = true;
                     scrollMessagesToBottom(true);
+                    scheduleMessageGapFill(data.message_cursor, opts);
                 }
 
                 function paintIncremental() {
@@ -3388,28 +3391,23 @@
                             if (mid > lastMsgId) lastMsgId = mid;
                             return;
                         }
-                        if (mid > lastMsgId || (m.sender_type === 'agent' && messagesEl.querySelector('.lc-msg.agent[data-id^="temp_"]'))) {
-                            // Reuse optimistic temp for our own agent reply instead of duplicating
-                            if (m.sender_type === 'agent') {
-                                var beforeAgent = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
-                                appendLiveMessage(m);
-                                if (!beforeAgent && messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
-                                    added += 1;
-                                }
-                            } else {
-                                messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
-                                if (mid > lastMsgId) lastMsgId = mid;
+                        // Paint anything not in DOM — do not require mid > lastMsgId
+                        // (a bad cursor bump used to permanently skip agent bubbles).
+                        if (m.sender_type === 'agent') {
+                            var beforeAgent = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
+                            appendLiveMessage(m);
+                            if (!beforeAgent && messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
                                 added += 1;
-                                if (m.sender_type === 'visitor' || m.sender_type === 'system') {
-                                    if (m.sender_type === 'visitor') {
-                                        playSound = true;
-                                    }
-                                }
                             }
-                            if (m.sender_type === 'agent' && mid > lastMsgId) {
-                                lastMsgId = mid;
+                        } else {
+                            messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
+                            if (mid > lastMsgId) lastMsgId = mid;
+                            added += 1;
+                            if (m.sender_type === 'visitor') {
+                                playSound = true;
                             }
                         }
+                        if (mid > lastMsgId) lastMsgId = mid;
                     });
                     // Also render any incremental notes inline (reconciles temp "You" bubbles)
                     (data.notes || []).forEach(function (n) {
@@ -3429,6 +3427,8 @@
                     if (sawClose && !sawContinueOrVisitor && c && c.status === 'closed') {
                         applyConversationClosedLocally(conversationId, 'inactivity');
                     }
+                    lastMsgId = Math.max(lastMsgId, maxPaintedMessageId());
+                    scheduleMessageGapFill(data.message_cursor, opts);
                 }
 
                 if (!c) {
@@ -4761,6 +4761,35 @@
         }, 8000);
     }
 
+    function maxPaintedMessageId() {
+        if (!messagesEl) return 0;
+        var max = 0;
+        messagesEl.querySelectorAll('.lc-msg[data-id]').forEach(function (el) {
+            if (el.classList.contains('is-note') || el.getAttribute('data-history') === '1') return;
+            var id = parseInt(el.getAttribute('data-id'), 10) || 0;
+            if (id > max) max = id;
+        });
+        return max;
+    }
+
+    function scheduleMessageGapFill(cursor, pollOpts) {
+        cursor = parseInt(cursor, 10) || 0;
+        if (cursor < 1 || !selectedId || pollDisabled) return;
+        if (pollOpts && pollOpts._gapFill) return;
+        var painted = maxPaintedMessageId();
+        if (cursor <= painted) return;
+        // Server has messages we never painted — rewind cursor and catch up once
+        lastMsgId = painted;
+        if (messageGapFillTimer) clearTimeout(messageGapFillTimer);
+        messageGapFillTimer = setTimeout(function () {
+            messageGapFillTimer = null;
+            if (!selectedId || messageGapFillBusy) return;
+            messageGapFillBusy = true;
+            pollMessages({ skipJourney: true, _gapFill: true });
+            setTimeout(function () { messageGapFillBusy = false; }, 1500);
+        }, 120);
+    }
+
     function appendLiveMessage(m) {
         if (!m || !m.id || !messagesEl) return;
         var mid = parseInt(m.id, 10) || 0;
@@ -4769,10 +4798,10 @@
             if (mid > lastMsgId) lastMsgId = mid;
             return;
         }
-        // Only reconcile OUR optimistic reply — never swallow another agent's bubble
-        // (supervisor watching must always paint the attending agent's messages).
+        // Only reconcile OUR optimistic reply — missing sender_id must NOT count as own
+        // (that used to steal/suppress attending-agent bubbles for supervisors).
         var senderId = parseInt(m.sender_id, 10) || 0;
-        var isOwnAgentMsg = m.sender_type === 'agent' && (!senderId || senderId === myAgentId);
+        var isOwnAgentMsg = m.sender_type === 'agent' && senderId > 0 && senderId === myAgentId;
         if (isOwnAgentMsg && m.message) {
             var temps = messagesEl.querySelectorAll('.lc-msg.agent[data-id^="temp_"]');
             var matched = null;
@@ -4923,6 +4952,9 @@
                         if (payload.message.sender_type === 'visitor') {
                             markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
                         }
+                    } else if (!pollDisabled) {
+                        // List-only inbox ping while this chat is open — catch missed agent bubbles
+                        pollMessages({ skipJourney: true });
                     }
                     clearLocalUnread(cid);
                     return;
