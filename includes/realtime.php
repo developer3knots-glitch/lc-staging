@@ -467,6 +467,14 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
             if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
                 $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
             }
+            // Supervisors need agent replies live (brand inbox alone can miss on some JWTs)
+            if ($event === 'message.new' && function_exists('lc_conversation_active_supervisor_ids')) {
+                foreach (lc_conversation_active_supervisor_ids($conversationId) as $supId) {
+                    if ($supId > 0 && $supId !== $agentId && $supId !== $previousAgentId) {
+                        $peerChannels[] = lc_realtime_channel_agent($supId);
+                    }
+                }
+            }
         }
 
         // ONE curl for all peer channels (was 3–4 sequential publishes)

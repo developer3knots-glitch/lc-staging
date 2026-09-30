@@ -3388,10 +3388,14 @@
                             if (mid > lastMsgId) lastMsgId = mid;
                             return;
                         }
-                        if (mid > lastMsgId || (m.sender_type === 'agent' && messagesEl.querySelector('.lc-msg[data-id^="temp_"]'))) {
+                        if (mid > lastMsgId || (m.sender_type === 'agent' && messagesEl.querySelector('.lc-msg.agent[data-id^="temp_"]'))) {
                             // Reuse optimistic temp for our own agent reply instead of duplicating
                             if (m.sender_type === 'agent') {
+                                var beforeAgent = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
                                 appendLiveMessage(m);
+                                if (!beforeAgent && messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
+                                    added += 1;
+                                }
                             } else {
                                 messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                                 if (mid > lastMsgId) lastMsgId = mid;
@@ -4765,10 +4769,12 @@
             if (mid > lastMsgId) lastMsgId = mid;
             return;
         }
-        // Replace optimistic temp bubble for our own agent reply (exact text only —
-        // never steal the newest temp; rapid 1/2/3 would otherwise paint wrong).
-        if (m.sender_type === 'agent' && m.message) {
-            var temps = messagesEl.querySelectorAll('.lc-msg[data-id^="temp_"]');
+        // Only reconcile OUR optimistic reply — never swallow another agent's bubble
+        // (supervisor watching must always paint the attending agent's messages).
+        var senderId = parseInt(m.sender_id, 10) || 0;
+        var isOwnAgentMsg = m.sender_type === 'agent' && (!senderId || senderId === myAgentId);
+        if (isOwnAgentMsg && m.message) {
+            var temps = messagesEl.querySelectorAll('.lc-msg.agent[data-id^="temp_"]');
             var matched = null;
             var want = String(m.message).trim();
             for (var i = 0; i < temps.length; i++) {
@@ -4799,7 +4805,13 @@
         messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
         if (mid > lastMsgId) lastMsgId = mid;
         if (window.LCTime) window.LCTime.scan(messagesEl);
-        scrollMessagesToBottom(false);
+        // Supervisors / other-agent traffic: keep view pinned so replies are visible
+        if (isSupervising || m.sender_type === 'visitor' || !isOwnAgentMsg) {
+            stickToBottom = true;
+            scrollMessagesToBottom(true);
+        } else {
+            scrollMessagesToBottom(false);
+        }
         if (m.sender_type === 'visitor') {
             playIncomingSound();
             setPeerTypingVisible(false);

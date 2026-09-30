@@ -2523,3 +2523,37 @@ function lc_stop_agent_supervising(int $conversationId, int $agentId): void
     }
 }
 
+/**
+ * Active supervisors watching a chat (dismissed_at IS NULL).
+ *
+ * @return list<int>
+ */
+function lc_conversation_active_supervisor_ids(int $conversationId): array
+{
+    if ($conversationId < 1) {
+        return [];
+    }
+    if (function_exists('lc_ensure_supervisors_schema')) {
+        lc_ensure_supervisors_schema();
+    }
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT agent_id
+            FROM conversation_supervisors
+            WHERE conversation_id = ?
+              AND dismissed_at IS NULL
+        ');
+        $stmt->execute([$conversationId]);
+        $ids = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $id = (int) ($row['agent_id'] ?? 0);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        return array_values(array_unique($ids));
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+

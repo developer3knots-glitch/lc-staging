@@ -398,6 +398,7 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
     ];
 
     if ($row['sender_type'] === 'visitor' || $row['sender_type'] === 'agent') {
+        $msg['sender_id'] = (int) ($row['sender_id'] ?? 0);
         $status = function_exists('lc_message_delivery_status')
             ? lc_message_delivery_status($row)
             : (!empty($row['is_read']) ? 'read' : 'sent');
