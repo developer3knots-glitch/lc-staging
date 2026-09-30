@@ -86,6 +86,7 @@
     var lastMsgId = 0;
     var pendingHistoryWipe = false;
     var historyRetryTimer = null;
+    var stickToBottom = true;
     var pollTimer = null;
     var realtimeClient = null;
     var presenceClient = null;
@@ -704,6 +705,11 @@
                     '</div>' +
                 '</div>' +            '</div>';
         document.body.appendChild(root);
+
+        var msgScrollBox = document.getElementById('lc-panel-messages');
+        if (msgScrollBox) {
+            msgScrollBox.addEventListener('scroll', onMessagesScroll, { passive: true });
+        }
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
         document.getElementById('lc-toolbar-minimize').addEventListener('click', showMinimizeConfirm);
@@ -3462,6 +3468,7 @@
         updateStatus('Chat closed', false);
         var box = document.getElementById('lc-panel-messages');
         if (box) {
+            stickToBottom = true;
             try { box.scrollTop = box.scrollHeight; } catch (e) {}
         }
         // Keep receiving agent messages after soft close (inactivity / agent end)
@@ -5145,8 +5152,29 @@
             sys.innerHTML = esc(m.message);
             box.appendChild(sys);
         }
-        box.scrollTop = box.scrollHeight;
+        // Only pin to bottom when visitor is already near bottom (or forced — own send)
+        scrollMessagesToBottom(!!options.forceScroll);
         if (window.LCTime) window.LCTime.scan(box);
+    }
+
+    function isMessagesNearBottom(threshold) {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return true;
+        var pad = typeof threshold === 'number' ? threshold : 80;
+        return (box.scrollHeight - box.scrollTop - box.clientHeight) <= pad;
+    }
+
+    function onMessagesScroll() {
+        stickToBottom = isMessagesNearBottom(100);
+    }
+
+    function scrollMessagesToBottom(force) {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        if (force || stickToBottom || isMessagesNearBottom(80)) {
+            box.scrollTop = box.scrollHeight;
+            stickToBottom = true;
+        }
     }
 
     /** Same official SVGs as agent inbox ticks. */
@@ -5486,6 +5514,11 @@
                     }
                 });
 
+                if (isHistoryLoad) {
+                    stickToBottom = true;
+                    scrollMessagesToBottom(true);
+                }
+
                 if (data.status === 'closed') {
                     setPeerTypingVisible(false);
                     stopOwnTyping();
@@ -5705,7 +5738,7 @@
                     autoResizeTextarea(input);
                 }
                 if (data.message && data.message.id) {
-                    appendMessage(data.message);
+                    appendMessage(data.message, { forceScroll: true });
                     advanceLastMsgId(data.message.id);
                 } else {
                     pollMessages(false);
@@ -5959,7 +5992,7 @@
             message: msg,
             created_at: new Date().toISOString(),
             delivery_status: 'sent'
-        });
+        }, { forceScroll: true });
 
         var sendBtn = document.getElementById('lc-send');
         sendBtn.classList.add('is-sending');
