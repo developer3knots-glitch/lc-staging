@@ -93,5 +93,6 @@ pm2 restart livechat-realtime
 | WS 502/503 | Node not running → `pm2 status` / `pm2 logs livechat-realtime` |
 | WS 404 | Nginx location missing / wrong site config |
 | auth.error | Secret mismatch PHP vs Node `.env` |
-| Messages slow | Still on poll — check `window.LC_REALTIME` (`mode: ws`). After pull: **`pm2 restart livechat-realtime`** (multi-channel `/publish` needs Node restart) |
+| Messages slow / supervisor misses agent chat | **Must** `pm2 restart livechat-realtime` after pull (Node `staff:conv` + per-client publish). Hard-refresh both admin tabs. Confirm DevTools → Network → WS `lc-realtime` is **101**. |
+| Notes only appear after agent sends a reply | Same — Node restart + hard refresh. Notes publish on `staff:conv:{id}` now. |
 | Transfer lag | Confirm WS 101 + `pm2 restart` after server.js pull |

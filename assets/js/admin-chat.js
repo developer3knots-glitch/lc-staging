@@ -4684,20 +4684,51 @@
     }
 
     var subscribedConvChannel = '';
+    var subscribedStaffChannel = '';
+    var staffSubHeartbeat = null;
+
     function syncRealtimeConversationChannel(conversationId) {
         conversationId = parseInt(conversationId, 10) || 0;
-        var next = conversationId > 0 ? ('conv:' + conversationId) : '';
+        var nextConv = conversationId > 0 ? ('conv:' + conversationId) : '';
+        var nextStaff = conversationId > 0 ? ('staff:conv:' + conversationId) : '';
+
+        function subOne(prev, next) {
+            if (!realtimeClient || typeof realtimeClient.subscribe !== 'function') {
+                return next;
+            }
+            if (prev && prev !== next) {
+                try { realtimeClient.unsubscribe(prev); } catch (eUn) {}
+            }
+            if (next) {
+                try { realtimeClient.subscribe(next); } catch (eSub) {}
+            }
+            return next;
+        }
+
         if (!realtimeClient || typeof realtimeClient.subscribe !== 'function') {
-            subscribedConvChannel = next;
+            subscribedConvChannel = nextConv;
+            subscribedStaffChannel = nextStaff;
             return;
         }
-        if (subscribedConvChannel && subscribedConvChannel !== next) {
-            try { realtimeClient.unsubscribe(subscribedConvChannel); } catch (eUn) {}
+        subscribedConvChannel = subOne(subscribedConvChannel, nextConv);
+        subscribedStaffChannel = subOne(subscribedStaffChannel, nextStaff);
+
+        if (staffSubHeartbeat) {
+            clearInterval(staffSubHeartbeat);
+            staffSubHeartbeat = null;
         }
-        subscribedConvChannel = next;
-        // Always queue subscribe into _wantChannels (even before auth) so reconnect joins conv:
-        if (next) {
-            try { realtimeClient.subscribe(next); } catch (eSub) {}
+        // Keep staff room joined — reconnects / auth races used to drop supervisor live feed
+        if (nextStaff || nextConv) {
+            staffSubHeartbeat = setInterval(function () {
+                if (!realtimeClient || typeof realtimeClient.subscribe !== 'function') return;
+                if (!realtimeClient.isConnected || !realtimeClient.isConnected()) return;
+                if (subscribedConvChannel) {
+                    try { realtimeClient.subscribe(subscribedConvChannel); } catch (e1) {}
+                }
+                if (subscribedStaffChannel) {
+                    try { realtimeClient.subscribe(subscribedStaffChannel); } catch (e2) {}
+                }
+            }, 4000);
         }
     }
 
@@ -4921,21 +4952,18 @@
                         } else if (isContinueSystemMessage(msg)) {
                             applyConversationWaitingLocally(cid, { force: true });
                         } else if (isCloseSystemMessage(msg)) {
-                            var by = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
-                            applyConversationClosedLocally(cid, by);
+                            var byClose = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
+                            applyConversationClosedLocally(cid, byClose);
                         }
-                        // Supervisor / peer: poll once to pick any siblings missed in the same burst
-                        if (isSupervising && msg.sender_type === 'agent' && !pollDisabled) {
-                            setTimeout(function () {
-                                if (selectedId === cid) {
-                                    var painted = maxPaintedMessageId();
-                                    if (painted > 0) lastMsgId = Math.min(lastMsgId, painted);
-                                    pollMessages({ skipJourney: true, _gapFill: true });
-                                }
-                            }, 250);
+                    } else {
+                        // Full bubble missing from WS payload — rewind and catch via next WS/history hop
+                        var onlyId = parseInt(payload && payload.message_id, 10) || 0;
+                        if (onlyId > 0) {
+                            lastMsgId = Math.min(lastMsgId || onlyId, onlyId - 1);
                         }
-                    } else if (!pollDisabled) {
-                        pollMessages({ skipJourney: true });
+                        if (!pollDisabled) {
+                            pollMessages({ skipJourney: true, _gapFill: true });
+                        }
                     }
                     clearLocalUnread(cid);
                     return;

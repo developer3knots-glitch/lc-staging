@@ -142,6 +142,12 @@ function lc_realtime_channel_conversation(int $conversationId): string
     return 'conv:' . max(0, $conversationId);
 }
 
+/** Staff-only live room for a chat (assigned agent + supervisors). Not for visitors. */
+function lc_realtime_channel_staff_conversation(int $conversationId): string
+{
+    return 'staff:conv:' . max(0, $conversationId);
+}
+
 function lc_realtime_channel_agent(int $agentId): string
 {
     return 'agent:' . max(0, $agentId);
@@ -285,7 +291,10 @@ function lc_realtime_staff_channels(int $conversationId, ?array $conv = null): a
     if ($conv === null) {
         $conv = function_exists('lc_get_conversation') ? (lc_get_conversation($conversationId) ?: []) : [];
     }
-    $channels = [lc_realtime_channel_conversation($conversationId)];
+    $channels = [
+        lc_realtime_channel_conversation($conversationId),
+        lc_realtime_channel_staff_conversation($conversationId),
+    ];
     $brandId = (int) ($conv['brand_id'] ?? 0);
     $agentId = (int) ($conv['agent_id'] ?? 0);
     if ($brandId > 0) {
@@ -361,18 +370,20 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         'ts' => time(),
     ], JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0));
     if ($payload === false) {
-        $fallbackData = $data;
-        if (isset($fallbackData['message']) && is_array($fallbackData['message'])) {
-            $fallbackData['message_id'] = (int) ($fallbackData['message']['id'] ?? ($fallbackData['message_id'] ?? 0));
-            unset($fallbackData['message']);
-        }
+        // Keep message body — only scrub non-UTF8 leaves; never publish message_id-only
+        // (that forced clients onto poll and dropped live agent bubbles for supervisors).
+        array_walk_recursive($data, static function (&$v): void {
+            if (is_string($v)) {
+                $v = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $v) ?? $v;
+            }
+        });
         $payload = json_encode([
             'channels' => $channelList,
             'channel' => $channelList[0],
             'event' => $event,
-            'data' => $fallbackData,
+            'data' => $data,
             'ts' => time(),
-        ], JSON_UNESCAPED_SLASHES);
+        ], JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0));
     }
     if ($payload === false) {
         return;
@@ -383,38 +394,53 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         'X-LC-Secret: ' . lc_realtime_secret(),
     ];
 
-    // Single confirmed curl — multi-channel, keep tight for localhost Node
-    $timeoutMs = max(60, min(400, $timeoutMs));
-    $connectMs = max(30, min(150, (int) floor($timeoutMs * 0.5)));
+    // Confirmed curl — wait for Node delivered count; retry once if 0 subscribers
+    $timeoutMs = max(80, min(500, $timeoutMs));
+    $connectMs = max(40, min(200, (int) floor($timeoutMs * 0.5)));
 
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        if ($ch !== false) {
-            $curlOpts = [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => $payload,
-                CURLOPT_HTTPHEADER => $headers,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_NOSIGNAL => 1,
-            ];
-            if (defined('CURLOPT_TIMEOUT_MS')) {
-                $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
-                $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
-            } else {
-                $curlOpts[CURLOPT_TIMEOUT] = 1;
-                $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
-            }
-            curl_setopt_array($ch, $curlOpts);
-            $body = curl_exec($ch);
-            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            if ($code >= 200 && $code < 300) {
-                return;
-            }
-            if ($code >= 400 && $code < 500) {
-                return;
-            }
+    $doPublish = static function () use ($url, $payload, $headers, $timeoutMs, $connectMs): int {
+        if (!function_exists('curl_init')) {
+            return -1;
         }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return -1;
+        }
+        $curlOpts = [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOSIGNAL => 1,
+        ];
+        if (defined('CURLOPT_TIMEOUT_MS')) {
+            $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
+            $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
+        } else {
+            $curlOpts[CURLOPT_TIMEOUT] = 1;
+            $curlOpts[CURLOPT_CONNECTTIMEOUT] = 1;
+        }
+        curl_setopt_array($ch, $curlOpts);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code < 200 || $code >= 300 || !is_string($body) || $body === '') {
+            return -1;
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            return -1;
+        }
+        return (int) ($decoded['delivered'] ?? -1);
+    };
+
+    $delivered = $doPublish();
+    if ($delivered === 0) {
+        usleep(40000);
+        $delivered = $doPublish();
+    }
+    if ($delivered >= 0) {
+        return;
     }
 
     if (lc_realtime_publish_fire_and_forget($url, $payload)) {

@@ -99,16 +99,34 @@ function publish(channel, event, data) {
   return n;
 }
 
+/**
+ * Fan out once per WebSocket client (agents often sit on brand + agent + conv + staff).
+ * Prevents duplicate handler races and guarantees every subscriber gets the event.
+ */
 function publishMany(channels, event, data) {
-  let total = 0;
-  const seen = {};
+  const payload = JSON.stringify({
+    type: 'event',
+    channel: String((channels && channels[0]) || ''),
+    event: event,
+    data: data || {},
+  });
+  const seenClients = new Set();
+  let n = 0;
   (channels || []).forEach(function (ch) {
     const name = String(ch || '');
-    if (!name || seen[name]) return;
-    seen[name] = true;
-    total += publish(name, event, data);
+    if (!name) return;
+    const set = channelSubs.get(name);
+    if (!set || !set.size) return;
+    set.forEach(function (client) {
+      if (client.readyState !== 1 || seenClients.has(client)) return;
+      seenClients.add(client);
+      try {
+        client.send(payload);
+        n += 1;
+      } catch (e) { /* ignore */ }
+    });
   });
-  return total;
+  return n;
 }
 
 function readJson(req) {
@@ -218,10 +236,10 @@ function wireWebSocket(server) {
         return;
       }
 
-      // Dynamic channel join (open chat → conv:ID) — agents/visitors already authed
+      // Dynamic channel join (open chat → conv:ID / staff:conv:ID)
       if (msg.type === 'subscribe') {
         const ch = String(msg.channel || '');
-        if (/^(conv|agent|brand|visitor):/.test(ch)) {
+        if (/^(conv|agent|brand|visitor|staff):/.test(ch)) {
           subscribe(ws, ch);
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
