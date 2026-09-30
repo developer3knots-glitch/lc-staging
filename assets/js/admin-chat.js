@@ -4763,8 +4763,15 @@
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
 
-        // Manual: Settings → Disable HTTP polling — ticks + rare journey only
+        // Manual: Settings → Disable HTTP polling — still gap-fill open chat (WS is primary)
         if (pollDisabled) {
+            if (selectedId) {
+                pollTimer = setInterval(function () {
+                    var painted = maxPaintedMessageId();
+                    if (painted > 0 && lastMsgId > painted) lastMsgId = painted;
+                    pollMessages({ skipJourney: true });
+                }, isSupervising ? 800 : 1500);
+            }
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 60000);
@@ -4934,38 +4941,53 @@
                 resetPollTimers(); // switches to poll fallback
                 if (selectedId) pollMessages();
             });
+            function handleStaffMessagePayload(payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                var msg = payload && payload.message;
+                if (!selectedId || cid !== selectedId) return false;
+                if (msg && msg.id) {
+                    appendLiveMessage(msg);
+                    if (msg.sender_type === 'visitor') {
+                        markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
+                    }
+                    clearLocalUnread(cid);
+                    return true;
+                }
+                var onlyId = parseInt(payload && payload.message_id, 10) || 0;
+                if (onlyId > 0) {
+                    lastMsgId = Math.min(lastMsgId || onlyId, onlyId - 1);
+                    pollMessages({ skipJourney: true, _gapFill: true });
+                    clearLocalUnread(cid);
+                    return true;
+                }
+                return false;
+            }
+
+            function handleStaffNotePayload(payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (!cid || !payload || !selectedId || cid !== selectedId) return;
+                appendInlineNote(payload);
+                appendConversationNote(payload);
+            }
+
             realtimeClient.on('message.new', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 var msg = payload && payload.message;
-                if (selectedId && cid === selectedId) {
-                    if (msg && msg.id) {
-                        appendLiveMessage(msg);
-                        if (msg.sender_type === 'visitor') {
-                            markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
-                            if (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed') {
-                                applyConversationWaitingLocally(cid, {
-                                    force: true,
-                                    last_message: msg.message || '',
-                                    last_message_at: msg.created_at || undefined
-                                });
-                            }
-                        } else if (isContinueSystemMessage(msg)) {
-                            applyConversationWaitingLocally(cid, { force: true });
-                        } else if (isCloseSystemMessage(msg)) {
-                            var byClose = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
-                            applyConversationClosedLocally(cid, byClose);
+                if (handleStaffMessagePayload(payload)) {
+                    if (msg && msg.sender_type === 'visitor') {
+                        if (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed') {
+                            applyConversationWaitingLocally(cid, {
+                                force: true,
+                                last_message: msg.message || '',
+                                last_message_at: msg.created_at || undefined
+                            });
                         }
-                    } else {
-                        // Full bubble missing from WS payload — rewind and catch via next WS/history hop
-                        var onlyId = parseInt(payload && payload.message_id, 10) || 0;
-                        if (onlyId > 0) {
-                            lastMsgId = Math.min(lastMsgId || onlyId, onlyId - 1);
-                        }
-                        if (!pollDisabled) {
-                            pollMessages({ skipJourney: true, _gapFill: true });
-                        }
+                    } else if (msg && isContinueSystemMessage(msg)) {
+                        applyConversationWaitingLocally(cid, { force: true });
+                    } else if (msg && isCloseSystemMessage(msg)) {
+                        var byClose = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
+                        applyConversationClosedLocally(cid, byClose);
                     }
-                    clearLocalUnread(cid);
                     return;
                 }
                 if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
@@ -4985,6 +5007,10 @@
                     loadConversations();
                 }
             });
+            // Proven staff-room path (same as notes) — supervisors get agent replies here
+            realtimeClient.on('staff.message', function (payload) {
+                handleStaffMessagePayload(payload);
+            });
             realtimeClient.on('inbox.changed', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {
@@ -5000,8 +5026,9 @@
                         if (payload.message.sender_type === 'visitor') {
                             markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
                         }
-                    } else if (!pollDisabled) {
-                        // List-only inbox ping while this chat is open — catch missed agent bubbles
+                    } else {
+                        var painted = maxPaintedMessageId();
+                        if (painted > 0) lastMsgId = Math.min(lastMsgId, painted);
                         pollMessages({ skipJourney: true });
                     }
                     clearLocalUnread(cid);
@@ -5026,20 +5053,12 @@
                 if (payload && payload.receipts && payload.receipts.length) {
                     lastAgentReceipts = payload.receipts;
                     applyReceipts(payload.receipts);
-                } else if (!pollDisabled) {
+                } else {
                     pollMessages({ skipJourney: true });
                 }
             });
-            realtimeClient.on('conversation.note', function (payload) {
-                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                if (!cid || !payload) return;
-                // Notes are staff-only — paint for whoever has this chat open
-                // (assigned agent + any supervisor). Visitor never gets this event.
-                if (selectedId && cid === selectedId) {
-                    appendInlineNote(payload);
-                    appendConversationNote(payload);
-                }
-            });
+            realtimeClient.on('conversation.note', handleStaffNotePayload);
+            realtimeClient.on('staff.note', handleStaffNotePayload);
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {

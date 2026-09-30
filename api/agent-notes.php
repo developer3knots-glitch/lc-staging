@@ -59,10 +59,10 @@ if ($method === 'POST') {
             lc_json(['success' => false, 'error' => 'Failed to save note'], 500);
         }
 
-        // Fan out to assigned agent + every active supervisor + anyone on conv:
-        // (visitor never receives conversation.note)
+        // Fan out notes on the same staff room (agent + every supervisor)
         if (function_exists('lc_realtime_publish_staff_event')) {
-            lc_realtime_publish_staff_event($conversationId, 'conversation.note', $created, 220);
+            lc_realtime_publish_staff_event($conversationId, 'conversation.note', $created, 300);
+            lc_realtime_publish_staff_event($conversationId, 'staff.note', $created, 300);
         } elseif (function_exists('lc_realtime_publish')) {
             $brandId = (int) ($conv['brand_id'] ?? 0);
             if ($brandId > 0) {

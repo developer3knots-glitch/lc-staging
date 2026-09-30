@@ -617,9 +617,15 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
         return;
     }
 
+    $liveMessage = lc_format_message_row($row);
+    // Trim payload for WS reliability (admin bubbles don't need avatar blob)
+    if (isset($liveMessage['agent_avatar'])) {
+        unset($liveMessage['agent_avatar']);
+    }
+
     $msgPayload = [
         'message_id' => $messageId,
-        'message' => lc_format_message_row($row),
+        'message' => $liveMessage,
         'hidden_from_visitor' => (
             ($row['sender_type'] ?? '') === 'system'
             && function_exists('lc_message_hidden_from_visitor')
@@ -627,8 +633,13 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
         ),
     ];
 
-    // Live bubbles first (conv / visitor / agent)
+    // 1) Peers (visitor + staff) — customer + agents
     lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['peers_only' => true]);
+
+    // 2) Same path notes use (proven for supervisor↔agent) — agent bubbles must land here
+    if (function_exists('lc_realtime_publish_staff_event')) {
+        lc_realtime_publish_staff_event($conversationId, 'staff.message', $msgPayload, 300);
+    }
 
     // Inbox list / badges a tick later (no duplicate peer events)
     if (function_exists('lc_realtime_defer')) {
