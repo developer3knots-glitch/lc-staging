@@ -447,20 +447,24 @@ try {
         }
     }
 
-    // Recent transcript for resume / proactive Start-chat — widget paints without
-    // waiting on a separate poll (blank Admin header bug).
+    // Recent transcript for current visitor session only (floor hides closed rounds
+    // until the visitor continues — then only the resumed session is returned).
     $initMessages = [];
     try {
+        $floorId = function_exists('lc_visitor_visible_message_floor')
+            ? lc_visitor_visible_message_floor($convId, '')
+            : 0;
         $mStmt = $db->prepare("
             SELECT m.id, m.sender_type, m.sender_id, m.message, m.created_at,
                    a.name AS agent_name, a.avatar AS agent_avatar
             FROM messages m
             LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
             WHERE m.conversation_id = ?
+              AND m.id >= ?
             ORDER BY m.id ASC
             LIMIT 40
         ");
-        $mStmt->execute([$convId]);
+        $mStmt->execute([$convId, max(1, $floorId)]);
         while ($mrow = $mStmt->fetch(PDO::FETCH_ASSOC)) {
             $text = (string) ($mrow['message'] ?? '');
             if ($text !== '' && function_exists('lc_message_hidden_from_visitor')

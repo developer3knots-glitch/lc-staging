@@ -1073,51 +1073,13 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
         $nextId = (int) ($next->fetchColumn() ?: 0);
         if ($nextId > 0) {
             // New activity after close → current session starts there
+            // (visitor continue / new messages — only THIS session is visible)
             return $nextId;
         }
 
-        // Soft-closed with no messages after close → show THIS closed round
-        // (from previous boundary through the close), not an empty panel.
-        $prev = $db->prepare("
-            SELECT id, message
-            FROM messages
-            WHERE conversation_id = ?
-              AND id < ?
-              AND sender_type = 'system'
-              AND (
-                    message LIKE '%closed the live chat%'
-                 OR message LIKE '%Chat closed%'
-                 OR message LIKE '%Chat ended%'
-                 OR message LIKE '%left the page%'
-                 OR message LIKE '%due to inactivity%'
-                 OR message LIKE '%ended this chat%'
-                 OR message LIKE 'Merged %earlier chat%'
-                 OR message LIKE '%continued this conversation%'
-                 OR message LIKE '%returned. Previous conversation%'
-                 OR message LIKE 'Visitor continued this conversation%'
-                 OR message LIKE 'Visitor returned%'
-              )
-            ORDER BY id DESC
-            LIMIT 1
-        ");
-        $prev->execute([$conversationId, $markerId]);
-        $prevRow = $prev->fetch();
-        if (!$prevRow) {
-            return 0;
-        }
-        $prevId = (int) ($prevRow['id'] ?? 0);
-        $prevText = (string) ($prevRow['message'] ?? '');
-        if (stripos($prevText, 'continued this conversation') !== false
-            || stripos($prevText, 'returned. Previous conversation') !== false
-            || stripos($prevText, 'Visitor continued') !== false
-            || stripos($prevText, 'Visitor returned') !== false) {
-            return max(1, $prevId);
-        }
-        // Previous marker was also a close → session starts just after it
-        $afterPrev = $db->prepare('SELECT id FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 1');
-        $afterPrev->execute([$conversationId, $prevId]);
-        $startId = (int) ($afterPrev->fetchColumn() ?: 0);
-        return $startId > 0 ? $startId : max(1, $prevId + 1);
+        // Soft-closed, nothing after close yet → hide prior session until visitor
+        // types to continue. (Empty panel + "Type a message to continue…" is correct.)
+        return $markerId + 1;
     } catch (Throwable $e) {
         return 0;
     }

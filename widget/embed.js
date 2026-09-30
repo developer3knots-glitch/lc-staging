@@ -3490,9 +3490,12 @@
                 }
             }
         }
-        // Reset cursor + force history merge so agent msgs after continue are not skipped
-        lastMsgId = contiguousPollAfterId() || 0;
-        persistLastMsgId(lastMsgId);
+        // Current session only — reload from floor (continue marker forward)
+        lastMsgId = 0;
+        lastDateLabel = '';
+        pendingHistoryWipe = true;
+        try { persistLastMsgId(0); } catch (eContLm) {}
+        pollMessages(true);
         scheduleGapFill();
         forceMessageCatchup();
         loadRealtimeScript(function () { initVisitorRealtime(); });
@@ -4257,25 +4260,18 @@
             if (Date.now() < resumeGraceUntil) {
                 chatClosed = false;
             } else {
-                // Soft-close: keep compose, load transcript — never wipe first (blank black panel)
+                // Soft-close: keep compose, clear prior session — visitor only sees
+                // transcript after they type to continue (current session).
                 showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
                 if (!options.keepMessages) {
                     lastMsgId = 0;
                     lastDateLabel = '';
-                    pendingHistoryWipe = true;
-                }
-                // Paint any boot messages from widget-init before poll
-                var closedBoot = Array.isArray(data.messages) ? data.messages : [];
-                if (closedBoot.length) {
-                    closedBoot.forEach(function (m) {
-                        try {
-                            appendMessage(m, { suppressAgentState: true });
-                            var mid = parseInt(m && m.id, 10) || 0;
-                            if (mid > 0) advanceLastMsgId(mid);
-                        } catch (eBootC) {}
-                    });
+                    var softBox = document.getElementById('lc-panel-messages');
+                    if (softBox) softBox.innerHTML = '';
                     pendingHistoryWipe = false;
+                    try { persistLastMsgId(0); } catch (eSoftLm) {}
                 }
+                hideChatLoading();
                 pollMessages(true);
                 return;
             }
@@ -5308,13 +5304,16 @@
                 if (isHistoryLoad && gen !== pollGen) return;
                 if (!data || !data.success) {
                     hideChatLoading();
-                    // Auth/network miss — keep retrying history so transcript appears
-                    // (including soft-closed "type to continue" — empty panel is worse)
+                    // Soft-closed empty panel is intentional — do not retry-load old history
+                    if (chatClosed && lastClosedBy !== 'visitor') {
+                        return;
+                    }
+                    // Auth/network miss — keep retrying history so active transcript appears
                     if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                         if (historyRetryTimer) clearTimeout(historyRetryTimer);
                         historyRetryTimer = setTimeout(function () {
                             historyRetryTimer = null;
-                            if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
+                            if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor' && !chatClosed) {
                                 lastMsgId = 0;
                                 pollMessages(true);
                             }
@@ -5413,13 +5412,17 @@
                         }
                         pendingHistoryWipe = false;
                     } else if (pendingHistoryWipe && messages.length === 0) {
-                        // Empty history response — never wipe seeded/WS bubbles (blank Admin screen)
                         pendingHistoryWipe = false;
-                        if (messagesNeedHistoryReload() && conversationId && lastClosedBy !== 'visitor') {
+                        // Soft-closed: empty = hide prior session until visitor continues
+                        if (chatClosed && lastClosedBy !== 'visitor') {
+                            var softEmpty = document.getElementById('lc-panel-messages');
+                            if (softEmpty) softEmpty.innerHTML = '';
+                            hideChatLoading();
+                        } else if (messagesNeedHistoryReload() && conversationId && lastClosedBy !== 'visitor' && !chatClosed) {
                             if (historyRetryTimer) clearTimeout(historyRetryTimer);
                             historyRetryTimer = setTimeout(function () {
                                 historyRetryTimer = null;
-                                if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
+                                if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor' && !chatClosed) {
                                     lastMsgId = 0;
                                     pollMessages(true);
                                 }
