@@ -59,11 +59,15 @@ if ($method === 'POST') {
             lc_json(['success' => false, 'error' => 'Failed to save note'], 500);
         }
 
-        // Brand inbox only — agents already subscribe to it; also publishing
-        // agent:{assigned} doubles delivery for the chatting agent (two channels).
-        $brandId = (int) ($conv['brand_id'] ?? 0);
-        if ($brandId > 0 && function_exists('lc_realtime_publish')) {
-            lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'conversation.note', $created, 120);
+        // Fan out to assigned agent + every active supervisor + anyone on conv:
+        // (visitor never receives conversation.note)
+        if (function_exists('lc_realtime_publish_staff_event')) {
+            lc_realtime_publish_staff_event($conversationId, 'conversation.note', $created, 220);
+        } elseif (function_exists('lc_realtime_publish')) {
+            $brandId = (int) ($conv['brand_id'] ?? 0);
+            if ($brandId > 0) {
+                lc_realtime_publish(lc_realtime_channel_brand_inbox($brandId), 'conversation.note', $created, 120);
+            }
         }
 
         lc_json(['success' => true, 'note' => $created]);

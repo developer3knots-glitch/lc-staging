@@ -2804,10 +2804,12 @@
             if (sendBtn) sendBtn.disabled = false;
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
-            // Persist supervise + refresh left list (selected_id records supervisor server-side)
+            // Persist supervise ASAP so message/note fanout includes this supervisor
             try {
                 paintConversationList(filterConversations(lastConversations));
             } catch (ePaint) {}
+            loadConversations();
+            resetPollTimers();
             return;
         }
 
@@ -4739,13 +4741,21 @@
         }
 
         if (isRealtimeWsLive()) {
-            // Tight safety net — brand/agent/conv WS should be instant
+            // Supervising: faster catch-up so agent↔supervisor stay in sync
+            var chatPollMs = isSupervising ? 400 : 800;
             pollTimer = setInterval(function () {
-                if (selectedId) pollMessages({ skipJourney: true });
-            }, 800);
+                if (selectedId) {
+                    // Never let lastMsgId drift past painted bubbles
+                    var painted = maxPaintedMessageId();
+                    if (painted > 0 && lastMsgId > painted) {
+                        lastMsgId = painted;
+                    }
+                    pollMessages({ skipJourney: true });
+                }
+            }, chatPollMs);
             listTimer = setInterval(function () {
                 loadConversations();
-            }, 4000);
+            }, isSupervising ? 2500 : 4000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 30000);
@@ -4914,8 +4924,18 @@
                             var by = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
                             applyConversationClosedLocally(cid, by);
                         }
-                    } else {
-                        pollMessages();
+                        // Supervisor / peer: poll once to pick any siblings missed in the same burst
+                        if (isSupervising && msg.sender_type === 'agent' && !pollDisabled) {
+                            setTimeout(function () {
+                                if (selectedId === cid) {
+                                    var painted = maxPaintedMessageId();
+                                    if (painted > 0) lastMsgId = Math.min(lastMsgId, painted);
+                                    pollMessages({ skipJourney: true, _gapFill: true });
+                                }
+                            }, 250);
+                        }
+                    } else if (!pollDisabled) {
+                        pollMessages({ skipJourney: true });
                     }
                     clearLocalUnread(cid);
                     return;
@@ -4984,6 +5004,9 @@
             });
             realtimeClient.on('conversation.note', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (!cid || !payload) return;
+                // Notes are staff-only — paint for whoever has this chat open
+                // (assigned agent + any supervisor). Visitor never gets this event.
                 if (selectedId && cid === selectedId) {
                     appendInlineNote(payload);
                     appendConversationNote(payload);
