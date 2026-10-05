@@ -51,10 +51,32 @@
             .replace(/"/g, '&quot;');
     }
 
+    function countryCodeFromRow(row) {
+        var code = String(row.country_code || '').trim().toUpperCase();
+        if (/^[A-Z]{2}$/.test(code)) return code;
+        var raw = String(row.country || '');
+        var m = raw.match(/\(([A-Z]{2})\)\s*$/);
+        return m ? m[1] : '';
+    }
+
+    function countryFlagHtml(code) {
+        code = String(code || '').toLowerCase();
+        if (!/^[a-z]{2}$/.test(code)) return '';
+        return '<img class="lc-traffic-flag" src="https://flagcdn.com/20x15/' + code + '.png"'
+            + ' srcset="https://flagcdn.com/40x30/' + code + '.png 2x"'
+            + ' width="20" height="15" alt="" loading="lazy" decoding="async">';
+    }
+
     function countryLabel(row) {
-        var c = row.country || '';
-        if (!c) return '—';
-        return esc(c.replace(/\s*\([A-Z]{2}\)\s*$/, '').trim() || c);
+        var raw = String(row.country || '').trim();
+        if (!raw) return '<span class="lc-traffic-muted">—</span>';
+        var name = raw.replace(/\s*\([A-Z]{2}\)\s*$/, '').trim() || raw;
+        var code = countryCodeFromRow(row);
+        var flag = countryFlagHtml(code);
+        return '<span class="lc-traffic-country">'
+            + (flag || '<span class="lc-traffic-flag-fallback" aria-hidden="true"></span>')
+            + '<span class="lc-traffic-country-name">' + esc(name) + '</span>'
+            + '</span>';
     }
 
     function activityCell(row) {

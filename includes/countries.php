@@ -49,3 +49,25 @@ function lc_country_name(string $code): string
 
     return $list[$code] ?? $code;
 }
+
+/** Resolve ISO alpha-2 from "Pakistan" or "Pakistan (PK)". */
+function lc_country_code_from_label(string $label): string
+{
+    $label = trim($label);
+    if ($label === '') {
+        return '';
+    }
+    if (preg_match('/\(([A-Z]{2})\)\s*$/', $label, $m)) {
+        return $m[1];
+    }
+    if (preg_match('/^[A-Z]{2}$/', $label)) {
+        return $label;
+    }
+    $needle = strtolower($label);
+    foreach (lc_country_list() as $code => $name) {
+        if (strtolower($name) === $needle) {
+            return $code;
+        }
+    }
+    return '';
+}

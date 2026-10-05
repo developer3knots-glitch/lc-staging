@@ -4882,6 +4882,37 @@ body.lc-avatar-modal-open {
     font-variant-numeric: tabular-nums;
 }
 
+.lc-traffic-country {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.lc-traffic-flag {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.lc-traffic-flag-fallback {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+.lc-traffic-country-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .lc-traffic-email {
     font-size: 0.84rem;
     max-width: 200px;

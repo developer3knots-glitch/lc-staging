@@ -249,6 +249,8 @@ try {
         $countryCode = '';
         if (preg_match('/\(([A-Z]{2})\)\s*$/', $country, $m)) {
             $countryCode = $m[1];
+        } elseif ($country !== '' && function_exists('lc_country_code_from_label')) {
+            $countryCode = lc_country_code_from_label($country);
         }
 
         $activity = 'Left website';
