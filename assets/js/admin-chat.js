@@ -3857,6 +3857,14 @@
             // Open on keydown too — some layouts never report keyup as "#"
             setTimeout(maybeOpenCannedFromHashInput, 0);
         }
+        // # picker open + empty compose → Backspace closes picker
+        if ((e.key === 'Backspace' || e.key === 'Delete')
+            && cannedHashPicker && !cannedHashPicker.hidden
+            && !(String(replyInput.value || '').trim())) {
+            e.preventDefault();
+            closeCannedHashPicker();
+            return;
+        }
         if (e.key !== 'Enter' || e.shiftKey) return;
         if (e.repeat) return;
         e.preventDefault();
@@ -4481,6 +4489,15 @@
         });
         cannedHashSearch.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCannedHashPicker();
+                if (replyInput) replyInput.focus();
+                return;
+            }
+            // Empty search + Backspace (composer already empty after #) → close picker
+            if ((e.key === 'Backspace' || e.key === 'Delete')
+                && !(String(cannedHashSearch.value || ''))
+                && !(replyInput && String(replyInput.value || '').trim())) {
                 e.preventDefault();
                 closeCannedHashPicker();
                 if (replyInput) replyInput.focus();
