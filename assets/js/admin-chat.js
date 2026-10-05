@@ -160,6 +160,7 @@
     var cannedHashList = document.getElementById('lc-canned-hash-list');
     var cannedHashClose = document.getElementById('lc-canned-hash-close');
     var cannedHashActiveIdx = -1;
+    var cannedHashOpening = false;
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
     var transferPanel = document.getElementById('lc-transfer-panel');
@@ -2884,6 +2885,25 @@
         if (cannedHashSearch) cannedHashSearch.value = '';
         if (cannedHashList) cannedHashList.innerHTML = '';
         cannedHashActiveIdx = -1;
+        cannedHashOpening = false;
+    }
+
+    function positionCannedHashPicker() {
+        if (!cannedHashPicker) return;
+        var compose = document.getElementById('lc-chat-compose');
+        if (!compose) return;
+        var r = compose.getBoundingClientRect();
+        var left = Math.max(12, Math.round(r.left + 12));
+        var width = Math.max(260, Math.round(r.width - 24));
+        var maxRight = window.innerWidth - 12;
+        if (left + width > maxRight) width = Math.max(240, maxRight - left);
+        cannedHashPicker.style.position = 'fixed';
+        cannedHashPicker.style.left = left + 'px';
+        cannedHashPicker.style.width = width + 'px';
+        cannedHashPicker.style.right = 'auto';
+        cannedHashPicker.style.bottom = Math.max(8, Math.round(window.innerHeight - r.top + 8)) + 'px';
+        cannedHashPicker.style.top = 'auto';
+        cannedHashPicker.style.zIndex = '400';
     }
 
     function renderCannedHashList(query) {
@@ -2956,16 +2976,22 @@
         if (!cannedHashPicker || !replyInput || replyInput.disabled) return;
         closeCannedPanel();
         cannedHashPicker.hidden = false;
+        positionCannedHashPicker();
         if (cannedHashSearch) cannedHashSearch.value = '';
         renderCannedHashList('');
         loadCanned();
         if (cannedHashSearch) {
-            setTimeout(function () { cannedHashSearch.focus(); }, 0);
+            setTimeout(function () {
+                positionCannedHashPicker();
+                cannedHashSearch.focus();
+            }, 0);
         }
     }
 
     function openCannedFromHashShortcut() {
+        if (cannedHashOpening) return;
         if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
+        cannedHashOpening = true;
         var val = String(replyInput.value || '');
         var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
         if (pos > 0 && val.charAt(pos - 1) === '#') {
@@ -2978,6 +3004,18 @@
             } catch (err2) {}
         }
         openCannedHashPicker();
+        setTimeout(function () { cannedHashOpening = false; }, 50);
+    }
+
+    function maybeOpenCannedFromHashInput() {
+        if (cannedHashOpening) return;
+        if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
+        if (cannedHashPicker && !cannedHashPicker.hidden) return;
+        var val = String(replyInput.value || '');
+        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
+        if (pos > 0 && val.charAt(pos - 1) === '#') {
+            openCannedFromHashShortcut();
+        }
     }
 
     function renderCannedListLive(query) {
@@ -3809,17 +3847,24 @@
         sendReply();
     });
     replyInput.addEventListener('keydown', function (e) {
+        if (e.key === '#' || (e.shiftKey && (e.key === '3' || e.code === 'Digit3'))) {
+            // Open on keydown too — some layouts never report keyup as "#"
+            setTimeout(maybeOpenCannedFromHashInput, 0);
+        }
         if (e.key !== 'Enter' || e.shiftKey) return;
         if (e.repeat) return;
         e.preventDefault();
         sendReply();
     });
     replyInput.addEventListener('keyup', function (e) {
-        if (e.key !== '#') return;
+        if (e.key !== '#' && !(e.shiftKey && (e.key === '3' || e.code === 'Digit3'))) return;
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         openCannedFromHashShortcut();
     });
-    replyInput.addEventListener('input', onAgentComposeActivity);
+    replyInput.addEventListener('input', function () {
+        onAgentComposeActivity();
+        maybeOpenCannedFromHashInput();
+    });
     replyInput.addEventListener('paste', function () {
         setTimeout(onAgentComposeActivity, 0);
     });

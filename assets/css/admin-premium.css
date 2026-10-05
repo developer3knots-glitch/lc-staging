@@ -11112,17 +11112,15 @@ body.lc-page-chats .lc-chat-canned-empty {
     overflow: hidden !important;
 }
 
-/* # shortcut picker — floats above chat compose (separate from Canned button panel) */
+/* # shortcut picker — fixed above compose so parent overflow:hidden can't clip it */
 body.lc-page-chats .lc-chat-compose-pro {
     position: relative;
+    overflow: visible;
 }
 
 body.lc-page-chats .lc-canned-hash-picker {
-    position: absolute;
-    left: 1rem;
-    right: 1rem;
-    bottom: calc(100% + 0.4rem);
-    z-index: 50;
+    position: fixed;
+    z-index: 400;
     display: flex;
     flex-direction: column;
     max-height: min(360px, 48vh);
