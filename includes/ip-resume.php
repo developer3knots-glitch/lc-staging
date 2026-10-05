@@ -315,15 +315,11 @@ function lc_claim_ip_conversation(string $ip, int $brandId, int $currentVisitorI
     }
 
     if ($status === 'closed') {
-        // Same IP + same day: keep ONE ticket identity, but do NOT reopen on page load /
-        // widget refresh. Reopen only when the visitor actually continues (send / upload).
-        try {
-            $db->prepare('
-                UPDATE conversations
-                SET visitor_id = ?
-                WHERE id = ? AND DATE(started_at) = CURDATE()
-            ')->execute([$currentVisitorId, $convId]);
-        } catch (Throwable $e) {
+        // Only the same visitor row may soft-resume a closed ticket.
+        // Never rebind another browser/NAT stranger onto a closed chat (shows
+        // "Thanks for chatting" to brand-new visitors on a shared IP).
+        if ((int) $ownerVisitorId !== (int) $currentVisitorId) {
+            return null;
         }
         return ['id' => $convId, 'status' => 'closed'];
     }

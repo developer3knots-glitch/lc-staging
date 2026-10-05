@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 140;
+    var LC_WIDGET_BUILD = 141;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -2663,29 +2663,51 @@
         var liveId = serverLiveConversationId || resumeId || 0;
         var liveStatus = serverLiveConversationStatus;
 
+        // New IP / rotated identity → never reopen someone else's (or previous IP) closed screen
+        if (data.visitor_uid_rotated) {
+            pendingResumeConvId = null;
+            serverLiveConversationId = 0;
+            serverLiveConversationStatus = '';
+            persistConversationId(null);
+            persistChatToken('');
+            paintFreshChatEntry();
+            scheduleAutoOpenOnLoad();
+            return;
+        }
+
+        // Prefer server-owned live id; sessionStorage alone must not force a closed "Thanks" screen
+        var serverId = serverLiveConversationId || 0;
+
         // Already-started chat (waiting queue OR active with agent) → open thread now.
-        // Never flash "Let's chat" / idle over a live conversation on reload.
-        if (liveId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
-            pendingResumeConvId = liveId;
-            initChat({ resumeConversationId: liveId });
+        if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
+            pendingResumeConvId = serverId;
+            initChat({ resumeConversationId: serverId });
             return;
         }
 
-        // Soft-closed same-day ticket → keep transcript + continue compose (never idle)
-        var softResumeId = 0;
-        if (liveId > 0 && liveStatus === 'closed') {
-            softResumeId = liveId;
-        } else if (resumeId) {
-            softResumeId = resumeId;
-        }
-        if (softResumeId > 0 && (liveStatus === 'closed' || !liveStatus || liveStatus === '')) {
-            pendingResumeConvId = softResumeId;
-            initChat({ resumeConversationId: softResumeId });
+        // Soft-closed: ONLY when server confirms THIS visitor's closed ticket today
+        if (serverId > 0 && liveStatus === 'closed') {
+            pendingResumeConvId = serverId;
+            initChat({ resumeConversationId: serverId });
             return;
         }
 
-        if (liveId > 0) {
-            pendingResumeConvId = liveId;
+        // Stored id without server confirmation: resume only if server echoed same waiting/active
+        if (resumeId && serverId === resumeId && (liveStatus === 'active' || liveStatus === 'waiting')) {
+            pendingResumeConvId = resumeId;
+            initChat({ resumeConversationId: resumeId });
+            return;
+        }
+
+        // Stale sessionStorage from another IP / old closed chat — drop it
+        if (resumeId && !(serverId > 0 && serverId === resumeId)) {
+            persistConversationId(null);
+            persistChatToken('');
+            pendingResumeConvId = null;
+        }
+
+        if (serverId > 0) {
+            pendingResumeConvId = serverId;
         }
 
         if (prechatFormEnabled) {
@@ -5308,16 +5330,11 @@
         }
         lastMsgId = 0;
 
-        // Instant resume: don't wait for settings_only (geo-slow) to paint Let's chat
+        // Do NOT initChat here — settings_only must confirm IP/visitor first.
+        // Blind resume from sessionStorage caused "Thanks for chatting" on new IPs.
         var storedId = parseInt(getStoredConversationId(), 10) || 0;
-        if (storedId > 0 && !chatInitInFlight && !conversationId) {
-            entryRouted = true;
+        if (storedId > 0 && !conversationId) {
             pendingResumeConvId = storedId;
-            hideIdleIntro();
-            showChatView();
-            showChatLoading('Loading chat...', 'Waiting for chat to load');
-            scheduleAutoOpenOnLoad();
-            initChat({ resumeConversationId: storedId });
         }
     }
 

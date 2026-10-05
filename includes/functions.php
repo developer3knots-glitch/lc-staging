@@ -1061,8 +1061,11 @@ function lc_conversation_closed_by(int $conversationId): string
             if (preg_match('/left the page/i', $text)) {
                 return 'leave';
             }
-            if (preg_match('/visitor closed the live chat|closed the live chat/i', $text)) {
+            if (preg_match('/visitor closed the live chat/i', $text)) {
                 return 'visitor';
+            }
+            if (preg_match('/closed the live chat/i', $text)) {
+                return 'remote';
             }
             return 'remote';
         }

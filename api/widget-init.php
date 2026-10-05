@@ -70,15 +70,14 @@ try {
         $liveByIp = function_exists('lc_find_conversation_by_ip')
             ? lc_find_conversation_by_ip($ip, $brandId)
             : null;
+        // Unknown browser uid: only surface LIVE chats by IP — never another person's closed screen
         $hasLive = $liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
             'has_active_chat' => $hasLive,
-            'conversation_id' => ($liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active', 'closed'], true))
-                ? (int) $liveByIp['id']
-                : null,
-            'conversation_status' => $liveByIp ? (string) ($liveByIp['status'] ?? '') : '',
+            'conversation_id' => $hasLive ? (int) $liveByIp['id'] : null,
+            'conversation_status' => $hasLive ? (string) ($liveByIp['status'] ?? '') : '',
             'visitor_uid' => $visitorUid,
             'visitor_uid_rotated' => $visitorUidRotated,
             'visitor_identity_complete' => $known !== null,
@@ -197,10 +196,26 @@ try {
         } catch (Throwable $e) {
             $liveConv = null;
         }
+        // Same visitor's soft-closed ticket today (not another IP-share person's closed chat)
+        if (!$liveConv) {
+            try {
+                $closedStmt = $db->prepare("
+                    SELECT id, status FROM conversations
+                    WHERE visitor_id = ? AND brand_id = ? AND status = 'closed'
+                      AND DATE(started_at) = CURDATE()
+                    ORDER BY COALESCE(closed_at, last_message_at, started_at) DESC, id DESC
+                    LIMIT 1
+                ");
+                $closedStmt->execute([$visitorId, $brandId]);
+                $liveConv = $closedStmt->fetch() ?: null;
+            } catch (Throwable $e) {
+                $liveConv = null;
+            }
+        }
         if (!$liveConv && function_exists('lc_find_conversation_by_ip')) {
             $byIp = lc_find_conversation_by_ip($ip, $brandId);
-            // Same IP + today: live OR closed (will reopen on next message)
-            if ($byIp && in_array($byIp['status'] ?? '', ['waiting', 'active', 'closed'], true)) {
+            // IP share: only claim LIVE threads — never auto-open someone else's closed "Thanks" screen
+            if ($byIp && in_array($byIp['status'] ?? '', ['waiting', 'active'], true)) {
                 $liveConv = $byIp;
             }
         }
