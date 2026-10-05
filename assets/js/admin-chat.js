@@ -155,7 +155,11 @@
     var cannedListLive = document.getElementById('lc-canned-list-live');
     var cannedSearchLive = document.getElementById('lc-canned-search-live');
     var cannedRepliesCache = [];
-    var cannedShowAllIfEmpty = false;
+    var cannedHashPicker = document.getElementById('lc-canned-hash-picker');
+    var cannedHashSearch = document.getElementById('lc-canned-hash-search');
+    var cannedHashList = document.getElementById('lc-canned-hash-list');
+    var cannedHashClose = document.getElementById('lc-canned-hash-close');
+    var cannedHashActiveIdx = -1;
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
     var transferPanel = document.getElementById('lc-transfer-panel');
@@ -2844,6 +2848,7 @@
             replyInput.setSelectionRange(len, len);
         } catch (e2) {}
         closeCannedPanel();
+        closeCannedHashPicker();
     }
 
     function closeCannedPanel() {
@@ -2851,18 +2856,16 @@
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'false');
         if (cannedSearchLive) cannedSearchLive.value = '';
         if (cannedListLive) cannedListLive.innerHTML = '';
-        cannedShowAllIfEmpty = false;
     }
 
-    function openCannedPanel(opts) {
-        opts = opts || {};
+    function openCannedPanel() {
         if (!cannedPanel) return;
+        closeCannedHashPicker();
         cannedPanel.hidden = false;
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'true');
-        cannedShowAllIfEmpty = !!opts.showAllIfEmpty;
-        if (cannedSearchLive) cannedSearchLive.value = opts.query || '';
-        // Hash shortcut: show full list so agent can pick immediately; button open stays search-first
-        renderCannedListLive(opts.query || '', { showAllIfEmpty: cannedShowAllIfEmpty });
+        if (cannedSearchLive) cannedSearchLive.value = '';
+        // Only search field until user types — no full list dump
+        renderCannedListLive('');
         loadCanned();
         if (cannedSearchLive) {
             setTimeout(function () { cannedSearchLive.focus(); }, 0);
@@ -2875,8 +2878,94 @@
         else closeCannedPanel();
     }
 
+    function closeCannedHashPicker() {
+        if (!cannedHashPicker) return;
+        cannedHashPicker.hidden = true;
+        if (cannedHashSearch) cannedHashSearch.value = '';
+        if (cannedHashList) cannedHashList.innerHTML = '';
+        cannedHashActiveIdx = -1;
+    }
+
+    function renderCannedHashList(query) {
+        if (!cannedHashList) return;
+        var q = String(query || '').trim().toLowerCase();
+        if (!cannedRepliesCache.length) {
+            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No canned replies yet — add some in Canned Replies</div>';
+            cannedHashActiveIdx = -1;
+            return;
+        }
+        var html = '';
+        var shown = 0;
+        var firstIdx = -1;
+        cannedRepliesCache.forEach(function (r, idx) {
+            if (!r) return;
+            var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
+            if (q && hay.indexOf(q) === -1) return;
+            if (firstIdx < 0) firstIdx = idx;
+            shown += 1;
+            var title = esc(r.title || 'Reply');
+            var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 110));
+            html += '<button type="button" class="lc-canned-hash-item" role="option" data-idx="' + idx + '">'
+                + '<strong>' + title + '</strong>'
+                + '<span>' + preview + (String(r.message || '').length > 110 ? '…' : '') + '</span>'
+                + '</button>';
+        });
+        if (!shown) {
+            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No matching replies</div>';
+            cannedHashActiveIdx = -1;
+            return;
+        }
+        cannedHashList.innerHTML = html;
+        setCannedHashActiveByIdx(firstIdx);
+    }
+
+    function setCannedHashActiveByIdx(idx) {
+        if (!cannedHashList) return;
+        var buttons = cannedHashList.querySelectorAll('.lc-canned-hash-item');
+        cannedHashActiveIdx = -1;
+        buttons.forEach(function (btn) {
+            var i = parseInt(btn.getAttribute('data-idx'), 10);
+            var on = i === idx;
+            btn.classList.toggle('is-active', on);
+            if (on) {
+                cannedHashActiveIdx = i;
+                try { btn.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+            }
+        });
+    }
+
+    function moveCannedHashActive(delta) {
+        if (!cannedHashList) return;
+        var buttons = Array.prototype.slice.call(cannedHashList.querySelectorAll('.lc-canned-hash-item'));
+        if (!buttons.length) return;
+        var cur = -1;
+        buttons.forEach(function (btn, i) {
+            if (parseInt(btn.getAttribute('data-idx'), 10) === cannedHashActiveIdx) cur = i;
+        });
+        var next = cur < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, cur + delta));
+        setCannedHashActiveByIdx(parseInt(buttons[next].getAttribute('data-idx'), 10));
+    }
+
+    function applyCannedHashActive() {
+        if (cannedHashActiveIdx < 0) return;
+        var row = cannedRepliesCache[cannedHashActiveIdx];
+        if (row && row.message) applyCannedReply(row.message);
+    }
+
+    function openCannedHashPicker() {
+        if (!cannedHashPicker || !replyInput || replyInput.disabled) return;
+        closeCannedPanel();
+        cannedHashPicker.hidden = false;
+        if (cannedHashSearch) cannedHashSearch.value = '';
+        renderCannedHashList('');
+        loadCanned();
+        if (cannedHashSearch) {
+            setTimeout(function () { cannedHashSearch.focus(); }, 0);
+        }
+    }
+
     function openCannedFromHashShortcut() {
-        if (!replyInput || replyInput.disabled || !cannedPanel) return;
+        if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
         var val = String(replyInput.value || '');
         var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
         if (pos > 0 && val.charAt(pos - 1) === '#') {
@@ -2888,22 +2977,17 @@
                 replyInput.dispatchEvent(new Event('input', { bubbles: true }));
             } catch (err2) {}
         }
-        openCannedPanel({ showAllIfEmpty: true });
+        openCannedHashPicker();
     }
 
-    function renderCannedListLive(query, opts) {
+    function renderCannedListLive(query) {
         if (!cannedListLive) return;
-        opts = opts || {};
         var q = String(query || '').trim().toLowerCase();
-        // Empty search → hide all replies (search-only UX), unless hash shortcut asked for full list
-        if (!q && !opts.showAllIfEmpty) {
+        // Empty search → hide all replies (search-only UX)
+        if (!q) {
             cannedListLive.innerHTML = cannedRepliesCache.length
                 ? '<div class="lc-chat-canned-empty">Type to search replies…</div>'
                 : '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
-            return;
-        }
-        if (!q && opts.showAllIfEmpty && !cannedRepliesCache.length) {
-            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
             return;
         }
         var html = '';
@@ -2912,7 +2996,7 @@
             if (!r) return;
             // Match against title + full message body
             var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
-            if (q && hay.indexOf(q) === -1) return;
+            if (hay.indexOf(q) === -1) return;
             shown += 1;
             var title = esc(r.title || 'Reply');
             var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 90));
@@ -2948,10 +3032,10 @@
                     });
                 }
                 if (cannedPanel && !cannedPanel.hidden) {
-                    renderCannedListLive(
-                        cannedSearchLive ? cannedSearchLive.value : '',
-                        { showAllIfEmpty: cannedShowAllIfEmpty }
-                    );
+                    renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
+                }
+                if (cannedHashPicker && !cannedHashPicker.hidden) {
+                    renderCannedHashList(cannedHashSearch ? cannedHashSearch.value : '');
                 }
             });
     }
@@ -4316,10 +4400,7 @@
 
     if (cannedSearchLive) {
         cannedSearchLive.addEventListener('input', function () {
-            if (String(cannedSearchLive.value || '').trim()) {
-                cannedShowAllIfEmpty = false;
-            }
-            renderCannedListLive(cannedSearchLive.value, { showAllIfEmpty: cannedShowAllIfEmpty });
+            renderCannedListLive(cannedSearchLive.value);
         });
         cannedSearchLive.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
@@ -4343,11 +4424,68 @@
         });
     }
 
+    if (cannedHashSearch) {
+        cannedHashSearch.addEventListener('input', function () {
+            renderCannedHashList(cannedHashSearch.value);
+        });
+        cannedHashSearch.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCannedHashPicker();
+                if (replyInput) replyInput.focus();
+                return;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveCannedHashActive(1);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveCannedHashActive(-1);
+                return;
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyCannedHashActive();
+            }
+        });
+    }
+
+    if (cannedHashList) {
+        cannedHashList.addEventListener('click', function (e) {
+            var btn = e.target.closest('.lc-canned-hash-item');
+            if (!btn) return;
+            e.preventDefault();
+            var idx = parseInt(btn.getAttribute('data-idx'), 10);
+            var row = cannedRepliesCache[idx];
+            if (row && row.message) applyCannedReply(row.message);
+        });
+        cannedHashList.addEventListener('mousemove', function (e) {
+            var btn = e.target.closest('.lc-canned-hash-item');
+            if (!btn) return;
+            setCannedHashActiveByIdx(parseInt(btn.getAttribute('data-idx'), 10));
+        });
+    }
+
+    if (cannedHashClose) {
+        cannedHashClose.addEventListener('click', function (e) {
+            e.preventDefault();
+            closeCannedHashPicker();
+            if (replyInput) replyInput.focus();
+        });
+    }
+
     document.addEventListener('click', function (e) {
-        if (!cannedPanel || cannedPanel.hidden) return;
-        var bar = document.querySelector('.lc-chat-canned-bar');
-        if (bar && bar.contains(e.target)) return;
-        closeCannedPanel();
+        if (cannedPanel && !cannedPanel.hidden) {
+            var bar = document.querySelector('.lc-chat-canned-bar');
+            if (!(bar && bar.contains(e.target))) closeCannedPanel();
+        }
+        if (cannedHashPicker && !cannedHashPicker.hidden) {
+            if (!cannedHashPicker.contains(e.target) && e.target !== replyInput) {
+                closeCannedHashPicker();
+            }
+        }
     });
 
     if (moreBtn) {

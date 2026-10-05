@@ -232,6 +232,14 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
+                    <div class="lc-canned-hash-picker" id="lc-canned-hash-picker" hidden role="dialog" aria-label="Canned replies shortcut">
+                        <div class="lc-canned-hash-picker-head">
+                            <strong><i class="ti ti-bolt" aria-hidden="true"></i> Canned replies</strong>
+                            <button type="button" class="lc-canned-hash-picker-close" id="lc-canned-hash-close" title="Close" aria-label="Close"><i class="ti ti-x"></i></button>
+                        </div>
+                        <input type="search" class="lc-canned-hash-search" id="lc-canned-hash-search" placeholder="Search canned replies…" autocomplete="off" aria-label="Search canned replies">
+                        <div class="lc-canned-hash-list" id="lc-canned-hash-list" role="listbox" aria-label="Canned replies"></div>
+                    </div>
                     <div class="lc-compose-shell">
                         <div class="lc-compose-toolbar" id="lc-compose-mode-bar">
                             <div class="lc-compose-mode-tabs" role="tablist" aria-label="Compose mode">
@@ -246,7 +254,7 @@ require __DIR__ . '/includes/header.php';
                             </div>
                             <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
                                 <div class="lc-chat-canned-bar">
-                                    <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies (shortcut: #)">
+                                    <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
                                         <i class="ti ti-bolt" aria-hidden="true"></i>
                                         <span>Canned</span>
                                     </button>
