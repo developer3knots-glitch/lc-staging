@@ -1472,7 +1472,13 @@
             replyInput.value = '';
             replyInput.placeholder = closedBy === 'inactivity'
                 ? 'Chat closed due to inactivity'
-                : 'Chat closed - visitor ended this conversation';
+                : (closedBy === 'agent'
+                    ? 'Chat closed by agent'
+                    : (closedBy === 'leave'
+                        ? 'Chat closed - visitor left'
+                        : (closedBy === 'visitor'
+                            ? 'Chat closed - visitor ended this conversation'
+                            : 'Chat closed')));
         }
         var sendBtn = document.getElementById('lc-send-reply');
         if (sendBtn) sendBtn.disabled = true;

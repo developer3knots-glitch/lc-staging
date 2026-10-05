@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 139;
+    var LC_WIDGET_BUILD = 140;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -2664,11 +2664,23 @@
         var liveStatus = serverLiveConversationStatus;
 
         // Already-started chat (waiting queue OR active with agent) → open thread now.
-        // Never flash "Let's chat" over a live conversation on reload.
-        if (liveId > 0 && (liveStatus === 'active' || liveStatus === 'waiting'
-            || (resumeId && liveId === resumeId && liveStatus !== 'closed'))) {
+        // Never flash "Let's chat" / idle over a live conversation on reload.
+        if (liveId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = liveId;
             initChat({ resumeConversationId: liveId });
+            return;
+        }
+
+        // Soft-closed same-day ticket → keep transcript + continue compose (never idle)
+        var softResumeId = 0;
+        if (liveId > 0 && liveStatus === 'closed') {
+            softResumeId = liveId;
+        } else if (resumeId) {
+            softResumeId = resumeId;
+        }
+        if (softResumeId > 0 && (liveStatus === 'closed' || !liveStatus || liveStatus === '')) {
+            pendingResumeConvId = softResumeId;
+            initChat({ resumeConversationId: softResumeId });
             return;
         }
 
@@ -3383,16 +3395,18 @@
         var sysMsgs = box.querySelectorAll('.lcw-msg.lcw-system');
         for (var i = sysMsgs.length - 1; i >= 0; i--) {
             var txt = (sysMsgs[i].textContent || '').trim();
+            // Continue after a close means the thread is open again — ignore older closes
+            if (/continued this conversation|returned\. Previous conversation|Visitor returned/i.test(txt)) {
+                return '';
+            }
+            if (/will close soon due to inactivity|Are you still there/i.test(txt)) {
+                continue;
+            }
             if (/chat closed by agent/i.test(txt)) return 'agent';
             if (/closed automatically due to inactivity/i.test(txt)) return 'inactivity';
             if (/left the page/i.test(txt)) return 'leave';
             if (/visitor closed the live chat/i.test(txt)) return 'visitor';
         }
-        var blob = (box.innerText || box.textContent || '');
-        if (/chat closed by agent/i.test(blob)) return 'agent';
-        if (/closed automatically due to inactivity/i.test(blob)) return 'inactivity';
-        if (/visitor closed the live chat/i.test(blob)) return 'visitor';
-        if (/left the page/i.test(blob)) return 'leave';
         return lastClosedBy || '';
     }
 
@@ -3505,6 +3519,7 @@
         chatClosed = false;
         lastClosedBy = '';
         leaveCloseSent = false;
+        pendingHistoryWipe = false;
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         setCloseChatVisible(true);
@@ -3522,12 +3537,8 @@
                 }
             }
         }
-        // Current session only — reload from floor (continue marker forward)
-        lastMsgId = 0;
-        lastDateLabel = '';
-        pendingHistoryWipe = true;
-        try { persistLastMsgId(0); } catch (eContLm) {}
-        pollMessages(true);
+        // Keep painted transcript — only catch up new rows (never wipe on continue)
+        pollMessages(false);
         scheduleGapFill();
         forceMessageCatchup();
         loadRealtimeScript(function () { initVisitorRealtime(); });
@@ -4292,19 +4303,33 @@
             if (Date.now() < resumeGraceUntil) {
                 chatClosed = false;
             } else {
-                // Soft-close: keep compose, clear prior session — visitor only sees
-                // transcript after they type to continue (current session).
+                // Soft-close: keep compose + full current-round transcript (never blank/idle)
                 showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
                 if (!options.keepMessages) {
                     lastMsgId = 0;
                     lastDateLabel = '';
-                    var softBox = document.getElementById('lc-panel-messages');
-                    if (softBox) softBox.innerHTML = '';
-                    pendingHistoryWipe = false;
                     try { persistLastMsgId(0); } catch (eSoftLm) {}
+                    pendingHistoryWipe = true;
+                }
+                var softBoot = Array.isArray(data.messages) ? data.messages : [];
+                if (softBoot.length) {
+                    softBoot.forEach(function (m) {
+                        try {
+                            appendMessage(m, { suppressAgentState: true });
+                            var smid = parseInt(m && m.id, 10) || 0;
+                            if (smid > 0) advanceLastMsgId(smid);
+                        } catch (eSoftBoot) {}
+                    });
+                    pendingHistoryWipe = false;
                 }
                 hideChatLoading();
                 pollMessages(true);
+                startLiveMessageSync();
+                var softToken = data.realtime_token || '';
+                loadRealtimeScript(function () {
+                    initVisitorRealtime(softToken || null);
+                });
+                scheduleAutoOpenOnLoad();
                 return;
             }
         }
@@ -5357,16 +5382,16 @@
                 if (isHistoryLoad && gen !== pollGen) return;
                 if (!data || !data.success) {
                     hideChatLoading();
-                    // Soft-closed empty panel is intentional — do not retry-load old history
-                    if (chatClosed && lastClosedBy !== 'visitor') {
+                    // Soft-closed with bubbles already painted — stop. Empty panel must still retry.
+                    if (chatClosed && lastClosedBy !== 'visitor' && !messagesNeedHistoryReload()) {
                         return;
                     }
-                    // Auth/network miss — keep retrying history so active transcript appears
+                    // Auth/network miss — keep retrying history so transcript appears (active or soft-closed)
                     if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                         if (historyRetryTimer) clearTimeout(historyRetryTimer);
                         historyRetryTimer = setTimeout(function () {
                             historyRetryTimer = null;
-                            if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor' && !chatClosed) {
+                            if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                                 lastMsgId = 0;
                                 pollMessages(true);
                             }
@@ -5466,16 +5491,12 @@
                         pendingHistoryWipe = false;
                     } else if (pendingHistoryWipe && messages.length === 0) {
                         pendingHistoryWipe = false;
-                        // Soft-closed: empty = hide prior session until visitor continues
-                        if (chatClosed && lastClosedBy !== 'visitor') {
-                            var softEmpty = document.getElementById('lc-panel-messages');
-                            if (softEmpty) softEmpty.innerHTML = '';
-                            hideChatLoading();
-                        } else if (messagesNeedHistoryReload() && conversationId && lastClosedBy !== 'visitor' && !chatClosed) {
+                        // Empty history response — retry (including soft-closed). Never wipe bubbles.
+                        if (messagesNeedHistoryReload() && conversationId && lastClosedBy !== 'visitor') {
                             if (historyRetryTimer) clearTimeout(historyRetryTimer);
                             historyRetryTimer = setTimeout(function () {
                                 historyRetryTimer = null;
-                                if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor' && !chatClosed) {
+                                if (conversationId && messagesNeedHistoryReload() && lastClosedBy !== 'visitor') {
                                     lastMsgId = 0;
                                     pollMessages(true);
                                 }

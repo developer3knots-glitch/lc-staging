@@ -259,6 +259,9 @@ try {
                 $reopened = lc_reopen_recent_visitor_close($resumeConvId, $visitorId);
                 if ($reopened) {
                     $conv = $reopened;
+                } else {
+                    // Soft-closed same day: resume transcript; reopen only when visitor sends
+                    $conv = ['id' => (int) $dayRow['id'], 'status' => 'closed'];
                 }
             }
         }
@@ -281,6 +284,19 @@ try {
             WHERE visitor_id = ? AND brand_id = ? AND status IN ('waiting','active')
               AND DATE(started_at) = CURDATE()
             ORDER BY id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$visitorId, $brandId]);
+        $conv = $stmt->fetch() ?: null;
+    }
+
+    // Soft-closed same-day ticket (agent/inactivity) — keep thread for transcript + continue
+    if (!$conv) {
+        $stmt = $db->prepare("
+            SELECT id, status FROM conversations
+            WHERE visitor_id = ? AND brand_id = ? AND status = 'closed'
+              AND DATE(started_at) = CURDATE()
+            ORDER BY COALESCE(closed_at, last_message_at, started_at) DESC, id DESC
             LIMIT 1
         ");
         $stmt->execute([$visitorId, $brandId]);
@@ -425,28 +441,35 @@ try {
         $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
     }
 
-    // Status is returned in JSON; push WS/inbox after response so widget isn't blocked
+    // Status is returned in JSON; push WS/inbox after response so widget isn't blocked.
+    // Do not re-broadcast closed on every page reload (causes blank/ended flicker).
     $initStatus = $status;
     $initAgentInfo = $agentInfo;
-    if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($convId, $initStatus, $initAgentInfo): void {
+    if ($status !== 'closed') {
+        if (function_exists('lc_realtime_defer')) {
+            lc_realtime_defer(static function () use ($convId, $initStatus, $initAgentInfo): void {
+                lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
+                    'status' => $initStatus,
+                    'agent' => $initAgentInfo,
+                ]);
+                if ($initStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
+                    lc_realtime_publish_incoming_chat($convId);
+                }
+            });
+        } else {
             lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
-                'status' => $initStatus,
-                'agent' => $initAgentInfo,
+                'status' => $status,
+                'agent' => $agentInfo,
             ]);
-            if ($initStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
+            if ($status === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
                 lc_realtime_publish_incoming_chat($convId);
             }
-        });
-    } else {
-        lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
-            'status' => $status,
-            'agent' => $agentInfo,
-        ]);
-        if ($status === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-            lc_realtime_publish_incoming_chat($convId);
         }
     }
+
+    $closedBy = ($status === 'closed' && function_exists('lc_conversation_closed_by'))
+        ? lc_conversation_closed_by($convId)
+        : '';
 
     // Recent transcript for current visitor session only (floor hides closed rounds
     // until the visitor continues — then only the resumed session is returned).
@@ -509,6 +532,7 @@ try {
         'brand_id' => $brandId,
         'brand_key' => $brand['brand_key'],
         'status' => $status,
+        'closed_by' => $closedBy,
         'agents_online' => $online,
         'agent' => $agentInfo,
         'messages' => $initMessages,
