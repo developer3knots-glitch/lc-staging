@@ -1033,7 +1033,7 @@ function lc_visitor_visible_message_floor(int $conversationId, string $reference
                             OR message LIKE '%Chat closed%'
                             OR message LIKE '%Chat ended%'
                             OR message LIKE '%left the page%'
-                            OR message LIKE '%due to inactivity%'
+                            OR message LIKE 'Chat closed automatically due to inactivity%'
                             OR message LIKE '%ended this chat%'
                             OR message LIKE 'Merged %earlier chat%'
                         )
