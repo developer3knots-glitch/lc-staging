@@ -246,7 +246,7 @@ require __DIR__ . '/includes/header.php';
                             </div>
                             <div class="lc-chat-compose-tools" id="lc-chat-compose-tools">
                                 <div class="lc-chat-canned-bar">
-                                    <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies">
+                                    <button type="button" class="lc-chat-canned-toggle" id="lc-canned-toggle" aria-expanded="false" aria-controls="lc-canned-panel" title="Canned replies (shortcut: #)">
                                         <i class="ti ti-bolt" aria-hidden="true"></i>
                                         <span>Canned</span>
                                     </button>
@@ -267,7 +267,7 @@ require __DIR__ . '/includes/header.php';
                             <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
                         </div>
                         <div class="lc-compose-footer">
-                            <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line</p>
+                            <p class="lc-chat-compose-hint"><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>#</kbd> canned</p>
                         </div>
                     </div>
                 </div>

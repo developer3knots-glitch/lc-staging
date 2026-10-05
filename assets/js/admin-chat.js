@@ -155,6 +155,7 @@
     var cannedListLive = document.getElementById('lc-canned-list-live');
     var cannedSearchLive = document.getElementById('lc-canned-search-live');
     var cannedRepliesCache = [];
+    var cannedShowAllIfEmpty = false;
     var transferWrap = document.getElementById('lc-transfer-wrap');
     var transferBtn = document.getElementById('lc-transfer-chat');
     var transferPanel = document.getElementById('lc-transfer-panel');
@@ -2850,15 +2851,18 @@
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'false');
         if (cannedSearchLive) cannedSearchLive.value = '';
         if (cannedListLive) cannedListLive.innerHTML = '';
+        cannedShowAllIfEmpty = false;
     }
 
-    function openCannedPanel() {
+    function openCannedPanel(opts) {
+        opts = opts || {};
         if (!cannedPanel) return;
         cannedPanel.hidden = false;
         if (cannedToggle) cannedToggle.setAttribute('aria-expanded', 'true');
-        if (cannedSearchLive) cannedSearchLive.value = '';
-        // Only search field until user types — no full list dump
-        renderCannedListLive('');
+        cannedShowAllIfEmpty = !!opts.showAllIfEmpty;
+        if (cannedSearchLive) cannedSearchLive.value = opts.query || '';
+        // Hash shortcut: show full list so agent can pick immediately; button open stays search-first
+        renderCannedListLive(opts.query || '', { showAllIfEmpty: cannedShowAllIfEmpty });
         loadCanned();
         if (cannedSearchLive) {
             setTimeout(function () { cannedSearchLive.focus(); }, 0);
@@ -2871,14 +2875,35 @@
         else closeCannedPanel();
     }
 
-    function renderCannedListLive(query) {
+    function openCannedFromHashShortcut() {
+        if (!replyInput || replyInput.disabled || !cannedPanel) return;
+        var val = String(replyInput.value || '');
+        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
+        if (pos > 0 && val.charAt(pos - 1) === '#') {
+            replyInput.value = val.slice(0, pos - 1) + val.slice(pos);
+            try {
+                replyInput.setSelectionRange(pos - 1, pos - 1);
+            } catch (err) {}
+            try {
+                replyInput.dispatchEvent(new Event('input', { bubbles: true }));
+            } catch (err2) {}
+        }
+        openCannedPanel({ showAllIfEmpty: true });
+    }
+
+    function renderCannedListLive(query, opts) {
         if (!cannedListLive) return;
+        opts = opts || {};
         var q = String(query || '').trim().toLowerCase();
-        // Empty search → hide all replies (search-only UX)
-        if (!q) {
+        // Empty search → hide all replies (search-only UX), unless hash shortcut asked for full list
+        if (!q && !opts.showAllIfEmpty) {
             cannedListLive.innerHTML = cannedRepliesCache.length
                 ? '<div class="lc-chat-canned-empty">Type to search replies…</div>'
                 : '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
+            return;
+        }
+        if (!q && opts.showAllIfEmpty && !cannedRepliesCache.length) {
+            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
             return;
         }
         var html = '';
@@ -2887,7 +2912,7 @@
             if (!r) return;
             // Match against title + full message body
             var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
-            if (hay.indexOf(q) === -1) return;
+            if (q && hay.indexOf(q) === -1) return;
             shown += 1;
             var title = esc(r.title || 'Reply');
             var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 90));
@@ -2923,7 +2948,10 @@
                     });
                 }
                 if (cannedPanel && !cannedPanel.hidden) {
-                    renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
+                    renderCannedListLive(
+                        cannedSearchLive ? cannedSearchLive.value : '',
+                        { showAllIfEmpty: cannedShowAllIfEmpty }
+                    );
                 }
             });
     }
@@ -3702,6 +3730,11 @@
         e.preventDefault();
         sendReply();
     });
+    replyInput.addEventListener('keyup', function (e) {
+        if (e.key !== '#') return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        openCannedFromHashShortcut();
+    });
     replyInput.addEventListener('input', onAgentComposeActivity);
     replyInput.addEventListener('paste', function () {
         setTimeout(onAgentComposeActivity, 0);
@@ -4283,7 +4316,10 @@
 
     if (cannedSearchLive) {
         cannedSearchLive.addEventListener('input', function () {
-            renderCannedListLive(cannedSearchLive.value);
+            if (String(cannedSearchLive.value || '').trim()) {
+                cannedShowAllIfEmpty = false;
+            }
+            renderCannedListLive(cannedSearchLive.value, { showAllIfEmpty: cannedShowAllIfEmpty });
         });
         cannedSearchLive.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') {
