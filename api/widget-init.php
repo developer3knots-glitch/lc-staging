@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/cors.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();

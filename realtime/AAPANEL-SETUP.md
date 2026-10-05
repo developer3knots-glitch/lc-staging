@@ -60,6 +60,23 @@ location /lc-realtime {
 }
 ```
 
+## 3b) Nginx — CORS for widget (other domains like 3knotsdigital.com)
+
+If the browser console shows `No 'Access-Control-Allow-Origin'` on `widget-init.php`, add this **inside** the existing PHP `location ~ \.php$` block (top of the block), then reload Nginx:
+
+```nginx
+if ($request_method = OPTIONS) {
+    add_header Access-Control-Allow-Origin * always;
+    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+    add_header Access-Control-Allow-Headers "Content-Type, Authorization, ngrok-skip-browser-warning" always;
+    add_header Content-Length 0;
+    add_header Content-Type text/plain;
+    return 204;
+}
+```
+
+PHP also sends these headers in `includes/cors.php` (before DB). Nginx is only needed when WAF blocks OPTIONS before PHP.
+
 Save → Reload Nginx.
 
 ## 4) PHP config (already in repo after pull)
