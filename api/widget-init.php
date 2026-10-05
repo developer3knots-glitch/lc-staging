@@ -455,7 +455,7 @@ try {
         $floorId = function_exists('lc_visitor_visible_message_floor')
             ? lc_visitor_visible_message_floor($convId, '')
             : 0;
-        var mStmt = $db->prepare("
+        $mStmt = $db->prepare("
             SELECT " . lc_attachment_message_select_sql() . ",
                    a.name AS agent_name, a.avatar AS agent_avatar
             FROM messages m
