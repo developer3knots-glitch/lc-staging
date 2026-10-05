@@ -454,15 +454,15 @@ try {
         $floorId = function_exists('lc_visitor_visible_message_floor')
             ? lc_visitor_visible_message_floor($convId, '')
             : 0;
-        $mStmt = $db->prepare("
-            SELECT m.id, m.sender_type, m.sender_id, m.message, m.created_at,
+        var mStmt = $db->prepare("
+            SELECT " . lc_attachment_message_select_sql() . ",
                    a.name AS agent_name, a.avatar AS agent_avatar
             FROM messages m
             LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
             WHERE m.conversation_id = ?
               AND m.id >= ?
             ORDER BY m.id ASC
-            LIMIT 40
+            LIMIT 80
         ");
         $mStmt->execute([$convId, max(1, $floorId)]);
         while ($mrow = $mStmt->fetch(PDO::FETCH_ASSOC)) {
@@ -473,19 +473,23 @@ try {
             }
             if ($text !== '' && function_exists('lc_sanitize_system_message_for_visitor')
                 && ($mrow['sender_type'] ?? '') === 'system') {
-                $text = lc_sanitize_system_message_for_visitor($text);
+                $mrow['message'] = lc_sanitize_system_message_for_visitor($text);
             }
-            $agentName = trim((string) ($mrow['agent_name'] ?? ''));
-            $initMessages[] = [
-                'id' => (int) ($mrow['id'] ?? 0),
-                'sender_type' => (string) ($mrow['sender_type'] ?? 'system'),
-                'message' => $text,
-                'created_at' => (string) ($mrow['created_at'] ?? ''),
-                'agent_name' => $agentName !== '' ? $agentName : null,
-                'agent_avatar' => ($agentName !== '' && function_exists('lc_agent_public'))
-                    ? (lc_agent_public($agentName, $mrow['agent_avatar'] ?? null)['avatar'] ?? null)
-                    : null,
-            ];
+            if (function_exists('lc_format_message_row')) {
+                $initMessages[] = lc_format_message_row($mrow, $chatToken);
+            } else {
+                $agentName = trim((string) ($mrow['agent_name'] ?? ''));
+                $initMessages[] = [
+                    'id' => (int) ($mrow['id'] ?? 0),
+                    'sender_type' => (string) ($mrow['sender_type'] ?? 'system'),
+                    'message' => (string) ($mrow['message'] ?? ''),
+                    'created_at' => (string) ($mrow['created_at'] ?? ''),
+                    'agent_name' => $agentName !== '' ? $agentName : null,
+                    'agent_avatar' => ($agentName !== '' && function_exists('lc_agent_public'))
+                        ? (lc_agent_public($agentName, $mrow['agent_avatar'] ?? null)['avatar'] ?? null)
+                        : null,
+                ];
+            }
         }
     } catch (Throwable $e) {
         $initMessages = [];

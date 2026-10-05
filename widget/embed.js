@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 138;
+    var LC_WIDGET_BUILD = 139;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -25,8 +25,9 @@
     }
 
     var brandKey = (script && script.getAttribute('data-brand')) || 'default';
-    // Default ON: widget opens on page load, but never auto-connects by itself.
-    var autoOpenOnLoad = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase() !== 'false';
+    // Default ON. Some sites set data-auto-open="false" — only never/off disables it.
+    var autoOpenAttr = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase();
+    var autoOpenOnLoad = autoOpenAttr !== 'never' && autoOpenAttr !== 'off' && autoOpenAttr !== '0';
     var autoOpenOnMessage = ((script && script.getAttribute('data-auto-open-msg')) || 'true').toLowerCase() !== 'false';
     var didAutoOpenOnLoad = false;
 
@@ -419,7 +420,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=63';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=64';
         document.head.appendChild(link);
     }
 
@@ -710,6 +711,18 @@
         if (msgScrollBox) {
             msgScrollBox.addEventListener('scroll', onMessagesScroll, { passive: true });
         }
+        root.addEventListener('wheel', function (e) {
+            if (!isOpen) return;
+            var panel = document.getElementById('lc-panel');
+            if (!panel || panel.style.display === 'none') return;
+            if (!root.contains(e.target)) return;
+            var box = document.getElementById('lc-panel-messages');
+            if (box && (box === e.target || box.contains(e.target))) {
+                box.scrollTop += e.deltaY;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false, capture: true });
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
         document.getElementById('lc-toolbar-minimize').addEventListener('click', showMinimizeConfirm);
@@ -3088,7 +3101,7 @@
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
-        if (panel) panel.style.display = 'flex';
+        if (panel) panel.style.setProperty('display', 'flex', 'important');
         if (bubble) bubble.classList.add('lcw-open');
         if (root) root.classList.add('lcw-panel-open');
         persistPanelOpen(true);
@@ -3146,19 +3159,31 @@
     }
 
     /** First paint: maximize instantly (no artificial delay). */
+    function forceOpenChatPopup() {
+        if (!autoOpenOnLoad) return;
+        if (!isOpen) {
+            openPanel({ silenceFlow: true });
+        }
+        var panel = document.getElementById('lc-panel');
+        if (panel) panel.style.setProperty('display', 'flex', 'important');
+        var rootEl = document.getElementById('lc-widget-root');
+        if (rootEl) rootEl.classList.add('lcw-panel-open');
+        var bubble = document.getElementById('lc-bubble');
+        if (bubble) bubble.classList.add('lcw-open');
+        isOpen = true;
+    }
+
     function scheduleAutoOpenOnLoad() {
         if (!autoOpenOnLoad) return;
-        if (isOpen) {
-            didAutoOpenOnLoad = true;
-            return;
-        }
-        if (didAutoOpenOnLoad) return;
         didAutoOpenOnLoad = true;
         if (autoOpenTimer) {
             clearTimeout(autoOpenTimer);
             autoOpenTimer = null;
         }
-        openPanel({ silenceFlow: true });
+        forceOpenChatPopup();
+        setTimeout(forceOpenChatPopup, 0);
+        setTimeout(forceOpenChatPopup, 250);
+        setTimeout(forceOpenChatPopup, 800);
     }
 
     function openPanelInstantIdle() {
@@ -5469,6 +5494,7 @@
                     }
                     var exists = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
                     if (exists) {
+                        if (m.attachment) hydrateMessageAttachment(m);
                         advanceLastMsgId(mid);
                         return;
                     }
@@ -5546,9 +5572,8 @@
     }
 
     function messageBodyHtml(m) {
-        if (window.LCChatFiles && m.attachment) {
+        if (m && m.attachment) {
             var att = m.attachment;
-            // Ensure image/file URLs carry visitor auth (WS payloads often omit token)
             if (att.url && chatToken && att.url.indexOf('token=') === -1) {
                 att = Object.assign({}, att, {
                     url: att.url + (att.url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(chatToken)
@@ -5558,9 +5583,32 @@
                     url: att.url + (att.url.indexOf('?') >= 0 ? '&' : '?') + 'visitor_uid=' + encodeURIComponent(visitorUid)
                 });
             }
-            return window.LCChatFiles.renderWidgetAttachmentHtml(att, m.message);
+            if (window.LCChatFiles) {
+                return window.LCChatFiles.renderWidgetAttachmentHtml(att, m.message);
+            }
+            var name = esc(att.name || (att.kind === 'image' ? 'Image' : 'File'));
+            var url = esc(att.url || '');
+            var cap = m.message ? '<div class="lcw-chat-text">' + esc(m.message) + '</div>' : '';
+            if (att.kind === 'image' && att.url) {
+                return cap + '<a class="lcw-attach-link" href="' + url + '" target="_blank" rel="noopener noreferrer">'
+                    + '<img class="lcw-attach-img" src="' + url + '" alt="' + name + '"></a>';
+            }
+            return cap + '<a class="lcw-attach-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + name + '</a>';
         }
-        return esc(m.message);
+        return esc(m && m.message ? m.message : '');
+    }
+
+    function hydrateMessageAttachment(m) {
+        if (!m || !m.attachment || !m.id) return;
+        var row = document.querySelector('#lc-panel-messages [data-msg-id="' + m.id + '"]');
+        if (!row) return;
+        var body = row.querySelector('.lcw-msg-body');
+        if (!body) return;
+        if (body.querySelector('.lcw-attach-link')) return;
+        body.innerHTML = messageBodyHtml(m);
+        row.classList.add('has-attachment');
+        var bubble = row.querySelector('.lcw-msg');
+        if (bubble) bubble.classList.add('has-attachment');
     }
 
 
@@ -6017,7 +6065,11 @@
         resumeChatOnLoad();
         // Presence WS early — agent "Start chat" invite must not wait for settings
         initVisitorPresenceRealtime();
-        ensureAttachmentLib(function () { /* optional */ });
+        ensureAttachmentLib(function () {
+            if (conversationId) {
+                try { pollMessages(true); } catch (eAtt) {}
+            }
+        });
         // Soft gate: remove widget if IP/brand blocked
         fetch(siteUrl + '/api/widget-access.php', {
             method: 'POST',
