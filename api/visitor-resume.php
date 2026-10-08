@@ -60,8 +60,11 @@ try {
     $online = lc_get_online_agents_count($brandId);
 
     $agentInfo = null;
+    if (function_exists('lc_ensure_agent_tagline_schema')) {
+        lc_ensure_agent_tagline_schema();
+    }
     $agentStmt = $db->prepare('
-        SELECT a.name, a.avatar
+        SELECT a.name, a.avatar, a.tagline
         FROM conversations c
         LEFT JOIN agents a ON a.id = c.agent_id
         WHERE c.id = ?
@@ -70,7 +73,7 @@ try {
     $agentStmt->execute([$convId]);
     $agentRow = $agentStmt->fetch();
     if ($agentRow && !empty($agentRow['name'])) {
-        $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
+        $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null, $agentRow['tagline'] ?? null);
     }
 
     $ref = '';

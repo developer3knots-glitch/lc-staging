@@ -4334,6 +4334,14 @@ a.lc-history-item:hover .lc-history-item-arrow {
     border-radius: 999px;
 }
 
+.lc-agent-card-tagline {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #475569;
+    margin: 0.15rem 0 0.2rem;
+    line-height: 1.35;
+}
+
 .lc-agent-card-email {
     font-size: 0.78rem;
     color: var(--lc-muted);

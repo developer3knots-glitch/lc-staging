@@ -235,7 +235,11 @@ try {
         lc_mark_visitor_on_site($visitorId);
     }
 
-    $agentPublic = lc_agent_public((string) ($agent['name'] ?? 'Agent'), $agent['avatar'] ?? null);
+    $agentPublic = lc_agent_public(
+        (string) ($agent['name'] ?? 'Agent'),
+        $agent['avatar'] ?? null,
+        $agent['tagline'] ?? null
+    );
 
     // Seed transcript for the visitor widget (paint immediately on chat.invite —
     // do not wait for widget-init + poll, which left a blank Admin header).

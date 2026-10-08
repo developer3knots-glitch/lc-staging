@@ -3,6 +3,9 @@ require_once __DIR__ . '/../includes/auth.php';
 $currentAgent = lc_require_admin();
 lc_ensure_brands_schema();
 lc_ensure_accounts_schema();
+if (function_exists('lc_ensure_agent_tagline_schema')) {
+    lc_ensure_agent_tagline_schema();
+}
 
 $db = lc_db();
 $accountId = lc_agent_account_id($currentAgent);
@@ -11,6 +14,17 @@ $message = '';
 $error = '';
 $presets = lc_avatar_presets();
 $openEditId = (int) ($_GET['edit'] ?? 0);
+
+$lcAgentTagline = static function (string $raw): string {
+    $t = trim($raw);
+    if ($t === '') {
+        return '';
+    }
+    if (function_exists('mb_substr')) {
+        return mb_substr($t, 0, 120);
+    }
+    return substr($t, 0, 120);
+};
 
 /**
  * Load agent row only if it belongs to this account (tenant scope).
@@ -34,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     if ($action === 'add') {
         $name = trim($_POST['name'] ?? '');
+        $tagline = $lcAgentTagline((string) ($_POST['tagline'] ?? ''));
         $email = trim($_POST['email'] ?? '');
         $pass = $_POST['password'] ?? '';
         $role = $_POST['role'] === 'admin' ? 'admin' : 'agent';
@@ -61,8 +76,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'This email is already registered.';
                 } else {
                     $avatar = lc_avatar_resolve_from_request($_POST, $_FILES);
-                    $stmt = $db->prepare('INSERT INTO agents (account_id, name, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)');
-                    $stmt->execute([$accountId > 0 ? $accountId : null, $name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar]);
+                    $stmt = $db->prepare('INSERT INTO agents (account_id, name, tagline, email, password, role, brand_id, avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    $stmt->execute([
+                        $accountId > 0 ? $accountId : null,
+                        $name,
+                        $tagline !== '' ? $tagline : null,
+                        $email,
+                        password_hash($pass, PASSWORD_DEFAULT),
+                        $role,
+                        $brandId,
+                        $avatar,
+                    ]);
                     $message = 'Team member added successfully.';
                 }
             }
@@ -77,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Agent not found.';
         } else {
             $name = trim($_POST['name'] ?? '');
+            $tagline = $lcAgentTagline((string) ($_POST['tagline'] ?? ''));
             $email = trim($_POST['email'] ?? '');
             $pass = (string) ($_POST['password'] ?? '');
             $passConfirm = (string) ($_POST['password_confirm'] ?? '');
@@ -133,12 +158,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                $taglineDb = $tagline !== '' ? $tagline : null;
                 if ($pass !== '') {
-                    $sql = 'UPDATE agents SET name = ?, email = ?, password = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
-                    $params = [$name, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar, $id];
+                    $sql = 'UPDATE agents SET name = ?, tagline = ?, email = ?, password = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
+                    $params = [$name, $taglineDb, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $brandId, $avatar, $id];
                 } else {
-                    $sql = 'UPDATE agents SET name = ?, email = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
-                    $params = [$name, $email, $role, $brandId, $avatar, $id];
+                    $sql = 'UPDATE agents SET name = ?, tagline = ?, email = ?, role = ?, brand_id = ?, avatar = ? WHERE id = ?';
+                    $params = [$name, $taglineDb, $email, $role, $brandId, $avatar, $id];
                 }
                 if ($accountId > 0) {
                     $sql .= ' AND account_id = ?';
@@ -174,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($accountId > 0) {
     $stmt = $db->prepare('
-        SELECT a.id, a.name, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
+        SELECT a.id, a.name, a.tagline, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
         FROM agents a
         LEFT JOIN brands b ON b.id = a.brand_id
         WHERE a.account_id = ?
@@ -184,7 +210,7 @@ if ($accountId > 0) {
     $agents = $stmt->fetchAll();
 } else {
     $agents = $db->query('
-        SELECT a.id, a.name, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
+        SELECT a.id, a.name, a.tagline, a.email, a.role, a.status, a.is_active, a.last_seen, a.created_at, a.brand_id, a.avatar, b.name AS brand_name
         FROM agents a
         LEFT JOIN brands b ON b.id = a.brand_id
         ORDER BY a.id ASC
@@ -285,6 +311,9 @@ require __DIR__ . '/includes/header.php';
                                 <strong><?= lc_sanitize($a['name']) ?></strong>
                                 <?php if ($isSelf): ?><span class="lc-agent-you-badge">You</span><?php endif; ?>
                             </div>
+                            <?php if (trim((string) ($a['tagline'] ?? '')) !== ''): ?>
+                                <div class="lc-agent-card-tagline"><?= lc_sanitize((string) $a['tagline']) ?></div>
+                            <?php endif; ?>
                             <div class="lc-agent-card-email"><?= lc_sanitize($a['email']) ?></div>
                             <div class="lc-agent-card-tags">
                                 <span class="lc-agent-role-tag is-<?= lc_sanitize($a['role']) ?>"><?= ucfirst($a['role']) ?></span>
@@ -335,6 +364,8 @@ require __DIR__ . '/includes/header.php';
 
                             <label>Name</label>
                             <input type="text" name="name" required value="<?= lc_sanitize($a['name']) ?>" placeholder="Full name">
+                            <label>Tagline <span class="lc-muted-text">(under name in chat widget)</span></label>
+                            <input type="text" name="tagline" maxlength="120" value="<?= lc_sanitize((string) ($a['tagline'] ?? '')) ?>" placeholder="e.g. Sales Specialist · Here to help">
                             <label>Email (login)</label>
                             <input type="email" name="email" required value="<?= lc_sanitize($a['email']) ?>" placeholder="agent@company.com">
 
@@ -392,6 +423,8 @@ require __DIR__ . '/includes/header.php';
 
                         <label>Name</label>
                         <input type="text" name="name" required placeholder="Full name">
+                        <label>Tagline <span class="lc-muted-text">(under name in chat widget)</span></label>
+                        <input type="text" name="tagline" maxlength="120" placeholder="e.g. Sales Specialist · Here to help">
                         <label>Email</label>
                         <input type="email" name="email" required placeholder="agent@company.com">
                         <label>Password</label>
@@ -422,7 +455,7 @@ require __DIR__ . '/includes/header.php';
                         <i class="ti ti-shield-check"></i>
                         <div>
                             <strong>Roles explained</strong>
-                            <p><strong>Admin</strong> - brands, agents, settings, all chats.<br><strong>Agent</strong> - live inbox only, scoped to assigned brand if set.<br><strong>Edit</strong> - name, email, role, brand, avatar; leave password blank to keep current.</p>
+                            <p><strong>Admin</strong> - brands, agents, settings, all chats.<br><strong>Agent</strong> - live inbox only, scoped to assigned brand if set.<br><strong>Tagline</strong> - shown under the agent name in the visitor widget.<br><strong>Edit</strong> - name, tagline, email, role, brand, avatar; leave password blank to keep current.</p>
                         </div>
                     </div>
                 </div>

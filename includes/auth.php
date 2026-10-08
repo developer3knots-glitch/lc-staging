@@ -13,18 +13,21 @@ function lc_auth_agent(): ?array
         return null;
     }
     try {
-        $stmt = lc_db()->prepare('SELECT id, account_id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
+        $stmt = lc_db()->prepare('SELECT id, account_id, name, tagline, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
         $stmt->execute([$_SESSION['agent_id']]);
         $agent = $stmt->fetch();
         return $agent ?: null;
     } catch (Throwable $e) {
-        // account_id column may not exist yet on older DBs
+        // account_id / tagline columns may not exist yet on older DBs
         try {
             $stmt = lc_db()->prepare('SELECT id, name, email, role, status, avatar, brand_id FROM agents WHERE id = ? AND is_active = 1');
             $stmt->execute([$_SESSION['agent_id']]);
             $agent = $stmt->fetch();
             if ($agent) {
                 $agent['account_id'] = null;
+                if (!array_key_exists('tagline', $agent)) {
+                    $agent['tagline'] = null;
+                }
             }
             return $agent ?: null;
         } catch (Throwable $e2) {
@@ -56,6 +59,9 @@ function lc_require_auth(): array
             lc_ensure_blocking_schema();
             lc_ensure_ticket_schema();
             lc_ensure_attachments_schema();
+            if (function_exists('lc_ensure_agent_tagline_schema')) {
+                lc_ensure_agent_tagline_schema();
+            }
         } catch (Throwable $e) {
             // Schema upgrades must never block login/dashboard
         }

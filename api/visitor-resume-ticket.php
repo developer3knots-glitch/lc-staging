@@ -66,8 +66,11 @@ try {
 
     $agentInfo = null;
     $agentId = 0;
+    if (function_exists('lc_ensure_agent_tagline_schema')) {
+        lc_ensure_agent_tagline_schema();
+    }
     $agentStmt = $db->prepare('
-        SELECT c.agent_id, c.status AS conv_status, a.name, a.avatar
+        SELECT c.agent_id, c.status AS conv_status, a.name, a.avatar, a.tagline
         FROM conversations c
         LEFT JOIN agents a ON a.id = c.agent_id
         WHERE c.id = ?
@@ -79,7 +82,7 @@ try {
         $agentId = (int) ($agentRow['agent_id'] ?? 0);
         $status = (string) ($agentRow['conv_status'] ?? $status);
         if ($status === 'active' && $agentId > 0 && !empty($agentRow['name'])) {
-            $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null);
+            $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null, $agentRow['tagline'] ?? null);
         }
     }
 

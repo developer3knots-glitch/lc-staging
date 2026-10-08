@@ -351,14 +351,14 @@ function lc_assign_agent(int $conversationId): ?int
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, $agentId);
         if (function_exists('lc_realtime_publish_conversation_event')) {
-            $agentStmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
+            $agentStmt = lc_db()->prepare('SELECT name, avatar, tagline FROM agents WHERE id = ? LIMIT 1');
             $agentStmt->execute([$agentId]);
             $agentRow = $agentStmt->fetch() ?: [];
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => 'active',
                 'agent_id' => $agentId,
                 'agent' => function_exists('lc_agent_public')
-                    ? lc_agent_public((string) ($agentRow['name'] ?? ''), $agentRow['avatar'] ?? null)
+                    ? lc_agent_public((string) ($agentRow['name'] ?? ''), $agentRow['avatar'] ?? null, $agentRow['tagline'] ?? null)
                     : null,
             ]);
         }
@@ -793,7 +793,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         return ['ok' => false, 'error' => 'Chat is already with this agent'];
     }
 
-    $stmt = lc_db()->prepare('SELECT id, name, avatar, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
+    $stmt = lc_db()->prepare('SELECT id, name, tagline, avatar, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
     $stmt->execute([$targetAgentId]);
     $target = $stmt->fetch();
     if (!$target || !(int) $target['is_active']) {
@@ -877,7 +877,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         if (function_exists('lc_realtime_publish_conversation_event')) {
             $agentInfo = null;
             if (function_exists('lc_agent_public')) {
-                $agentInfo = lc_agent_public($targetName, $target['avatar'] ?? null);
+                $agentInfo = lc_agent_public($targetName, $target['avatar'] ?? null, $target['tagline'] ?? null);
             }
             lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                 'status' => 'active',

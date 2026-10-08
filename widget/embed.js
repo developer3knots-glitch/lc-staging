@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 141;
+    var LC_WIDGET_BUILD = 142;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -5068,7 +5068,8 @@
         wrap.innerHTML = renderAvatar(av, agent.name, 'lcw-head-avatar');
         nameEl.textContent = agent.name;
         if (roleEl) {
-            roleEl.textContent = agent.role || 'Agent';
+            var tag = String(agent.tagline || agent.role || '').trim();
+            roleEl.textContent = tag || 'Agent';
             roleEl.hidden = false;
         }
         if (titleEl) titleEl.textContent = agent.name;

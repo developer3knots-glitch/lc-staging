@@ -88,10 +88,16 @@ try {
         ], 409);
     }
 
-    $publishAgent = [
-        'name' => (string) ($agent['name'] ?? 'Agent'),
-        'avatar' => $agent['avatar'] ?? null,
-    ];
+    $publishAgent = function_exists('lc_agent_public')
+        ? lc_agent_public(
+            (string) ($agent['name'] ?? 'Agent'),
+            $agent['avatar'] ?? null,
+            $agent['tagline'] ?? null
+        )
+        : [
+            'name' => (string) ($agent['name'] ?? 'Agent'),
+            'avatar' => $agent['avatar'] ?? null,
+        ];
 
     // ALWAYS defer join/receipts/publish — Assign must return JSON instantly
     $runAfter = static function () use ($conversationId, $agentId, $publishAgent): void {

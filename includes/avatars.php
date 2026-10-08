@@ -275,16 +275,48 @@ function lc_avatar_meta(?string $avatar, string $name = 'Agent'): array
     ];
 }
 
-function lc_agent_public(?string $name, ?string $avatar): ?array
+/** Ensure agents.tagline exists (shown under agent name in visitor widget). */
+function lc_ensure_agent_tagline_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $pdo = lc_db();
+        $col = $pdo->query("SHOW COLUMNS FROM agents LIKE 'tagline'")->fetch();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE agents ADD COLUMN tagline VARCHAR(120) NULL DEFAULT NULL AFTER name");
+        }
+    } catch (Throwable $e) {
+        // ignore — older installs may race schema
+    }
+}
+
+function lc_agent_public(?string $name, ?string $avatar, ?string $tagline = null): ?array
 {
     $name = trim((string) $name);
     if ($name === '') {
         return null;
     }
-    return [
+    if (function_exists('lc_ensure_agent_tagline_schema')) {
+        lc_ensure_agent_tagline_schema();
+    }
+    $tag = trim((string) $tagline);
+    if (function_exists('mb_substr')) {
+        $tag = mb_substr($tag, 0, 120);
+    } else {
+        $tag = substr($tag, 0, 120);
+    }
+    $out = [
         'name' => $name,
         'avatar' => lc_avatar_meta($avatar, $name),
     ];
+    if ($tag !== '') {
+        $out['tagline'] = $tag;
+    }
+    return $out;
 }
 
 function lc_message_is_agent_join(string $message): bool

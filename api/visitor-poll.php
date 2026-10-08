@@ -17,6 +17,9 @@ try {
     if (function_exists('lc_ensure_transcript_schema')) {
         lc_ensure_transcript_schema();
     }
+    if (function_exists('lc_ensure_agent_tagline_schema')) {
+        lc_ensure_agent_tagline_schema();
+    }
     $db = lc_db();
     $access = function_exists('lc_visitor_access_conversation')
         ? lc_visitor_access_conversation($conversationId, $visitorUid, $chatToken)
@@ -44,7 +47,7 @@ try {
         : 'NULL AS transcript_email, NULL AS transcript_sent_at';
     $stmt = $db->prepare('
         SELECT c.status, c.agent_id, c.visitor_id, c.started_at, ' . $transcriptSelect . ',
-               a.name AS agent_name, a.avatar AS agent_avatar
+               a.name AS agent_name, a.avatar AS agent_avatar, a.tagline AS agent_tagline
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         LEFT JOIN agents a ON a.id = c.agent_id
@@ -168,7 +171,7 @@ try {
     $agentName = trim((string) ($conv['agent_name'] ?? ''));
     $agentPublic = null;
     if ($convStatus === 'active' && $agentId > 0 && $agentName !== '') {
-        $agentPublic = lc_agent_public($agentName, $conv['agent_avatar'] ?? null);
+        $agentPublic = lc_agent_public($agentName, $conv['agent_avatar'] ?? null, $conv['agent_tagline'] ?? null);
     } else {
         $agentId = 0;
         $agentName = '';
