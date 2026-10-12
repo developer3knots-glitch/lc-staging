@@ -108,11 +108,24 @@ function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = nul
  */
 function lc_open_conversation_ids_for_visitor(int $visitorId, ?int $brandId = null): array
 {
+    $rows = lc_open_conversations_for_visitor($visitorId, $brandId);
+    return array_values(array_map(static function (array $row): int {
+        return (int) ($row['id'] ?? 0);
+    }, $rows));
+}
+
+/**
+ * Open chats for a visitor (id + routing fields for fast WS fanout).
+ *
+ * @return list<array{id:int,agent_id:int,brand_id:int}>
+ */
+function lc_open_conversations_for_visitor(int $visitorId, ?int $brandId = null): array
+{
     if ($visitorId < 1) {
         return [];
     }
     try {
-        $sql = "SELECT id FROM conversations WHERE visitor_id = ? AND status IN ('waiting','active')";
+        $sql = "SELECT id, agent_id, brand_id FROM conversations WHERE visitor_id = ? AND status IN ('waiting','active')";
         $params = [$visitorId];
         if ($brandId !== null && $brandId > 0) {
             $sql .= ' AND brand_id = ?';
@@ -121,7 +134,19 @@ function lc_open_conversation_ids_for_visitor(int $visitorId, ?int $brandId = nu
         $sql .= ' ORDER BY id DESC LIMIT 8';
         $stmt = lc_db()->prepare($sql);
         $stmt->execute($params);
-        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id < 1) {
+                continue;
+            }
+            $out[] = [
+                'id' => $id,
+                'agent_id' => (int) ($row['agent_id'] ?? 0),
+                'brand_id' => (int) ($row['brand_id'] ?? 0),
+            ];
+        }
+        return $out;
     } catch (Throwable $e) {
         return [];
     }
@@ -222,8 +247,7 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         if (in_array($s, ['0', 'false', 'no', 'off'], true)) {
             return false;
         }
-        $bool = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        return $bool;
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
     };
 
     $widgetOpen = null;
@@ -236,46 +260,121 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         ? $parseFlag($input['page_visible'])
         : null;
 
-    $prevStatus = null;
+    $prevRow = [];
     try {
         $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        $prevStatus = (string) (lc_visitor_engagement_status($prevRow)['status'] ?? '');
     } catch (Throwable $e) {
         $prevRow = [];
     }
+    $prevStatus = (string) (lc_visitor_engagement_status($prevRow)['status'] ?? '');
 
     if ($widgetOpen !== null || $pageVisible !== null) {
         lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible);
+        if ($widgetOpen !== null) {
+            $prevRow['widget_open'] = $widgetOpen ? 1 : 0;
+        }
+        if ($pageVisible !== null) {
+            $prevRow['page_visible'] = $pageVisible ? 1 : 0;
+        }
+        $prevRow['last_seen'] = gmdate('Y-m-d H:i:s');
     }
 
-    try {
-        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible FROM visitors WHERE id = ? LIMIT 1');
-        $stmt->execute([$visitorId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: $prevRow;
-    } catch (Throwable $e) {
-        $row = $prevRow;
-    }
-
-    $presence = lc_visitor_engagement_status($row);
-    $changed = $forcePublish || $prevStatus === null || $prevStatus !== (string) ($presence['status'] ?? '');
-    if ($changed && function_exists('lc_realtime_publish_visitor_presence')) {
+    $presence = lc_visitor_engagement_status($prevRow);
+    $changed = $forcePublish || $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
+    if ($changed) {
         lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
     }
     return $presence;
 }
 
+/**
+ * Instant agent status push — no heavy conversation load, no retry sleep.
+ */
 function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?int $brandId = null): void
 {
-    if ($visitorId < 1 || !function_exists('lc_realtime_publish_conversation_event')) {
+    if ($visitorId < 1) {
         return;
     }
-    $ids = lc_open_conversation_ids_for_visitor($visitorId, $brandId);
-    foreach ($ids as $conversationId) {
-        lc_realtime_publish_conversation_event($conversationId, 'visitor.presence', [
-            'visitor_presence' => $presence,
-        ], ['peers_only' => true]);
+    if (!function_exists('lc_realtime_mode') || lc_realtime_mode() !== 'ws') {
+        return;
+    }
+    if (!function_exists('lc_realtime_publish_url') || !function_exists('lc_realtime_channel_conversation')) {
+        return;
+    }
+    $url = lc_realtime_publish_url();
+    if ($url === '') {
+        return;
+    }
+
+    $convs = lc_open_conversations_for_visitor($visitorId, $brandId);
+    if ($convs === []) {
+        return;
+    }
+
+    $secret = function_exists('lc_realtime_secret') ? lc_realtime_secret() : '';
+    foreach ($convs as $conv) {
+        $conversationId = (int) ($conv['id'] ?? 0);
+        if ($conversationId < 1) {
+            continue;
+        }
+        $channels = [
+            lc_realtime_channel_conversation($conversationId),
+            lc_realtime_channel_staff_conversation($conversationId),
+        ];
+        $agentId = (int) ($conv['agent_id'] ?? 0);
+        if ($agentId > 0 && function_exists('lc_realtime_channel_agent')) {
+            $channels[] = lc_realtime_channel_agent($agentId);
+        }
+        $payload = json_encode([
+            'channels' => array_values(array_unique($channels)),
+            'channel' => $channels[0],
+            'event' => 'visitor.presence',
+            'data' => [
+                'conversation_id' => $conversationId,
+                'visitor_presence' => $presence,
+            ],
+            'ts' => time(),
+        ], JSON_UNESCAPED_SLASHES);
+        if ($payload === false) {
+            continue;
+        }
+
+        // Prefer non-blocking publish so visitor HTTP returns immediately.
+        if (function_exists('lc_realtime_publish_fire_and_forget')
+            && lc_realtime_publish_fire_and_forget($url, $payload)) {
+            continue;
+        }
+
+        if (!function_exists('curl_init')) {
+            continue;
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            continue;
+        }
+        $headers = [
+            'Content-Type: application/json',
+            'X-LC-Secret: ' . $secret,
+        ];
+        $opts = [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOSIGNAL => 1,
+        ];
+        if (defined('CURLOPT_TIMEOUT_MS')) {
+            $opts[CURLOPT_TIMEOUT_MS] = 80;
+            $opts[CURLOPT_CONNECTTIMEOUT_MS] = 40;
+        } else {
+            $opts[CURLOPT_TIMEOUT] = 1;
+            $opts[CURLOPT_CONNECTTIMEOUT] = 1;
+        }
+        curl_setopt_array($ch, $opts);
+        curl_exec($ch);
+        curl_close($ch);
     }
 }
 

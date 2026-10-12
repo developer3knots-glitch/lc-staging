@@ -62,6 +62,21 @@ try {
         $visitorId = (int) $visitor['id'];
     }
 
+    // Lightweight presence-only pulse (minimize / tab hide / open) — skip geo & traffic.
+    if ($event === 'presence' || $event === 'widget') {
+        lc_mark_visitor_on_site($visitorId);
+        $presence = function_exists('lc_apply_visitor_presence_input')
+            ? lc_apply_visitor_presence_input($visitorId, $input, $brandId, true)
+            : null;
+        lc_json([
+            'success' => true,
+            'event' => 'presence',
+            'visitor_uid' => $visitorUid,
+            'visitor_uid_rotated' => $visitorUidRotated,
+            'visitor_presence' => $presence,
+        ]);
+    }
+
     // Page duration only (SPA / in-site navigation). Does not mark visitor as left.
     if ($event === 'leave') {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);

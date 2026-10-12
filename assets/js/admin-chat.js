@@ -504,8 +504,10 @@
             el.textContent = '';
             el.className = 'lc-visitor-presence-badge';
             el.removeAttribute('title');
+            lastPresenceStatusKey = '';
             return;
         }
+        lastPresenceStatusKey = String(presence.status || '');
         el.hidden = false;
         el.textContent = presence.label;
         el.className = 'lc-visitor-presence-badge is-' + presence.status;
@@ -3236,6 +3238,7 @@
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
         setVisitorPresenceBadge(null);
+        lastPresenceStatusKey = '';
         setText('lc-details-ip', ' - ');
         setText('lc-details-country', ' - ');
         setText('lc-details-brand', ' - ');
@@ -5032,13 +5035,37 @@
         }
     }
 
+    var presencePollTimer = null;
+    var lastPresenceStatusKey = '';
+
+    function pollVisitorPresenceOnly() {
+        if (!selectedId) return;
+        var conversationId = selectedId;
+        fetch(base + '/api/agent-visitor-presence.php?conversation_id=' + encodeURIComponent(conversationId), {
+            credentials: 'same-origin',
+            cache: 'no-store'
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (selectedId !== conversationId) return;
+                if (!data || !data.success || !data.visitor_presence) return;
+                var key = String(data.visitor_presence.status || '');
+                if (key && key === lastPresenceStatusKey) return;
+                lastPresenceStatusKey = key;
+                setVisitorPresenceBadge(data.visitor_presence);
+            })
+            .catch(function () {});
+    }
+
     function resetPollTimers() {
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
+        if (presencePollTimer) clearInterval(presencePollTimer);
         if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
         if (window.__lcJourneyTimer) clearInterval(window.__lcJourneyTimer);
         pollTimer = null;
         listTimer = null;
+        presencePollTimer = null;
         window.__lcReceiptTimer = null;
         window.__lcJourneyTimer = null;
 
@@ -5062,6 +5089,12 @@
         // Fast tick sync — must update without full page reload
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
+
+        // Visitor Active/Minimized/Away/Left — dedicated fast poll (WS is still primary)
+        if (selectedId) {
+            pollVisitorPresenceOnly();
+            presencePollTimer = setInterval(pollVisitorPresenceOnly, 1000);
+        }
 
         // Manual: Settings → Disable HTTP polling — still gap-fill open chat (WS is primary)
         if (pollDisabled) {
@@ -5362,7 +5395,11 @@
             realtimeClient.on('visitor.presence', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!selectedId || cid !== selectedId) return;
-                setVisitorPresenceBadge(payload && (payload.visitor_presence || payload));
+                var presence = payload && (payload.visitor_presence || payload);
+                if (presence && presence.status) {
+                    lastPresenceStatusKey = String(presence.status);
+                }
+                setVisitorPresenceBadge(presence);
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;

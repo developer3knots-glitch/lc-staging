@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 144;
+    var LC_WIDGET_BUILD = 145;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -370,11 +370,12 @@
             if (!visitorUid) return;
             var fields = engagementFields();
             var key = fields.chat_open + ':' + fields.page_visible;
-            if (!force && key === lastPresenceKey && document.visibilityState === 'visible') {
+            if (!force && key === lastPresenceKey) {
                 return;
             }
             lastPresenceKey = key;
-            postPageEvent({ event: 'ping' }, !!useBeacon);
+            // Dedicated presence event — fast server path + instant agent WS push
+            postPageEvent({ event: 'presence' }, !!useBeacon);
         };
 
         recordView();
@@ -391,8 +392,8 @@
                 siteLeaveSent = false;
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
+                reportEngagementPresence(false, true);
                 postPageEvent({ event: 'ping' }, false);
-                lastPresenceKey = engagementFields().chat_open + ':' + engagementFields().page_visible;
                 if (conversationId && !chatClosed) {
                     scheduleCatchupSync();
                     if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
