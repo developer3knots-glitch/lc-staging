@@ -263,6 +263,33 @@ function wireWebSocket(server) {
         }
         return;
       }
+
+      // Visitor → agent presence (instant; no PHP hop)
+      if (msg.type === 'client_event') {
+        const claims = ws._lcClaims || {};
+        const event = String(msg.event || '');
+        if (event !== 'visitor.presence') return;
+        if (String(claims.role || '') !== 'visitor') return;
+        const cid = parseInt(msg.data && msg.data.conversation_id, 10)
+          || parseInt(claims.conversation_id, 10)
+          || 0;
+        if (cid < 1 || (claims.conversation_id && parseInt(claims.conversation_id, 10) !== cid)) {
+          return;
+        }
+        const convCh = 'conv:' + cid;
+        // Must be on this conversation channel (token or dynamic subscribe)
+        if (!(ws._lcChannels && ws._lcChannels.has(convCh))) return;
+        const presence = (msg.data && msg.data.visitor_presence) || msg.data || {};
+        publishMany(
+          [convCh, 'staff:conv:' + cid],
+          'visitor.presence',
+          {
+            conversation_id: cid,
+            visitor_presence: presence,
+          }
+        );
+        return;
+      }
     });
 
     ws.on('close', function () {

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 145;
+    var LC_WIDGET_BUILD = 147;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -366,6 +366,70 @@
             window.addEventListener('popstate', recordView);
         }
 
+        function localPresencePayload(fields) {
+            var status = 'active';
+            var label = 'Active';
+            if (!fields.page_visible) {
+                status = 'away';
+                label = 'Away';
+            } else if (!fields.chat_open) {
+                status = 'minimized';
+                label = 'Chat minimized';
+            }
+            return {
+                status: status,
+                label: label,
+                widget_open: !!fields.chat_open,
+                page_visible: !!fields.page_visible,
+                left_site: false,
+                last_seen: new Date().toISOString()
+            };
+        }
+
+        function pushPresenceOverWs(fields) {
+            var cid = parseInt(conversationId, 10) || 0;
+            if (cid < 1) return false;
+            if (!(realtimeClient && typeof realtimeClient.publishClientEvent === 'function')) return false;
+            if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
+            return !!realtimeClient.publishClientEvent('visitor.presence', {
+                conversation_id: cid,
+                visitor_presence: localPresencePayload(fields)
+            });
+        }
+
+        function persistPresenceHttp(fields, useBeacon) {
+            var endpoint = siteUrl + '/api/visitor-presence.php';
+            var body = JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                chat_open: fields.chat_open,
+                page_visible: fields.page_visible,
+                public_ipv4: publicIpv4
+            });
+            if (useBeacon) {
+                try {
+                    fetch(endpoint, {
+                        method: 'POST',
+                        headers: apiHeaders({ 'Content-Type': 'application/json' }),
+                        body: body,
+                        keepalive: true
+                    }).catch(function () {});
+                } catch (err) {}
+                if (navigator.sendBeacon) {
+                    try {
+                        navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
+                    } catch (err2) {}
+                }
+                return;
+            }
+            fetch(endpoint, {
+                method: 'POST',
+                headers: apiHeaders({ 'Content-Type': 'application/json' }),
+                body: body,
+                keepalive: true
+            }).catch(function () {});
+        }
+
         reportEngagementPresence = function (useBeacon, force) {
             if (!visitorUid) return;
             var fields = engagementFields();
@@ -374,8 +438,10 @@
                 return;
             }
             lastPresenceKey = key;
-            // Dedicated presence event — fast server path + instant agent WS push
-            postPageEvent({ event: 'presence' }, !!useBeacon);
+            // 1) Instant agent update over WebSocket (no PHP wait)
+            pushPresenceOverWs(fields);
+            // 2) Persist for poll / reconnect (dedicated light endpoint)
+            persistPresenceHttp(fields, !!useBeacon);
         };
 
         recordView();
@@ -2100,6 +2166,8 @@
             stopLiveMessageSync();
             // WS is live — keep a rare safety catch-up only (not the live path)
             startWsSafetyCatchup();
+            // Push current Active/Minimized/Away to agent over WS only (no presence HTTP poll)
+            reportEngagementPresence(false, true);
         });
         client.on('disconnected', function () {
             resetVisitorPollTimers();
@@ -2501,7 +2569,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=11';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=12';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

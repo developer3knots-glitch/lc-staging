@@ -99,6 +99,30 @@
         }
     };
 
+    /**
+     * Visitor client→server event (presence). Server fans out to staff.
+     * @param {string} event
+     * @param {object} data
+     */
+    WebSocketDriver.prototype.publishClientEvent = function (event, data) {
+        event = String(event || '');
+        if (!event || !this.isConnected()) return false;
+        try {
+            this.ws.send(JSON.stringify({
+                type: 'client_event',
+                event: event,
+                data: data || {}
+            }));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
+
+    PollDriver.prototype.publishClientEvent = function () {
+        return false;
+    };
+
     WebSocketDriver.prototype._flushWantedChannels = function () {
         var self = this;
         if (!self.isConnected()) return;

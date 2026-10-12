@@ -3282,6 +3282,7 @@
             }
         }
         pollMessages();
+        lastPresenceStatusKey = '';
         scheduleReceiptSyncBursts();
         updateHeaderAvatar(visitorNameEl.textContent);
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
@@ -5035,37 +5036,15 @@
         }
     }
 
-    var presencePollTimer = null;
     var lastPresenceStatusKey = '';
-
-    function pollVisitorPresenceOnly() {
-        if (!selectedId) return;
-        var conversationId = selectedId;
-        fetch(base + '/api/agent-visitor-presence.php?conversation_id=' + encodeURIComponent(conversationId), {
-            credentials: 'same-origin',
-            cache: 'no-store'
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (selectedId !== conversationId) return;
-                if (!data || !data.success || !data.visitor_presence) return;
-                var key = String(data.visitor_presence.status || '');
-                if (key && key === lastPresenceStatusKey) return;
-                lastPresenceStatusKey = key;
-                setVisitorPresenceBadge(data.visitor_presence);
-            })
-            .catch(function () {});
-    }
 
     function resetPollTimers() {
         if (pollTimer) clearInterval(pollTimer);
         if (listTimer) clearInterval(listTimer);
-        if (presencePollTimer) clearInterval(presencePollTimer);
         if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
         if (window.__lcJourneyTimer) clearInterval(window.__lcJourneyTimer);
         pollTimer = null;
         listTimer = null;
-        presencePollTimer = null;
         window.__lcReceiptTimer = null;
         window.__lcJourneyTimer = null;
 
@@ -5090,11 +5069,7 @@
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
 
-        // Visitor Active/Minimized/Away/Left — dedicated fast poll (WS is still primary)
-        if (selectedId) {
-            pollVisitorPresenceOnly();
-            presencePollTimer = setInterval(pollVisitorPresenceOnly, 1000);
-        }
+        // Visitor presence: WebSocket only (visitor.presence) — no HTTP presence poll
 
         // Manual: Settings → Disable HTTP polling — still gap-fill open chat (WS is primary)
         if (pollDisabled) {
