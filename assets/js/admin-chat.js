@@ -516,6 +516,39 @@
         scrollMessagesToBottom(false);
     }
 
+    function applyVisitorPresenceToInbox(conversationId, presence) {
+        conversationId = parseInt(conversationId, 10) || 0;
+        presence = normalizeVisitorPresence(presence);
+        if (!conversationId || !presence || !lastConversations || !lastConversations.length) return;
+        var changed = false;
+        for (var i = 0; i < lastConversations.length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) === conversationId) {
+                lastConversations[i].visitor_presence = presence;
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) return;
+        var el = listEl ? listEl.querySelector('.lc-chat-item[data-id="' + conversationId + '"]') : null;
+        if (el) {
+            var foot = el.querySelector('.lc-chat-item-foot');
+            if (foot) {
+                var old = foot.querySelector('.lc-badge-presence, .lc-badge-active, .lc-badge-waiting, .lc-badge-closed');
+                var badgeCls = 'lc-badge lc-badge-presence is-' + presence.status;
+                var label = presence.status === 'minimized' ? 'Minimized'
+                    : (presence.status === 'away' ? 'Away'
+                    : (presence.status === 'left' ? 'Left site'
+                    : (presence.status === 'disconnected' ? 'Disconnected' : 'On chat')));
+                if (old) {
+                    old.className = badgeCls;
+                    old.textContent = label;
+                } else {
+                    foot.insertAdjacentHTML('afterbegin', '<span class="' + badgeCls + '">' + esc(label) + '</span>');
+                }
+            }
+        }
+    }
+
     function setVisitorPresenceBadge(presenceOrConv) {
         var bar = document.getElementById('lc-visitor-presence-bar');
         var textEl = document.getElementById('lc-visitor-presence-text');
@@ -536,6 +569,7 @@
         }
         var prev = lastPresenceStatusKey;
         var next = String(presence.status || '');
+        var statusChanged = prev !== next;
         lastPresenceStatusKey = next;
         if (bar) {
             bar.hidden = false;
@@ -544,11 +578,12 @@
         if (textEl) {
             textEl.textContent = presenceChatLine(presence);
         }
-        // Announce changes inside the chat transcript (not a tiny header pill)
-        if (prev && prev !== next) {
-            appendPresenceSystemMessage(presence, true);
-        } else if (!prev && next) {
-            appendPresenceSystemMessage(presence, false);
+        if (selectedId) {
+            applyVisitorPresenceToInbox(selectedId, presence);
+        }
+        // Always mirror into the open transcript when status changes (or first paint)
+        if (statusChanged) {
+            appendPresenceSystemMessage(presence, !!prev);
         }
     }
 
@@ -1038,9 +1073,19 @@
             if (isOtherAgentActive && c.is_supervising) {
                 html += '<span class="lc-badge lc-badge-supervising"><i class="ti ti-shield-check"></i> Supervising</span>';
             } else {
-                var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-                var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
-                html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
+                // Prefer live visitor engagement over conversation "active" (was misleading)
+                var eng = normalizeVisitorPresence(c.visitor_presence);
+                if (eng && status !== 'closed') {
+                    var engLabel = eng.status === 'minimized' ? 'Minimized'
+                        : (eng.status === 'away' ? 'Away'
+                        : (eng.status === 'left' ? 'Left site'
+                        : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat')));
+                    html += '<span class="lc-badge lc-badge-presence is-' + esc(eng.status) + '">' + esc(engLabel) + '</span>';
+                } else {
+                    var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
+                    var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
+                    html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
+                }
             }
         }
         if (c.agent_name && status === 'active' && !c.ip_blocked) {
@@ -2357,6 +2402,18 @@
                     }
                 });
                 paintConversationList(filterConversations(lastConversations));
+
+                // Sync presence bar/chat line from inbox payload (WS-independent refresh)
+                if (selectedId) {
+                    for (var pi = 0; pi < lastConversations.length; pi++) {
+                        if ((parseInt(lastConversations[pi].id, 10) || 0) === selectedId) {
+                            if (lastConversations[pi].visitor_presence) {
+                                setVisitorPresenceBadge(lastConversations[pi]);
+                            }
+                            break;
+                        }
+                    }
+                }
 
                 // Keep the open chat mounted even if inbox hides IP duplicates.
                 // Tearing it down here made the panel vanish after email/list refresh.
@@ -5395,12 +5452,13 @@
             realtimeClient.on('staff.note', handleStaffNotePayload);
             realtimeClient.on('visitor.presence', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                if (!selectedId || cid !== selectedId) return;
+                if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
-                if (presence && presence.status) {
-                    lastPresenceStatusKey = String(presence.status);
+                applyVisitorPresenceToInbox(cid, presence);
+                // Always paint open chat — do NOT pre-set lastPresenceStatusKey (breaks change lines)
+                if (selectedId && cid === selectedId) {
+                    setVisitorPresenceBadge(presence);
                 }
-                setVisitorPresenceBadge(presence);
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;

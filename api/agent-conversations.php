@@ -24,6 +24,9 @@ try {
     if (function_exists('lc_ensure_visitor_phone_schema')) {
         lc_ensure_visitor_phone_schema();
     }
+    if (function_exists('lc_ensure_visitor_presence_schema')) {
+        lc_ensure_visitor_presence_schema();
+    }
     if (function_exists('lc_merge_same_ip_conversations')) {
         try {
             lc_merge_same_ip_conversations();
@@ -83,6 +86,10 @@ try {
                c.is_returning, c.prior_chat_count,
                v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
+               v.last_seen AS visitor_last_seen,
+               v.left_site_at AS visitor_left_site_at,
+               v.widget_open AS visitor_widget_open,
+               v.page_visible AS visitor_page_visible,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
                (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
                (CASE
@@ -139,6 +146,10 @@ try {
                            c.is_returning, c.prior_chat_count,
                            v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                            v.ip_address AS visitor_ip, v.country AS visitor_country,
+                           v.last_seen AS visitor_last_seen,
+                           v.left_site_at AS visitor_left_site_at,
+                           v.widget_open AS visitor_widget_open,
+                           v.page_visible AS visitor_page_visible,
                            a.name AS agent_name, b.name AS brand_name, b.brand_key,
                            (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
                            0 AS unread
@@ -167,10 +178,13 @@ try {
         $row['reference'] = $row['ticket_reference'] ?: lc_conversation_reference((int) $row['id'], $row['started_at'] ?? null);
         unset($row['ticket_reference']);
         if (function_exists('lc_format_api_datetimes')) {
-            $row = lc_format_api_datetimes($row, ['started_at', 'accepted_at', 'closed_at', 'last_message_at']);
+            $row = lc_format_api_datetimes($row, ['started_at', 'accepted_at', 'closed_at', 'last_message_at', 'visitor_last_seen', 'visitor_left_site_at']);
         }
         if (function_exists('lc_enrich_returning_visitor_flags')) {
             $row = lc_enrich_returning_visitor_flags($row);
+        }
+        if (function_exists('lc_visitor_engagement_status')) {
+            $row['visitor_presence'] = lc_visitor_engagement_status($row);
         }
         $assignedAgentId = (int) ($row['agent_id'] ?? 0);
         $cid = (int) ($row['id'] ?? 0);

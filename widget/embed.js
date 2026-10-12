@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 148;
+    var LC_WIDGET_BUILD = 149;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -427,16 +427,24 @@
         }
 
         function persistPresenceHttp(fields, useBeacon) {
-            var endpoint = siteUrl + '/api/visitor-presence.php';
-            var body = JSON.stringify({
+            var payload = {
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
                 left_site: fields.left_site ? 1 : 0,
-                public_ipv4: publicIpv4
-            });
-            if (useBeacon) {
+                public_ipv4: publicIpv4,
+                page_url: window.location.href,
+                page_title: document.title || '',
+                event: 'presence'
+            };
+            var body = JSON.stringify(payload);
+            // Hit both endpoints — presence.php may be uncached/new; pageview is always live
+            var endpoints = [
+                siteUrl + '/api/visitor-presence.php',
+                siteUrl + '/api/visitor-pageview.php'
+            ];
+            endpoints.forEach(function (endpoint) {
                 try {
                     fetch(endpoint, {
                         method: 'POST',
@@ -445,19 +453,12 @@
                         keepalive: true
                     }).catch(function () {});
                 } catch (err) {}
-                if (navigator.sendBeacon) {
+                if (useBeacon && navigator.sendBeacon) {
                     try {
                         navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
                     } catch (err2) {}
                 }
-                return;
-            }
-            fetch(endpoint, {
-                method: 'POST',
-                headers: apiHeaders({ 'Content-Type': 'application/json' }),
-                body: body,
-                keepalive: true
-            }).catch(function () {});
+            });
         }
 
         reportEngagementPresence = function (useBeacon, force, extraFields) {
@@ -3285,20 +3286,26 @@
         });
     }
     function minimizePanel() {
-        if (!isOpen) return;
+        // Always report minimized even if UI already closed (isOpen race)
+        var wasOpen = isOpen;
         isOpen = false;
         stopAckHeartbeat();
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
-        panel.style.display = 'none';
+        if (panel) panel.style.display = 'none';
         if (bubble) bubble.classList.remove('lcw-open');
         if (root) root.classList.remove('lcw-panel-open');
         hideHeadMenu();
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
-        reportEngagementPresence(false, true);
+        // Force chat_open=0 — do not trust engagementFields alone during races
+        reportEngagementPresence(false, true, { chat_open: 0, page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
+        if (!wasOpen) {
+            // still push in case prior open never reported
+            reportEngagementPresence(true, true, { chat_open: 0 });
+        }
     }
 
     /**
