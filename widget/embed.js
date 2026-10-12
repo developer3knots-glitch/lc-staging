@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 142;
+    var LC_WIDGET_BUILD = 143;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -1981,18 +1981,11 @@
                 advanceLastMsgId(mid);
                 return true;
             }
-            if (m.sender_type === 'visitor' && m.message) {
-                document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]').forEach(function (el) {
-                    var body = el.querySelector('.lcw-msg-body');
-                    if (body && body.textContent === m.message) {
-                        el.remove();
-                    }
-                });
-            }
             var exists = !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             if (!exists) {
                 var isNewIncoming = m.sender_type !== 'visitor';
                 try {
+                    // adopts matching temp_* visitor bubbles — no remove+repaint duplicate
                     appendMessage(m);
                 } catch (err) {
                     return false;
@@ -2749,9 +2742,18 @@
         return offline || welcome || 'We\'re away right now. Leave a message and we\'ll get back to you.';
     }
 
+    function clearIdleWelcomePreview() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        box.querySelectorAll('[data-idle-preview="1"]').forEach(function (el) {
+            el.remove();
+        });
+    }
+
     function showIdleWelcomePreview() {
         var text = idleWelcomeText();
         if (!text) return;
+        clearIdleWelcomePreview();
         // Preview only - no conversation / ticket until visitor sends a message
         appendMessage({
             sender_type: 'system',
@@ -2759,6 +2761,27 @@
             created_at: new Date().toISOString(),
             _idlePreview: true
         });
+    }
+
+    /** Turn optimistic temp_* visitor bubble into the real server id (avoids hi/hi duplicate). */
+    function adoptTempVisitorBubble(m) {
+        var mid = parseInt(m && m.id, 10) || 0;
+        if (mid < 1 || (m.sender_type || '') !== 'visitor') return false;
+        var text = String(m.message || '').trim();
+        if (!text) return false;
+        var temps = document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]');
+        for (var i = 0; i < temps.length; i++) {
+            var el = temps[i];
+            var body = el.querySelector('.lcw-msg-body');
+            if (!body || body.textContent.trim() !== text) continue;
+            el.setAttribute('data-msg-id', String(mid));
+            el.classList.remove('lcw-msg-pending');
+            try {
+                updateVisitorTicks(String(mid), m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
+            } catch (eTicks) {}
+            return true;
+        }
+        return false;
     }
 
     function syncPrechatGateUi() {
@@ -2904,6 +2927,7 @@
                 return;
             }
             hideTeaser(true);
+            clearIdleWelcomePreview();
             // Keep optimistic bubble; Connecting stays until agent joins
             handleChatStarted(data, { keepMessages: !!firstMsg });
             if (tempId && data.status === 'waiting') {
@@ -5112,6 +5136,13 @@
             }
             return;
         }
+        // Real server rows replace idle preview + optimistic temps (prevents welcome/hi twice)
+        if (!m._idlePreview && (parseInt(m.id, 10) || 0) > 0) {
+            clearIdleWelcomePreview();
+            if (adoptTempVisitorBubble(m)) {
+                return;
+            }
+        }
         if (m.sender_type === 'system' && !ticketDisplayEnabled && isTicketReferenceMessage(m)) {
             return;
         }
@@ -5219,6 +5250,7 @@
             var sys = document.createElement('div');
             sys.className = 'lcw-msg lcw-system';
             if (msgKey) sys.setAttribute('data-msg-id', msgKey);
+            if (m._idlePreview) sys.setAttribute('data-idle-preview', '1');
             if (isTicketReferenceMessage(m)) {
                 sys.setAttribute('data-ticket-ref-msg', '1');
             }
@@ -5538,17 +5570,9 @@
                         return;
                     }
                     if (mid < 1 && !isHistoryLoad) return;
-                    // Swap optimistic temp bubble for the real server message
-                    if (m.sender_type === 'visitor' && m.message) {
-                        document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]').forEach(function (el) {
-                            var body = el.querySelector('.lcw-msg-body');
-                            if (body && body.textContent === m.message) {
-                                el.remove();
-                            }
-                        });
-                    }
                     var isNewIncoming = !isHistoryLoad && m.sender_type !== 'visitor';
                     var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
+                    // appendMessage adopts matching temp_* bubbles — do not remove+repaint
                     appendMessage(m, { suppressAgentState: suppressAgentState });
                     if (mid > 0 && document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
                         advanceLastMsgId(mid);
