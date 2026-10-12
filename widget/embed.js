@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 149;
+    var LC_WIDGET_BUILD = 150;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -370,7 +370,14 @@
             window.addEventListener('popstate', recordView);
         }
 
-        function localPresencePayload(fields) {
+        var presenceSeq = 0;
+
+        function nextPresenceTs() {
+            presenceSeq += 1;
+            return Date.now() * 1000 + (presenceSeq % 1000);
+        }
+
+        function localPresencePayload(fields, ts) {
             fields = fields || engagementFields();
             var status = 'active';
             var label = 'Active';
@@ -390,16 +397,16 @@
                 widget_open: !!fields.chat_open,
                 page_visible: !!fields.page_visible,
                 left_site: !!fields.left_site,
+                presence_ts: ts || nextPresenceTs(),
                 last_seen: new Date().toISOString()
             };
         }
 
-        function pushPresenceOverWs(fields) {
+        function pushPresenceOverWs(fields, ts) {
             var cid = parseInt(conversationId, 10) || 0;
             if (cid < 1) return false;
             if (!(realtimeClient && typeof realtimeClient.publishClientEvent === 'function')) return false;
             if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
-            // Prefer confirmed conv room; still try (server auto-joins claim cid)
             try {
                 if (typeof realtimeClient.subscribe === 'function') {
                     realtimeClient.subscribe('conv:' + cid);
@@ -407,7 +414,7 @@
             } catch (eSub) {}
             return !!realtimeClient.publishClientEvent('visitor.presence', {
                 conversation_id: cid,
-                visitor_presence: localPresencePayload(fields)
+                visitor_presence: localPresencePayload(fields, ts)
             });
         }
 
@@ -416,49 +423,46 @@
             presenceFlushTimer = setTimeout(function () {
                 presenceFlushTimer = null;
                 if (!pendingPresenceFields) return;
-                if (pushPresenceOverWs(pendingPresenceFields)) {
+                var ts = pendingPresenceFields._ts || nextPresenceTs();
+                if (pushPresenceOverWs(pendingPresenceFields, ts)) {
                     lastPresenceKey = pendingPresenceFields.chat_open + ':' + pendingPresenceFields.page_visible
                         + (pendingPresenceFields.left_site ? ':left' : '');
                     pendingPresenceFields = null;
                     return;
                 }
                 schedulePresenceWsRetry();
-            }, 250);
+            }, 120);
         }
 
-        function persistPresenceHttp(fields, useBeacon) {
+        function persistPresenceHttp(fields, useBeacon, ts) {
             var payload = {
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
                 left_site: fields.left_site ? 1 : 0,
+                presence_ts: ts || nextPresenceTs(),
                 public_ipv4: publicIpv4,
                 page_url: window.location.href,
                 page_title: document.title || '',
                 event: 'presence'
             };
             var body = JSON.stringify(payload);
-            // Hit both endpoints — presence.php may be uncached/new; pageview is always live
-            var endpoints = [
-                siteUrl + '/api/visitor-presence.php',
-                siteUrl + '/api/visitor-pageview.php'
-            ];
-            endpoints.forEach(function (endpoint) {
+            // Single endpoint — dual posts caused out-of-order Active/Minimized flaps
+            var endpoint = siteUrl + '/api/visitor-presence.php';
+            try {
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: apiHeaders({ 'Content-Type': 'application/json' }),
+                    body: body,
+                    keepalive: true
+                }).catch(function () {});
+            } catch (err) {}
+            if (useBeacon && navigator.sendBeacon) {
                 try {
-                    fetch(endpoint, {
-                        method: 'POST',
-                        headers: apiHeaders({ 'Content-Type': 'application/json' }),
-                        body: body,
-                        keepalive: true
-                    }).catch(function () {});
-                } catch (err) {}
-                if (useBeacon && navigator.sendBeacon) {
-                    try {
-                        navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
-                    } catch (err2) {}
-                }
-            });
+                    navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
+                } catch (err2) {}
+            }
         }
 
         reportEngagementPresence = function (useBeacon, force, extraFields) {
@@ -475,16 +479,17 @@
             if (!force && key === lastPresenceKey) {
                 return;
             }
-            // Instant WS first; queue+retry if socket not ready yet
-            if (pushPresenceOverWs(fields)) {
+            var ts = nextPresenceTs();
+            fields._ts = ts;
+            // Instant WS first (live agent UI). HTTP is DB-only ordered by presence_ts.
+            if (pushPresenceOverWs(fields, ts)) {
                 lastPresenceKey = key;
                 pendingPresenceFields = null;
             } else {
                 pendingPresenceFields = fields;
                 schedulePresenceWsRetry();
             }
-            // DB persist only (not the live agent path)
-            persistPresenceHttp(fields, !!useBeacon);
+            persistPresenceHttp(fields, !!useBeacon, ts);
         };
 
         // Expose flush for realtime connected handlers outside this closure
@@ -3371,7 +3376,8 @@
             focusVisitorCompose({ delay: 180 });
         }
         startAckHeartbeat();
-        reportEngagementPresence(false, true);
+        // Force open=1 with monotonic ts so a late minimize HTTP cannot win
+        reportEngagementPresence(false, true, { chat_open: 1, page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
     }
 
     function togglePanel() {

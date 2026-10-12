@@ -40,6 +40,9 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('page_visible', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN page_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER widget_open');
         }
+        if (!in_array('presence_ts', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN presence_ts BIGINT NOT NULL DEFAULT 0 AFTER page_visible');
+        }
     } catch (Throwable $e) {
     }
 }
@@ -77,11 +80,14 @@ function lc_mark_visitor_left_site(int $visitorId): void
 
 /**
  * Persist widget open / tab visibility for agent presence UI.
+ * Optional $presenceTs (ms) rejects stale out-of-order HTTP (minimize after open).
+ *
+ * @return bool true if row was updated
  */
-function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null): void
+function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null, int $presenceTs = 0): bool
 {
     if ($visitorId < 1 || ($widgetOpen === null && $pageVisible === null)) {
-        return;
+        return false;
     }
     lc_ensure_visitor_presence_schema();
     $sets = [];
@@ -95,11 +101,22 @@ function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = nul
         $params[] = $pageVisible ? 1 : 0;
     }
     $sets[] = 'last_seen = UTC_TIMESTAMP()';
+    if ($presenceTs > 0) {
+        $sets[] = 'presence_ts = ?';
+        $params[] = $presenceTs;
+    }
     $params[] = $visitorId;
+    $sql = 'UPDATE visitors SET ' . implode(', ', $sets) . ' WHERE id = ?';
+    if ($presenceTs > 0) {
+        $sql .= ' AND presence_ts <= ?';
+        $params[] = $presenceTs;
+    }
     try {
-        lc_db()->prepare('UPDATE visitors SET ' . implode(', ', $sets) . ' WHERE id = ?')
-            ->execute($params);
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount() > 0;
     } catch (Throwable $e) {
+        return false;
     }
 }
 
@@ -260,18 +277,53 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         ? $parseFlag($input['page_visible'])
         : null;
 
+    $presenceTs = 0;
+    if (isset($input['presence_ts'])) {
+        $presenceTs = (int) $input['presence_ts'];
+    } elseif (isset($input['ts'])) {
+        $presenceTs = (int) $input['ts'];
+    }
+    if ($presenceTs > 20000000000) {
+        // already ms
+    } elseif ($presenceTs > 1000000000) {
+        $presenceTs *= 1000;
+    }
+
     $prevRow = [];
     try {
-        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, presence_ts FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) {
         $prevRow = [];
     }
     $prevStatus = (string) (lc_visitor_engagement_status($prevRow)['status'] ?? '');
+    $prevTs = (int) ($prevRow['presence_ts'] ?? 0);
 
+    // Stale HTTP (e.g. slow minimize finishing after open) — ignore completely
+    if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
+        $stale = lc_visitor_engagement_status($prevRow);
+        $stale['presence_ts'] = $prevTs;
+        $stale['ignored_stale'] = true;
+        return $stale;
+    }
+
+    $applied = false;
     if ($widgetOpen !== null || $pageVisible !== null) {
-        lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible);
+        $applied = lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible, $presenceTs);
+        if (!$applied && $presenceTs > 0) {
+            // Lost race to a newer pulse
+            try {
+                $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+                $stmt->execute([$visitorId]);
+                $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: $prevRow;
+            } catch (Throwable $e) {
+            }
+            $presence = lc_visitor_engagement_status($prevRow);
+            $presence['presence_ts'] = (int) ($prevRow['presence_ts'] ?? $prevTs);
+            $presence['ignored_stale'] = true;
+            return $presence;
+        }
         if ($widgetOpen !== null) {
             $prevRow['widget_open'] = $widgetOpen ? 1 : 0;
         }
@@ -279,11 +331,16 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
             $prevRow['page_visible'] = $pageVisible ? 1 : 0;
         }
         $prevRow['last_seen'] = gmdate('Y-m-d H:i:s');
+        if ($presenceTs > 0) {
+            $prevRow['presence_ts'] = $presenceTs;
+        }
     }
 
     $presence = lc_visitor_engagement_status($prevRow);
+    $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : (int) ($prevRow['presence_ts'] ?? 0);
     $changed = $forcePublish || $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
-    if ($changed) {
+    // Never re-broadcast stale/duplicate HTTP — live path is visitor WS client_event
+    if ($changed && $applied) {
         lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
     }
     return $presence;

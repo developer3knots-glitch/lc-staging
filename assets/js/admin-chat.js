@@ -470,6 +470,9 @@
         el.title = visitorKindLabel(c);
     }
 
+    var livePresenceTs = 0;
+    var livePresenceSource = '';
+
     function normalizeVisitorPresence(presence) {
         if (!presence || typeof presence !== 'object') return null;
         var status = String(presence.status || '').toLowerCase();
@@ -481,12 +484,14 @@
             disconnected: 'Disconnected'
         };
         if (!labels[status]) return null;
+        var ts = parseInt(presence.presence_ts || presence.ts || 0, 10) || 0;
         return {
             status: status,
             label: presence.label || labels[status],
             widget_open: !!presence.widget_open,
             page_visible: presence.page_visible !== false,
-            left_site: !!presence.left_site
+            left_site: !!presence.left_site,
+            presence_ts: ts
         };
     }
 
@@ -502,12 +507,19 @@
         }
     }
 
-    function appendPresenceSystemMessage(presence, force) {
+    function appendPresenceSystemMessage(presence) {
         if (!messagesEl || !presence) return;
         var line = presenceChatLine(presence);
         if (!line) return;
         var last = messagesEl.querySelector('.lc-msg.system.is-presence:last-of-type');
-        if (!force && last && last.getAttribute('data-presence') === presence.status) {
+        if (last && last.getAttribute('data-presence') === presence.status) {
+            return;
+        }
+        // Replace last presence line instead of spamming the transcript
+        if (last) {
+            last.setAttribute('data-presence', presence.status);
+            last.className = 'lc-msg system is-presence is-' + presence.status;
+            last.textContent = line;
             return;
         }
         var html = '<div class="lc-msg system is-presence is-' + esc(presence.status) + '" data-presence="' +
@@ -549,7 +561,13 @@
         }
     }
 
-    function setVisitorPresenceBadge(presenceOrConv) {
+    /**
+     * @param {object} presenceOrConv
+     * @param {{source?:string,force?:boolean}} opts source: ws|poll|inbox
+     */
+    function setVisitorPresenceBadge(presenceOrConv, opts) {
+        opts = opts || {};
+        var source = String(opts.source || 'poll');
         var bar = document.getElementById('lc-visitor-presence-bar');
         var textEl = document.getElementById('lc-visitor-presence-text');
         var presence = null;
@@ -559,14 +577,44 @@
             presence = normalizeVisitorPresence(presenceOrConv);
         }
         if (!presence) {
-            if (bar) {
-                bar.hidden = true;
-                bar.className = 'lc-visitor-presence-bar';
+            if (opts.force) {
+                if (bar) {
+                    bar.hidden = true;
+                    bar.className = 'lc-visitor-presence-bar';
+                }
+                if (textEl) textEl.textContent = 'Visitor status unknown';
+                lastPresenceStatusKey = '';
+                livePresenceTs = 0;
+                livePresenceSource = '';
             }
-            if (textEl) textEl.textContent = 'Visitor status unknown';
-            lastPresenceStatusKey = '';
             return;
         }
+
+        var incomingTs = presence.presence_ts || 0;
+        // HTTP/inbox must NEVER overwrite a newer live WS status (root cause of 3–4s lag + flap)
+        if (source !== 'ws' && !opts.force) {
+            if (livePresenceSource === 'ws' && livePresenceTs > 0) {
+                if (!incomingTs || incomingTs < livePresenceTs) {
+                    return;
+                }
+            }
+            if (incomingTs > 0 && livePresenceTs > 0 && incomingTs < livePresenceTs) {
+                return;
+            }
+        }
+
+        if (incomingTs > livePresenceTs) {
+            livePresenceTs = incomingTs;
+        } else if (source === 'ws' && !incomingTs) {
+            livePresenceTs = Date.now();
+            presence.presence_ts = livePresenceTs;
+        }
+        if (source === 'ws') {
+            livePresenceSource = 'ws';
+        } else if (!livePresenceSource) {
+            livePresenceSource = source;
+        }
+
         var prev = lastPresenceStatusKey;
         var next = String(presence.status || '');
         var statusChanged = prev !== next;
@@ -581,9 +629,8 @@
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
         }
-        // Always mirror into the open transcript when status changes (or first paint)
         if (statusChanged) {
-            appendPresenceSystemMessage(presence, !!prev);
+            appendPresenceSystemMessage(presence);
         }
     }
 
@@ -874,7 +921,7 @@
             populateContactFields(true);
         }
         setVisitorKindBadge(c);
-        setVisitorPresenceBadge(c);
+        setVisitorPresenceBadge(c, { source: 'poll' });
 
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
@@ -2403,12 +2450,12 @@
                 });
                 paintConversationList(filterConversations(lastConversations));
 
-                // Sync presence bar/chat line from inbox payload (WS-independent refresh)
+                // Inbox is backup only — never stomp fresher WS presence
                 if (selectedId) {
                     for (var pi = 0; pi < lastConversations.length; pi++) {
                         if ((parseInt(lastConversations[pi].id, 10) || 0) === selectedId) {
                             if (lastConversations[pi].visitor_presence) {
-                                setVisitorPresenceBadge(lastConversations[pi]);
+                                setVisitorPresenceBadge(lastConversations[pi], { source: 'inbox' });
                             }
                             break;
                         }
@@ -3320,7 +3367,9 @@
         populateContactFields(true);
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
-        setVisitorPresenceBadge(null);
+        setVisitorPresenceBadge(null, { force: true });
+        livePresenceTs = 0;
+        livePresenceSource = '';
         lastPresenceStatusKey = '';
         setText('lc-details-ip', ' - ');
         setText('lc-details-country', ' - ');
@@ -3758,7 +3807,7 @@
                     closeMoreMenu();
                     visitorNameEl.textContent = c.visitor_name || 'Visitor';
                     updateHeaderAvatar(c.visitor_name || 'Visitor');
-                    setVisitorPresenceBadge(c);
+                    setVisitorPresenceBadge(c, { source: 'poll' });
                     renderVisitorDetails(c, !!c.ip_blocked);
                     renderDetailsRail(c, 'Chat closed');
                     if (c.reference) {
@@ -3774,7 +3823,7 @@
                 replyInput.placeholder = 'Type a message...';
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
-                setVisitorPresenceBadge(c);
+                setVisitorPresenceBadge(c, { source: 'poll' });
                 currentConversationMeta = {
                     brand_name: c.brand_name,
                     visitor_ip: c.visitor_ip,
@@ -5455,9 +5504,8 @@
                 if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
                 applyVisitorPresenceToInbox(cid, presence);
-                // Always paint open chat — do NOT pre-set lastPresenceStatusKey (breaks change lines)
                 if (selectedId && cid === selectedId) {
-                    setVisitorPresenceBadge(presence);
+                    setVisitorPresenceBadge(presence, { source: 'ws' });
                 }
             });
             realtimeClient.on('conversation.updated', function (payload) {
