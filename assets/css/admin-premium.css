@@ -8873,6 +8873,57 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     color: #047857;
 }
 
+.lc-visitor-presence-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: 0.4rem;
+    padding: 0.12rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    vertical-align: middle;
+    max-width: 11rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lc-visitor-presence-badge::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.lc-visitor-presence-badge.is-active {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.lc-visitor-presence-badge.is-minimized {
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.lc-visitor-presence-badge.is-away {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.lc-visitor-presence-badge.is-left {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.lc-visitor-presence-badge.is-disconnected {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
 .lc-return-toast {
     position: fixed;
     right: 1.25rem;

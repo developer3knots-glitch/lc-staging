@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 143;
+    var LC_WIDGET_BUILD = 144;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -237,14 +237,26 @@
         } catch (err) {}
     }
 
+    /** Push widget open / tab visibility to the server for agent presence. */
+    var reportEngagementPresence = function () {};
+
     function initPageTracker() {
         var lastSentUrl = '';
         var currentEnteredAt = Date.now();
         var leaveSentForUrl = '';
         var siteLeaveSent = false;
         var presenceTimer = null;
+        var lastPresenceKey = '';
+
+        function engagementFields() {
+            return {
+                chat_open: isOpen ? 1 : 0,
+                page_visible: (typeof document !== 'undefined' && document.visibilityState === 'hidden') ? 0 : 1
+            };
+        }
 
         function buildPayload(extra) {
+            var engagement = engagementFields();
             var data = {
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -252,7 +264,9 @@
                 page_title: document.title || '',
                 referrer: document.referrer || '',
                 website_url: '',
-                public_ipv4: publicIpv4
+                public_ipv4: publicIpv4,
+                chat_open: engagement.chat_open,
+                page_visible: engagement.page_visible
             };
             if (extra) {
                 for (var key in extra) {
@@ -352,12 +366,24 @@
             window.addEventListener('popstate', recordView);
         }
 
+        reportEngagementPresence = function (useBeacon, force) {
+            if (!visitorUid) return;
+            var fields = engagementFields();
+            var key = fields.chat_open + ':' + fields.page_visible;
+            if (!force && key === lastPresenceKey && document.visibilityState === 'visible') {
+                return;
+            }
+            lastPresenceKey = key;
+            postPageEvent({ event: 'ping' }, !!useBeacon);
+        };
+
         recordView();
         hookHistory();
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
             if (document.visibilityState !== 'visible') return;
             postPageEvent({ event: 'ping' }, false);
+            lastPresenceKey = engagementFields().chat_open + ':' + engagementFields().page_visible;
         }, 15000);
 
         document.addEventListener('visibilitychange', function () {
@@ -366,12 +392,16 @@
                 currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
                 postPageEvent({ event: 'ping' }, false);
+                lastPresenceKey = engagementFields().chat_open + ':' + engagementFields().page_visible;
                 if (conversationId && !chatClosed) {
                     scheduleCatchupSync();
                     if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
                         loadRealtimeScript(function () { initVisitorRealtime(); });
                     }
                 }
+            } else {
+                // Tab hidden ≠ left website — report Away while keeping on-site presence.
+                reportEngagementPresence(true, true);
             }
         });
 
@@ -3140,6 +3170,7 @@
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
+        reportEngagementPresence(false, true);
     }
 
     /**
@@ -3205,6 +3236,7 @@
             focusVisitorCompose({ delay: 180 });
         }
         startAckHeartbeat();
+        reportEngagementPresence(false, true);
     }
 
     function togglePanel() {

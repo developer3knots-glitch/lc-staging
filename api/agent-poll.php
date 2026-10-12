@@ -108,6 +108,14 @@ try {
             if (!empty($conv['visitor_last_seen'])) {
                 $formattedConv['visitor_last_seen'] = lc_to_iso8601($conv['visitor_last_seen']);
             }
+            if (!empty($conv['visitor_left_site_at']) && function_exists('lc_to_iso8601')) {
+                $formattedConv['visitor_left_site_at'] = lc_to_iso8601($conv['visitor_left_site_at']);
+            }
+            if (isset($conv['visitor_presence']) && is_array($conv['visitor_presence'])) {
+                $formattedConv['visitor_presence'] = $conv['visitor_presence'];
+            } elseif (function_exists('lc_visitor_engagement_status')) {
+                $formattedConv['visitor_presence'] = lc_visitor_engagement_status($conv);
+            }
             // Use stored geo only — never block chat open on external IP lookups.
             if ($visitorId > 0 && function_exists('lc_visitor_geo_payload')) {
                 $formattedConv['visitor_geo'] = lc_visitor_geo_payload([

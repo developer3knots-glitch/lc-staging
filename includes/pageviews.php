@@ -34,6 +34,12 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('left_site_at', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN left_site_at DATETIME NULL DEFAULT NULL AFTER last_seen');
         }
+        if (!in_array('widget_open', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN widget_open TINYINT(1) NOT NULL DEFAULT 0 AFTER left_site_at');
+        }
+        if (!in_array('page_visible', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN page_visible TINYINT(1) NOT NULL DEFAULT 1 AFTER widget_open');
+        }
     } catch (Throwable $e) {
     }
 }
@@ -58,9 +64,218 @@ function lc_mark_visitor_left_site(int $visitorId): void
     }
     lc_ensure_visitor_presence_schema();
     try {
-        lc_db()->prepare('UPDATE visitors SET left_site_at = UTC_TIMESTAMP() WHERE id = ? AND left_site_at IS NULL')
-            ->execute([$visitorId]);
+        lc_db()->prepare('
+            UPDATE visitors
+            SET left_site_at = COALESCE(left_site_at, UTC_TIMESTAMP()),
+                widget_open = 0,
+                page_visible = 0
+            WHERE id = ?
+        ')->execute([$visitorId]);
     } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Persist widget open / tab visibility for agent presence UI.
+ */
+function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null): void
+{
+    if ($visitorId < 1 || ($widgetOpen === null && $pageVisible === null)) {
+        return;
+    }
+    lc_ensure_visitor_presence_schema();
+    $sets = [];
+    $params = [];
+    if ($widgetOpen !== null) {
+        $sets[] = 'widget_open = ?';
+        $params[] = $widgetOpen ? 1 : 0;
+    }
+    if ($pageVisible !== null) {
+        $sets[] = 'page_visible = ?';
+        $params[] = $pageVisible ? 1 : 0;
+    }
+    $sets[] = 'last_seen = UTC_TIMESTAMP()';
+    $params[] = $visitorId;
+    try {
+        lc_db()->prepare('UPDATE visitors SET ' . implode(', ', $sets) . ' WHERE id = ?')
+            ->execute($params);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * @return list<int>
+ */
+function lc_open_conversation_ids_for_visitor(int $visitorId, ?int $brandId = null): array
+{
+    if ($visitorId < 1) {
+        return [];
+    }
+    try {
+        $sql = "SELECT id FROM conversations WHERE visitor_id = ? AND status IN ('waiting','active')";
+        $params = [$visitorId];
+        if ($brandId !== null && $brandId > 0) {
+            $sql .= ' AND brand_id = ?';
+            $params[] = $brandId;
+        }
+        $sql .= ' ORDER BY id DESC LIMIT 8';
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute($params);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function lc_presence_timestamp(?string $value): ?int
+{
+    if ($value === null || trim($value) === '') {
+        return null;
+    }
+    if (function_exists('lc_to_iso8601')) {
+        $iso = lc_to_iso8601($value);
+        if ($iso !== null) {
+            try {
+                return (new DateTimeImmutable($iso))->getTimestamp();
+            } catch (Throwable $e) {
+            }
+        }
+    }
+    $ts = strtotime($value . (preg_match('/[zZ]|[+-]\d{2}:?\d{2}$/', $value) ? '' : ' UTC'));
+    return $ts !== false ? $ts : null;
+}
+
+/**
+ * Agent-facing visitor engagement status.
+ *
+ * @param array<string,mixed>|null $row Visitor or conversation-joined visitor fields
+ * @return array{status:string,label:string,widget_open:bool,page_visible:bool,left_site:bool,last_seen:?string}
+ */
+function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
+{
+    $row = $row ?: [];
+    $staleSec = max(30, min(300, $staleSec));
+    $leftRaw = $row['visitor_left_site_at'] ?? $row['left_site_at'] ?? null;
+    $lastRaw = $row['visitor_last_seen'] ?? $row['last_seen'] ?? null;
+    $widgetOpen = (int) ($row['visitor_widget_open'] ?? $row['widget_open'] ?? 0) === 1;
+    $pageVisible = array_key_exists('visitor_page_visible', $row) || array_key_exists('page_visible', $row)
+        ? ((int) ($row['visitor_page_visible'] ?? $row['page_visible'] ?? 1) === 1)
+        : true;
+    $leftSite = $leftRaw !== null && trim((string) $leftRaw) !== '';
+
+    $base = [
+        'widget_open' => $widgetOpen,
+        'page_visible' => $pageVisible,
+        'left_site' => $leftSite,
+        'last_seen' => $lastRaw !== null && trim((string) $lastRaw) !== ''
+            ? (function_exists('lc_to_iso8601') ? (lc_to_iso8601((string) $lastRaw) ?: (string) $lastRaw) : (string) $lastRaw)
+            : null,
+    ];
+
+    if ($leftSite) {
+        return array_merge($base, ['status' => 'left', 'label' => 'Left website']);
+    }
+
+    $seenTs = lc_presence_timestamp($lastRaw !== null ? (string) $lastRaw : null);
+    if ($seenTs === null || (time() - $seenTs) > $staleSec) {
+        return array_merge($base, ['status' => 'disconnected', 'label' => 'Disconnected']);
+    }
+    if (!$pageVisible) {
+        return array_merge($base, ['status' => 'away', 'label' => 'Away']);
+    }
+    if (!$widgetOpen) {
+        return array_merge($base, ['status' => 'minimized', 'label' => 'Chat minimized']);
+    }
+    return array_merge($base, ['status' => 'active', 'label' => 'Active']);
+}
+
+/**
+ * Apply optional chat_open / page_visible from a visitor API payload and notify agents on change.
+ *
+ * @param array<string,mixed> $input
+ * @return array{status:string,label:string,widget_open:bool,page_visible:bool,left_site:bool,last_seen:?string}|null
+ */
+function lc_apply_visitor_presence_input(int $visitorId, array $input, int $brandId = 0, bool $forcePublish = false): ?array
+{
+    if ($visitorId < 1) {
+        return null;
+    }
+    lc_ensure_visitor_presence_schema();
+
+    $parseFlag = static function ($raw): ?bool {
+        if ($raw === null) {
+            return null;
+        }
+        if (is_bool($raw)) {
+            return $raw;
+        }
+        if (is_int($raw) || is_float($raw)) {
+            return ((int) $raw) === 1;
+        }
+        $s = strtolower(trim((string) $raw));
+        if ($s === '' || $s === 'null') {
+            return null;
+        }
+        if (in_array($s, ['1', 'true', 'yes', 'on'], true)) {
+            return true;
+        }
+        if (in_array($s, ['0', 'false', 'no', 'off'], true)) {
+            return false;
+        }
+        $bool = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        return $bool;
+    };
+
+    $widgetOpen = null;
+    if (array_key_exists('chat_open', $input)) {
+        $widgetOpen = $parseFlag($input['chat_open']);
+    } elseif (array_key_exists('widget_open', $input)) {
+        $widgetOpen = $parseFlag($input['widget_open']);
+    }
+    $pageVisible = array_key_exists('page_visible', $input)
+        ? $parseFlag($input['page_visible'])
+        : null;
+
+    $prevStatus = null;
+    try {
+        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $prevStatus = (string) (lc_visitor_engagement_status($prevRow)['status'] ?? '');
+    } catch (Throwable $e) {
+        $prevRow = [];
+    }
+
+    if ($widgetOpen !== null || $pageVisible !== null) {
+        lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible);
+    }
+
+    try {
+        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: $prevRow;
+    } catch (Throwable $e) {
+        $row = $prevRow;
+    }
+
+    $presence = lc_visitor_engagement_status($row);
+    $changed = $forcePublish || $prevStatus === null || $prevStatus !== (string) ($presence['status'] ?? '');
+    if ($changed && function_exists('lc_realtime_publish_visitor_presence')) {
+        lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
+    }
+    return $presence;
+}
+
+function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?int $brandId = null): void
+{
+    if ($visitorId < 1 || !function_exists('lc_realtime_publish_conversation_event')) {
+        return;
+    }
+    $ids = lc_open_conversation_ids_for_visitor($visitorId, $brandId);
+    foreach ($ids as $conversationId) {
+        lc_realtime_publish_conversation_event($conversationId, 'visitor.presence', [
+            'visitor_presence' => $presence,
+        ], ['peers_only' => true]);
     }
 }
 

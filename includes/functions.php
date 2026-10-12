@@ -1599,10 +1599,16 @@ function lc_get_conversation(int $id): ?array
     if (function_exists('lc_ensure_visitor_ipv4_schema')) {
         lc_ensure_visitor_ipv4_schema();
     }
+    if (function_exists('lc_ensure_visitor_presence_schema')) {
+        lc_ensure_visitor_presence_schema();
+    }
     $stmt = lc_db()->prepare("
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.ipv4_address AS visitor_ipv4, v.country AS visitor_country, v.page_url AS visitor_page,
                v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
+               v.left_site_at AS visitor_left_site_at,
+               v.widget_open AS visitor_widget_open,
+               v.page_visible AS visitor_page_visible,
                v.phone AS visitor_phone,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
                v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon, v.geo_source AS visitor_geo_source,
@@ -1620,6 +1626,9 @@ function lc_get_conversation(int $id): ?array
         if ($frozen !== '' && filter_var($frozen, FILTER_VALIDATE_IP)) {
             $row['visitor_ip'] = $frozen;
             $row['visitor_ipv4'] = $frozen;
+        }
+        if (function_exists('lc_visitor_engagement_status')) {
+            $row['visitor_presence'] = lc_visitor_engagement_status($row);
         }
     }
     return $row ?: null;

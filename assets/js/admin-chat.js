@@ -470,6 +470,60 @@
         el.title = visitorKindLabel(c);
     }
 
+    function normalizeVisitorPresence(presence) {
+        if (!presence || typeof presence !== 'object') return null;
+        var status = String(presence.status || '').toLowerCase();
+        var labels = {
+            active: 'Active',
+            minimized: 'Chat minimized',
+            away: 'Away',
+            left: 'Left website',
+            disconnected: 'Disconnected'
+        };
+        if (!labels[status]) return null;
+        return {
+            status: status,
+            label: presence.label || labels[status],
+            widget_open: !!presence.widget_open,
+            page_visible: presence.page_visible !== false,
+            left_site: !!presence.left_site
+        };
+    }
+
+    function setVisitorPresenceBadge(presenceOrConv) {
+        var el = document.getElementById('lc-chat-visitor-presence');
+        if (!el) return;
+        var presence = null;
+        if (presenceOrConv && presenceOrConv.visitor_presence) {
+            presence = normalizeVisitorPresence(presenceOrConv.visitor_presence);
+        } else {
+            presence = normalizeVisitorPresence(presenceOrConv);
+        }
+        if (!presence) {
+            el.hidden = true;
+            el.textContent = '';
+            el.className = 'lc-visitor-presence-badge';
+            el.removeAttribute('title');
+            return;
+        }
+        el.hidden = false;
+        el.textContent = presence.label;
+        el.className = 'lc-visitor-presence-badge is-' + presence.status;
+        var tip = presence.label;
+        if (presence.status === 'minimized') {
+            tip = 'Visitor is still on the site; chat widget is minimized';
+        } else if (presence.status === 'away') {
+            tip = 'Visitor tab is in the background or not visible';
+        } else if (presence.status === 'left') {
+            tip = 'Visitor left or closed the website';
+        } else if (presence.status === 'disconnected') {
+            tip = 'No recent visitor heartbeat';
+        } else if (presence.status === 'active') {
+            tip = 'Visitor is on the site with chat open';
+        }
+        el.title = tip;
+    }
+
     var lastReturningWaiting = 0;
 
     function showReturningVisitorToast(name) {
@@ -757,6 +811,7 @@
             populateContactFields(true);
         }
         setVisitorKindBadge(c);
+        setVisitorPresenceBadge(c);
 
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
@@ -3180,6 +3235,7 @@
         populateContactFields(true);
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
+        setVisitorPresenceBadge(null);
         setText('lc-details-ip', ' - ');
         setText('lc-details-country', ' - ');
         setText('lc-details-brand', ' - ');
@@ -3615,6 +3671,7 @@
                     closeMoreMenu();
                     visitorNameEl.textContent = c.visitor_name || 'Visitor';
                     updateHeaderAvatar(c.visitor_name || 'Visitor');
+                    setVisitorPresenceBadge(c);
                     renderVisitorDetails(c, !!c.ip_blocked);
                     renderDetailsRail(c, 'Chat closed');
                     if (c.reference) {
@@ -3630,6 +3687,7 @@
                 replyInput.placeholder = 'Type a message...';
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
+                setVisitorPresenceBadge(c);
                 currentConversationMeta = {
                     brand_name: c.brand_name,
                     visitor_ip: c.visitor_ip,
@@ -5301,6 +5359,11 @@
             });
             realtimeClient.on('conversation.note', handleStaffNotePayload);
             realtimeClient.on('staff.note', handleStaffNotePayload);
+            realtimeClient.on('visitor.presence', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (!selectedId || cid !== selectedId) return;
+                setVisitorPresenceBadge(payload && (payload.visitor_presence || payload));
+            });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {

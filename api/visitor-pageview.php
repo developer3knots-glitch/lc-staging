@@ -101,6 +101,21 @@ try {
             ')->execute([$storeIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         }
         lc_mark_visitor_left_site($visitorId);
+        $presence = null;
+        if (function_exists('lc_apply_visitor_presence_input')) {
+            $presence = lc_apply_visitor_presence_input($visitorId, [
+                'chat_open' => 0,
+                'page_visible' => 0,
+            ], $brandId, true);
+        } elseif (function_exists('lc_realtime_publish_visitor_presence') && function_exists('lc_visitor_engagement_status')) {
+            $presence = lc_visitor_engagement_status([
+                'left_site_at' => date('Y-m-d H:i:s'),
+                'widget_open' => 0,
+                'page_visible' => 0,
+                'last_seen' => date('Y-m-d H:i:s'),
+            ]);
+            lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId);
+        }
         if (function_exists('lc_realtime_publish_traffic')) {
             lc_realtime_publish_traffic($brandId, 'left', [
                 'visitor_id' => $visitorId,
@@ -112,6 +127,7 @@ try {
             'event' => 'unload',
             'visitor_uid' => $visitorUid,
             'visitor_uid_rotated' => $visitorUidRotated,
+            'visitor_presence' => $presence,
         ]);
     }
 
@@ -135,6 +151,11 @@ try {
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
     lc_mark_visitor_on_site($visitorId);
+    $presence = null;
+    if (function_exists('lc_apply_visitor_presence_input')) {
+        // Force publish when returning from Left so agents see Active/Minimized again.
+        $presence = lc_apply_visitor_presence_input($visitorId, $input, $brandId, $wasLeft || $isNewVisitor);
+    }
 
     $wasAway = true;
     if (!$isNewVisitor && $prevLastSeen) {
@@ -178,6 +199,7 @@ try {
         'event' => $event === 'ping' ? 'ping' : 'view',
         'visitor_uid' => $visitorUid,
         'visitor_uid_rotated' => $visitorUidRotated,
+        'visitor_presence' => $presence,
     ]);
 } catch (Throwable $e) {
     error_log('visitor-pageview: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
