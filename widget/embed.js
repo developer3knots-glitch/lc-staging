@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 150;
+    var LC_WIDGET_BUILD = 151;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -435,20 +435,22 @@
         }
 
         function persistPresenceHttp(fields, useBeacon, ts) {
+            var cid = parseInt(conversationId, 10) || 0;
             var payload = {
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
+                conversation_id: cid > 0 ? cid : undefined,
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
                 left_site: fields.left_site ? 1 : 0,
                 presence_ts: ts || nextPresenceTs(),
                 public_ipv4: publicIpv4,
-                page_url: window.location.href,
-                page_title: document.title || '',
                 event: 'presence'
             };
+            if (!payload.conversation_id) {
+                delete payload.conversation_id;
+            }
             var body = JSON.stringify(payload);
-            // Single endpoint — dual posts caused out-of-order Active/Minimized flaps
             var endpoint = siteUrl + '/api/visitor-presence.php';
             try {
                 fetch(endpoint, {
@@ -2634,7 +2636,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=12';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=13';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

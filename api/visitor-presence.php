@@ -1,7 +1,7 @@
 <?php
 /**
- * Ultra-light visitor presence pulse (minimize / tab / open).
- * Persists flags + fires agent WS; no geo/traffic/pageview work.
+ * Fast visitor presence pulse — same realtime path as typing (confirmed publish).
+ * POST: visitor_uid, chat_open, page_visible, conversation_id?, presence_ts?
  */
 require_once __DIR__ . '/../includes/functions.php';
 lc_cors_headers();
@@ -17,59 +17,168 @@ if (!is_array($input) || !$input) {
 }
 
 $visitorUid = trim((string) ($input['visitor_uid'] ?? ''));
-$brandKey = trim((string) ($input['brand_key'] ?? 'default'));
+$conversationId = (int) ($input['conversation_id'] ?? 0);
 if ($visitorUid === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
 
-$ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
-if (!lc_rate_limit('ip:' . $ip . ':presence', 180, 60)) {
+$ip = function_exists('lc_client_ip') ? lc_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '');
+if (!lc_rate_limit('ip:' . $ip . ':presence', 240, 60)) {
     lc_json(['success' => false, 'error' => 'Too many requests'], 429);
 }
 
+$parseFlag = static function ($raw): ?bool {
+    if ($raw === null) {
+        return null;
+    }
+    if (is_bool($raw)) {
+        return $raw;
+    }
+    if (is_int($raw) || is_float($raw)) {
+        return ((int) $raw) === 1;
+    }
+    $s = strtolower(trim((string) $raw));
+    if (in_array($s, ['1', 'true', 'yes', 'on'], true)) {
+        return true;
+    }
+    if (in_array($s, ['0', 'false', 'no', 'off'], true)) {
+        return false;
+    }
+    return null;
+};
+
 try {
-    lc_ensure_brands_schema();
     if (function_exists('lc_ensure_visitor_presence_schema')) {
         lc_ensure_visitor_presence_schema();
     }
 
-    $brand = lc_get_brand_by_key($brandKey);
-    $brandId = $brand ? (int) $brand['id'] : 0;
+    $db = lc_db();
+    $visitorId = 0;
+    $agentId = 0;
+    $brandId = 0;
+    $leftAt = null;
+    $prevTs = 0;
+    $widgetOpen = 0;
+    $pageVisible = 1;
 
-    $stmt = lc_db()->prepare('SELECT id FROM visitors WHERE visitor_uid = ? LIMIT 1');
-    $stmt->execute([$visitorUid]);
-    $visitorId = (int) ($stmt->fetchColumn() ?: 0);
-    if ($visitorId < 1) {
-        lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
+    if ($conversationId > 0) {
+        $stmt = $db->prepare('
+            SELECT c.id, c.agent_id, c.brand_id, c.status,
+                   v.id AS visitor_id, v.left_site_at, v.widget_open, v.page_visible, v.presence_ts
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.id = ? AND v.visitor_uid = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$conversationId, $visitorUid]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            lc_json(['success' => false, 'error' => 'Not found'], 404);
+        }
+        $visitorId = (int) $row['visitor_id'];
+        $agentId = (int) ($row['agent_id'] ?? 0);
+        $brandId = (int) ($row['brand_id'] ?? 0);
+        $leftAt = $row['left_site_at'] ?? null;
+        $prevTs = (int) ($row['presence_ts'] ?? 0);
+        $widgetOpen = (int) ($row['widget_open'] ?? 0);
+        $pageVisible = (int) ($row['page_visible'] ?? 1);
+        if (!in_array((string) ($row['status'] ?? ''), ['waiting', 'active'], true)) {
+            $conversationId = 0;
+        }
+    } else {
+        $stmt = $db->prepare('SELECT id, left_site_at, widget_open, page_visible, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
+        $stmt->execute([$visitorUid]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
+        }
+        $visitorId = (int) $row['id'];
+        $leftAt = $row['left_site_at'] ?? null;
+        $prevTs = (int) ($row['presence_ts'] ?? 0);
+        $widgetOpen = (int) ($row['widget_open'] ?? 0);
+        $pageVisible = (int) ($row['page_visible'] ?? 1);
+    }
+
+    $presenceTs = (int) ($input['presence_ts'] ?? $input['ts'] ?? 0);
+    if ($presenceTs > 1000000000 && $presenceTs < 20000000000) {
+        $presenceTs *= 1000;
+    }
+
+    // Reject out-of-order pulses (slow minimize after open)
+    if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
+        $presence = lc_visitor_engagement_status([
+            'left_site_at' => $leftAt,
+            'widget_open' => $widgetOpen,
+            'page_visible' => $pageVisible,
+            'last_seen' => gmdate('Y-m-d H:i:s'),
+            'presence_ts' => $prevTs,
+        ]);
+        $presence['presence_ts'] = $prevTs;
+        $presence['ignored_stale'] = true;
+        lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
     }
 
     $leftSite = !empty($input['left_site']) && (
-        $input['left_site'] === true
-        || $input['left_site'] === 1
-        || $input['left_site'] === '1'
-        || $input['left_site'] === 'true'
+        $input['left_site'] === true || $input['left_site'] === 1
+        || $input['left_site'] === '1' || $input['left_site'] === 'true'
     );
+    $chatOpen = $parseFlag($input['chat_open'] ?? $input['widget_open'] ?? null);
+    $pageVis = $parseFlag($input['page_visible'] ?? null);
 
     if ($leftSite) {
-        if (function_exists('lc_mark_visitor_left_site')) {
-            lc_mark_visitor_left_site($visitorId);
-        }
-        $input['chat_open'] = 0;
-        $input['page_visible'] = 0;
-    } else {
-        lc_mark_visitor_on_site($visitorId);
+        $chatOpen = false;
+        $pageVis = false;
+        lc_mark_visitor_left_site($visitorId);
+        $leftAt = gmdate('Y-m-d H:i:s');
+    } elseif ($leftAt) {
+        $db->prepare('UPDATE visitors SET left_site_at = NULL WHERE id = ?')->execute([$visitorId]);
+        $leftAt = null;
     }
 
-    $presence = function_exists('lc_apply_visitor_presence_input')
-        ? lc_apply_visitor_presence_input($visitorId, $input, $brandId, true)
-        : null;
-    if ($leftSite && is_array($presence)) {
+    if ($chatOpen !== null) {
+        $widgetOpen = $chatOpen ? 1 : 0;
+    }
+    if ($pageVis !== null) {
+        $pageVisible = $pageVis ? 1 : 0;
+    }
+
+    $applied = lc_set_visitor_engagement_flags(
+        $visitorId,
+        $chatOpen,
+        $pageVis,
+        $presenceTs > 0 ? $presenceTs : 0
+    );
+
+    $presence = lc_visitor_engagement_status([
+        'left_site_at' => $leftAt,
+        'widget_open' => $widgetOpen,
+        'page_visible' => $pageVisible,
+        'last_seen' => gmdate('Y-m-d H:i:s'),
+    ]);
+    if ($leftSite) {
         $presence['status'] = 'left';
         $presence['label'] = 'Left website';
         $presence['left_site'] = true;
-        if (function_exists('lc_realtime_publish_visitor_presence')) {
-            lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
+    }
+    $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : $prevTs;
+
+    // Same confirmed realtime path as typing — not fire-and-forget
+    if (($applied || $leftSite) && $conversationId > 0 && function_exists('lc_realtime_publish_channels')) {
+        if (function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
+            $channels = [
+                lc_realtime_channel_conversation($conversationId),
+                lc_realtime_channel_staff_conversation($conversationId),
+            ];
+            if ($agentId > 0) {
+                $channels[] = lc_realtime_channel_agent($agentId);
+            }
+            lc_realtime_publish_channels($channels, 'visitor.presence', [
+                'conversation_id' => $conversationId,
+                'visitor_presence' => $presence,
+            ], 180);
         }
+    } elseif (($applied || $leftSite) && function_exists('lc_realtime_publish_visitor_presence')) {
+        lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
     }
 
     lc_json([

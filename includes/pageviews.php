@@ -347,30 +347,17 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
 }
 
 /**
- * Instant agent status push — no heavy conversation load, no retry sleep.
+ * Push visitor presence on the same confirmed channel path as typing.
  */
 function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?int $brandId = null): void
 {
-    if ($visitorId < 1) {
+    if ($visitorId < 1 || !function_exists('lc_realtime_publish_channels')) {
         return;
     }
     if (!function_exists('lc_realtime_mode') || lc_realtime_mode() !== 'ws') {
         return;
     }
-    if (!function_exists('lc_realtime_publish_url') || !function_exists('lc_realtime_channel_conversation')) {
-        return;
-    }
-    $url = lc_realtime_publish_url();
-    if ($url === '') {
-        return;
-    }
-
     $convs = lc_open_conversations_for_visitor($visitorId, $brandId);
-    if ($convs === []) {
-        return;
-    }
-
-    $secret = function_exists('lc_realtime_secret') ? lc_realtime_secret() : '';
     foreach ($convs as $conv) {
         $conversationId = (int) ($conv['id'] ?? 0);
         if ($conversationId < 1) {
@@ -381,57 +368,14 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
             lc_realtime_channel_staff_conversation($conversationId),
         ];
         $agentId = (int) ($conv['agent_id'] ?? 0);
-        if ($agentId > 0 && function_exists('lc_realtime_channel_agent')) {
+        if ($agentId > 0) {
             $channels[] = lc_realtime_channel_agent($agentId);
         }
-        $payload = json_encode([
-            'channels' => array_values(array_unique($channels)),
-            'channel' => $channels[0],
-            'event' => 'visitor.presence',
-            'data' => [
-                'conversation_id' => $conversationId,
-                'visitor_presence' => $presence,
-            ],
-            'ts' => time(),
-        ], JSON_UNESCAPED_SLASHES);
-        if ($payload === false) {
-            continue;
-        }
-
-        // Prefer non-blocking publish so visitor HTTP returns immediately.
-        if (function_exists('lc_realtime_publish_fire_and_forget')
-            && lc_realtime_publish_fire_and_forget($url, $payload)) {
-            continue;
-        }
-
-        if (!function_exists('curl_init')) {
-            continue;
-        }
-        $ch = curl_init($url);
-        if ($ch === false) {
-            continue;
-        }
-        $headers = [
-            'Content-Type: application/json',
-            'X-LC-Secret: ' . $secret,
-        ];
-        $opts = [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_NOSIGNAL => 1,
-        ];
-        if (defined('CURLOPT_TIMEOUT_MS')) {
-            $opts[CURLOPT_TIMEOUT_MS] = 80;
-            $opts[CURLOPT_CONNECTTIMEOUT_MS] = 40;
-        } else {
-            $opts[CURLOPT_TIMEOUT] = 1;
-            $opts[CURLOPT_CONNECTTIMEOUT] = 1;
-        }
-        curl_setopt_array($ch, $opts);
-        curl_exec($ch);
-        curl_close($ch);
+        // Confirmed publish (typing-style) — fire-and-forget was dropping events → 3–4s poll lag
+        lc_realtime_publish_channels($channels, 'visitor.presence', [
+            'conversation_id' => $conversationId,
+            'visitor_presence' => $presence,
+        ], 180);
     }
 }
 
