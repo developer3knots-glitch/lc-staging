@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 147;
+    var LC_WIDGET_BUILD = 148;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -247,6 +247,8 @@
         var siteLeaveSent = false;
         var presenceTimer = null;
         var lastPresenceKey = '';
+        var pendingPresenceFields = null;
+        var presenceFlushTimer = null;
 
         function engagementFields() {
             return {
@@ -330,6 +332,8 @@
             siteLeaveSent = true;
             var url = lastSentUrl || window.location.href;
             var duration = Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
+            // Instant "Left website" on agent chat via WS before tab dies
+            reportEngagementPresence(true, true, { chat_open: 0, page_visible: 0, left_site: 1 });
             postPageEvent({
                 event: 'unload',
                 page_url: url,
@@ -367,9 +371,13 @@
         }
 
         function localPresencePayload(fields) {
+            fields = fields || engagementFields();
             var status = 'active';
             var label = 'Active';
-            if (!fields.page_visible) {
+            if (fields.left_site) {
+                status = 'left';
+                label = 'Left website';
+            } else if (!fields.page_visible) {
                 status = 'away';
                 label = 'Away';
             } else if (!fields.chat_open) {
@@ -381,7 +389,7 @@
                 label: label,
                 widget_open: !!fields.chat_open,
                 page_visible: !!fields.page_visible,
-                left_site: false,
+                left_site: !!fields.left_site,
                 last_seen: new Date().toISOString()
             };
         }
@@ -391,10 +399,31 @@
             if (cid < 1) return false;
             if (!(realtimeClient && typeof realtimeClient.publishClientEvent === 'function')) return false;
             if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
+            // Prefer confirmed conv room; still try (server auto-joins claim cid)
+            try {
+                if (typeof realtimeClient.subscribe === 'function') {
+                    realtimeClient.subscribe('conv:' + cid);
+                }
+            } catch (eSub) {}
             return !!realtimeClient.publishClientEvent('visitor.presence', {
                 conversation_id: cid,
                 visitor_presence: localPresencePayload(fields)
             });
+        }
+
+        function schedulePresenceWsRetry() {
+            if (presenceFlushTimer) return;
+            presenceFlushTimer = setTimeout(function () {
+                presenceFlushTimer = null;
+                if (!pendingPresenceFields) return;
+                if (pushPresenceOverWs(pendingPresenceFields)) {
+                    lastPresenceKey = pendingPresenceFields.chat_open + ':' + pendingPresenceFields.page_visible
+                        + (pendingPresenceFields.left_site ? ':left' : '');
+                    pendingPresenceFields = null;
+                    return;
+                }
+                schedulePresenceWsRetry();
+            }, 250);
         }
 
         function persistPresenceHttp(fields, useBeacon) {
@@ -404,6 +433,7 @@
                 brand_key: brandKey,
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
+                left_site: fields.left_site ? 1 : 0,
                 public_ipv4: publicIpv4
             });
             if (useBeacon) {
@@ -430,18 +460,36 @@
             }).catch(function () {});
         }
 
-        reportEngagementPresence = function (useBeacon, force) {
+        reportEngagementPresence = function (useBeacon, force, extraFields) {
             if (!visitorUid) return;
             var fields = engagementFields();
-            var key = fields.chat_open + ':' + fields.page_visible;
+            if (extraFields) {
+                for (var ek in extraFields) {
+                    if (Object.prototype.hasOwnProperty.call(extraFields, ek)) {
+                        fields[ek] = extraFields[ek];
+                    }
+                }
+            }
+            var key = fields.chat_open + ':' + fields.page_visible + (fields.left_site ? ':left' : '');
             if (!force && key === lastPresenceKey) {
                 return;
             }
-            lastPresenceKey = key;
-            // 1) Instant agent update over WebSocket (no PHP wait)
-            pushPresenceOverWs(fields);
-            // 2) Persist for poll / reconnect (dedicated light endpoint)
+            // Instant WS first; queue+retry if socket not ready yet
+            if (pushPresenceOverWs(fields)) {
+                lastPresenceKey = key;
+                pendingPresenceFields = null;
+            } else {
+                pendingPresenceFields = fields;
+                schedulePresenceWsRetry();
+            }
+            // DB persist only (not the live agent path)
             persistPresenceHttp(fields, !!useBeacon);
+        };
+
+        // Expose flush for realtime connected handlers outside this closure
+        window.__lcFlushVisitorPresence = function () {
+            var fields = pendingPresenceFields || engagementFields();
+            reportEngagementPresence(false, true, fields.left_site ? { left_site: 1 } : null);
         };
 
         recordView();
@@ -2166,8 +2214,12 @@
             stopLiveMessageSync();
             // WS is live — keep a rare safety catch-up only (not the live path)
             startWsSafetyCatchup();
-            // Push current Active/Minimized/Away to agent over WS only (no presence HTTP poll)
-            reportEngagementPresence(false, true);
+            // Flush queued / current presence the moment WS is live
+            if (typeof window.__lcFlushVisitorPresence === 'function') {
+                window.__lcFlushVisitorPresence();
+            } else {
+                reportEngagementPresence(false, true);
+            }
         });
         client.on('disconnected', function () {
             resetVisitorPollTimers();
@@ -2261,7 +2313,11 @@
             && realtimeClient.opts && realtimeClient.opts.wsUrl === url
             && realtimeBoundConvId === bindForConv) {
             stopSafetySync();
+            ensureVisitorConvChannel();
             startLiveMessageSync();
+            if (typeof window.__lcFlushVisitorPresence === 'function') {
+                window.__lcFlushVisitorPresence();
+            }
             return true;
         }
         // Do not kill a reconnecting socket unless URL/conversation changed
@@ -2534,6 +2590,9 @@
                 stopSafetySync();
                 ensureVisitorConvChannel();
                 startWsSafetyCatchup();
+                if (typeof window.__lcFlushVisitorPresence === 'function') {
+                    window.__lcFlushVisitorPresence();
+                }
             }
             return;
         }

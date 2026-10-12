@@ -490,9 +490,35 @@
         };
     }
 
+    function presenceChatLine(presence) {
+        if (!presence) return '';
+        switch (presence.status) {
+            case 'active': return 'Visitor is active in chat';
+            case 'minimized': return 'Visitor minimized the chat (still on website)';
+            case 'away': return 'Visitor switched tab / window is not visible';
+            case 'left': return 'Visitor left the website';
+            case 'disconnected': return 'Visitor appears disconnected';
+            default: return presence.label || '';
+        }
+    }
+
+    function appendPresenceSystemMessage(presence, force) {
+        if (!messagesEl || !presence) return;
+        var line = presenceChatLine(presence);
+        if (!line) return;
+        var last = messagesEl.querySelector('.lc-msg.system.is-presence:last-of-type');
+        if (!force && last && last.getAttribute('data-presence') === presence.status) {
+            return;
+        }
+        var html = '<div class="lc-msg system is-presence is-' + esc(presence.status) + '" data-presence="' +
+            esc(presence.status) + '" role="status">' + esc(line) + '</div>';
+        messagesEl.insertAdjacentHTML('beforeend', html);
+        scrollMessagesToBottom(false);
+    }
+
     function setVisitorPresenceBadge(presenceOrConv) {
-        var el = document.getElementById('lc-chat-visitor-presence');
-        if (!el) return;
+        var bar = document.getElementById('lc-visitor-presence-bar');
+        var textEl = document.getElementById('lc-visitor-presence-text');
         var presence = null;
         if (presenceOrConv && presenceOrConv.visitor_presence) {
             presence = normalizeVisitorPresence(presenceOrConv.visitor_presence);
@@ -500,30 +526,30 @@
             presence = normalizeVisitorPresence(presenceOrConv);
         }
         if (!presence) {
-            el.hidden = true;
-            el.textContent = '';
-            el.className = 'lc-visitor-presence-badge';
-            el.removeAttribute('title');
+            if (bar) {
+                bar.hidden = true;
+                bar.className = 'lc-visitor-presence-bar';
+            }
+            if (textEl) textEl.textContent = 'Visitor status unknown';
             lastPresenceStatusKey = '';
             return;
         }
-        lastPresenceStatusKey = String(presence.status || '');
-        el.hidden = false;
-        el.textContent = presence.label;
-        el.className = 'lc-visitor-presence-badge is-' + presence.status;
-        var tip = presence.label;
-        if (presence.status === 'minimized') {
-            tip = 'Visitor is still on the site; chat widget is minimized';
-        } else if (presence.status === 'away') {
-            tip = 'Visitor tab is in the background or not visible';
-        } else if (presence.status === 'left') {
-            tip = 'Visitor left or closed the website';
-        } else if (presence.status === 'disconnected') {
-            tip = 'No recent visitor heartbeat';
-        } else if (presence.status === 'active') {
-            tip = 'Visitor is on the site with chat open';
+        var prev = lastPresenceStatusKey;
+        var next = String(presence.status || '');
+        lastPresenceStatusKey = next;
+        if (bar) {
+            bar.hidden = false;
+            bar.className = 'lc-visitor-presence-bar is-' + presence.status;
         }
-        el.title = tip;
+        if (textEl) {
+            textEl.textContent = presenceChatLine(presence);
+        }
+        // Announce changes inside the chat transcript (not a tiny header pill)
+        if (prev && prev !== next) {
+            appendPresenceSystemMessage(presence, true);
+        } else if (!prev && next) {
+            appendPresenceSystemMessage(presence, false);
+        }
     }
 
     var lastReturningWaiting = 0;
@@ -5032,7 +5058,7 @@
                 if (subscribedStaffChannel) {
                     try { realtimeClient.subscribe(subscribedStaffChannel); } catch (e2) {}
                 }
-            }, 4000);
+            }, 1000);
         }
     }
 

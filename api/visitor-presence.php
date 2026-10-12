@@ -43,14 +43,34 @@ try {
         lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
     }
 
-    // Still on site unless explicitly left via unload elsewhere
-    if (empty($input['left_site'])) {
+    $leftSite = !empty($input['left_site']) && (
+        $input['left_site'] === true
+        || $input['left_site'] === 1
+        || $input['left_site'] === '1'
+        || $input['left_site'] === 'true'
+    );
+
+    if ($leftSite) {
+        if (function_exists('lc_mark_visitor_left_site')) {
+            lc_mark_visitor_left_site($visitorId);
+        }
+        $input['chat_open'] = 0;
+        $input['page_visible'] = 0;
+    } else {
         lc_mark_visitor_on_site($visitorId);
     }
 
     $presence = function_exists('lc_apply_visitor_presence_input')
         ? lc_apply_visitor_presence_input($visitorId, $input, $brandId, true)
         : null;
+    if ($leftSite && is_array($presence)) {
+        $presence['status'] = 'left';
+        $presence['label'] = 'Left website';
+        $presence['left_site'] = true;
+        if (function_exists('lc_realtime_publish_visitor_presence')) {
+            lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
+        }
+    }
 
     lc_json([
         'success' => true,

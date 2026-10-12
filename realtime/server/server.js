@@ -270,18 +270,25 @@ function wireWebSocket(server) {
         const event = String(msg.event || '');
         if (event !== 'visitor.presence') return;
         if (String(claims.role || '') !== 'visitor') return;
-        const cid = parseInt(msg.data && msg.data.conversation_id, 10)
-          || parseInt(claims.conversation_id, 10)
-          || 0;
-        if (cid < 1 || (claims.conversation_id && parseInt(claims.conversation_id, 10) !== cid)) {
+        const claimCid = parseInt(claims.conversation_id, 10) || 0;
+        const cid = parseInt(msg.data && msg.data.conversation_id, 10) || claimCid || 0;
+        // Only reject when token is bound to a *different* open chat
+        if (cid < 1 || (claimCid > 0 && claimCid !== cid)) {
           return;
         }
         const convCh = 'conv:' + cid;
-        // Must be on this conversation channel (token or dynamic subscribe)
-        if (!(ws._lcChannels && ws._lcChannels.has(convCh))) return;
+        const staffCh = 'staff:conv:' + cid;
+        // Auto-join authorized conv room so early presence isn't dropped pre-subscribe
+        if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
+          if (claimCid === cid || claimCid === 0) {
+            subscribe(ws, convCh);
+          } else {
+            return;
+          }
+        }
         const presence = (msg.data && msg.data.visitor_presence) || msg.data || {};
         publishMany(
-          [convCh, 'staff:conv:' + cid],
+          [convCh, staffCh],
           'visitor.presence',
           {
             conversation_id: cid,

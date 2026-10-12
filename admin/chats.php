@@ -84,7 +84,6 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-chat-header-title-row">
                                 <strong id="lc-chat-visitor-name">Visitor</strong>
                                 <span id="lc-chat-visitor-kind" class="lc-visitor-kind-badge" hidden></span>
-                                <span id="lc-chat-visitor-presence" class="lc-visitor-presence-badge" hidden title="Visitor status"></span>
                                 <div class="lc-chat-ref" id="lc-chat-ref" hidden>
                                     <span class="lc-chat-ref-icon" title="Ticket reference" aria-hidden="true"><i class="ti ti-ticket"></i></span>
                                     <code class="lc-chat-ref-code" id="lc-chat-ref-code"> - </code>
@@ -171,6 +170,11 @@ require __DIR__ . '/includes/header.php';
 
                 <!-- Kept for JS hooks; content mirrored to right details rail -->
                 <div class="lc-chat-context-bar" id="lc-chat-visitor-meta" hidden></div>
+
+                <div id="lc-visitor-presence-bar" class="lc-visitor-presence-bar" hidden role="status" aria-live="polite">
+                    <span class="lc-visitor-presence-dot" aria-hidden="true"></span>
+                    <span id="lc-visitor-presence-text">Visitor status unknown</span>
+                </div>
 
                 <div class="lc-chat-messages lc-chat-messages-pro" id="lc-messages"></div>
 
