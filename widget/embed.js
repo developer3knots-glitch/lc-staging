@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 153;
+    var LC_WIDGET_BUILD = 154;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -133,6 +133,8 @@
     var ticketDisplayEnabled = false;
     var ticketResumeEnabled = false;
     var prechatFormEnabled = false; // default: direct chat (matches server)
+    var awayFormMode = false;
+    var AWAY_THANKS_KEY = 'lc_away_thanks_' + brandKey;
     var serverIdentityComplete = false;
     var serverVisitorName = '';
     var serverVisitorEmail = '';
@@ -618,7 +620,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=64';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=65';
         document.head.appendChild(link);
     }
 
@@ -773,6 +775,11 @@
                                 '<span class="lcw-btn-label">Start conversation</span>' +
                             '</button>' +
                         '</form>' +
+                    '</div>' +
+                    '<div id="lc-away-thanks" class="lcw-away-thanks" hidden>' +
+                        '<div class="lcw-away-thanks-icon" aria-hidden="true">✓</div>' +
+                        '<h3 class="lcw-form-title">Thank you</h3>' +
+                        '<p id="lc-away-thanks-text">We have received your message. We will get back to you when we are back online.</p>' +
                     '</div>' +
                     '<div class="lcw-ticket-resume-wrap" id="lc-ticket-resume-wrap">' +
                         '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
@@ -1503,6 +1510,10 @@
 
     /** Single entry paint for a fresh chat (idle compose or prechat — never both). */
     function paintFreshChatEntry() {
+        if ((parseInt(agentsOnline, 10) || 0) < 1) {
+            showAwayForm();
+            return;
+        }
         if (prechatFormEnabled && !visitorHasKnownIdentity()) {
             showPrechatForm(true);
             return;
@@ -1511,9 +1522,72 @@
         beginChatFromIdle();
     }
 
+    function awayMessageText() {
+        return String((settings && settings.offline_message) || '').trim()
+            || 'We are away right now. Leave a message and we will get back to you.';
+    }
+
+    function readAwayThanksId() {
+        try {
+            return parseInt(sessionStorage.getItem(AWAY_THANKS_KEY) || '0', 10) || 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function showAwayForm() {
+        awayFormMode = true;
+        try { sessionStorage.removeItem(AWAY_THANKS_KEY); } catch (e) {}
+        showPrechatForm(true, true);
+        var panel = document.getElementById('lc-panel-prechat');
+        if (panel) panel.classList.add('is-away');
+        var thanks = document.getElementById('lc-away-thanks');
+        var formCard = document.getElementById('lc-prechat-start-panel');
+        if (thanks) thanks.hidden = true;
+        if (formCard) formCard.hidden = false;
+        var statusCard = document.getElementById('lc-prechat-status');
+        if (statusCard) {
+            statusCard.hidden = false;
+            statusCard.style.display = '';
+        }
+        updatePrechatStatus(0);
+        var title = document.querySelector('#lc-prechat-start-panel .lcw-form-title');
+        var sub = document.querySelector('#lc-prechat-start-panel .lcw-form-subtitle');
+        var btnLabel = document.querySelector('#lc-prechat-submit .lcw-btn-label');
+        if (title) title.textContent = 'We are away';
+        if (sub) sub.textContent = 'Leave your name, email and message. We will reply when we are back.';
+        if (btnLabel) btnLabel.textContent = 'Send message';
+        var resumeWrap = document.getElementById('lc-ticket-resume-wrap');
+        if (resumeWrap) resumeWrap.style.display = 'none';
+    }
+
+    function showAwayThanks() {
+        awayFormMode = true;
+        showPrechatForm(true, true);
+        var panel = document.getElementById('lc-panel-prechat');
+        if (panel) panel.classList.add('is-away');
+        var formCard = document.getElementById('lc-prechat-start-panel');
+        var thanks = document.getElementById('lc-away-thanks');
+        var statusCard = document.getElementById('lc-prechat-status');
+        if (formCard) formCard.hidden = true;
+        if (statusCard) {
+            statusCard.hidden = true;
+            statusCard.style.display = 'none';
+        }
+        if (thanks) thanks.hidden = false;
+        var resumeWrap = document.getElementById('lc-ticket-resume-wrap');
+        if (resumeWrap) resumeWrap.style.display = 'none';
+        var text = document.getElementById('lc-away-thanks-text');
+        if (text) {
+            text.textContent = 'We have received your message. We will get back to you when we are back online.';
+        }
+    }
+
     function showPrechatForm(skipSettingsFetch, skipTicketReset) {
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
+        var prechatPanel = document.getElementById('lc-panel-prechat');
+        if (prechatPanel) prechatPanel.classList.remove('is-away');
         document.getElementById('lc-panel-prechat').style.display = 'flex';
         document.getElementById('lc-panel-messages').style.display = 'none';
         document.getElementById('lc-panel-compose').style.display = 'none';
@@ -2882,6 +2956,20 @@
         // Prefer server-owned live id; sessionStorage alone must not force a closed "Thanks" screen
         var serverId = serverLiveConversationId || 0;
 
+        var thanksId = readAwayThanksId();
+        if ((parseInt(agentsOnline, 10) || 0) > 0 && thanksId) {
+            try { sessionStorage.removeItem(AWAY_THANKS_KEY); } catch (eThanks) {}
+            thanksId = 0;
+        }
+
+        // Offline message already sent — keep the thank-you screen until an agent is online.
+        if ((parseInt(agentsOnline, 10) || 0) < 1 && thanksId > 0
+            && serverId === thanksId && liveStatus === 'waiting') {
+            showAwayThanks();
+            scheduleAutoOpenOnLoad();
+            return;
+        }
+
         // Already-started chat (waiting queue OR active with agent) → open thread now.
         if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = serverId;
@@ -2912,6 +3000,13 @@
 
         if (serverId > 0) {
             pendingResumeConvId = serverId;
+        }
+
+        if ((parseInt(agentsOnline, 10) || 0) < 1) {
+            showAwayForm();
+            scheduleAutoOpenOnLoad();
+            requestBrowserGeo();
+            return;
         }
 
         if (prechatFormEnabled) {
@@ -3069,13 +3164,33 @@
 
     function startDirectChat(options) {
         options = options || {};
+        if ((parseInt(agentsOnline, 10) || 0) < 1 && !options.resumeConversationId && !conversationId) {
+            showAwayForm();
+            if (options.initialMessage) {
+                var awayBox = document.getElementById('lc-prechat-message');
+                if (awayBox) awayBox.value = String(options.initialMessage);
+            }
+            return;
+        }
         if (prechatFormEnabled && !visitorHasKnownIdentity()) {
             showPrechatForm(true);
             return;
         }
         // No silent start - wait for first visitor message (or explicit resume)
         if (!options.initialMessage && !options.resumeConversationId) {
+            if ((parseInt(agentsOnline, 10) || 0) < 1) {
+                showAwayForm();
+                return;
+            }
             showIdleChatReady();
+            return;
+        }
+        if ((parseInt(agentsOnline, 10) || 0) < 1 && !conversationId && !options.resumeConversationId) {
+            showAwayForm();
+            if (options.initialMessage) {
+                var awayMsg = document.getElementById('lc-prechat-message');
+                if (awayMsg) awayMsg.value = String(options.initialMessage);
+            }
             return;
         }
         if (chatInitInFlight || proactiveInviteInFlight || conversationId) {
@@ -3207,8 +3322,8 @@
                 lc_hp: honeypot,
                 public_ipv4: publicIpv4,
                 chat_token: getStoredChatToken() || chatToken || '',
-                resume_conversation_id: forceNewChat ? 0 : (pendingResumeConvId || 0),
-                force_new: forceNewChat ? 1 : 0
+                resume_conversation_id: (forceNewChat || awayFormMode) ? 0 : (pendingResumeConvId || 0),
+                force_new: (forceNewChat || awayFormMode) ? 1 : 0
             })
         })
         .then(function (r) { return r.json(); })
@@ -3224,6 +3339,20 @@
             pendingResumeConvId = null;
             forceNewChat = false;
             hideTeaser(true);
+            var nobodyOnline = awayFormMode || (parseInt(data.agents_online, 10) || 0) < 1;
+            if (nobodyOnline) {
+                var savedId = parseInt(data.conversation_id, 10) || 0;
+                if (savedId > 0) {
+                    persistConversationId(savedId);
+                    try { sessionStorage.setItem(AWAY_THANKS_KEY, String(savedId)); } catch (eAway) {}
+                }
+                if (data.chat_token) persistChatToken(data.chat_token);
+                showAwayThanks();
+                return;
+            }
+            awayFormMode = false;
+            var awayPanel = document.getElementById('lc-panel-prechat');
+            if (awayPanel) awayPanel.classList.remove('is-away');
             showChatView();
             handleChatStarted(data, { keepMessages: false });
         })

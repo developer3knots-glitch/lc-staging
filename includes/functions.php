@@ -284,8 +284,28 @@ function lc_uid(): string
     return bin2hex(random_bytes(16));
 }
 
+/**
+ * Logged-in agents ping last_seen about every 45s.
+ * No ping for 2 minutes means logout was missed: browser closed or session expired.
+ * Manual Away stays while the session is still alive.
+ */
+function lc_sweep_stale_agent_presence(int $staleSec = 120): void
+{
+    $staleSec = max(90, min(600, $staleSec));
+    try {
+        lc_db()->prepare("
+            UPDATE agents
+            SET status = 'offline'
+            WHERE status IN ('online', 'away')
+              AND (last_seen IS NULL OR last_seen < DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$staleSec} SECOND))
+        ")->execute();
+    } catch (Throwable $e) {
+    }
+}
+
 function lc_get_online_agents_count(?int $brandId = null, ?int $accountId = null): int
 {
+    lc_sweep_stale_agent_presence();
     lc_ensure_brands_schema();
     if (function_exists('lc_ensure_accounts_schema')) {
         lc_ensure_accounts_schema();

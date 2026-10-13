@@ -41,7 +41,17 @@
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify(payload)
-        });
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data) return;
+            if (data.error === 'Unauthorized') {
+                window.location.href = window.LC_BASE_URL + '/admin/login.php';
+                return;
+            }
+            if (data.status && statusSelect && data.status !== statusSelect.value) {
+                statusSelect.value = data.status;
+                syncStatusUi();
+            }
+        }).catch(function () {});
     }
 
     function closeStatusMenu() {

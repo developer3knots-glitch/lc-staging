@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+if (function_exists('lc_sweep_stale_agent_presence')) {
+    lc_sweep_stale_agent_presence();
+}
+
 $agent = lc_auth_agent();
 if (!$agent) {
     lc_json(['success' => false, 'error' => 'Unauthorized'], 401);
@@ -24,7 +28,7 @@ if (!in_array($status, ['online', 'away', 'offline'], true)) {
 }
 
 try {
-    $stmt = lc_db()->prepare('UPDATE agents SET status = ?, last_seen = NOW() WHERE id = ?');
+    $stmt = lc_db()->prepare('UPDATE agents SET status = ?, last_seen = UTC_TIMESTAMP() WHERE id = ?');
     $stmt->execute([$status, (int) $agent['id']]);
     $assigned = 0;
     if ($status === 'online' && function_exists('lc_drain_waiting_queue_for_agent')) {

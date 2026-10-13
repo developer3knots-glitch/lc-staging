@@ -562,6 +562,33 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--lcw-primary) 6%, #fff) 0%, var(--lcw-surface) 100%);
     border-bottom: 1px solid var(--lcw-border);
 }
+.lcw-away-thanks {
+    text-align: center;
+    padding: 2rem 1.25rem 1.5rem;
+}
+.lcw-away-thanks-icon {
+    width: 3rem;
+    height: 3rem;
+    margin: 0 auto 0.85rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ecfdf5;
+    color: #047857;
+    font-size: 1.35rem;
+    font-weight: 700;
+}
+.lcw-away-thanks p {
+    margin: 0.45rem 0 0;
+    color: #64748b;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+.lcw-prechat.is-away #lc-prechat-status {
+    display: flex;
+}
+
 .lcw-form-title {
     margin: 0;
     font-size: 0.96rem;
