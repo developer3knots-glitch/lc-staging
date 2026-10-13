@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 154;
+    var LC_WIDGET_BUILD = 155;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -1544,7 +1544,10 @@
         var thanks = document.getElementById('lc-away-thanks');
         var formCard = document.getElementById('lc-prechat-start-panel');
         if (thanks) thanks.hidden = true;
-        if (formCard) formCard.hidden = false;
+        if (formCard) {
+            formCard.hidden = false;
+            formCard.style.display = '';
+        }
         var statusCard = document.getElementById('lc-prechat-status');
         if (statusCard) {
             statusCard.hidden = false;
@@ -1696,7 +1699,16 @@
         return !!(intro && !intro.hidden);
     }
 
+    function agentsAreOffline() {
+        return (parseInt(agentsOnline, 10) || 0) < 1;
+    }
+
     function beginChatFromIdle() {
+        // No agent online → name/email/message form, not the chat composer.
+        if (agentsAreOffline() && !(parseInt(conversationId, 10) > 0)) {
+            showAwayForm();
+            return;
+        }
         // Lock entry routing — late settings_only must not yank back to Let's chat
         entryRouted = true;
         var liveId = forceNewChat ? 0 : (serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0);
@@ -2905,6 +2917,25 @@
         options = options || {};
         if (!data || !data.success) return;
         applyWidgetSettings(data);
+        // Nobody online: always the away form, even if the composer already opened
+        // or a same-day waiting/closed chat would otherwise resume.
+        // An active thread (agent already in it) stays on the chat.
+        var liveStatusNow = String(serverLiveConversationStatus || '').toLowerCase();
+        var serverIdNow = parseInt(serverLiveConversationId, 10) || 0;
+        var openIdNow = parseInt(conversationId, 10) || 0;
+        var keepActiveThread = liveStatusNow === 'active' && (serverIdNow > 0 || openIdNow > 0);
+        if (agentsAreOffline() && !keepActiveThread) {
+            entryRouted = true;
+            var thanksNow = readAwayThanksId();
+            if (thanksNow > 0 && serverIdNow === thanksNow && liveStatusNow === 'waiting') {
+                showAwayThanks();
+            } else {
+                showAwayForm();
+            }
+            scheduleAutoOpenOnLoad();
+            requestBrowserGeo();
+            return;
+        }
         // First successful route wins — later settings fetches must not blink form ↔ idle.
         // Also: user already clicked Let's chat / started compose — never reset.
         if (entryRouted) return;
@@ -3124,6 +3155,10 @@
 
     function showIdleChatReady(options) {
         options = options || {};
+        if (agentsAreOffline() && !(parseInt(conversationId, 10) > 0)) {
+            showAwayForm();
+            return;
+        }
         // Never yank the visitor back to Let's chat after they already entered chat UI
         if (!options.force && (conversationId || chatInitInFlight || chatComposerActive())) {
             return;
