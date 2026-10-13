@@ -237,13 +237,12 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-chat-compose lc-chat-compose-pro" id="lc-chat-compose">
-                    <div class="lc-canned-hash-picker" id="lc-canned-hash-picker" hidden role="dialog" aria-label="Canned replies shortcut">
-                        <div class="lc-canned-hash-picker-head">
-                            <strong><i class="ti ti-bolt" aria-hidden="true"></i> Canned replies</strong>
-                            <button type="button" class="lc-canned-hash-picker-close" id="lc-canned-hash-close" title="Close" aria-label="Close"><i class="ti ti-x"></i></button>
+                    <div class="lc-canned-hash-picker" id="lc-canned-hash-picker" hidden role="listbox" aria-label="Canned response shortcuts">
+                        <div class="lc-canned-hash-list" id="lc-canned-hash-list"></div>
+                        <div class="lc-canned-hash-foot">
+                            <button type="button" class="lc-canned-hash-new" id="lc-canned-hash-new">+ New</button>
+                            <a class="lc-canned-hash-gear" href="<?= lc_sanitize(lc_admin_url('canned')) ?>" title="Canned replies" aria-label="Manage canned replies"><i class="ti ti-settings"></i></a>
                         </div>
-                        <input type="search" class="lc-canned-hash-search" id="lc-canned-hash-search" placeholder="Shortcut, e.g. call" autocomplete="off" aria-label="Filter canned replies by shortcut">
-                        <div class="lc-canned-hash-list" id="lc-canned-hash-list" role="listbox" aria-label="Canned replies"></div>
                     </div>
                     <div class="lc-compose-shell">
                         <div class="lc-compose-toolbar" id="lc-compose-mode-bar">
@@ -430,6 +429,36 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-ip-modal-actions">
             <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm" id="lc-ip-modal-cancel">Cancel</button>
             <button type="button" class="lc-btn lc-btn-danger lc-btn-sm" id="lc-ip-modal-ok">OK</button>
+        </div>
+    </div>
+</div>
+
+<div class="lc-canned-modal" id="lc-canned-create" hidden>
+    <div class="lc-canned-modal-backdrop" id="lc-canned-create-backdrop"></div>
+    <div class="lc-canned-modal-card" role="dialog" aria-modal="true" aria-labelledby="lc-canned-create-title">
+        <div class="lc-canned-modal-head">
+            <h3 id="lc-canned-create-title">Create canned response</h3>
+            <button type="button" class="lc-canned-modal-x" id="lc-canned-create-close" aria-label="Close"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="lc-canned-vis" role="tablist" aria-label="Who can use this response">
+            <button type="button" class="lc-canned-vis-btn is-active" id="lc-canned-vis-shared" data-visibility="shared">
+                <i class="ti ti-users"></i> Shared
+            </button>
+            <button type="button" class="lc-canned-vis-btn" id="lc-canned-vis-private" data-visibility="private">
+                <i class="ti ti-user"></i> Private
+            </button>
+        </div>
+        <p class="lc-canned-vis-hint" id="lc-canned-vis-hint">All group members will have access to this canned response</p>
+        <label class="lc-canned-modal-label" for="lc-canned-create-message">Response text</label>
+        <textarea id="lc-canned-create-message" rows="6" maxlength="2000" placeholder="Frequently used response..."></textarea>
+        <p class="lc-canned-create-error" id="lc-canned-create-error" hidden>Enter your response.</p>
+        <div class="lc-canned-shortcut-label">Shortcuts</div>
+        <div class="lc-canned-shortcut-chips" id="lc-canned-shortcut-chips"></div>
+        <input type="text" id="lc-canned-create-shortcut" maxlength="40" placeholder="#Type shortcut..." autocomplete="off">
+        <p class="lc-canned-shortcut-hint">Hit enter to add a new one</p>
+        <div class="lc-canned-modal-actions">
+            <button type="button" class="lc-btn lc-btn-secondary" id="lc-canned-create-cancel">Cancel</button>
+            <button type="button" class="lc-btn lc-btn-primary" id="lc-canned-create-save">Save</button>
         </div>
     </div>
 </div>

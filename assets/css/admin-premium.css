@@ -11281,11 +11281,12 @@ body.lc-page-chats .lc-canned-hash-picker {
     z-index: 400;
     display: flex;
     flex-direction: column;
-    max-height: min(360px, 48vh);
+    width: min(300px, calc(100vw - 24px));
+    max-height: min(380px, 52vh);
     background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
     overflow: hidden;
 }
 
@@ -11347,40 +11348,259 @@ body.lc-page-chats .lc-canned-hash-search {
 
 body.lc-page-chats .lc-canned-hash-list {
     overflow-y: auto;
-    padding: 0.4rem;
-    min-height: 120px;
+    padding: 0.3rem 0;
+    min-height: 0;
+    flex: 1;
 }
 
 body.lc-page-chats .lc-canned-hash-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.2rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem 0.5rem;
     width: 100%;
     text-align: left;
     border: none;
     background: transparent;
-    border-radius: 10px;
-    padding: 0.55rem 0.7rem;
+    border-radius: 0;
+    padding: 0.48rem 0.85rem;
     cursor: pointer;
     font-family: inherit;
+    color: #111827;
 }
 
 body.lc-page-chats .lc-canned-hash-item:hover,
 body.lc-page-chats .lc-canned-hash-item.is-active {
-    background: #fff7ed;
+    background: #f3f4f6;
 }
 
-body.lc-page-chats .lc-canned-hash-item strong {
-    font-size: 0.86rem;
+body.lc-page-chats .lc-canned-hash-label {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: #1f2937;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.lc-page-chats .lc-canned-hash-chev {
+    color: #9ca3af;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+body.lc-page-chats .lc-canned-hash-preview {
+    display: none;
+    flex: 1 0 100%;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #6b7280;
+    white-space: normal;
+}
+
+body.lc-page-chats .lc-canned-hash-item.is-preview .lc-canned-hash-preview {
+    display: block;
+}
+
+body.lc-page-chats .lc-canned-hash-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.55rem;
+    border-top: 1px solid #eceff3;
+    background: #fff;
+}
+
+body.lc-page-chats .lc-canned-hash-new {
+    border: none;
+    background: transparent;
+    color: #2563eb;
+    font: inherit;
+    font-size: 0.92rem;
+    font-weight: 650;
+    padding: 0.35rem 0.45rem;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+body.lc-page-chats .lc-canned-hash-new:hover {
+    background: #eff6ff;
+}
+
+body.lc-page-chats .lc-canned-hash-gear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    color: #6b7280;
+    text-decoration: none;
+}
+
+body.lc-page-chats .lc-canned-hash-gear:hover {
+    background: #f3f4f6;
     color: #111827;
-    font-weight: 700;
 }
 
-body.lc-page-chats .lc-canned-hash-item span {
-    font-size: 0.74rem;
-    color: #64748b;
-    line-height: 1.35;
+.lc-canned-modal[hidden] { display: none !important; }
+.lc-canned-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.lc-canned-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+}
+.lc-canned-modal-card {
+    position: relative;
+    width: min(520px, 100%);
+    max-height: min(92vh, 720px);
+    overflow: auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    padding: 1.15rem 1.25rem 1rem;
+}
+.lc-canned-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+.lc-canned-modal-head h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #111827;
+}
+.lc-canned-modal-x {
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1rem;
+}
+.lc-canned-modal-x:hover { background: #f3f4f6; color: #111827; }
+.lc-canned-vis {
+    display: inline-flex;
+    gap: 0.35rem;
+    padding: 0.2rem;
+    background: #f3f4f6;
+    border-radius: 10px;
+}
+.lc-canned-vis-btn {
+    border: none;
+    background: transparent;
+    color: #4b5563;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 650;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.lc-canned-vis-btn.is-active {
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.lc-canned-vis-hint {
+    margin: 0.55rem 0 0.85rem;
+    color: #6b7280;
+    font-size: 0.82rem;
+}
+.lc-canned-modal-label,
+.lc-canned-shortcut-label {
+    display: block;
+    margin: 0 0 0.35rem;
+    font-size: 0.84rem;
+    font-weight: 650;
+    color: #374151;
+}
+#lc-canned-create-message,
+#lc-canned-create-shortcut {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    font: inherit;
+    font-size: 0.92rem;
+    color: #111827;
+}
+#lc-canned-create-message {
+    min-height: 140px;
+    resize: vertical;
+}
+#lc-canned-create-message:focus,
+#lc-canned-create-shortcut:focus {
+    outline: none;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+#lc-canned-create-message.is-invalid {
+    border-color: #fca5a5;
+}
+.lc-canned-create-error {
+    margin: 0.4rem 0 0;
+    color: #dc2626;
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+.lc-canned-shortcut-label { margin-top: 0.85rem; }
+.lc-canned-shortcut-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.4rem;
+}
+.lc-canned-shortcut-chips:empty { display: none; }
+.lc-canned-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.35rem 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 650;
+}
+.lc-canned-chip button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0 0.15rem;
+}
+.lc-canned-shortcut-hint {
+    margin: 0.35rem 0 0.9rem;
+    color: #9ca3af;
+    font-size: 0.78rem;
+}
+.lc-canned-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
 }
 
 body.lc-page-chats .lc-canned-hash-empty {

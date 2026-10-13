@@ -2594,3 +2594,57 @@ function lc_conversation_active_supervisor_ids(int $conversationId): array
     }
 }
 
+function lc_ensure_canned_shortcut_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $db = lc_db();
+    try {
+        $db->exec("ALTER TABLE canned_replies ADD COLUMN visibility VARCHAR(12) NOT NULL DEFAULT 'shared' AFTER message");
+    } catch (Throwable $e) {
+    }
+    try {
+        $db->exec('ALTER TABLE canned_replies ADD COLUMN shortcuts TEXT NULL AFTER visibility');
+    } catch (Throwable $e) {
+    }
+}
+
+/** @param array<string, mixed> $row */
+function lc_canned_shortcut_list(array $row): array
+{
+    $list = [];
+    $raw = $row['shortcuts'] ?? '';
+    if (is_string($raw) && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            foreach ($decoded as $item) {
+                $shortcut = trim(ltrim((string) $item, "#'\" \t"));
+                if ($shortcut !== '') {
+                    $list[] = $shortcut;
+                }
+            }
+        }
+    }
+    if (!$list) {
+        $title = trim(ltrim((string) ($row['title'] ?? ''), '#'));
+        if ($title !== '') {
+            $list[] = $title;
+        }
+    }
+    $seen = [];
+    $out = [];
+    foreach ($list as $shortcut) {
+        $key = function_exists('mb_strtolower') ? mb_strtolower($shortcut) : strtolower($shortcut);
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $out[] = $shortcut;
+    }
+
+    return $out;
+}
+

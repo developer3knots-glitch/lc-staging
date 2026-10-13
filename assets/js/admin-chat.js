@@ -3093,7 +3093,7 @@
         if (!compose) return;
         var r = compose.getBoundingClientRect();
         var left = Math.max(12, Math.round(r.left + 12));
-        var width = Math.max(260, Math.round(r.width - 24));
+        var width = Math.min(300, Math.max(240, window.innerWidth - 24));
         var maxRight = window.innerWidth - 12;
         if (left + width > maxRight) width = Math.max(240, maxRight - left);
         cannedHashPicker.style.position = 'fixed';
@@ -3163,41 +3163,77 @@
         return 'No replies match “' + esc(q) + '”.';
     }
 
+    function composerHashToken() {
+        if (!replyInput) return null;
+        var val = String(replyInput.value || '');
+        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
+        var upto = val.slice(0, pos);
+        var hash = upto.lastIndexOf('#');
+        if (hash < 0) return null;
+        var token = upto.slice(hash + 1);
+        if (/\s/.test(token)) return null;
+        return { start: hash, query: token };
+    }
+
+    function cannedShortcutRows(query) {
+        var q = cannedQuery(query);
+        var rows = [];
+        cannedRepliesCache.forEach(function (r, idx) {
+            if (!r) return;
+            var labels = (r.shortcuts && r.shortcuts.length) ? r.shortcuts : [r.title || ''];
+            labels.forEach(function (label) {
+                var name = String(label || '').replace(/^#+/, '').trim();
+                if (!name) return;
+                var low = name.toLowerCase();
+                if (q && low.indexOf(q) !== 0) return;
+                rows.push({
+                    idx: idx,
+                    label: name,
+                    exact: q && low === q ? 0 : 1,
+                    message: String(r.message || '')
+                });
+            });
+        });
+        rows.sort(function (a, b) {
+            if (a.exact !== b.exact) return a.exact - b.exact;
+            return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+        });
+        return rows;
+    }
+
     function renderCannedHashList(query) {
         if (!cannedHashList) return;
         var q = cannedQuery(query);
         if (!cannedRepliesCache.length) {
-            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No canned replies yet — add some in Canned Replies</div>';
+            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No shortcuts yet. Use + New.</div>';
             cannedHashActiveIdx = -1;
             return;
         }
-        var matches = cannedMatches(q);
+        var matches = cannedShortcutRows(q);
         if (!matches.length) {
-            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">' + cannedNoMatchText(q) + '</div>';
+            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No shortcut starts with “' + esc(q) + '”.</div>';
             cannedHashActiveIdx = -1;
             return;
         }
         var html = '';
-        matches.forEach(function (row) {
-            var r = cannedRepliesCache[row.idx];
-            var title = esc(r.title || 'Reply');
-            var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 110));
-            html += '<button type="button" class="lc-canned-hash-item" role="option" data-idx="' + row.idx + '">'
-                + '<strong>' + title + '</strong>'
-                + '<span>' + preview + (String(r.message || '').length > 110 ? '…' : '') + '</span>'
+        matches.forEach(function (row, i) {
+            var preview = esc(String(row.message || '').replace(/\s+/g, ' ').slice(0, 180));
+            html += '<button type="button" class="lc-canned-hash-item" role="option" data-row="' + i + '" data-idx="' + row.idx + '">'
+                + '<span class="lc-canned-hash-label">' + esc(row.label) + '</span>'
+                + '<i class="ti ti-chevron-right lc-canned-hash-chev" aria-hidden="true"></i>'
+                + '<span class="lc-canned-hash-preview">' + preview + '</span>'
                 + '</button>';
         });
         cannedHashList.innerHTML = html;
-        setCannedHashActiveByIdx(matches[0].idx);
+        setCannedHashActiveByRow(0);
     }
 
-    function setCannedHashActiveByIdx(idx) {
+    function setCannedHashActiveByRow(row) {
         if (!cannedHashList) return;
         var buttons = cannedHashList.querySelectorAll('.lc-canned-hash-item');
         cannedHashActiveIdx = -1;
-        buttons.forEach(function (btn) {
-            var i = parseInt(btn.getAttribute('data-idx'), 10);
-            var on = i === idx;
+        buttons.forEach(function (btn, i) {
+            var on = i === row;
             btn.classList.toggle('is-active', on);
             if (on) {
                 cannedHashActiveIdx = i;
@@ -3208,20 +3244,36 @@
 
     function moveCannedHashActive(delta) {
         if (!cannedHashList) return;
-        var buttons = Array.prototype.slice.call(cannedHashList.querySelectorAll('.lc-canned-hash-item'));
+        var buttons = cannedHashList.querySelectorAll('.lc-canned-hash-item');
         if (!buttons.length) return;
-        var cur = -1;
-        buttons.forEach(function (btn, i) {
-            if (parseInt(btn.getAttribute('data-idx'), 10) === cannedHashActiveIdx) cur = i;
-        });
-        var next = cur < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, cur + delta));
-        setCannedHashActiveByIdx(parseInt(buttons[next].getAttribute('data-idx'), 10));
+        var cur = cannedHashActiveIdx < 0 ? 0 : cannedHashActiveIdx;
+        var next = Math.max(0, Math.min(buttons.length - 1, cur + delta));
+        setCannedHashActiveByRow(next);
+    }
+
+    function applyCannedShortcut(message) {
+        if (!replyInput || !message) return;
+        var token = composerHashToken();
+        var val = String(replyInput.value || '');
+        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
+        if (token) {
+            replyInput.value = val.slice(0, token.start) + message + val.slice(pos);
+            var caret = token.start + String(message).length;
+            try { replyInput.setSelectionRange(caret, caret); } catch (e) {}
+        } else {
+            replyInput.value = message;
+        }
+        try { replyInput.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {}
+        closeCannedHashPicker();
+        replyInput.focus();
     }
 
     function applyCannedHashActive() {
-        if (cannedHashActiveIdx < 0) return;
-        var row = cannedRepliesCache[cannedHashActiveIdx];
-        if (row && row.message) applyCannedReply(row.message);
+        if (!cannedHashList || cannedHashActiveIdx < 0) return;
+        var btn = cannedHashList.querySelectorAll('.lc-canned-hash-item')[cannedHashActiveIdx];
+        if (!btn) return;
+        var row = cannedRepliesCache[parseInt(btn.getAttribute('data-idx'), 10)];
+        if (row && row.message) applyCannedShortcut(row.message);
     }
 
     function openCannedHashPicker() {
@@ -3229,45 +3281,30 @@
         closeCannedPanel();
         cannedHashPicker.hidden = false;
         positionCannedHashPicker();
-        if (cannedHashSearch) cannedHashSearch.value = '';
-        renderCannedHashList('');
+        var token = composerHashToken();
+        renderCannedHashList(token ? token.query : '');
         loadCanned();
-        if (cannedHashSearch) {
-            setTimeout(function () {
-                positionCannedHashPicker();
-                cannedHashSearch.focus();
-            }, 0);
+        if (replyInput) replyInput.focus();
+    }
+
+    function syncCannedHashFromComposer() {
+        if (cannedHashOpening) return;
+        if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
+        var token = composerHashToken();
+        if (!token) {
+            if (!cannedHashPicker.hidden) closeCannedHashPicker();
+            return;
         }
+        if (cannedHashPicker.hidden) openCannedHashPicker();
+        else renderCannedHashList(token.query);
     }
 
     function openCannedFromHashShortcut() {
-        if (cannedHashOpening) return;
-        if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
-        cannedHashOpening = true;
-        var val = String(replyInput.value || '');
-        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
-        if (pos > 0 && val.charAt(pos - 1) === '#') {
-            replyInput.value = val.slice(0, pos - 1) + val.slice(pos);
-            try {
-                replyInput.setSelectionRange(pos - 1, pos - 1);
-            } catch (err) {}
-            try {
-                replyInput.dispatchEvent(new Event('input', { bubbles: true }));
-            } catch (err2) {}
-        }
-        openCannedHashPicker();
-        setTimeout(function () { cannedHashOpening = false; }, 50);
+        syncCannedHashFromComposer();
     }
 
     function maybeOpenCannedFromHashInput() {
-        if (cannedHashOpening) return;
-        if (!replyInput || replyInput.disabled || !cannedHashPicker) return;
-        if (cannedHashPicker && !cannedHashPicker.hidden) return;
-        var val = String(replyInput.value || '');
-        var pos = typeof replyInput.selectionStart === 'number' ? replyInput.selectionStart : val.length;
-        if (pos > 0 && val.charAt(pos - 1) === '#') {
-            openCannedFromHashShortcut();
-        }
+        syncCannedHashFromComposer();
     }
 
     function renderCannedListLive(query) {
@@ -3321,7 +3358,8 @@
                     renderCannedListLive(cannedSearchLive ? cannedSearchLive.value : '');
                 }
                 if (cannedHashPicker && !cannedHashPicker.hidden) {
-                    renderCannedHashList(cannedHashSearch ? cannedHashSearch.value : '');
+                    var tokenNow = composerHashToken();
+                    renderCannedHashList(tokenNow ? tokenNow.query : '');
                 }
             });
     }
@@ -4113,12 +4151,26 @@
     });
     replyInput.addEventListener('keydown', function (e) {
         if (e.key === '#' || (e.shiftKey && (e.key === '3' || e.code === 'Digit3'))) {
-            // Open on keydown too — some layouts never report keyup as "#"
             setTimeout(maybeOpenCannedFromHashInput, 0);
         }
-        // # picker open + empty compose → Backspace closes picker
+        var pickerOpen = cannedHashPicker && !cannedHashPicker.hidden;
+        if (pickerOpen && e.key === 'ArrowDown') {
+            e.preventDefault();
+            moveCannedHashActive(1);
+            return;
+        }
+        if (pickerOpen && e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveCannedHashActive(-1);
+            return;
+        }
+        if (pickerOpen && e.key === 'Escape') {
+            e.preventDefault();
+            closeCannedHashPicker();
+            return;
+        }
         if ((e.key === 'Backspace' || e.key === 'Delete')
-            && cannedHashPicker && !cannedHashPicker.hidden
+            && pickerOpen
             && !(String(replyInput.value || '').trim())) {
             e.preventDefault();
             closeCannedHashPicker();
@@ -4127,6 +4179,10 @@
         if (e.key !== 'Enter' || e.shiftKey) return;
         if (e.repeat) return;
         e.preventDefault();
+        if (pickerOpen) {
+            if (cannedHashActiveIdx >= 0) applyCannedHashActive();
+            return;
+        }
         sendReply();
     });
     replyInput.addEventListener('keyup', function (e) {
@@ -4784,16 +4840,180 @@
             var btn = e.target.closest('.lc-canned-hash-item');
             if (!btn) return;
             e.preventDefault();
-            var idx = parseInt(btn.getAttribute('data-idx'), 10);
-            var row = cannedRepliesCache[idx];
-            if (row && row.message) applyCannedReply(row.message);
+            if (e.target.closest('.lc-canned-hash-chev')) {
+                btn.classList.toggle('is-preview');
+                return;
+            }
+            var row = cannedRepliesCache[parseInt(btn.getAttribute('data-idx'), 10)];
+            if (row && row.message) applyCannedShortcut(row.message);
         });
         cannedHashList.addEventListener('mousemove', function (e) {
             var btn = e.target.closest('.lc-canned-hash-item');
             if (!btn) return;
-            setCannedHashActiveByIdx(parseInt(btn.getAttribute('data-idx'), 10));
+            setCannedHashActiveByRow(parseInt(btn.getAttribute('data-row'), 10) || 0);
         });
     }
+
+    var cannedCreate = document.getElementById('lc-canned-create');
+    var cannedCreateMessage = document.getElementById('lc-canned-create-message');
+    var cannedCreateShortcut = document.getElementById('lc-canned-create-shortcut');
+    var cannedCreateChips = document.getElementById('lc-canned-shortcut-chips');
+    var cannedCreateError = document.getElementById('lc-canned-create-error');
+    var cannedVisHint = document.getElementById('lc-canned-vis-hint');
+    var cannedCreateVisibility = 'shared';
+    var cannedCreateShortcuts = [];
+
+    function renderCannedCreateChips() {
+        if (!cannedCreateChips) return;
+        cannedCreateChips.innerHTML = cannedCreateShortcuts.map(function (name, i) {
+            return '<span class="lc-canned-chip">#' + esc(name)
+                + '<button type="button" data-chip="' + i + '" aria-label="Remove shortcut">&times;</button></span>';
+        }).join('');
+    }
+
+    function setCannedCreateVisibility(next) {
+        cannedCreateVisibility = next === 'private' ? 'private' : 'shared';
+        document.querySelectorAll('.lc-canned-vis-btn').forEach(function (btn) {
+            btn.classList.toggle('is-active', btn.getAttribute('data-visibility') === cannedCreateVisibility);
+        });
+        if (cannedVisHint) {
+            cannedVisHint.textContent = cannedCreateVisibility === 'private'
+                ? 'Only you will have access to this canned response'
+                : 'All group members will have access to this canned response';
+        }
+    }
+
+    function openCannedCreate() {
+        if (!cannedCreate) return;
+        cannedCreateShortcuts = [];
+        renderCannedCreateChips();
+        if (cannedCreateMessage) {
+            cannedCreateMessage.value = '';
+            cannedCreateMessage.classList.remove('is-invalid');
+        }
+        if (cannedCreateShortcut) cannedCreateShortcut.value = '';
+        if (cannedCreateError) {
+            cannedCreateError.hidden = true;
+            cannedCreateError.textContent = 'Enter your response.';
+        }
+        setCannedCreateVisibility('shared');
+        cannedCreate.hidden = false;
+        if (cannedCreateMessage) cannedCreateMessage.focus();
+    }
+
+    function closeCannedCreate() {
+        if (cannedCreate) cannedCreate.hidden = true;
+        if (replyInput) replyInput.focus();
+    }
+
+    function addCannedCreateShortcut(raw) {
+        var name = String(raw || '').replace(/^#+/, '').trim();
+        if (!name) return;
+        var low = name.toLowerCase();
+        if (cannedCreateShortcuts.some(function (s) { return s.toLowerCase() === low; })) return;
+        if (cannedCreateShortcuts.length >= 12) return;
+        cannedCreateShortcuts.push(name);
+        renderCannedCreateChips();
+    }
+
+    function saveCannedCreate() {
+        var message = cannedCreateMessage ? String(cannedCreateMessage.value || '').trim() : '';
+        if (cannedCreateShortcut && String(cannedCreateShortcut.value || '').trim()) {
+            addCannedCreateShortcut(cannedCreateShortcut.value);
+            cannedCreateShortcut.value = '';
+        }
+        if (!message) {
+            if (cannedCreateMessage) cannedCreateMessage.classList.add('is-invalid');
+            if (cannedCreateError) {
+                cannedCreateError.textContent = 'Enter your response.';
+                cannedCreateError.hidden = false;
+            }
+            return;
+        }
+        if (!cannedCreateShortcuts.length) {
+            if (cannedCreateError) {
+                cannedCreateError.textContent = 'Add a shortcut.';
+                cannedCreateError.hidden = false;
+            }
+            if (cannedCreateShortcut) cannedCreateShortcut.focus();
+            return;
+        }
+        if (cannedCreateError) cannedCreateError.hidden = true;
+        if (cannedCreateMessage) cannedCreateMessage.classList.remove('is-invalid');
+        var saveBtn = document.getElementById('lc-canned-create-save');
+        if (saveBtn) saveBtn.disabled = true;
+        fetch(base + '/api/canned-save.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                message: message,
+                visibility: cannedCreateVisibility,
+                shortcuts: cannedCreateShortcuts
+            })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (saveBtn) saveBtn.disabled = false;
+            if (!data || !data.success || !data.reply) {
+                if (cannedCreateError) {
+                    cannedCreateError.textContent = (data && data.error) || 'Could not save canned response.';
+                    cannedCreateError.hidden = false;
+                }
+                return;
+            }
+            cannedRepliesCache.push(data.reply);
+            cannedLoaded = true;
+            closeCannedCreate();
+            if (cannedHashPicker && !cannedHashPicker.hidden) {
+                var tokenNow = composerHashToken();
+                renderCannedHashList(tokenNow ? tokenNow.query : '');
+            }
+        }).catch(function () {
+            if (saveBtn) saveBtn.disabled = false;
+            if (cannedCreateError) {
+                cannedCreateError.textContent = 'Could not save canned response.';
+                cannedCreateError.hidden = false;
+            }
+        });
+    }
+
+    var cannedHashNew = document.getElementById('lc-canned-hash-new');
+    if (cannedHashNew) {
+        cannedHashNew.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openCannedCreate();
+        });
+    }
+    document.querySelectorAll('.lc-canned-vis-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            setCannedCreateVisibility(btn.getAttribute('data-visibility'));
+        });
+    });
+    if (cannedCreateChips) {
+        cannedCreateChips.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-chip]');
+            if (!btn) return;
+            cannedCreateShortcuts.splice(parseInt(btn.getAttribute('data-chip'), 10), 1);
+            renderCannedCreateChips();
+        });
+    }
+    if (cannedCreateShortcut) {
+        cannedCreateShortcut.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            addCannedCreateShortcut(cannedCreateShortcut.value);
+            cannedCreateShortcut.value = '';
+        });
+    }
+    ['lc-canned-create-close', 'lc-canned-create-cancel', 'lc-canned-create-backdrop'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('click', function (e) {
+            e.preventDefault();
+            closeCannedCreate();
+        });
+    });
+    var cannedCreateSave = document.getElementById('lc-canned-create-save');
+    if (cannedCreateSave) cannedCreateSave.addEventListener('click', saveCannedCreate);
 
     if (cannedHashClose) {
         cannedHashClose.addEventListener('click', function (e) {
