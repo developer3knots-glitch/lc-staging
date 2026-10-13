@@ -2,6 +2,8 @@
 /**
  * Agent starts a chat with a browsing visitor (Traffic → Start chat).
  */
+ob_start();
+ini_set('display_errors', '0');
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/realtime.php';
 require_once __DIR__ . '/../includes/pageviews.php';
@@ -276,8 +278,8 @@ try {
         $seedMessages = [];
     }
 
-    // 1) Invite FIRST — fan out to this visitor_uid AND any other uids on the same
-    // public IP today (widget localStorage uid often differs from Traffic visitor row).
+    // Invite and inbox fanout run after the JSON response so a slow realtime
+    // server cannot turn this request into an HTML fatal (invalid JSON in the browser).
     $inviteUids = [];
     if ($visitorUid !== '') {
         $inviteUids[$visitorUid] = true;
@@ -301,53 +303,70 @@ try {
         } catch (Throwable $e) {
         }
     }
-    if (function_exists('lc_realtime_publish')) {
-        $invitePayload = [
-            'conversation_id' => $convId,
-            'brand_id' => $brandId,
-            'brand_key' => (string) ($brand['brand_key'] ?? ''),
+    $publishStart = static function () use (
+        $inviteUids,
+        $convId,
+        $brandId,
+        $brand,
+        $agentPublic,
+        $seedMessages,
+        $pendingPublishIds,
+        $created,
+        $visitorId,
+        $visitorUid
+    ): void {
+        if (function_exists('lc_realtime_publish')) {
+            $invitePayload = [
+                'conversation_id' => $convId,
+                'brand_id' => $brandId,
+                'brand_key' => (string) ($brand['brand_key'] ?? ''),
+                'agent' => $agentPublic,
+                'proactive' => true,
+                'messages' => $seedMessages,
+            ];
+            foreach (array_keys($inviteUids) as $uid) {
+                lc_realtime_publish(lc_realtime_channel_visitor($uid), 'chat.invite', $invitePayload, 250);
+            }
+        }
+
+        lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
+            'status' => 'active',
             'agent' => $agentPublic,
             'proactive' => true,
-            'messages' => $seedMessages,
-        ];
-        foreach (array_keys($inviteUids) as $uid) {
-            lc_realtime_publish(lc_realtime_channel_visitor($uid), 'chat.invite', $invitePayload, 250);
-        }
-    }
-
-    // 2) Conversation / inbox status
-    lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
-        'status' => 'active',
-        'agent' => $agentPublic,
-        'proactive' => true,
-    ]);
-
-    // 3) Deferred system messages (visitor now joining / already invited)
-    // Also publish welcome so late subscribers still get transcript over WS.
-    if ($created) {
-        try {
-            $welcomeId = (int) ($db->query(
-                "SELECT id FROM messages WHERE conversation_id = {$convId} AND sender_type = 'system' ORDER BY id ASC LIMIT 1"
-            )->fetchColumn() ?: 0);
-            if ($welcomeId > 0 && !in_array($welcomeId, $pendingPublishIds, true)) {
-                array_unshift($pendingPublishIds, $welcomeId);
-            }
-        } catch (Throwable $e) {
-        }
-    }
-    if (function_exists('lc_realtime_publish_message')) {
-        foreach ($pendingPublishIds as $mid) {
-            lc_realtime_publish_message($convId, (int) $mid);
-        }
-    }
-
-    if (function_exists('lc_realtime_publish_traffic')) {
-        lc_realtime_publish_traffic($brandId, 'chatting', [
-            'visitor_id' => $visitorId,
-            'visitor_uid' => $visitorUid,
-            'conversation_id' => $convId,
-            'notify' => false,
         ]);
+
+        $messageIds = $pendingPublishIds;
+        if ($created) {
+            try {
+                $welcomeId = (int) (lc_db()->query(
+                    "SELECT id FROM messages WHERE conversation_id = {$convId} AND sender_type = 'system' ORDER BY id ASC LIMIT 1"
+                )->fetchColumn() ?: 0);
+                if ($welcomeId > 0 && !in_array($welcomeId, $messageIds, true)) {
+                    array_unshift($messageIds, $welcomeId);
+                }
+            } catch (Throwable $e) {
+            }
+        }
+        if (function_exists('lc_realtime_publish_message')) {
+            foreach ($messageIds as $mid) {
+                lc_realtime_publish_message($convId, (int) $mid);
+            }
+        }
+
+        if (function_exists('lc_realtime_publish_traffic')) {
+            lc_realtime_publish_traffic($brandId, 'chatting', [
+                'visitor_id' => $visitorId,
+                'visitor_uid' => $visitorUid,
+                'conversation_id' => $convId,
+                'notify' => false,
+            ]);
+        }
+    };
+
+    if (function_exists('lc_realtime_defer')) {
+        lc_realtime_defer($publishStart);
+    } else {
+        $publishStart();
     }
 
     lc_json([

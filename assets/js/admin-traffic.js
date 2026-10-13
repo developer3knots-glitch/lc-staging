@@ -219,8 +219,14 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ visitor_id: visitorId, brand_id: brandId })
         })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
+            .then(function (r) { return r.text(); })
+            .then(function (text) {
+                var data = null;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    throw new Error('Could not start chat');
+                }
                 if (!data || !data.success || !data.chat_url) {
                     throw new Error((data && data.error) || 'Could not start chat');
                 }

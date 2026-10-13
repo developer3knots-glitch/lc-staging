@@ -443,6 +443,12 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         return;
     }
 
+    // Curl already used a short timeout. A second blocking HTTP call here is what
+    // turned Start chat into a PHP fatal (HTML) when the realtime server was slow.
+    if (function_exists('curl_init')) {
+        return;
+    }
+
     if (lc_realtime_publish_fire_and_forget($url, $payload)) {
         return;
     }
