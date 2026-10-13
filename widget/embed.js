@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 156;
+    var LC_WIDGET_BUILD = 157;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -69,8 +69,6 @@
         // New visitor identity → show landing popup + push again
         didAutoOpenOnLoad = false;
         scheduleWelcomeEngagement();
-        // Fresh identity may be on a new network — allow GPS prompt again
-        clearBrowserGeoAskState();
         return true;
     }
 
@@ -4596,126 +4594,8 @@
     }
 
 
-    var GEO_SENT_KEY = 'lc_browser_geo_' + brandKey;
-    var GEO_ASKED_KEY = 'lc_browser_geo_asked_' + brandKey;
-    var geoRequestInFlight = false;
-
-    function clearBrowserGeoAskState() {
-        try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignore) {}
-        try { localStorage.removeItem(GEO_ASKED_KEY); } catch (ignore2) {}
-        try { sessionStorage.removeItem(GEO_SENT_KEY); } catch (ignore3) {}
-    }
-
-    function markGeoAsked(state) {
-        try {
-            sessionStorage.setItem(GEO_ASKED_KEY, state || '1');
-        } catch (ignore) {}
-        try {
-            // Persist only final outcomes — never lock on "pending"
-            if (state === 'denied' || state === '1') {
-                localStorage.setItem(GEO_ASKED_KEY, state || '1');
-            }
-        } catch (ignore2) {}
-    }
-
-    function wasGeoAsked() {
-        try {
-            if (sessionStorage.getItem(GEO_SENT_KEY) === '1') return true;
-        } catch (ignoreSent) {}
-        var sessionState = '';
-        try {
-            sessionState = String(sessionStorage.getItem(GEO_ASKED_KEY) || '');
-        } catch (ignore) {}
-        // pending = in-flight only — allow retry if previous attempt stalled
-        if (sessionState === '1' || sessionState === 'denied') return true;
-        try {
-            var ls = String(localStorage.getItem(GEO_ASKED_KEY) || '');
-            if (ls === '1' || ls === 'denied') return true;
-        } catch (ignore2) {}
-        return false;
-    }
-
     function requestBrowserGeo() {
-        if (!navigator.geolocation || !visitorUid || geoRequestInFlight) {
-            return;
-        }
-        if (wasGeoAsked()) {
-            return;
-        }
-
-        function askPosition() {
-            if (geoRequestInFlight || wasGeoAsked()) {
-                return;
-            }
-            geoRequestInFlight = true;
-            markGeoAsked('pending');
-            navigator.geolocation.getCurrentPosition(
-                function (pos) {
-                    geoRequestInFlight = false;
-                    var lat = pos.coords && pos.coords.latitude;
-                    var lon = pos.coords && pos.coords.longitude;
-                    if (typeof lat !== 'number' || typeof lon !== 'number') {
-                        markGeoAsked('1');
-                        return;
-                    }
-                    fetch(siteUrl + '/api/visitor-geo.php', {
-                        method: 'POST',
-                        headers: apiHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({
-                            visitor_uid: visitorUid,
-                            brand_key: brandKey,
-                            lat: lat,
-                            lon: lon
-                        })
-                    })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        try {
-                            sessionStorage.setItem(GEO_SENT_KEY, '1');
-                        } catch (ignore2) {}
-                        markGeoAsked(data && data.success ? '1' : '1');
-                    })
-                    .catch(function () {
-                        // Soft fail — allow one more try later this session
-                        try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignoreClr) {}
-                        geoRequestInFlight = false;
-                    });
-                },
-                function (err) {
-                    geoRequestInFlight = false;
-                    var code = err && typeof err.code === 'number' ? err.code : 0;
-                    // 1 = PERMISSION_DENIED — don't spam. Timeout/unavailable → retry later.
-                    if (code === 1) {
-                        markGeoAsked('denied');
-                        return;
-                    }
-                    try { sessionStorage.removeItem(GEO_ASKED_KEY); } catch (ignoreClr2) {}
-                },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-            );
-        }
-
-        // If permission already decided, avoid a fresh prompt loop
-        if (navigator.permissions && navigator.permissions.query) {
-            navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
-                if (!status) {
-                    askPosition();
-                    return;
-                }
-                if (status.state === 'denied') {
-                    markGeoAsked('denied');
-                    return;
-                }
-                if (status.state === 'granted' || status.state === 'prompt') {
-                    askPosition();
-                }
-            }).catch(function () {
-                askPosition();
-            });
-            return;
-        }
-
-        askPosition();
+        // Location comes from the visitor IP. Never prompt for browser GPS.
     }
 
     function handleChatStarted(data, options) {
