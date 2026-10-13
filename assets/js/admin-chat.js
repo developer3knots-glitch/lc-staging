@@ -3105,37 +3105,90 @@
         cannedHashPicker.style.zIndex = '400';
     }
 
+    function cannedQuery(raw) {
+        return String(raw || '').trim().toLowerCase().replace(/^#+/, '');
+    }
+
+    function cannedShortcutText(r) {
+        return String((r && (r.shortcut || r.title)) || '').trim().toLowerCase().replace(/^#+/, '');
+    }
+
+    /**
+     * Rank a canned reply against a shortcut query.
+     * 1 exact title/shortcut, 2 title starts with query, 3 a title word starts with query,
+     * 4 title contains the query (2+ letters), 5 message body contains it (3+ letters).
+     * 0 = no match. null = empty query (show the full list).
+     */
+    function cannedMatchRank(r, rawQuery) {
+        var q = cannedQuery(rawQuery);
+        if (!q) return null;
+        var shortcut = cannedShortcutText(r);
+        var title = String((r && r.title) || '').trim().toLowerCase();
+        var message = String((r && r.message) || '').toLowerCase();
+        if (shortcut === q || title === q) return 1;
+        if ((shortcut && shortcut.indexOf(q) === 0) || (title && title.indexOf(q) === 0)) return 2;
+        var words = title.split(/[^a-z0-9]+/).filter(Boolean);
+        for (var i = 0; i < words.length; i++) {
+            if (words[i].indexOf(q) === 0) return 3;
+        }
+        if (q.length >= 2 && title.indexOf(q) !== -1) return 4;
+        if (q.length >= 3 && message.indexOf(q) !== -1) return 5;
+        return 0;
+    }
+
+    function cannedMatches(query) {
+        var q = cannedQuery(query);
+        var rows = [];
+        cannedRepliesCache.forEach(function (r, idx) {
+            if (!r) return;
+            var rank = cannedMatchRank(r, q);
+            if (rank === 0) return;
+            rows.push({
+                idx: idx,
+                rank: rank == null ? 9 : rank,
+                title: String(r.title || '')
+            });
+        });
+        rows.sort(function (a, b) {
+            if (a.rank !== b.rank) return a.rank - b.rank;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+        });
+        return rows;
+    }
+
+    function cannedNoMatchText(q) {
+        if (q.length < 3) {
+            return 'No shortcut starts with “' + esc(q) + '”. Type 3 or more letters to search the message text.';
+        }
+        return 'No replies match “' + esc(q) + '”.';
+    }
+
     function renderCannedHashList(query) {
         if (!cannedHashList) return;
-        var q = String(query || '').trim().toLowerCase();
+        var q = cannedQuery(query);
         if (!cannedRepliesCache.length) {
             cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No canned replies yet — add some in Canned Replies</div>';
             cannedHashActiveIdx = -1;
             return;
         }
+        var matches = cannedMatches(q);
+        if (!matches.length) {
+            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">' + cannedNoMatchText(q) + '</div>';
+            cannedHashActiveIdx = -1;
+            return;
+        }
         var html = '';
-        var shown = 0;
-        var firstIdx = -1;
-        cannedRepliesCache.forEach(function (r, idx) {
-            if (!r) return;
-            var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
-            if (q && hay.indexOf(q) === -1) return;
-            if (firstIdx < 0) firstIdx = idx;
-            shown += 1;
+        matches.forEach(function (row) {
+            var r = cannedRepliesCache[row.idx];
             var title = esc(r.title || 'Reply');
             var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 110));
-            html += '<button type="button" class="lc-canned-hash-item" role="option" data-idx="' + idx + '">'
+            html += '<button type="button" class="lc-canned-hash-item" role="option" data-idx="' + row.idx + '">'
                 + '<strong>' + title + '</strong>'
                 + '<span>' + preview + (String(r.message || '').length > 110 ? '…' : '') + '</span>'
                 + '</button>';
         });
-        if (!shown) {
-            cannedHashList.innerHTML = '<div class="lc-canned-hash-empty">No matching replies</div>';
-            cannedHashActiveIdx = -1;
-            return;
-        }
         cannedHashList.innerHTML = html;
-        setCannedHashActiveByIdx(firstIdx);
+        setCannedHashActiveByIdx(matches[0].idx);
     }
 
     function setCannedHashActiveByIdx(idx) {
@@ -3227,25 +3280,21 @@
                 : '<div class="lc-chat-canned-empty">No canned replies yet — add some in Canned Replies</div>';
             return;
         }
+        var matches = cannedMatches(q);
+        if (!matches.length) {
+            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">' + cannedNoMatchText(q) + '</div>';
+            return;
+        }
         var html = '';
-        var shown = 0;
-        cannedRepliesCache.forEach(function (r, idx) {
-            if (!r) return;
-            // Match against title + full message body
-            var hay = ((r.title || '') + ' ' + (r.message || '')).toLowerCase();
-            if (hay.indexOf(q) === -1) return;
-            shown += 1;
+        matches.forEach(function (row) {
+            var r = cannedRepliesCache[row.idx];
             var title = esc(r.title || 'Reply');
             var preview = esc(String(r.message || '').replace(/\s+/g, ' ').slice(0, 90));
-            html += '<button type="button" class="lc-chat-canned-item" role="option" data-idx="' + idx + '">'
+            html += '<button type="button" class="lc-chat-canned-item" role="option" data-idx="' + row.idx + '">'
                 + '<strong>' + title + '</strong>'
                 + '<span>' + preview + (String(r.message || '').length > 90 ? '…' : '') + '</span>'
                 + '</button>';
         });
-        if (!shown) {
-            cannedListLive.innerHTML = '<div class="lc-chat-canned-empty">No matching replies</div>';
-            return;
-        }
         cannedListLive.innerHTML = html;
     }
 

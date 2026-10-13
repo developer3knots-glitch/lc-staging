@@ -242,7 +242,7 @@ require __DIR__ . '/includes/header.php';
                             <strong><i class="ti ti-bolt" aria-hidden="true"></i> Canned replies</strong>
                             <button type="button" class="lc-canned-hash-picker-close" id="lc-canned-hash-close" title="Close" aria-label="Close"><i class="ti ti-x"></i></button>
                         </div>
-                        <input type="search" class="lc-canned-hash-search" id="lc-canned-hash-search" placeholder="Search canned replies…" autocomplete="off" aria-label="Search canned replies">
+                        <input type="search" class="lc-canned-hash-search" id="lc-canned-hash-search" placeholder="Shortcut, e.g. call" autocomplete="off" aria-label="Filter canned replies by shortcut">
                         <div class="lc-canned-hash-list" id="lc-canned-hash-list" role="listbox" aria-label="Canned replies"></div>
                     </div>
                     <div class="lc-compose-shell">
@@ -264,7 +264,7 @@ require __DIR__ . '/includes/header.php';
                                         <span>Canned</span>
                                     </button>
                                     <div class="lc-chat-canned-panel" id="lc-canned-panel" hidden>
-                                        <input type="search" class="lc-chat-canned-search" id="lc-canned-search-live" placeholder="Search replies..." autocomplete="off" aria-label="Search canned replies">
+                                        <input type="search" class="lc-chat-canned-search" id="lc-canned-search-live" placeholder="Shortcut, or 3+ letters to search the message" autocomplete="off" aria-label="Search canned replies by shortcut">
                                         <div class="lc-chat-canned-list" id="lc-canned-list-live" role="listbox" aria-label="Canned replies"></div>
                                         <select id="lc-canned-select" class="lc-canned-select-hidden" aria-hidden="true" tabindex="-1"><option value="">Select a reply...</option></select>
                                     </div>
