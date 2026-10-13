@@ -26,7 +26,7 @@ define('LC_REALTIME_MODE', 'ws');
 define('LC_REALTIME_WS_URL', 'wss://erp.3knotsdigital.com/lc-realtime');
 define('LC_REALTIME_PUBLISH_URL', 'http://127.0.0.1:6001/publish'); // if PHP on same VPS
 define('LC_REALTIME_SECRET', 'your-long-random-secret');
-```
+```   
 
 ## Health check
 
