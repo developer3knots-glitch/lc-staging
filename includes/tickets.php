@@ -400,7 +400,12 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
     if (function_exists('lc_clear_transcript_request')) {
         lc_clear_transcript_request($conversationId);
     }
-    lc_add_system_message($conversationId, 'Visitor resumed this conversation. Waiting for an agent.');
+    lc_add_system_message(
+        $conversationId,
+        function_exists('lc_system_note_for_visitor')
+            ? lc_system_note_for_visitor($conversationId, 'continued this conversation.')
+            : 'Visitor continued this conversation.'
+    );
     lc_touch_conversation($conversationId);
 
     if (function_exists('lc_realtime_publish_conversation_event')) {

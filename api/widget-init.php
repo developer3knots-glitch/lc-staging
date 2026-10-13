@@ -236,7 +236,16 @@ try {
         ]);
     }
 
+    $forceNew = ($input['force_new'] ?? false) === true
+        || in_array((string) ($input['force_new'] ?? ''), ['1', 'true', 'yes'], true);
+    if ($forceNew) {
+        $resumeConvId = 0;
+    }
+
     $conv = null;
+    // Start a new chat must not reclaim today's closed thread (that inserted
+    // "continued this conversation" on a brand-new session).
+    if (!$forceNew) {
     // Same-tab / proactive resume: attach to this conversation even when Traffic
     // visitor_id differs from the browser uid (IP claim / multi-tab).
     if ($resumeConvId > 0 && !$visitorUidRotated) {
@@ -324,6 +333,7 @@ try {
         if ($claimed) {
             $conv = $claimed;
         }
+    }
     }
 
     if ($conv) {

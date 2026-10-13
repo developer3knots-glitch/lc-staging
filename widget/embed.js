@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 151;
+    var LC_WIDGET_BUILD = 152;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -139,6 +139,7 @@
     var serverLiveConversationId = 0;
     var serverLiveConversationStatus = '';
     var pendingResumeConvId = null;
+    var forceNewChat = false;
     var entryRouted = false; // lock first entry decision so settings sync cannot flip form ↔ idle
     var settingsSyncTimer = null;
     var ownTypingActive = false;
@@ -1580,7 +1581,7 @@
     function beginChatFromIdle() {
         // Lock entry routing — late settings_only must not yank back to Let's chat
         entryRouted = true;
-        var liveId = serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0;
+        var liveId = forceNewChat ? 0 : (serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0);
         liveId = parseInt(liveId, 10) || 0;
         if (liveId > 0) {
             hideIdleIntro();
@@ -3066,7 +3067,9 @@
         if (firstMsg) {
             payload.initial_message = firstMsg;
         }
-        if (options.resumeConversationId) {
+        if (forceNewChat) {
+            payload.force_new = 1;
+        } else if (options.resumeConversationId) {
             payload.resume_conversation_id = options.resumeConversationId;
         }
         chatInitInFlight = true;
@@ -3094,6 +3097,7 @@
             }
             hideTeaser(true);
             clearIdleWelcomePreview();
+            forceNewChat = false;
             // Keep optimistic bubble; Connecting stays until agent joins
             handleChatStarted(data, { keepMessages: !!firstMsg });
             if (tempId && data.status === 'waiting') {
@@ -3159,7 +3163,8 @@
                 lc_hp: honeypot,
                 public_ipv4: publicIpv4,
                 chat_token: getStoredChatToken() || chatToken || '',
-                resume_conversation_id: pendingResumeConvId || 0
+                resume_conversation_id: forceNewChat ? 0 : (pendingResumeConvId || 0),
+                force_new: forceNewChat ? 1 : 0
             })
         })
         .then(function (r) { return r.json(); })
@@ -3173,6 +3178,7 @@
                 return;
             }
             pendingResumeConvId = null;
+            forceNewChat = false;
             hideTeaser(true);
             showChatView();
             handleChatStarted(data, { keepMessages: false });
@@ -4288,6 +4294,8 @@
     }
 
     function startNewChat() {
+        // Intentional new session — do not reopen today's closed thread.
+        forceNewChat = true;
         // Intentional new session from ended screen — never leave a half-reset panel.
         hideEndedState();
         hideEmojiPicker();
