@@ -8935,6 +8935,7 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 .lc-msg.system.is-presence.is-active { color: #047857; }
 .lc-msg.system.is-presence.is-minimized { color: #c2410c; }
 .lc-msg.system.is-presence.is-away { color: #475569; }
+.lc-msg.system.is-presence.is-window { color: #1d4ed8; }
 .lc-msg.system.is-presence.is-left { color: #b91c1c; }
 .lc-msg.system.is-presence.is-disconnected { color: #6b7280; }
 
@@ -8955,6 +8956,10 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
 .lc-badge-presence.is-away {
     background: #f1f5f9;
     color: #475569;
+}
+.lc-badge-presence.is-window {
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 .lc-badge-presence.is-left {
     background: #fef2f2;

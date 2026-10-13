@@ -479,17 +479,24 @@
         var labels = {
             active: 'Active',
             minimized: 'Chat minimized',
-            away: 'Away',
+            away: 'Switched tab',
+            window: 'Switched window',
             left: 'Left website',
             disconnected: 'Disconnected'
         };
         if (!labels[status]) return null;
         var ts = parseInt(presence.presence_ts || presence.ts || 0, 10) || 0;
+        function flagOn(value, fallback) {
+            if (value === undefined || value === null || value === '') return fallback;
+            if (value === false || value === 0 || value === '0' || value === 'false') return false;
+            return true;
+        }
         return {
             status: status,
             label: presence.label || labels[status],
-            widget_open: !!presence.widget_open,
-            page_visible: presence.page_visible !== false,
+            widget_open: flagOn(presence.widget_open, false),
+            page_visible: flagOn(presence.page_visible, true),
+            window_focused: flagOn(presence.window_focused, status !== 'window'),
             left_site: !!presence.left_site,
             presence_ts: ts
         };
@@ -499,11 +506,13 @@
         if (!presence) return '';
         switch (presence.status) {
             case 'active':
-                return prevStatus === 'minimized'
-                    ? 'Visitor maximized the chat'
-                    : 'Visitor is active in chat';
+                if (prevStatus === 'minimized') return 'Visitor maximized the chat';
+                if (prevStatus === 'away') return 'Visitor returned to the tab';
+                if (prevStatus === 'window') return 'Visitor returned to the window';
+                return 'Visitor is active in chat';
             case 'minimized': return 'Visitor minimized the chat (still on website)';
-            case 'away': return 'Visitor switched tab / window is not visible';
+            case 'away': return 'Visitor switched tab';
+            case 'window': return 'Visitor switched window';
             case 'left': return 'Visitor left the website';
             case 'disconnected': return 'Visitor appears disconnected';
             default: return presence.label || '';
@@ -545,9 +554,10 @@
                 var old = foot.querySelector('.lc-badge-presence, .lc-badge-active, .lc-badge-waiting, .lc-badge-closed');
                 var badgeCls = 'lc-badge lc-badge-presence is-' + presence.status;
                 var label = presence.status === 'minimized' ? 'Minimized'
-                    : (presence.status === 'away' ? 'Away'
+                    : (presence.status === 'away' ? 'Tab'
+                    : (presence.status === 'window' ? 'Window'
                     : (presence.status === 'left' ? 'Left site'
-                    : (presence.status === 'disconnected' ? 'Disconnected' : 'On chat')));
+                    : (presence.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
                 if (old) {
                     old.className = badgeCls;
                     old.textContent = label;
@@ -3636,7 +3646,7 @@
         var conversationId = selectedId;
         var isFirstLoadReq = needsFullHistory;
         var full = isFirstLoadReq ? 1 : 0;
-        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin' })
+        fetch(base + '/api/agent-poll.php?conversation_id=' + conversationId + '&last_id=' + lastMsgId + '&full=' + full, { credentials: 'same-origin', cache: 'no-store' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (selectedId !== conversationId) {

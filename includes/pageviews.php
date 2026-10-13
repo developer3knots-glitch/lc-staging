@@ -43,6 +43,9 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('presence_ts', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN presence_ts BIGINT NOT NULL DEFAULT 0 AFTER page_visible');
         }
+        if (!in_array('window_focused', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN window_focused TINYINT(1) NOT NULL DEFAULT 1 AFTER presence_ts');
+        }
     } catch (Throwable $e) {
     }
 }
@@ -84,9 +87,9 @@ function lc_mark_visitor_left_site(int $visitorId): void
  *
  * @return bool true if row was updated
  */
-function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null, int $presenceTs = 0): bool
+function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null, int $presenceTs = 0, ?bool $windowFocused = null): bool
 {
-    if ($visitorId < 1 || ($widgetOpen === null && $pageVisible === null)) {
+    if ($visitorId < 1 || ($widgetOpen === null && $pageVisible === null && $windowFocused === null)) {
         return false;
     }
     lc_ensure_visitor_presence_schema();
@@ -99,6 +102,10 @@ function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = nul
     if ($pageVisible !== null) {
         $sets[] = 'page_visible = ?';
         $params[] = $pageVisible ? 1 : 0;
+    }
+    if ($windowFocused !== null) {
+        $sets[] = 'window_focused = ?';
+        $params[] = $windowFocused ? 1 : 0;
     }
     $sets[] = 'last_seen = UTC_TIMESTAMP()';
     if ($presenceTs > 0) {
@@ -203,12 +210,18 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
     $pageVisible = array_key_exists('visitor_page_visible', $row) || array_key_exists('page_visible', $row)
         ? ((int) ($row['visitor_page_visible'] ?? $row['page_visible'] ?? 1) === 1)
         : true;
+    $windowFocused = array_key_exists('visitor_window_focused', $row) || array_key_exists('window_focused', $row)
+        ? ((int) ($row['visitor_window_focused'] ?? $row['window_focused'] ?? 1) === 1)
+        : true;
     $leftSite = $leftRaw !== null && trim((string) $leftRaw) !== '';
+    $presenceTs = (int) ($row['visitor_presence_ts'] ?? $row['presence_ts'] ?? 0);
 
     $base = [
         'widget_open' => $widgetOpen,
         'page_visible' => $pageVisible,
+        'window_focused' => $windowFocused,
         'left_site' => $leftSite,
+        'presence_ts' => $presenceTs,
         'last_seen' => $lastRaw !== null && trim((string) $lastRaw) !== ''
             ? (function_exists('lc_to_iso8601') ? (lc_to_iso8601((string) $lastRaw) ?: (string) $lastRaw) : (string) $lastRaw)
             : null,
@@ -223,7 +236,10 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
         return array_merge($base, ['status' => 'disconnected', 'label' => 'Disconnected']);
     }
     if (!$pageVisible) {
-        return array_merge($base, ['status' => 'away', 'label' => 'Away']);
+        return array_merge($base, ['status' => 'away', 'label' => 'Switched tab']);
+    }
+    if (!$windowFocused) {
+        return array_merge($base, ['status' => 'window', 'label' => 'Switched window']);
     }
     if (!$widgetOpen) {
         return array_merge($base, ['status' => 'minimized', 'label' => 'Chat minimized']);
@@ -276,6 +292,9 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
     $pageVisible = array_key_exists('page_visible', $input)
         ? $parseFlag($input['page_visible'])
         : null;
+    $windowFocused = array_key_exists('window_focused', $input)
+        ? $parseFlag($input['window_focused'])
+        : null;
 
     $presenceTs = 0;
     if (isset($input['presence_ts'])) {
@@ -291,7 +310,7 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
 
     $prevRow = [];
     try {
-        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) {
@@ -309,12 +328,12 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
     }
 
     $applied = false;
-    if ($widgetOpen !== null || $pageVisible !== null) {
-        $applied = lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible, $presenceTs);
+    if ($widgetOpen !== null || $pageVisible !== null || $windowFocused !== null) {
+        $applied = lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible, $presenceTs, $windowFocused);
         if (!$applied && $presenceTs > 0) {
             // Lost race to a newer pulse
             try {
-                $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+                $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE id = ? LIMIT 1');
                 $stmt->execute([$visitorId]);
                 $prevRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: $prevRow;
             } catch (Throwable $e) {
@@ -329,6 +348,9 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         }
         if ($pageVisible !== null) {
             $prevRow['page_visible'] = $pageVisible ? 1 : 0;
+        }
+        if ($windowFocused !== null) {
+            $prevRow['window_focused'] = $windowFocused ? 1 : 0;
         }
         $prevRow['last_seen'] = gmdate('Y-m-d H:i:s');
         if ($presenceTs > 0) {

@@ -64,7 +64,7 @@ try {
     if ($conversationId > 0) {
         $stmt = $db->prepare('
             SELECT c.id, c.agent_id, c.brand_id, c.status,
-                   v.id AS visitor_id, v.left_site_at, v.widget_open, v.page_visible, v.presence_ts
+                   v.id AS visitor_id, v.left_site_at, v.widget_open, v.page_visible, v.window_focused, v.presence_ts
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
             WHERE c.id = ? AND v.visitor_uid = ?
@@ -86,7 +86,7 @@ try {
             $conversationId = 0;
         }
     } else {
-        $stmt = $db->prepare('SELECT id, left_site_at, widget_open, page_visible, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
+        $stmt = $db->prepare('SELECT id, left_site_at, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
         $stmt->execute([$visitorUid]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
@@ -124,6 +124,15 @@ try {
     );
     $chatOpen = $parseFlag($input['chat_open'] ?? $input['widget_open'] ?? null);
     $pageVis = $parseFlag($input['page_visible'] ?? null);
+    $windowFocused = array_key_exists('window_focused', $input) ? $parseFlag($input['window_focused']) : null;
+    $prevStatus = (string) (lc_visitor_engagement_status([
+        'left_site_at' => $leftAt,
+        'widget_open' => $widgetOpen,
+        'page_visible' => $pageVisible,
+        'window_focused' => (int) ($row['window_focused'] ?? 1),
+        'last_seen' => gmdate('Y-m-d H:i:s'),
+        'presence_ts' => $prevTs,
+    ])['status'] ?? '');
 
     if ($leftSite) {
         $chatOpen = false;
@@ -141,18 +150,21 @@ try {
     if ($pageVis !== null) {
         $pageVisible = $pageVis ? 1 : 0;
     }
+    $windowOpenFlag = $windowFocused === null ? (int) ($row['window_focused'] ?? 1) : ($windowFocused ? 1 : 0);
 
     $applied = lc_set_visitor_engagement_flags(
         $visitorId,
         $chatOpen,
         $pageVis,
-        $presenceTs > 0 ? $presenceTs : 0
+        $presenceTs > 0 ? $presenceTs : 0,
+        $windowFocused
     );
 
     $presence = lc_visitor_engagement_status([
         'left_site_at' => $leftAt,
         'widget_open' => $widgetOpen,
         'page_visible' => $pageVisible,
+        'window_focused' => $windowOpenFlag,
         'last_seen' => gmdate('Y-m-d H:i:s'),
     ]);
     if ($leftSite) {
@@ -160,10 +172,18 @@ try {
         $presence['label'] = 'Left website';
         $presence['left_site'] = true;
     }
+    $clientStatus = strtolower(trim((string) ($input['status'] ?? '')));
+    $allowedStatus = ['active', 'minimized', 'away', 'window', 'left', 'disconnected'];
+    if (in_array($clientStatus, $allowedStatus, true)) {
+        $presence['status'] = $clientStatus;
+    }
     $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : $prevTs;
+    $statusChanged = $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
 
-    // Same confirmed realtime path as typing — not fire-and-forget
-    if (($applied || $leftSite) && $conversationId > 0 && function_exists('lc_realtime_publish_channels')) {
+    // Same confirmed realtime path as typing — not fire-and-forget.
+    // Publish on a real status change even if MySQL rowCount was 0 (window focus
+    // used to be dropped because widget_open/page_visible did not change).
+    if (($statusChanged || $leftSite) && $conversationId > 0 && function_exists('lc_realtime_publish_channels')) {
         if (function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
             $channels = [
                 lc_realtime_channel_conversation($conversationId),
@@ -177,7 +197,7 @@ try {
                 'visitor_presence' => $presence,
             ], 180);
         }
-    } elseif (($applied || $leftSite) && function_exists('lc_realtime_publish_visitor_presence')) {
+    } elseif (($statusChanged || $leftSite) && function_exists('lc_realtime_publish_visitor_presence')) {
         lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
     }
 

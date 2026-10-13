@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 152;
+    var LC_WIDGET_BUILD = 153;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -254,7 +254,8 @@
         function engagementFields() {
             return {
                 chat_open: isOpen ? 1 : 0,
-                page_visible: (typeof document !== 'undefined' && document.visibilityState === 'hidden') ? 0 : 1
+                page_visible: (typeof document !== 'undefined' && document.visibilityState === 'hidden') ? 0 : 1,
+                window_focused: windowFocused ? 1 : 0
             };
         }
 
@@ -372,6 +373,8 @@
         }
 
         var presenceSeq = 0;
+        var windowFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+        var windowBlurTimer = null;
 
         function nextPresenceTs() {
             presenceSeq += 1;
@@ -382,12 +385,17 @@
             fields = fields || engagementFields();
             var status = 'active';
             var label = 'Active';
+            var tabHidden = !fields.page_visible;
+            var windowBlurred = fields.window_focused === 0 || fields.window_focused === false;
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
-            } else if (!fields.page_visible) {
+            } else if (tabHidden) {
                 status = 'away';
-                label = 'Away';
+                label = 'Switched tab';
+            } else if (windowBlurred) {
+                status = 'window';
+                label = 'Switched window';
             } else if (!fields.chat_open) {
                 status = 'minimized';
                 label = 'Chat minimized';
@@ -396,7 +404,8 @@
                 status: status,
                 label: label,
                 widget_open: !!fields.chat_open,
-                page_visible: !!fields.page_visible,
+                page_visible: !tabHidden,
+                window_focused: !windowBlurred,
                 left_site: !!fields.left_site,
                 presence_ts: ts || nextPresenceTs(),
                 last_seen: new Date().toISOString()
@@ -406,17 +415,27 @@
         function pushPresenceOverWs(fields, ts) {
             var cid = parseInt(conversationId, 10) || 0;
             if (cid < 1) return false;
-            if (!(realtimeClient && typeof realtimeClient.publishClientEvent === 'function')) return false;
-            if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
-            try {
-                if (typeof realtimeClient.subscribe === 'function') {
-                    realtimeClient.subscribe('conv:' + cid);
-                }
-            } catch (eSub) {}
-            return !!realtimeClient.publishClientEvent('visitor.presence', {
-                conversation_id: cid,
-                visitor_presence: localPresencePayload(fields, ts)
-            });
+            var payload = localPresencePayload(fields, ts);
+            var clients = [realtimeClient, presenceClient];
+            for (var i = 0; i < clients.length; i++) {
+                var client = clients[i];
+                if (!(client && typeof client.publishClientEvent === 'function')) continue;
+                if (!(client.isConnected && client.isConnected())) continue;
+                try {
+                    if (typeof client.subscribe === 'function') {
+                        client.subscribe('conv:' + cid);
+                    }
+                } catch (eSub) {}
+                try {
+                    if (client.publishClientEvent('visitor.presence', {
+                        conversation_id: cid,
+                        visitor_presence: payload
+                    })) {
+                        return true;
+                    }
+                } catch (ePub) {}
+            }
+            return false;
         }
 
         function schedulePresenceWsRetry() {
@@ -426,8 +445,7 @@
                 if (!pendingPresenceFields) return;
                 var ts = pendingPresenceFields._ts || nextPresenceTs();
                 if (pushPresenceOverWs(pendingPresenceFields, ts)) {
-                    lastPresenceKey = pendingPresenceFields.chat_open + ':' + pendingPresenceFields.page_visible
-                        + (pendingPresenceFields.left_site ? ':left' : '');
+                    lastPresenceKey = presenceKey(pendingPresenceFields);
                     pendingPresenceFields = null;
                     return;
                 }
@@ -443,6 +461,8 @@
                 conversation_id: cid > 0 ? cid : undefined,
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
+                window_focused: fields.window_focused ? 1 : 0,
+                status: localPresencePayload(fields, ts).status,
                 left_site: fields.left_site ? 1 : 0,
                 presence_ts: ts || nextPresenceTs(),
                 public_ipv4: publicIpv4,
@@ -468,6 +488,12 @@
             }
         }
 
+        function presenceKey(fields) {
+            fields = fields || {};
+            return (fields.chat_open ? 1 : 0) + ':' + (fields.page_visible ? 1 : 0) + ':' +
+                (fields.window_focused ? 1 : 0) + (fields.left_site ? ':left' : '');
+        }
+
         reportEngagementPresence = function (useBeacon, force, extraFields) {
             if (!visitorUid) return;
             var fields = engagementFields();
@@ -478,7 +504,7 @@
                     }
                 }
             }
-            var key = fields.chat_open + ':' + fields.page_visible + (fields.left_site ? ':left' : '');
+            var key = presenceKey(fields);
             if (!force && key === lastPresenceKey) {
                 return;
             }
@@ -507,7 +533,6 @@
         presenceTimer = setInterval(function () {
             if (document.visibilityState !== 'visible') return;
             postPageEvent({ event: 'ping' }, false);
-            lastPresenceKey = engagementFields().chat_open + ':' + engagementFields().page_visible;
         }, 15000);
 
         document.addEventListener('visibilitychange', function () {
@@ -527,6 +552,25 @@
                 // Tab hidden ≠ left website — report Away while keeping on-site presence.
                 reportEngagementPresence(true, true);
             }
+        });
+
+        window.addEventListener('blur', function () {
+            windowFocused = false;
+            if (windowBlurTimer) clearTimeout(windowBlurTimer);
+            // Tab hide also blurs the window — let visibilitychange own that log.
+            windowBlurTimer = setTimeout(function () {
+                windowBlurTimer = null;
+                if (document.visibilityState === 'hidden') return;
+                reportEngagementPresence(true, true, { window_focused: 0 });
+            }, 80);
+        });
+        window.addEventListener('focus', function () {
+            windowFocused = true;
+            if (windowBlurTimer) {
+                clearTimeout(windowBlurTimer);
+                windowBlurTimer = null;
+            }
+            reportEngagementPresence(false, true, { window_focused: 1 });
         });
 
         window.addEventListener('pagehide', sendSiteLeave);

@@ -1602,6 +1602,8 @@ function lc_get_conversation(int $id): ?array
                v.left_site_at AS visitor_left_site_at,
                v.widget_open AS visitor_widget_open,
                v.page_visible AS visitor_page_visible,
+               v.window_focused AS visitor_window_focused,
+               v.presence_ts AS visitor_presence_ts,
                v.phone AS visitor_phone,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
                v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon, v.geo_source AS visitor_geo_source,

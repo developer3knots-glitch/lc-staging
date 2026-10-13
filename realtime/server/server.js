@@ -271,7 +271,8 @@ function wireWebSocket(server) {
         if (event !== 'visitor.presence') return;
         if (String(claims.role || '') !== 'visitor') return;
         const claimCid = parseInt(claims.conversation_id, 10) || 0;
-        const cid = parseInt(msg.data && msg.data.conversation_id, 10) || claimCid || 0;
+        const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+        const cid = parseInt(data.conversation_id, 10) || claimCid || 0;
         // Only reject when token is bound to a *different* open chat
         if (cid < 1 || (claimCid > 0 && claimCid !== cid)) {
           return;
@@ -282,11 +283,9 @@ function wireWebSocket(server) {
         if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
           if (claimCid === cid || claimCid === 0) {
             subscribe(ws, convCh);
-          } else {
-            return;
           }
         }
-        const presence = (msg.data && msg.data.visitor_presence) || msg.data || {};
+        const presence = data.visitor_presence || data || {};
         publishMany(
           [convCh, staffCh],
           'visitor.presence',

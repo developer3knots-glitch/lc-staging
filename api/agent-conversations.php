@@ -90,6 +90,8 @@ try {
                v.left_site_at AS visitor_left_site_at,
                v.widget_open AS visitor_widget_open,
                v.page_visible AS visitor_page_visible,
+               v.window_focused AS visitor_window_focused,
+               v.presence_ts AS visitor_presence_ts,
                a.name AS agent_name, b.name AS brand_name, b.brand_key,
                (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
                (CASE
@@ -150,6 +152,8 @@ try {
                            v.left_site_at AS visitor_left_site_at,
                            v.widget_open AS visitor_widget_open,
                            v.page_visible AS visitor_page_visible,
+                           v.window_focused AS visitor_window_focused,
+                           v.presence_ts AS visitor_presence_ts,
                            a.name AS agent_name, b.name AS brand_name, b.brand_key,
                            (SELECT message FROM messages WHERE conversation_id = c.id AND sender_type IN ('visitor','agent') ORDER BY id DESC LIMIT 1) AS last_message,
                            0 AS unread
