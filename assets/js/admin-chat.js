@@ -3996,9 +3996,19 @@
         if (!replyInput) return;
         try {
             replyInput.style.height = 'auto';
-            replyInput.style.height = Math.min(replyInput.scrollHeight, 140) + 'px';
+            var style = window.getComputedStyle(replyInput);
+            var maxPx = parseFloat(style.maxHeight);
+            var minPx = parseFloat(style.minHeight);
+            if (!isFinite(maxPx) || maxPx <= 0) maxPx = 240;
+            if (!isFinite(minPx) || minPx < 0) minPx = 0;
+            var next = Math.max(replyInput.scrollHeight, minPx);
+            replyInput.style.height = Math.min(next, maxPx) + 'px';
         } catch (e) {}
     }
+
+    window.addEventListener('resize', function () {
+        autoResizeReplyInput();
+    });
 
     document.querySelectorAll('.lc-chat-tab').forEach(function (tab) {
         tab.addEventListener('click', function () {

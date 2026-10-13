@@ -7495,18 +7495,23 @@ body.lc-page-chats .lc-chat-item-idline {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
+.lc-chat-compose-pro {
+    flex-shrink: 0;
+}
+
 .lc-chat-compose-pro textarea {
     flex: 1;
     border: none;
     background: transparent;
-    padding: 0.5rem 0.4rem;
+    padding: 0.65rem 0.45rem;
     resize: none;
     font-family: inherit;
-    font-size: 0.9rem;
-    min-height: 44px;
-    max-height: 140px;
-    line-height: 1.45;
+    font-size: 0.92rem;
+    min-height: clamp(76px, 14vh, 120px);
+    max-height: clamp(128px, 28vh, 240px);
+    line-height: 1.5;
     color: #0f172a;
+    overflow-y: auto;
 }
 
 .lc-chat-compose-pro textarea::placeholder {
@@ -7641,6 +7646,13 @@ body.lc-page-chats .lc-chat-compose-hint {
     margin: 0;
 }
 
+@media (max-width: 820px), (max-height: 760px) {
+    .lc-chat-compose-pro textarea {
+        min-height: clamp(64px, 12vh, 96px);
+        max-height: clamp(104px, 22vh, 168px);
+    }
+}
+
 @media (max-width: 640px) {
     .lc-compose-mode-tab span,
     .lc-chat-canned-toggle span {
@@ -7650,6 +7662,16 @@ body.lc-page-chats .lc-chat-compose-hint {
     .lc-compose-mode-tab,
     .lc-chat-canned-toggle {
         padding: 0.4rem 0.55rem;
+    }
+
+    .lc-chat-compose-pro {
+        padding: 0.55rem 0.65rem 0.6rem;
+    }
+
+    .lc-chat-compose-pro textarea {
+        min-height: 84px;
+        max-height: min(160px, 28vh);
+        font-size: 16px;
     }
 }
 
