@@ -562,31 +562,117 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--lcw-primary) 6%, #fff) 0%, var(--lcw-surface) 100%);
     border-bottom: 1px solid var(--lcw-border);
 }
+#lc-panel.lcw-mode-prechat #lc-idle-intro {
+    display: none !important;
+}
+.lcw-away-kicker {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #b45309;
+}
+.lcw-prechat.is-away #lc-away-kicker,
+.lcw-away-thanks .lcw-away-kicker {
+    display: inline-flex;
+}
+.lcw-away-kicker-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18);
+}
+.lcw-prechat.is-away {
+    padding: 1.05rem 0.95rem 0.45rem;
+    gap: 0.2rem;
+    background:
+        radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--lcw-primary) 12%, transparent), transparent 58%),
+        var(--lcw-bg);
+}
+.lcw-prechat.is-away #lc-prechat-status {
+    display: none !important;
+}
+.lcw-prechat.is-away .lcw-form-card {
+    border-radius: 18px;
+    border-color: rgba(226, 232, 240, 0.95);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.07);
+    overflow: hidden;
+}
+.lcw-prechat.is-away .lcw-form-card-head {
+    background: transparent;
+    border-bottom: none;
+    padding: 1.15rem 1.15rem 0.1rem;
+}
+.lcw-prechat.is-away .lcw-form-title {
+    font-size: 1.22rem;
+    letter-spacing: -0.03em;
+}
+.lcw-prechat.is-away .lcw-form-subtitle {
+    font-size: 0.84rem;
+    line-height: 1.5;
+    max-width: 28em;
+}
+.lcw-prechat.is-away .lcw-prechat-form {
+    padding: 0.75rem 1.15rem 1.15rem;
+    gap: 0.72rem;
+}
+.lcw-prechat.is-away .lcw-prechat-form textarea {
+    min-height: 92px;
+}
 .lcw-away-thanks {
     text-align: center;
     padding: 2rem 1.25rem 1.5rem;
 }
+.lcw-away-thanks[hidden] {
+    display: none !important;
+}
+.lcw-prechat.is-away .lcw-away-thanks:not([hidden]) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0.15rem 0 0.35rem;
+    padding: 2.5rem 1.35rem 2.1rem;
+    background: var(--lcw-surface);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 18px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.07);
+}
 .lcw-away-thanks-icon {
-    width: 3rem;
-    height: 3rem;
-    margin: 0 auto 0.85rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    margin: 0 auto 0.9rem;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     background: #ecfdf5;
     color: #047857;
+    box-shadow: inset 0 0 0 1px #a7f3d0;
+}
+.lcw-away-thanks .lcw-away-kicker {
+    color: #047857;
+    justify-content: center;
+}
+.lcw-away-thanks .lcw-away-kicker-dot {
+    background: #10b981;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.16);
+}
+.lcw-away-thanks .lcw-form-title {
     font-size: 1.35rem;
-    font-weight: 700;
 }
 .lcw-away-thanks p {
-    margin: 0.45rem 0 0;
+    margin: 0.4rem 0 0;
     color: #64748b;
     font-size: 0.92rem;
-    line-height: 1.45;
-}
-.lcw-prechat.is-away #lc-prechat-status {
-    display: flex;
+    line-height: 1.5;
+    max-width: 24em;
 }
 
 .lcw-form-title {

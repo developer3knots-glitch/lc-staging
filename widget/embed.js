@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 155;
+    var LC_WIDGET_BUILD = 156;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -620,7 +620,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=65';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=66';
         document.head.appendChild(link);
     }
 
@@ -749,6 +749,7 @@
                     '</div>' +
                     '<div class="lcw-form-card" id="lc-prechat-start-panel">' +
                         '<div class="lcw-form-card-head">' +
+                            '<p class="lcw-away-kicker" id="lc-away-kicker"><span class="lcw-away-kicker-dot" aria-hidden="true"></span>Away</p>' +
                             '<h3 class="lcw-form-title">Start a conversation</h3>' +
                             '<p class="lcw-form-subtitle">Tell us a little about yourself - our team will take it from here.</p>' +
                         '</div>' +
@@ -777,9 +778,12 @@
                         '</form>' +
                     '</div>' +
                     '<div id="lc-away-thanks" class="lcw-away-thanks" hidden>' +
-                        '<div class="lcw-away-thanks-icon" aria-hidden="true">✓</div>' +
+                        '<div class="lcw-away-thanks-icon" aria-hidden="true">' +
+                            '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' +
+                        '</div>' +
+                        '<p class="lcw-away-kicker lcw-away-kicker-static"><span class="lcw-away-kicker-dot" aria-hidden="true"></span>Message received</p>' +
                         '<h3 class="lcw-form-title">Thank you</h3>' +
-                        '<p id="lc-away-thanks-text">We have received your message. We will get back to you when we are back online.</p>' +
+                        '<p id="lc-away-thanks-text">We have your message. A member of the team will reply when we are back online.</p>' +
                     '</div>' +
                     '<div class="lcw-ticket-resume-wrap" id="lc-ticket-resume-wrap">' +
                         '<div id="lc-ticket-resume-panel" class="lcw-ticket-resume-panel" hidden>' +
@@ -1550,15 +1554,14 @@
         }
         var statusCard = document.getElementById('lc-prechat-status');
         if (statusCard) {
-            statusCard.hidden = false;
-            statusCard.style.display = '';
+            statusCard.hidden = true;
+            statusCard.style.display = 'none';
         }
-        updatePrechatStatus(0);
         var title = document.querySelector('#lc-prechat-start-panel .lcw-form-title');
         var sub = document.querySelector('#lc-prechat-start-panel .lcw-form-subtitle');
         var btnLabel = document.querySelector('#lc-prechat-submit .lcw-btn-label');
         if (title) title.textContent = 'We are away';
-        if (sub) sub.textContent = 'Leave your name, email and message. We will reply when we are back.';
+        if (sub) sub.textContent = awayMessageText();
         if (btnLabel) btnLabel.textContent = 'Send message';
         var resumeWrap = document.getElementById('lc-ticket-resume-wrap');
         if (resumeWrap) resumeWrap.style.display = 'none';
@@ -1582,11 +1585,12 @@
         if (resumeWrap) resumeWrap.style.display = 'none';
         var text = document.getElementById('lc-away-thanks-text');
         if (text) {
-            text.textContent = 'We have received your message. We will get back to you when we are back online.';
+            text.textContent = 'We have your message. A member of the team will reply when we are back online.';
         }
     }
 
     function showPrechatForm(skipSettingsFetch, skipTicketReset) {
+        hideIdleIntro();
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
         var prechatPanel = document.getElementById('lc-panel-prechat');
