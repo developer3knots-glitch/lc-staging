@@ -495,10 +495,13 @@
         };
     }
 
-    function presenceChatLine(presence) {
+    function presenceChatLine(presence, prevStatus) {
         if (!presence) return '';
         switch (presence.status) {
-            case 'active': return 'Visitor is active in chat';
+            case 'active':
+                return prevStatus === 'minimized'
+                    ? 'Visitor maximized the chat'
+                    : 'Visitor is active in chat';
             case 'minimized': return 'Visitor minimized the chat (still on website)';
             case 'away': return 'Visitor switched tab / window is not visible';
             case 'left': return 'Visitor left the website';
@@ -507,19 +510,13 @@
         }
     }
 
-    function appendPresenceSystemMessage(presence) {
+    function appendPresenceSystemMessage(presence, prevStatus) {
         if (!messagesEl || !presence) return;
-        var line = presenceChatLine(presence);
+        var line = presenceChatLine(presence, prevStatus);
         if (!line) return;
-        var last = messagesEl.querySelector('.lc-msg.system.is-presence:last-of-type');
-        if (last && last.getAttribute('data-presence') === presence.status) {
-            return;
-        }
-        // Replace last presence line instead of spamming the transcript
-        if (last) {
-            last.setAttribute('data-presence', presence.status);
-            last.className = 'lc-msg system is-presence is-' + presence.status;
-            last.textContent = line;
+        var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
+        var last = nodes.length ? nodes[nodes.length - 1] : null;
+        if (last && last.getAttribute('data-presence') === presence.status && last.textContent === line) {
             return;
         }
         var html = '<div class="lc-msg system is-presence is-' + esc(presence.status) + '" data-presence="' +
@@ -619,18 +616,17 @@
         var next = String(presence.status || '');
         var statusChanged = prev !== next;
         lastPresenceStatusKey = next;
+        // Presence log lives only inside the chat transcript, not the header strip.
         if (bar) {
-            bar.hidden = false;
-            bar.className = 'lc-visitor-presence-bar is-' + presence.status;
+            bar.hidden = true;
+            bar.className = 'lc-visitor-presence-bar';
         }
-        if (textEl) {
-            textEl.textContent = presenceChatLine(presence);
-        }
+        if (textEl) textEl.textContent = '';
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
         }
         if (statusChanged) {
-            appendPresenceSystemMessage(presence);
+            appendPresenceSystemMessage(presence, prev);
         }
     }
 
