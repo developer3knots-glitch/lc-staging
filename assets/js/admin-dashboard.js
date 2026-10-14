@@ -86,6 +86,7 @@
                 r.id,
                 r.status,
                 r.can_supervise ? '1' : '0',
+                r.transferred_to_me ? '1' : '0',
                 r.unread || 0,
                 r.last_msg || '',
                 r.last_message_at || '',
@@ -161,6 +162,9 @@
         html += '<div class="lc-conv-item-av">' + esc(r.visitor_initials || initials(r.visitor_name)) + '</div>';
         html += '<div class="lc-conv-item-body">';
         html += '<div class="lc-conv-item-top"><strong>' + esc(r.visitor_name) + '</strong>' + statusBadge(r.status);
+        if (r.transferred_to_me) {
+            html += '<span class="lc-badge lc-badge-transferred" title="This chat is active. It was transferred to you.">Transferred to you</span>';
+        }
         if (unread > 0) {
             html += '<span class="lc-badge lc-badge-unread">' + unread + ' new</span>';
         }

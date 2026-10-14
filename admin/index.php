@@ -81,10 +81,20 @@ if (function_exists('lc_merge_same_ip_conversations')) {
     try { lc_merge_same_ip_conversations(); } catch (Throwable $e) {}
 }
 $agentId = (int) $agent['id'];
+if (function_exists('lc_ensure_conversation_transfer_schema')) {
+    lc_ensure_conversation_transfer_schema();
+}
+$homeTransferSelect = 'NULL AS transferred_to_agent_id,';
+try {
+    if ($db->query("SHOW COLUMNS FROM conversations LIKE 'transferred_to_agent_id'")->fetch()) {
+        $homeTransferSelect = 'c.transferred_to_agent_id,';
+    }
+} catch (Throwable $e) {
+}
 $recentSql = "
     SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
-               v.user_agent AS visitor_user_agent,
+               v.user_agent AS visitor_user_agent, {$homeTransferSelect}
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
            (CASE
                 WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
@@ -389,6 +399,9 @@ require __DIR__ . '/includes/header.php';
                                 <div class="lc-conv-item-top">
                                     <strong><?= lc_sanitize($name) ?></strong>
                                     <?= $statusBadge($r['status']) ?>
+                                    <?php if (($r['status'] ?? '') === 'active' && (int) ($r['transferred_to_agent_id'] ?? 0) === $agentId && $rAgentId === $agentId): ?>
+                                        <span class="lc-badge lc-badge-transferred" title="This chat is active. It was transferred to you.">Transferred to you</span>
+                                    <?php endif; ?>
                                     <?php if ($itemUnread > 0): ?>
                                         <span class="lc-badge lc-badge-unread"><?= $itemUnread ?> new</span>
                                     <?php endif; ?>

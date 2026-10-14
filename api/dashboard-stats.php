@@ -77,10 +77,20 @@ try {
 
     $unread = lc_unread_count_for_agent($agentId);
 
+    if (function_exists('lc_ensure_conversation_transfer_schema')) {
+        lc_ensure_conversation_transfer_schema();
+    }
+    $dashTransferSelect = 'NULL AS transferred_to_agent_id,';
+    try {
+        if ($db->query("SHOW COLUMNS FROM conversations LIKE 'transferred_to_agent_id'")->fetch()) {
+            $dashTransferSelect = 'c.transferred_to_agent_id,';
+        }
+    } catch (Throwable $e) {
+    }
     $recentSql = "
         SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
-               v.user_agent AS visitor_user_agent,
+               v.user_agent AS visitor_user_agent, {$dashTransferSelect}
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
                (CASE
                     WHEN c.agent_id = ? OR (c.status = 'waiting' AND c.agent_id IS NULL) THEN
@@ -120,10 +130,14 @@ try {
             : ['device' => 'Unknown', 'os' => 'Unknown', 'browser' => 'Unknown', 'label' => 'Unknown'];
         $rAgentId = (int) ($r['agent_id'] ?? 0);
         $canSupervise = ($r['status'] === 'active' && $rAgentId > 0 && $rAgentId !== $agentId);
+        $transferredToMe = ($r['status'] === 'active'
+            && (int) ($r['transferred_to_agent_id'] ?? 0) === $agentId
+            && $rAgentId === $agentId);
         $recentFormatted[] = [
             'id' => (int) $r['id'],
             'agent_id' => $rAgentId,
             'can_supervise' => $canSupervise,
+            'transferred_to_me' => $transferredToMe,
             'visitor_name' => $name,
             'visitor_initials' => lc_avatar_initials($name),
             'brand_name' => $r['brand_name'] ?? '',
