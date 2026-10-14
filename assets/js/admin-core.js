@@ -495,7 +495,7 @@
             var name = payload.name || 'Visitor';
             var detail = payload.page_path || payload.ip || '';
             var chatUrl = cid
-                ? (base + '/admin/chats?id=' + cid)
+                ? (base + '/admin/chats.php?id=' + cid)
                 : (base + '/admin/chats.php');
             showIncomingToast(name, detail, chatUrl);
             fireBrowserPush(name, detail, dedupeKey, {
@@ -533,7 +533,7 @@
             if (note.length > 90) note = note.slice(0, 87) + '...';
             var line = fromName + ' transferred ' + visitor;
             var chatUrl = cid
-                ? (base + '/admin/chats?id=' + cid)
+                ? (base + '/admin/chats.php?id=' + cid)
                 : (base + '/admin/chats.php');
             showTransferToast(line, note, chatUrl);
             fireBrowserPush(visitor, note, dedupeKey, {
