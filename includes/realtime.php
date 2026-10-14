@@ -771,3 +771,28 @@ function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = [
         'is_incoming' => true,
     ], $extra));
 }
+
+/**
+ * Tell only the receiving agent that a chat was transferred to them.
+ * Personal channel so the rest of the team does not get the alert.
+ */
+function lc_realtime_publish_chat_transfer(int $conversationId, int $targetAgentId, array $extra = []): void
+{
+    if ($conversationId < 1 || $targetAgentId < 1) {
+        return;
+    }
+    $name = 'Visitor';
+    if (function_exists('lc_get_conversation')) {
+        $conv = lc_get_conversation($conversationId) ?: [];
+        $visitorName = trim((string) ($conv['visitor_name'] ?? ''));
+        if ($visitorName !== '') {
+            $name = $visitorName;
+        }
+    }
+    lc_realtime_publish(lc_realtime_channel_agent($targetAgentId), 'chat.transferred', array_merge([
+        'conversation_id' => $conversationId,
+        'target_agent_id' => $targetAgentId,
+        'name' => $name,
+        'notify' => true,
+    ], $extra), 250);
+}

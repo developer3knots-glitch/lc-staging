@@ -907,6 +907,13 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
                 'transferred' => true,
             ]);
         }
+        if (function_exists('lc_realtime_publish_chat_transfer')) {
+            lc_realtime_publish_chat_transfer($conversationId, $targetAgentId, [
+                'from_agent_id' => (int) ($actingAgent['id'] ?? 0),
+                'from_agent_name' => $actingName,
+                'note' => $note,
+            ]);
+        }
     } catch (Throwable $e) {
         // Transfer already persisted — never surface publish failures as transfer errors.
     }

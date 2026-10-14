@@ -356,6 +356,30 @@
             };
         }
 
+        function showTransferToast(title, detail, chatUrl) {
+            var el = document.getElementById('lc-transfer-toast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'lc-transfer-toast';
+                el.className = 'lc-return-toast lc-land-toast';
+                el.setAttribute('role', 'status');
+                document.body.appendChild(el);
+            }
+            el.innerHTML =
+                '<i class="ti ti-arrows-exchange" aria-hidden="true"></i>' +
+                '<div><strong>Chat transferred to you</strong><span>' +
+                esc(title || 'A chat was transferred to you') + (detail ? ' · ' + esc(detail) : '') +
+                '</span></div>';
+            el.classList.add('is-visible');
+            clearTimeout(showTransferToast._t);
+            showTransferToast._t = setTimeout(function () {
+                el.classList.remove('is-visible');
+            }, 12000);
+            el.onclick = function () {
+                window.location.href = chatUrl || (base + '/admin/chats.php');
+            };
+        }
+
         function fireBrowserPush(name, detail, visitorKey, options) {
             options = options || {};
             if (!window.Notification || Notification.permission !== 'granted') {
@@ -489,6 +513,46 @@
             return true;
         }
 
+        function notifyChatTransfer(payload) {
+            payload = payload || {};
+            if (payload.notify === false || payload.notify === 0 || payload.notify === '0') {
+                return false;
+            }
+            var myId = parseInt(window.LC_AGENT_ID, 10) || 0;
+            var targetId = parseInt(payload.target_agent_id, 10) || 0;
+            if (myId > 0 && targetId > 0 && targetId !== myId) return false;
+
+            var cid = parseInt(payload.conversation_id, 10) || 0;
+            var fromId = parseInt(payload.from_agent_id, 10) || 0;
+            var dedupeKey = 'transfer:' + (cid || '0') + ':' + (fromId || payload.from_agent_name || '');
+            if (!canNotifyVisitor(dedupeKey)) return false;
+
+            var visitor = payload.name || 'Visitor';
+            var fromName = payload.from_agent_name || 'An agent';
+            var note = String(payload.note || '').replace(/\s+/g, ' ').trim();
+            if (note.length > 90) note = note.slice(0, 87) + '...';
+            var line = fromName + ' transferred ' + visitor;
+            var chatUrl = cid
+                ? (base + '/admin/chats?id=' + cid)
+                : (base + '/admin/chats.php');
+            showTransferToast(line, note, chatUrl);
+            fireBrowserPush(visitor, note, dedupeKey, {
+                title: 'Chat transferred to you',
+                body: line + (note ? ' — ' + note : ''),
+                tag: 'lc-transfer-' + String(cid || dedupeKey),
+                url: chatUrl
+            });
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+            return true;
+        }
+
+        window.LCTransferNotify = notifyChatTransfer;
+
         function handleTrafficEvent(payload) {
             payload = payload || {};
             var presence = String(payload.presence || 'browsing').toLowerCase();
@@ -539,6 +603,9 @@
                     });
                     landRt.on('traffic.changed', function (payload) {
                         handleTrafficEvent(payload || {});
+                    });
+                    landRt.on('chat.transferred', function (payload) {
+                        notifyChatTransfer(payload || {});
                     });
                     landRt.on('disconnected', function () {
                         startPollFallback(POLL_MS);

@@ -5793,6 +5793,20 @@
                     setVisitorPresenceBadge(presence, { source: 'ws' });
                 }
             });
+            realtimeClient.on('chat.transferred', function (payload) {
+                var target = parseInt(payload && payload.target_agent_id, 10) || 0;
+                if (target && myAgentId && target !== myAgentId) return;
+                if (window.LCTransferNotify) {
+                    window.LCTransferNotify(payload || {});
+                }
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                if (cid) {
+                    loadConversations();
+                    if (selectedId && cid === selectedId) {
+                        pollMessages();
+                    }
+                }
+            });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {
