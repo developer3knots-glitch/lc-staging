@@ -81,9 +81,22 @@ try {
         $where .= ')';
     }
 
+    if (function_exists('lc_ensure_conversation_transfer_schema')) {
+        lc_ensure_conversation_transfer_schema();
+    }
+    $transferSelect = 'NULL AS transferred_to_agent_id,';
+    try {
+        $hasTransferCol = (bool) $db->query("SHOW COLUMNS FROM conversations LIKE 'transferred_to_agent_id'")->fetch();
+        if ($hasTransferCol) {
+            $transferSelect = 'c.transferred_to_agent_id,';
+        }
+    } catch (Throwable $e) {
+        $transferSelect = 'NULL AS transferred_to_agent_id,';
+    }
+
     $sql = "
         SELECT c.id, c.status, c.agent_id, c.visitor_id, c.brand_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
-               c.is_returning, c.prior_chat_count,
+               c.is_returning, c.prior_chat_count, {$transferSelect}
                v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                v.ip_address AS visitor_ip, v.country AS visitor_country,
                v.last_seen AS visitor_last_seen,
@@ -145,7 +158,7 @@ try {
             try {
                 $one = $db->prepare("
                     SELECT c.id, c.status, c.agent_id, c.visitor_id, c.brand_id, c.page_url, c.last_message_at, c.started_at, c.ticket_reference,
-                           c.is_returning, c.prior_chat_count,
+                           c.is_returning, c.prior_chat_count, {$transferSelect}
                            v.name AS visitor_name, v.email AS visitor_email, v.phone AS visitor_phone, v.visitor_uid,
                            v.ip_address AS visitor_ip, v.country AS visitor_country,
                            v.last_seen AS visitor_last_seen,

@@ -139,6 +139,9 @@ try {
                     last_message_at = UTC_TIMESTAMP()
                 WHERE id = ?
             ")->execute([$agentId, $reopenId]);
+            if (function_exists('lc_clear_conversation_transfer_flag')) {
+                lc_clear_conversation_transfer_flag($reopenId);
+            }
             $conv = lc_get_conversation($reopenId);
         }
     }
@@ -196,6 +199,11 @@ try {
                     last_message_at = UTC_TIMESTAMP()
                 WHERE id = ?
             ")->execute([$agentId, $convId]);
+            $keptTransfer = (int) ($conv['transferred_to_agent_id'] ?? 0) === $agentId
+                && (int) ($conv['agent_id'] ?? 0) === $agentId;
+            if (!$keptTransfer && function_exists('lc_clear_conversation_transfer_flag')) {
+                lc_clear_conversation_transfer_flag($convId);
+            }
             $conv = lc_get_conversation($convId);
         }
     }

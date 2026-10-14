@@ -43,6 +43,9 @@ try {
 
         $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = COALESCE(accepted_at, UTC_TIMESTAMP()) WHERE id = ?");
         $upd->execute([$myAgentId, $conversationId]);
+        if (function_exists('lc_clear_conversation_transfer_flag')) {
+            lc_clear_conversation_transfer_flag($conversationId);
+        }
 
         if (function_exists('lc_ensure_supervisors_schema')) {
             lc_ensure_supervisors_schema();

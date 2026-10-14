@@ -8895,6 +8895,20 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     color: #047857;
 }
 
+.lc-badge-transferred,
+.lc-visitor-kind-badge.is-transferred {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fdba74;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 700;
+}
+
+.lc-visitor-kind-badge.is-transferred[hidden] {
+    display: none !important;
+}
+
 .lc-visitor-presence-bar {
     display: flex;
     align-items: center;

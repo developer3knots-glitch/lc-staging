@@ -470,6 +470,21 @@
         el.title = visitorKindLabel(c);
     }
 
+    function isTransferredToMe(c) {
+        if (!c || String(c.status || '') !== 'active') return false;
+        var to = parseInt(c.transferred_to_agent_id, 10) || 0;
+        var assigned = parseInt(c.agent_id, 10) || 0;
+        return to > 0 && to === myAgentId && assigned === myAgentId;
+    }
+
+    function setTransferBadge(c) {
+        var el = document.getElementById('lc-chat-transfer-badge');
+        if (!el) return;
+        var on = isTransferredToMe(c);
+        el.hidden = !on;
+        el.textContent = on ? 'Active · Transferred to you' : '';
+    }
+
     var livePresenceTs = 0;
     var livePresenceSource = '';
 
@@ -927,6 +942,7 @@
             populateContactFields(true);
         }
         setVisitorKindBadge(c);
+        setTransferBadge(c);
         setVisitorPresenceBadge(c, { source: 'poll' });
 
         var geo = c.visitor_geo || {};
@@ -1106,6 +1122,9 @@
         html += esc(c.last_message || ' - ');
         html += '</div>';
         html += '<div class="lc-chat-item-foot">';
+        if (isTransferredToMe(c)) {
+            html += '<span class="lc-badge lc-badge-transferred" title="This chat is active. It was transferred to you.">Active · Transferred to you</span>';
+        }
         if (c.ip_blocked) {
             html += '<span class="lc-badge lc-badge-blocked" title="Visitor IP is blocked">Blocked</span>';
         } else if (isReturningVisitor(c)) {
@@ -1440,6 +1459,7 @@
             c.visitor_email || '',
             c.visitor_phone || '',
             isReturningVisitor(c) ? '1' : '0',
+            isTransferredToMe(c) ? '1' : '0',
             c.ip_blocked ? '1' : '0',
             // Normalized so ISO vs MySQL strings don't thrash the list
             activityStamp(c.last_message_at)
@@ -3460,6 +3480,7 @@
         populateContactFields(true);
         setText('lc-details-visitor-kind', '-');
         setVisitorKindBadge(null);
+        setTransferBadge(null);
         setVisitorPresenceBadge(null, { force: true });
         livePresenceTs = 0;
         livePresenceSource = '';
@@ -3490,6 +3511,7 @@
                 if ((parseInt(lastConversations[si].id, 10) || 0) === id) {
                     var sRow = lastConversations[si];
                     setVisitorKindBadge(sRow);
+                    setTransferBadge(sRow);
                     var sAid = parseInt(sRow.agent_id || 0, 10);
                     if (isAdmin || (sAid > 0 && sAid === myAgentId)) {
                         setContactFieldsReadOnly(false);

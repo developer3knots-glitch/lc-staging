@@ -84,6 +84,7 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-chat-header-title-row">
                                 <strong id="lc-chat-visitor-name">Visitor</strong>
                                 <span id="lc-chat-visitor-kind" class="lc-visitor-kind-badge" hidden></span>
+                                <span id="lc-chat-transfer-badge" class="lc-visitor-kind-badge is-transferred" hidden title="This chat is active. It was transferred to you.">Active · Transferred to you</span>
                                 <div class="lc-chat-ref" id="lc-chat-ref" hidden>
                                     <span class="lc-chat-ref-icon" title="Ticket reference" aria-hidden="true"><i class="ti ti-ticket"></i></span>
                                     <code class="lc-chat-ref-code" id="lc-chat-ref-code"> - </code>

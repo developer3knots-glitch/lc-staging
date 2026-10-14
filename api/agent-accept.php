@@ -73,6 +73,9 @@ try {
           AND (agent_id IS NULL OR agent_id = 0 OR agent_id = ?)
     ");
     $upd->execute([$agentId, $conversationId, $agentId]);
+    if (function_exists('lc_clear_conversation_transfer_flag')) {
+        lc_clear_conversation_transfer_flag($conversationId);
+    }
 
     // Do not trust PDO rowCount() (MySQL "changed rows" can be 0) — re-read.
     $fresh = lc_get_conversation($conversationId);

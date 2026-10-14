@@ -368,6 +368,7 @@ function lc_assign_agent(int $conversationId): ?int
 
     $upd = lc_db()->prepare("UPDATE conversations SET agent_id = ?, status = 'active', accepted_at = NOW() WHERE id = ? AND status = 'waiting' AND (agent_id IS NULL OR agent_id = 0)");
     $upd->execute([$agentId, $conversationId]);
+    lc_clear_conversation_transfer_flag($conversationId);
     if ($upd->rowCount()) {
         lc_add_agent_join_message($conversationId, $agentId);
         if (function_exists('lc_realtime_publish_conversation_event')) {
@@ -794,6 +795,36 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
     return $rows;
 }
 
+function lc_ensure_conversation_transfer_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    try {
+        $pdo = lc_db();
+        $has = $pdo->query("SHOW COLUMNS FROM conversations LIKE 'transferred_to_agent_id'")->fetch();
+        if (!$has) {
+            $pdo->exec('ALTER TABLE conversations ADD COLUMN transferred_to_agent_id INT UNSIGNED NULL DEFAULT NULL');
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_clear_conversation_transfer_flag(int $conversationId): void
+{
+    if ($conversationId < 1) {
+        return;
+    }
+    try {
+        lc_ensure_conversation_transfer_schema();
+        lc_db()->prepare('UPDATE conversations SET transferred_to_agent_id = NULL WHERE id = ? AND transferred_to_agent_id IS NOT NULL')
+            ->execute([$conversationId]);
+    } catch (Throwable $e) {
+    }
+}
+
 /**
  * @return array{ok: bool, error?: string, agent_id?: int, agent_name?: string}
  */
@@ -840,6 +871,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     if (function_exists('lc_ensure_attachments_schema')) {
         lc_ensure_attachments_schema();
     }
+    lc_ensure_conversation_transfer_schema();
 
     // Visitor-facing only — never include ticket ref or internal transfer notes.
     $transferMsg = $actingName . ' transferred this chat to ' . $targetName . '.';
@@ -850,8 +882,8 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     $joinMsgId = 0;
     $db->beginTransaction();
     try {
-        $upd = $db->prepare("UPDATE conversations SET agent_id = ?, accepted_at = UTC_TIMESTAMP() WHERE id = ? AND status = 'active'");
-        $upd->execute([$targetAgentId, $conversationId]);
+        $upd = $db->prepare("UPDATE conversations SET agent_id = ?, accepted_at = UTC_TIMESTAMP(), transferred_to_agent_id = ? WHERE id = ? AND status = 'active'");
+        $upd->execute([$targetAgentId, $targetAgentId, $conversationId]);
         if (!$upd->rowCount()) {
             if ($db->inTransaction()) {
                 $db->rollBack();
@@ -977,6 +1009,7 @@ function lc_reopen_closed_for_visitor_continue(int $conversationId, int $visitor
         if ($status === 'closed') {
             $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ? AND status = 'closed'");
             $upd->execute([$conversationId]);
+            lc_clear_conversation_transfer_flag($conversationId);
             if ($upd->rowCount() < 1) {
                 $check = $db->prepare('SELECT status FROM conversations WHERE id = ? AND visitor_id = ? LIMIT 1');
                 $check->execute([$conversationId, $visitorId]);

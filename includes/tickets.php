@@ -317,6 +317,9 @@ function lc_resume_conversation_by_ticket(string $ticketInput, string $email, in
         $status = 'waiting';
         $db->prepare('UPDATE conversations SET status = ?, agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ?')
             ->execute([$status, $convId]);
+        if (function_exists('lc_clear_conversation_transfer_flag')) {
+            lc_clear_conversation_transfer_flag($convId);
+        }
         if (function_exists('lc_clear_transcript_request')) {
             lc_clear_transcript_request($convId);
         }
@@ -386,6 +389,9 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
     $db = lc_db();
     $upd = $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, accepted_at = NULL, closed_at = NULL WHERE id = ? AND status = 'closed'");
     $upd->execute([$conversationId]);
+    if (function_exists('lc_clear_conversation_transfer_flag')) {
+        lc_clear_conversation_transfer_flag($conversationId);
+    }
     if (!$upd->rowCount()) {
         $fresh = function_exists('lc_get_conversation') ? lc_get_conversation($conversationId) : null;
         $freshStatus = (string) ($fresh['status'] ?? 'waiting');
