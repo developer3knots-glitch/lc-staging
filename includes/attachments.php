@@ -409,8 +409,14 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
     if (!empty($row['agent_name'])) {
         $msg['agent_name'] = $row['agent_name'];
     }
-    if (array_key_exists('agent_avatar', $row)) {
-        $msg['agent_avatar'] = lc_avatar_meta($row['agent_avatar'] ?? null, $row['agent_name'] ?? 'Agent');
+    if (($row['sender_type'] ?? '') === 'agent' || array_key_exists('agent_avatar', $row)) {
+        $agentLabel = trim((string) ($row['agent_name'] ?? ''));
+        if ($agentLabel === '') {
+            $agentLabel = 'Agent';
+        }
+        $msg['agent_avatar'] = function_exists('lc_resolve_message_agent_avatar')
+            ? lc_resolve_message_agent_avatar($row, $agentLabel)
+            : lc_avatar_meta($row['agent_avatar'] ?? null, $agentLabel);
     }
 
     if (lc_message_has_attachment($row)) {
@@ -431,7 +437,19 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
         $agentName = $agentName ?: 'Agent';
         $msg['event'] = 'agent_join';
         $msg['agent_name'] = $agentName;
-        $msg['agent_avatar'] = lc_avatar_meta($row['agent_avatar'] ?? null, $agentName);
+        $msg['agent_avatar'] = function_exists('lc_resolve_message_agent_avatar')
+            ? lc_resolve_message_agent_avatar($row, $agentName)
+            : lc_avatar_meta($row['agent_avatar'] ?? null, $agentName);
+    }
+
+    if ($msg['sender_type'] === 'system' && preg_match('/^(.+?)\s+took over the chat from/iu', $msg['message'], $takeoverMatch)) {
+        $takerName = trim((string) $takeoverMatch[1]);
+        if ($takerName !== '') {
+            $msg['agent_name'] = $takerName;
+            $msg['agent_avatar'] = function_exists('lc_resolve_message_agent_avatar')
+                ? lc_resolve_message_agent_avatar($row, $takerName)
+                : lc_avatar_meta($row['agent_avatar'] ?? null, $takerName);
+        }
     }
 
     if (!empty($msg['created_at'])) {

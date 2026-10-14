@@ -275,6 +275,54 @@ function lc_avatar_meta(?string $avatar, string $name = 'Agent'): array
     ];
 }
 
+/** Avatar column for an agent id, or a unique name when the message has no sender id. */
+function lc_agent_avatar_raw(int $agentId = 0, string $name = ''): ?string
+{
+    static $byId = [];
+    static $byName = [];
+    if ($agentId > 0) {
+        if (array_key_exists($agentId, $byId)) {
+            return $byId[$agentId];
+        }
+        try {
+            $stmt = lc_db()->prepare('SELECT avatar FROM agents WHERE id = ? LIMIT 1');
+            $stmt->execute([$agentId]);
+            $value = $stmt->fetchColumn();
+            $byId[$agentId] = is_string($value) && $value !== '' ? $value : null;
+        } catch (Throwable $e) {
+            $byId[$agentId] = null;
+        }
+        return $byId[$agentId];
+    }
+    $name = trim($name);
+    if ($name === '' || strcasecmp($name, 'Agent') === 0) {
+        return null;
+    }
+    $key = function_exists('mb_strtolower') ? mb_strtolower($name) : strtolower($name);
+    if (array_key_exists($key, $byName)) {
+        return $byName[$key];
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT avatar FROM agents WHERE name = ? ORDER BY is_active DESC, id ASC LIMIT 1');
+        $stmt->execute([$name]);
+        $value = $stmt->fetchColumn();
+        $byName[$key] = is_string($value) && $value !== '' ? $value : null;
+    } catch (Throwable $e) {
+        $byName[$key] = null;
+    }
+    return $byName[$key];
+}
+
+/** Widget avatar for a message row. Looks up the agent when the join line has no photo yet. */
+function lc_resolve_message_agent_avatar(array $row, string $name): array
+{
+    $raw = $row['agent_avatar'] ?? null;
+    if (!is_string($raw) || trim($raw) === '') {
+        $raw = lc_agent_avatar_raw((int) ($row['sender_id'] ?? 0), $name);
+    }
+    return lc_avatar_meta(is_string($raw) ? $raw : null, $name !== '' ? $name : 'Agent');
+}
+
 /** Ensure agents.tagline exists (shown under agent name in visitor widget). */
 function lc_ensure_agent_tagline_schema(): void
 {

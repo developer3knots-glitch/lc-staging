@@ -608,8 +608,8 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
 
     $stmt = lc_db()->prepare('
         SELECT ' . lc_attachment_message_select_sql() . ',
-               CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
-               CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
+               CASE WHEN m.sender_type IN ("agent", "system") THEN a.name ELSE NULL END AS agent_name,
+               CASE WHEN m.sender_type IN ("agent", "system") THEN a.avatar ELSE NULL END AS agent_avatar
         FROM messages m
         LEFT JOIN agents a ON a.id = m.sender_id
         WHERE m.id = ? AND m.conversation_id = ?
@@ -624,10 +624,6 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
     }
 
     $liveMessage = lc_format_message_row($row);
-    // Trim payload for WS reliability (admin bubbles don't need avatar blob)
-    if (isset($liveMessage['agent_avatar'])) {
-        unset($liveMessage['agent_avatar']);
-    }
 
     $msgPayload = [
         'message_id' => $messageId,

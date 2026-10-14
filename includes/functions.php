@@ -1361,8 +1361,8 @@ function lc_agent_prior_threads_with_messages(
         $stmt = lc_db()->prepare('
             SELECT ' . lc_attachment_message_select_sql() . ',
                    m.conversation_id,
-                   CASE WHEN m.sender_type = "agent" THEN a.name ELSE NULL END AS agent_name,
-                   CASE WHEN m.sender_type = "agent" THEN a.avatar ELSE NULL END AS agent_avatar
+                   CASE WHEN m.sender_type IN ("agent", "system") THEN a.name ELSE NULL END AS agent_name,
+                   CASE WHEN m.sender_type IN ("agent", "system") THEN a.avatar ELSE NULL END AS agent_avatar
             FROM messages m
             LEFT JOIN agents a ON a.id = m.sender_id
             WHERE m.conversation_id IN (' . $placeholders . ')

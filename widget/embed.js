@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 157;
+    var LC_WIDGET_BUILD = 158;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -5326,12 +5326,34 @@
             : esc(text);
     }
 
+    function avatarInitials(avatar, name) {
+        var fromAvatar = avatar && avatar.initials ? String(avatar.initials).trim() : '';
+        if (fromAvatar && fromAvatar !== '?') return fromAvatar;
+        var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return '?';
+        if (parts.length >= 2) {
+            return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+        }
+        return parts[0].charAt(0).toUpperCase();
+    }
+
+    function resolveMessageAvatar(m, name) {
+        var av = m && m.agent_avatar ? m.agent_avatar : null;
+        if (av && av.url) return av;
+        var currentName = currentAgent && currentAgent.name ? String(currentAgent.name).trim().toLowerCase() : '';
+        var wanted = String(name || '').trim().toLowerCase();
+        if (currentName && wanted && currentName === wanted && currentAgent.avatar && currentAgent.avatar.url) {
+            return currentAgent.avatar;
+        }
+        return av;
+    }
+
     function renderAvatar(avatar, name, className) {
         className = className || 'lcw-avatar';
         if (avatar && avatar.url) {
             return '<img src="' + esc(avatar.url) + '" alt="' + esc(name || 'Agent') + '" class="' + className + '">';
         }
-        var initials = (avatar && avatar.initials) ? avatar.initials : '?';
+        var initials = avatarInitials(avatar, name);
         var color = (avatar && avatar.color) ? avatar.color : '#6FD943';
         return '<span class="' + className + ' lcw-avatar-initials" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
     }
@@ -5409,6 +5431,15 @@
             if (options.updateRead && m.sender_type === 'visitor') {
                 updateVisitorTicks(msgKey, m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             }
+            var existing = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]');
+            if (existing && (isAgentJoinMessage(m) || isTakeoverMessage(m))) {
+                var joinLabel = m.agent_name || 'Agent';
+                var nextAvatar = renderAvatar(resolveMessageAvatar(m, joinLabel), joinLabel, 'lcw-join-avatar');
+                var currentAvatar = existing.querySelector('.lcw-join-avatar');
+                if (currentAvatar && nextAvatar.indexOf('<img') === 0 && currentAvatar.tagName !== 'IMG') {
+                    currentAvatar.outerHTML = nextAvatar;
+                }
+            }
             return;
         }
         // Real server rows replace idle preview + optimistic temps (prevents welcome/hi twice)
@@ -5442,7 +5473,7 @@
             if (!options.suppressAgentState) {
                 setWaitingState(false);
                 var joinName = m.agent_name || 'Agent';
-                var joinAvatar = m.agent_avatar || null;
+                var joinAvatar = resolveMessageAvatar(m, joinName);
                 updateHeaderAgent({ name: joinName, avatar: joinAvatar });
                 updateStatus('Chatting with ' + joinName, true);
             }
@@ -5450,7 +5481,7 @@
             div.className = 'lcw-join-event';
             if (msgKey) div.setAttribute('data-msg-id', msgKey);
             var joinName = m.agent_name || 'Agent';
-            var joinAvatar = m.agent_avatar || null;
+            var joinAvatar = resolveMessageAvatar(m, joinName);
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> joined the conversation</div>';
             box.appendChild(div);
@@ -5474,14 +5505,14 @@
             }
             if (!options.suppressAgentState) {
                 setWaitingState(false);
-                var joinAvatar = m.agent_avatar || null;
+                var joinAvatar = resolveMessageAvatar(m, takerName);
                 updateHeaderAgent({ name: takerName, avatar: joinAvatar });
                 updateStatus('Chatting with ' + takerName, true);
             }
             var joinDiv = document.createElement('div');
             joinDiv.className = 'lcw-join-event';
             if (msgKey) joinDiv.setAttribute('data-msg-id', msgKey);
-            var joinAvatar = m.agent_avatar || null;
+            var joinAvatar = resolveMessageAvatar(m, takerName);
             joinDiv.innerHTML = renderAvatar(joinAvatar, takerName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(takerName) + '</strong> joined the conversation</div>';
             box.appendChild(joinDiv);
@@ -5489,7 +5520,7 @@
             if (!options.suppressAgentState) {
                 setWaitingState(false);
                 var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
-                var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
+                var agentAvatar = resolveMessageAvatar(m, agentName);
                 updateHeaderAgent({ name: agentName, avatar: agentAvatar });
                 updateStatus('Chatting with ' + agentName, true);
             }
@@ -5497,7 +5528,7 @@
             row.className = 'lcw-msg-row lcw-agent-row';
             if (msgKey) row.setAttribute('data-msg-id', msgKey);
             var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
-            var agentAvatar = m.agent_avatar || (currentAgent && currentAgent.avatar) || null;
+            var agentAvatar = resolveMessageAvatar(m, agentName);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
