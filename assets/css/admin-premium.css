@@ -1674,6 +1674,9 @@ body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
 
 .lc-msg-body {
     min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .lc-msg-foot {
