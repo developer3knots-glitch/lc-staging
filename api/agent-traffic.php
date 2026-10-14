@@ -208,11 +208,18 @@ try {
             $status = 'left';
         }
 
-        $counts['all']++;
+        $onSite = $status !== 'left';
+        if ($onSite) {
+            $counts['all']++;
+        }
         if (isset($counts[$status])) {
             $counts[$status]++;
         }
-        if ($tab !== 'all' && $status !== $tab) {
+        if ($tab === 'all') {
+            if (!$onSite) {
+                continue;
+            }
+        } elseif ($status !== $tab) {
             continue;
         }
 
