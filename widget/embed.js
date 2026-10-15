@@ -5111,7 +5111,7 @@
         var draft = '';
         if (isTyping && input) {
             draft = String(input.value || '');
-            if (draft.length > 280) draft = draft.slice(0, 280);
+            if (draft.length > 2000) draft = draft.slice(0, 2000);
         }
         var now = Date.now();
         // Keep heartbeats flowing; only skip identical drafts briefly.

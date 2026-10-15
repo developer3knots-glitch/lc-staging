@@ -238,10 +238,10 @@
             typingEl.hidden = false;
             if (typingLabelEl) {
                 var who = (name || 'Visitor').trim() || 'Visitor';
-                var draft = (preview || '').trim();
-                if (draft) {
+                var draft = String(preview || '').replace(/^[ \t]+|[ \t]+$/g, '');
+                if (draft && draft.replace(/\s/g, '') !== '') {
                     typingLabelEl.classList.add('has-preview');
-                    typingLabelEl.textContent = draft;
+                    typingLabelEl.innerHTML = esc(draft).replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
                     typingLabelEl.title = who + ': ' + draft;
                 } else {
                     typingLabelEl.classList.remove('has-preview');

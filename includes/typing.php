@@ -24,7 +24,9 @@ function lc_ensure_typing_schema(): void
             $pdo->exec('ALTER TABLE conversations ADD COLUMN agent_typing_at DATETIME NULL DEFAULT NULL');
         }
         if (!in_array('visitor_typing_preview', $cols, true)) {
-            $pdo->exec('ALTER TABLE conversations ADD COLUMN visitor_typing_preview VARCHAR(400) NULL DEFAULT NULL');
+            $pdo->exec('ALTER TABLE conversations ADD COLUMN visitor_typing_preview VARCHAR(2000) NULL DEFAULT NULL');
+        } else {
+            $pdo->exec('ALTER TABLE conversations MODIFY visitor_typing_preview VARCHAR(2000) NULL DEFAULT NULL');
         }
     } catch (Throwable $e) {
         // Non-fatal: typing disabled until migration succeeds
@@ -35,15 +37,16 @@ function lc_sanitize_typing_preview(string $raw): string
 {
     $raw = str_replace("\0", '', $raw);
     $raw = strip_tags($raw);
-    $raw = trim($raw);
-    if ($raw === '') {
+    // Keep line breaks. Only drop spaces at the ends, not a new line the visitor just started.
+    $raw = preg_replace("/^[ \t]+|[ \t]+$/u", '', $raw) ?? $raw;
+    if (trim($raw) === '') {
         return '';
     }
     if (function_exists('mb_substr')) {
-        return mb_substr($raw, 0, 280, 'UTF-8');
+        return mb_substr($raw, 0, 2000, 'UTF-8');
     }
 
-    return substr($raw, 0, 280);
+    return substr($raw, 0, 2000);
 }
 
 function lc_typing_ttl_seconds(): int
