@@ -184,6 +184,81 @@ try {
     $stmt->execute($execParams);
     $rows = $stmt->fetchAll();
 
+    $countryKnown = static function (string $country): bool {
+        $name = trim((string) (preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', trim($country)) ?: ''));
+        return $name !== '' && strcasecmp($name, 'Unknown') !== 0 && strcasecmp($name, 'Local') !== 0;
+    };
+    $countryByIp = [];
+    foreach ($rows as $row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $country = trim((string) ($row['visitor_country'] ?? ''));
+        if ($ip !== '' && $countryKnown($country) && empty($countryByIp[$ip])) {
+            $countryByIp[$ip] = $country;
+        }
+    }
+    $missingIps = [];
+    foreach ($rows as $row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $country = trim((string) ($row['visitor_country'] ?? ''));
+        if ($ip !== '' && !$countryKnown($country) && empty($countryByIp[$ip])) {
+            $missingIps[$ip] = true;
+        }
+    }
+    if ($missingIps) {
+        try {
+            $ips = array_keys($missingIps);
+            $placeholders = implode(',', array_fill(0, count($ips), '?'));
+            $sib = $db->prepare("
+                SELECT ip_address, country
+                FROM visitors
+                WHERE ip_address IN ({$placeholders})
+                  AND country IS NOT NULL AND TRIM(country) <> '' AND country <> 'Unknown'
+            ");
+            $sib->execute($ips);
+            while ($hit = $sib->fetch(PDO::FETCH_ASSOC)) {
+                $ip = trim((string) ($hit['ip_address'] ?? ''));
+                $country = trim((string) ($hit['country'] ?? ''));
+                if ($ip !== '' && $countryKnown($country) && empty($countryByIp[$ip])) {
+                    $countryByIp[$ip] = $country;
+                }
+            }
+        } catch (Throwable $e) {
+        }
+        $lookups = 0;
+        foreach (array_keys($missingIps) as $ip) {
+            if (!empty($countryByIp[$ip]) || $lookups >= 2 || !function_exists('lc_resolve_geo')) {
+                continue;
+            }
+            $lookups++;
+            $geo = lc_resolve_geo($ip);
+            $resolved = trim((string) ($geo['country'] ?? ''));
+            if ($countryKnown($resolved)) {
+                $countryByIp[$ip] = $resolved;
+            }
+        }
+    }
+    if ($countryByIp) {
+        try {
+            $fix = $db->prepare("
+                UPDATE visitors
+                SET country = ?
+                WHERE id = ?
+                  AND (country IS NULL OR TRIM(country) = '' OR country = 'Unknown')
+            ");
+            foreach ($rows as &$row) {
+                $ip = trim((string) ($row['visitor_ip'] ?? ''));
+                $country = trim((string) ($row['visitor_country'] ?? ''));
+                if ($ip === '' || $countryKnown($country) || empty($countryByIp[$ip])) {
+                    continue;
+                }
+                $row['visitor_country'] = $countryByIp[$ip];
+                $fix->execute([$countryByIp[$ip], (int) ($row['visitor_id'] ?? 0)]);
+            }
+            unset($row);
+        } catch (Throwable $e) {
+        }
+    }
+
     $counts = [
         'all' => 0,
         'chatting' => 0,
