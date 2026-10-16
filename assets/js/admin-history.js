@@ -355,7 +355,118 @@
             if (el) el.textContent = value && String(value).trim() !== '' ? String(value) : '—';
         }
 
-        function paintArchiveMeta(meta, conversation) {
+        function hostFromUrl(url) {
+            if (!url) return '';
+            try {
+                var u = new URL(url, window.location.origin);
+                return (u.hostname || '').replace(/^www\./i, '');
+            } catch (e) {
+                return String(url).replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
+            }
+        }
+
+        function formatDurationSeconds(total) {
+            total = Math.max(0, parseInt(total, 10) || 0);
+            if (total < 60) return total + 's';
+            if (total < 3600) return Math.floor(total / 60) + 'm ' + (total % 60) + 's';
+            return Math.floor(total / 3600) + 'h ' + Math.floor((total % 3600) / 60) + 'm';
+        }
+
+        function chatDuration(c, fallback) {
+            if (fallback) return fallback;
+            if (!c || !c.started_at) return '';
+            var start = window.LCTime && window.LCTime.parseTimestamp
+                ? window.LCTime.parseTimestamp(c.started_at)
+                : new Date(c.started_at);
+            var endRaw = c.closed_at || c.last_message_at;
+            if (!endRaw) return '';
+            var end = window.LCTime && window.LCTime.parseTimestamp
+                ? window.LCTime.parseTimestamp(endRaw)
+                : new Date(endRaw);
+            if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return '';
+            return formatDurationSeconds(Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000)));
+        }
+
+        function paintArchiveMap(geo) {
+            var wrap = document.getElementById('lc-hx-map-wrap');
+            var iframe = document.getElementById('lc-hx-map');
+            if (!wrap || !iframe) return;
+            geo = geo || {};
+            var lat = geo.lat;
+            var lon = geo.lon;
+            var label = (geo.label || geo.country || '').trim();
+            var source = String(geo.source || 'ip').toLowerCase();
+            var src = '';
+            if (source === 'browser' && lat && lon) {
+                src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+            } else if (label && label !== 'Unknown' && label !== '-') {
+                src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+            } else if (lat && lon) {
+                src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
+            }
+            if (!src) {
+                wrap.hidden = true;
+                iframe.removeAttribute('src');
+                return;
+            }
+            wrap.hidden = false;
+            if (iframe.getAttribute('src') !== src) iframe.src = src;
+        }
+
+        function paintArchiveNotes(notes) {
+            var box = document.getElementById('lc-hx-notes');
+            var countEl = document.getElementById('lc-hx-notes-count');
+            notes = notes || [];
+            if (countEl) countEl.textContent = String(notes.length);
+            if (!box) return;
+            if (!notes.length) {
+                box.innerHTML = '<p class="lc-hx-archive-empty-line">No internal notes yet</p>';
+                return;
+            }
+            box.innerHTML = notes.map(function (n) {
+                return '<article class="lc-hx-note">' +
+                    '<strong>' + esc(n.agent_name || 'Agent') + '</strong>' +
+                    '<time>' + esc(timeLabel(n.created_at) || n.time_label || '') + '</time>' +
+                    '<p>' + esc(n.note || '') + '</p></article>';
+            }).join('');
+        }
+
+        function paintArchivePages(views) {
+            var list = document.getElementById('lc-hx-pages');
+            var empty = document.getElementById('lc-hx-pages-empty');
+            if (views === null) {
+                if (list) list.innerHTML = '';
+                if (empty) empty.hidden = true;
+                return;
+            }
+            views = views || [];
+            if (!list) return;
+            if (!views.length) {
+                list.innerHTML = '';
+                if (empty) empty.hidden = false;
+                return;
+            }
+            if (empty) empty.hidden = true;
+            var html = '';
+            for (var i = views.length - 1; i >= 0; i--) {
+                var view = views[i] || {};
+                var title = (view.page_title || view.page_path || '/').trim();
+                var href = (view.page_url || '').trim();
+                var when = timeLabel(view.visited_at);
+                html += '<li class="lc-details-page-item' + (i === views.length - 1 ? ' is-current' : '') + '">';
+                html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
+                html += '<div class="lc-details-page-body">';
+                html += '<span class="lc-details-page-title">' + esc(title) + '</span>';
+                if (href && href !== title) {
+                    html += '<a class="lc-details-page-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(view.page_path || href) + '</a>';
+                }
+                if (when) html += '<span class="lc-details-page-time">' + esc(when) + '</span>';
+                html += '</div></li>';
+            }
+            list.innerHTML = html;
+        }
+
+        function paintArchiveMeta(meta, conversation, notes) {
             meta = meta || {};
             var c = conversation || {};
             var name = (c.visitor_name || meta.name || 'Visitor').trim() || 'Visitor';
@@ -364,10 +475,27 @@
             var ip = (c.visitor_ip || c.visitor_ipv4 || meta.ip || '').trim();
             var agent = (c.agent_name || meta.agent || '').trim();
             var ticket = (c.reference || meta.ticket || '').trim();
-            var date = meta.date || '';
-            var duration = meta.duration || '';
+            var date = meta.date || timeLabel(c.started_at) || '';
+            var duration = chatDuration(c, meta.duration || '');
             var status = (c.status || 'closed');
             status = status.charAt(0).toUpperCase() + status.slice(1);
+            var geo = c.visitor_geo || {};
+            var location = (geo.label || (c.visitor_country || '')).trim();
+            if (location && location !== 'Unknown') {
+                location += String(geo.source || 'ip').toLowerCase() === 'browser' ? ' (device GPS)' : ' (approx. from IP)';
+            }
+            var stats = c.visitor_stats || {};
+            var chats = parseInt(stats.chat_count, 10) || ((parseInt(c.prior_chat_count, 10) || 0) + (c.id ? 1 : 0));
+            var pages = parseInt(stats.page_count, 10) || 0;
+            var returning = parseInt(c.is_returning, 10) === 1 || (parseInt(c.prior_chat_count, 10) || 0) > 0;
+            var returningLine = '';
+            if (c.id) {
+                returningLine = (returning ? 'Returning' : 'New visitor') + ', ' + chats + ' chat' + (chats === 1 ? '' : 's');
+                if (pages > 0) returningLine += ', ' + pages + ' page' + (pages === 1 ? '' : 's');
+            }
+            var came = hostFromUrl(stats.referrer || '') || hostFromUrl(c.visitor_page || c.page_url || '');
+            var device = c.visitor_device || {};
+            var deviceLabel = device.label || [device.device, device.os, device.browser].filter(Boolean).join(' · ');
 
             if (archiveTitle) archiveTitle.textContent = name;
             if (archiveSub) {
@@ -382,11 +510,21 @@
             setDetail('lc-hx-d-name', name);
             setDetail('lc-hx-d-email', email);
             setDetail('lc-hx-d-phone', phone);
+            setDetail('lc-hx-d-location', location);
+            setDetail('lc-hx-d-returning', returningLine);
+            setDetail('lc-hx-d-seen', timeLabel(c.visitor_last_seen || c.last_message_at));
+            setDetail('lc-hx-d-from', came);
+            setDetail('lc-hx-d-page', c.page_url || c.visitor_page || '');
+            setDetail('lc-hx-d-device', deviceLabel);
+            setDetail('lc-hx-d-group', c.brand_name || '');
+            setDetail('lc-hx-d-ticket', ticket);
             setDetail('lc-hx-d-ip', ip);
             setDetail('lc-hx-d-agent', agent);
             setDetail('lc-hx-d-date', date);
             setDetail('lc-hx-d-duration', duration);
             setDetail('lc-hx-d-status', status);
+            paintArchiveMap(geo);
+            if (notes) paintArchiveNotes(notes);
         }
 
         function timeLabel(ts) {
@@ -462,7 +600,8 @@
             if (conversationId < 1 || !archiveEl) return;
             activeArchiveId = conversationId;
             markActiveRow(conversationId);
-            paintArchiveMeta(meta || {}, null);
+            paintArchiveMeta(meta || {}, null, []);
+            paintArchivePages(null);
             showArchiveState('loading');
             if (archiveMessages) archiveMessages.innerHTML = '';
             archiveEl.hidden = false;
@@ -482,7 +621,16 @@
                 .then(function (data) {
                     if (activeArchiveId !== conversationId) return;
                     if (!data || !data.success) throw new Error((data && data.error) || 'Failed');
-                    paintArchiveMeta(meta || {}, data.conversation || {});
+                    paintArchiveMeta(meta || {}, data.conversation || {}, data.notes || []);
+                    fetch(base + '/api/agent-pageviews.php?conversation_id=' + encodeURIComponent(conversationId) + '&since_id=0', {
+                        credentials: 'same-origin'
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (pages) {
+                            if (activeArchiveId !== conversationId) return;
+                            paintArchivePages((pages && pages.page_views) || []);
+                        })
+                        .catch(function () {});
                     var msgs = data.messages || [];
                     if (!msgs.length) {
                         showArchiveState('empty');
