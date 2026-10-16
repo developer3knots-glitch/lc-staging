@@ -142,6 +142,7 @@
     var assignToMeBtn = document.getElementById('lc-assign-to-me');
     var archiveChatBtn = document.getElementById('lc-archive-chat');
     var unassignedBar = document.getElementById('lc-unassigned-bar');
+    var reopenBar = document.getElementById('lc-reopen-bar');
     var composeBox = document.getElementById('lc-chat-compose') || document.querySelector('.lc-chat-compose');
     var chatTagsEl = document.getElementById('lc-chat-tags');
     var addTagBtn = document.getElementById('lc-add-tag-btn');
@@ -1693,6 +1694,7 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         closeMoreMenu();
+        setReopenBarVisible(true);
     }
 
     /** Visitor continued after close → Incoming (waiting) so agent can Assign again */
@@ -2934,7 +2936,50 @@
         });
     }
 
+    function setReopenBarVisible(on) {
+        if (!reopenBar) return;
+        reopenBar.hidden = !on;
+        reopenBar.classList.toggle('is-on', !!on);
+    }
+
+    function reopenSelectedChat() {
+        if (!selectedId) return;
+        var btn = document.getElementById('lc-reopen-chat');
+        if (btn) btn.disabled = true;
+        fetch(base + '/api/agent-reopen.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: selectedId })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (btn) btn.disabled = false;
+            if (!data || data.success === false) {
+                alert((data && data.error) || 'Could not reopen chat');
+                return;
+            }
+            setReopenBarVisible(false);
+            syncConversationListStatus({
+                id: selectedId,
+                status: 'active',
+                agent_id: data.agent_id || myAgentId
+            });
+            currentAssignedAgentId = parseInt(data.agent_id || myAgentId, 10) || myAgentId;
+            if (replyInput) {
+                replyInput.disabled = false;
+                replyInput.placeholder = 'Type a message…';
+            }
+            var sendBtn = document.getElementById('lc-send-reply');
+            if (sendBtn) sendBtn.disabled = false;
+            pollMessages();
+            loadConversations();
+        }).catch(function () {
+            if (btn) btn.disabled = false;
+            alert('Could not reopen chat');
+        });
+    }
+
     function updateChatActions(c, canCompose) {
+        setReopenBarVisible(false);
         canCompose = canComposeChat(c, canCompose);
         if (currentIpBlocked || (c && c.ip_blocked)) {
             canCompose = false;
@@ -2970,6 +3015,7 @@
             setUnassignedMode(false);
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
+            setReopenBarVisible(!(currentIpBlocked || (c && c.ip_blocked)));
             return;
         }
 
@@ -4384,6 +4430,8 @@
     }
     if (assignToMeBtn) assignToMeBtn.addEventListener('click', assignChatToMe);
     if (archiveChatBtn) archiveChatBtn.addEventListener('click', archiveSelectedChat);
+    var reopenChatBtn = document.getElementById('lc-reopen-chat');
+    if (reopenChatBtn) reopenChatBtn.addEventListener('click', reopenSelectedChat);
 
     if (noteForm) {
         noteForm.addEventListener('submit', function (e) {

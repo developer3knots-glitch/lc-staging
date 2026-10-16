@@ -10539,6 +10539,18 @@ body.lc-page-chats {
     }
 }
 
+.lc-reopen-bar {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.9rem 1.25rem;
+    border-top: 1px solid #e8edf3;
+    background: #fff;
+}
+.lc-reopen-bar.is-on { display: flex; }
+.lc-reopen-title { margin: 0; font-size: 0.92rem; color: #475569; }
+
 /* ===== Unassigned chat bar (LiveChat-style) ===== */
 .lc-unassigned-bar {
     display: none;

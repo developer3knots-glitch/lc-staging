@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 158;
+    var LC_WIDGET_BUILD = 159;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -87,6 +87,7 @@
     var historyRetryTimer = null;
     var stickToBottom = true;
     var pollTimer = null;
+    var visitorReopenTimer = null;
     var realtimeClient = null;
     var presenceClient = null;
     var realtimeBoundConvId = 0;
@@ -3833,7 +3834,7 @@
         for (var i = sysMsgs.length - 1; i >= 0; i--) {
             var txt = (sysMsgs[i].textContent || '').trim();
             // Continue after a close means the thread is open again — ignore older closes
-            if (/continued this conversation|returned\. Previous conversation|Visitor returned/i.test(txt)) {
+            if (/continued this conversation|returned\. Previous conversation|Visitor returned|reopened this chat/i.test(txt)) {
                 return '';
             }
             if (/will close soon due to inactivity|Are you still there/i.test(txt)) {
@@ -3921,6 +3922,7 @@
             updateEndedResumeButton();
             syncTranscriptSentUi('ended');
             syncTranscriptEndedUi();
+            startVisitorReopenWatch();
             return;
         }
 
@@ -3952,11 +3954,32 @@
         scheduleGapFill();
     }
 
+    function stopVisitorReopenWatch() {
+        if (visitorReopenTimer) {
+            clearInterval(visitorReopenTimer);
+            visitorReopenTimer = null;
+        }
+    }
+
+    function startVisitorReopenWatch() {
+        stopVisitorReopenWatch();
+        if (!conversationId) return;
+        visitorReopenTimer = setInterval(function () {
+            if (!chatClosed || !conversationId || lastClosedBy !== 'visitor') {
+                stopVisitorReopenWatch();
+                return;
+            }
+            pollMessages(false);
+        }, 3000);
+    }
+
     function markChatContinuedFromClosed(data) {
+        stopVisitorReopenWatch();
         chatClosed = false;
         lastClosedBy = '';
         leaveCloseSent = false;
         pendingHistoryWipe = false;
+        showChatView();
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         setCloseChatVisible(true);
@@ -4504,6 +4527,7 @@
     }
 
     function startNewChat() {
+        stopVisitorReopenWatch();
         // Intentional new session — do not reopen today's closed thread.
         forceNewChat = true;
         // Intentional new session from ended screen — never leave a half-reset panel.
@@ -5781,6 +5805,12 @@
                 if (data.agents_online !== undefined) {
                     agentsOnline = data.agents_online;
                     setBubbleOnline(agentsOnline > 0);
+                }
+                if (chatClosed && data.status && data.status !== 'closed') {
+                    markChatContinuedFromClosed({
+                        status: data.status,
+                        agent: data.agent || null
+                    });
                 }
                 if (data.status !== 'closed') {
                     applyAgentConnectionState(data);

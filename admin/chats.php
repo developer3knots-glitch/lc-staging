@@ -188,6 +188,11 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
+                                <div class="lc-reopen-bar" id="lc-reopen-bar" hidden>
+                    <p class="lc-reopen-title">This chat is closed.</p>
+                    <button type="button" class="lc-btn lc-btn-assign" id="lc-reopen-chat">Reopen chat</button>
+                </div>
+
                                 <div class="lc-unassigned-bar" id="lc-unassigned-bar" hidden>
                     <p class="lc-unassigned-title">This chat is unassigned.</p>
                     <div class="lc-unassigned-actions">
