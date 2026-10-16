@@ -380,6 +380,29 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
         return;
     }
     $convs = lc_open_conversations_for_visitor($visitorId, $brandId);
+    if (!$convs) {
+        try {
+            $sql = "SELECT id, agent_id, brand_id FROM conversations WHERE visitor_id = ? AND status = 'closed'";
+            $params = [$visitorId];
+            if ($brandId !== null && $brandId > 0) {
+                $sql .= ' AND brand_id = ?';
+                $params[] = $brandId;
+            }
+            $sql .= ' ORDER BY id DESC LIMIT 1';
+            $stmt = lc_db()->prepare($sql);
+            $stmt->execute($params);
+            $closed = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($closed && (int) ($closed['id'] ?? 0) > 0) {
+                $convs = [[
+                    'id' => (int) $closed['id'],
+                    'agent_id' => (int) ($closed['agent_id'] ?? 0),
+                    'brand_id' => (int) ($closed['brand_id'] ?? 0),
+                ]];
+            }
+        } catch (Throwable $e) {
+            $convs = [];
+        }
+    }
     foreach ($convs as $conv) {
         $conversationId = (int) ($conv['id'] ?? 0);
         if ($conversationId < 1) {

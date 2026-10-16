@@ -188,11 +188,6 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                                <div class="lc-reopen-bar" id="lc-reopen-bar" hidden>
-                    <p class="lc-reopen-title">This chat is closed.</p>
-                    <button type="button" class="lc-btn lc-btn-assign" id="lc-reopen-chat">Reopen chat</button>
-                </div>
-
                                 <div class="lc-unassigned-bar" id="lc-unassigned-bar" hidden>
                     <p class="lc-unassigned-title">This chat is unassigned.</p>
                     <div class="lc-unassigned-actions">
@@ -281,6 +276,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-chat-compose-inner">
                             <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
                             <textarea id="lc-reply-input" rows="4" placeholder="Type a message…"></textarea>
+                            <button type="button" class="lc-chat-open-btn" id="lc-reopen-chat" hidden title="Visitor is browsing. Open this chat.">Open</button>
                             <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
                             <input type="file" id="lc-file-input" accept="<?= lc_sanitize(lc_attachment_file_accept()) ?>" hidden>
                         </div>

@@ -10539,17 +10539,24 @@ body.lc-page-chats {
     }
 }
 
-.lc-reopen-bar {
+.lc-chat-open-btn {
     display: none;
-    flex-direction: column;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0.9rem 1.25rem;
-    border-top: 1px solid #e8edf3;
-    background: #fff;
+    justify-content: center;
+    flex: 0 0 auto;
+    height: 2.4rem;
+    padding: 0 0.95rem;
+    border: 0;
+    border-radius: 8px;
+    background: #111827;
+    color: #fff;
+    font-size: 0.88rem;
+    font-weight: 650;
+    cursor: pointer;
 }
-.lc-reopen-bar.is-on { display: flex; }
-.lc-reopen-title { margin: 0; font-size: 0.92rem; color: #475569; }
+.lc-chat-compose.is-can-open .lc-chat-open-btn { display: inline-flex; }
+.lc-chat-compose.is-can-open .lc-chat-send-btn { display: none; }
+.lc-chat-open-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* ===== Unassigned chat bar (LiveChat-style) ===== */
 .lc-unassigned-bar {

@@ -142,7 +142,6 @@
     var assignToMeBtn = document.getElementById('lc-assign-to-me');
     var archiveChatBtn = document.getElementById('lc-archive-chat');
     var unassignedBar = document.getElementById('lc-unassigned-bar');
-    var reopenBar = document.getElementById('lc-reopen-bar');
     var composeBox = document.getElementById('lc-chat-compose') || document.querySelector('.lc-chat-compose');
     var chatTagsEl = document.getElementById('lc-chat-tags');
     var addTagBtn = document.getElementById('lc-add-tag-btn');
@@ -1694,7 +1693,7 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         closeMoreMenu();
-        setReopenBarVisible(true);
+        setReopenBarVisible(selectedVisitorIsBrowsing(cid) && !currentIpBlocked);
     }
 
     /** Visitor continued after close → Incoming (waiting) so agent can Assign again */
@@ -2936,10 +2935,32 @@
         });
     }
 
+    function visitorIsBrowsing(presenceOrConv) {
+        if (!presenceOrConv) return false;
+        var raw = presenceOrConv.visitor_presence ? presenceOrConv.visitor_presence : presenceOrConv;
+        var presence = normalizeVisitorPresence(raw);
+        if (!presence || presence.left_site) return false;
+        return presence.status === 'active'
+            || presence.status === 'minimized'
+            || presence.status === 'away'
+            || presence.status === 'window';
+    }
+
+    function selectedVisitorIsBrowsing(cid) {
+        cid = parseInt(cid, 10) || 0;
+        for (var i = 0; i < (lastConversations || []).length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) === cid) {
+                return visitorIsBrowsing(lastConversations[i]);
+            }
+        }
+        return false;
+    }
+
     function setReopenBarVisible(on) {
-        if (!reopenBar) return;
-        reopenBar.hidden = !on;
-        reopenBar.classList.toggle('is-on', !!on);
+        var btn = document.getElementById('lc-reopen-chat');
+        var compose = document.getElementById('lc-chat-compose');
+        if (btn) btn.hidden = !on;
+        if (compose) compose.classList.toggle('is-can-open', !!on);
     }
 
     function reopenSelectedChat() {
@@ -3011,11 +3032,13 @@
             setTakeoverMenuVisible(false);
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
-            replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+            replyInput.placeholder = visitorIsBrowsing(c)
+                ? 'Visitor is browsing — open this chat'
+                : 'Chat closed - visitor ended this conversation';
             setUnassignedMode(false);
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
-            setReopenBarVisible(!(currentIpBlocked || (c && c.ip_blocked)));
+            setReopenBarVisible(visitorIsBrowsing(c) && !(currentIpBlocked || (c && c.ip_blocked)));
             return;
         }
 
@@ -3958,7 +3981,10 @@
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
                     replyInput.value = '';
-                    replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+                    replyInput.placeholder = visitorIsBrowsing(c)
+                        ? 'Visitor is browsing — open this chat'
+                        : 'Chat closed - visitor ended this conversation';
+                    setReopenBarVisible(visitorIsBrowsing(c) && !(currentIpBlocked || c.ip_blocked));
                     if (typeof clearPendingAttachment === 'function') clearPendingAttachment();
                     if (acceptBtn) acceptBtn.style.display = 'none';
                     setTakeoverMenuVisible(false);
@@ -5861,6 +5887,14 @@
                 applyVisitorPresenceToInbox(cid, presence);
                 if (selectedId && cid === selectedId) {
                     setVisitorPresenceBadge(presence, { source: 'ws' });
+                    if (conversationRowStatus(cid) === 'closed') {
+                        setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
+                        if (replyInput) {
+                            replyInput.placeholder = visitorIsBrowsing(presence)
+                                ? 'Visitor is browsing — open this chat'
+                                : 'Chat closed - visitor ended this conversation';
+                        }
+                    }
                 }
             });
             realtimeClient.on('chat.transferred', function (payload) {
