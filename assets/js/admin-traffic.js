@@ -158,11 +158,21 @@
         }
         if (row.status === 'browsing') {
             return (
-                '<button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" ' +
-                    'data-start-chat="' + esc(row.visitor_id) + '" ' +
-                    'data-brand-id="' + esc(row.brand_id || 0) + '">' +
-                    '<i class="ti ti-message-plus" aria-hidden="true"></i> Start chat' +
-                '</button>'
+                '<span class="lc-traffic-start">' +
+                    '<button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" ' +
+                        'data-start-chat="' + esc(row.visitor_id) + '" ' +
+                        'data-brand-id="' + esc(row.brand_id || 0) + '" ' +
+                        'data-greeting="1">' +
+                        '<i class="ti ti-message-plus" aria-hidden="true"></i> Start chat' +
+                    '</button>' +
+                    '<button type="button" class="lc-traffic-start-quiet" ' +
+                        'data-start-chat="' + esc(row.visitor_id) + '" ' +
+                        'data-brand-id="' + esc(row.brand_id || 0) + '" ' +
+                        'data-greeting="0" ' +
+                        'title="Join without a message" aria-label="Join without a message">' +
+                        '<i class="ti ti-pencil" aria-hidden="true"></i>' +
+                    '</button>' +
+                '</span>'
             );
         }
         return '<span class="lc-traffic-muted">—</span>';
@@ -208,7 +218,7 @@
             });
     }
 
-    function startChatWithVisitor(visitorId, brandId, btn) {
+    function startChatWithVisitor(visitorId, brandId, btn, sendGreeting) {
         visitorId = parseInt(visitorId, 10) || 0;
         brandId = parseInt(brandId, 10) || 0;
         if (visitorId < 1) return;
@@ -220,7 +230,11 @@
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ visitor_id: visitorId, brand_id: brandId })
+            body: JSON.stringify({
+                visitor_id: visitorId,
+                brand_id: brandId,
+                greeting: sendGreeting ? 1 : 0
+            })
         })
             .then(function (r) { return r.text(); })
             .then(function (text) {
@@ -630,7 +644,12 @@
             var btn = e.target.closest('[data-start-chat]');
             if (!btn) return;
             e.preventDefault();
-            startChatWithVisitor(btn.getAttribute('data-start-chat'), btn.getAttribute('data-brand-id'), btn);
+            startChatWithVisitor(
+                btn.getAttribute('data-start-chat'),
+                btn.getAttribute('data-brand-id'),
+                btn,
+                btn.getAttribute('data-greeting') === '1'
+            );
         });
     }
 

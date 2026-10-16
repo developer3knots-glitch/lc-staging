@@ -239,6 +239,18 @@ try {
                 $pendingPublishIds[] = $noteId;
             }
         }
+        $sendGreeting = !empty($input['greeting']) && (string) $input['greeting'] !== '0' && $input['greeting'] !== false;
+        if ($sendGreeting) {
+            $greet = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+            $greet->execute([$convId, 'agent', $agentId, 'Hello How are you doing?']);
+            $greetId = (int) $db->lastInsertId();
+            if ($greetId > 0) {
+                $pendingPublishIds[] = $greetId;
+                if (function_exists('lc_touch_conversation')) {
+                    lc_touch_conversation($convId);
+                }
+            }
+        }
     }
 
     if (function_exists('lc_mark_visitor_on_site')) {

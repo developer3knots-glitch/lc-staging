@@ -5083,6 +5083,42 @@ body.lc-avatar-modal-open {
     white-space: nowrap;
 }
 
+.lc-traffic-start {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.lc-traffic-start-quiet {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    cursor: pointer;
+}
+
+.lc-traffic-start-quiet:hover {
+    border-color: #2f6fed;
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+
+.lc-traffic-start-quiet:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.lc-traffic-start-quiet .ti {
+    font-size: 0.95rem;
+}
+
 .lc-traffic-device {
     display: inline-flex;
     align-items: center;
