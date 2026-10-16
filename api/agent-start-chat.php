@@ -218,19 +218,22 @@ try {
     $pendingPublishIds = [];
     $currentAgent = (int) ($conv['agent_id'] ?? 0);
     if ($currentAgent === $agentId) {
+        // Both Start chat and the pencil join should tell the visitor this agent joined.
+        // Only collapse an immediate double-click. Compare with NOW() — created_at is local time.
         $recentJoin = $db->prepare("
             SELECT id FROM messages
             WHERE conversation_id = ? AND sender_type = 'system' AND sender_id = ?
               AND message LIKE '%joined the chat%'
-              AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 MINUTE)
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
             LIMIT 1
         ");
         $recentJoin->execute([$convId, $agentId]);
-        if (!$recentJoin->fetch()) {
+        $joinId = (int) ($recentJoin->fetchColumn() ?: 0);
+        if ($joinId < 1) {
             $joinId = lc_add_agent_join_message($convId, $agentId, false);
-            if ($joinId > 0) {
-                $pendingPublishIds[] = $joinId;
-            }
+        }
+        if ($joinId > 0 && !in_array($joinId, $pendingPublishIds, true)) {
+            $pendingPublishIds[] = $joinId;
         }
         if ($created) {
             // Agent-only audit note (hidden from visitor widget)
@@ -283,16 +286,24 @@ try {
                 && lc_message_hidden_from_visitor($text)) {
                 continue;
             }
-            $seedMessages[] = [
+            $agentName = trim((string) ($srow['agent_name'] ?? ''));
+            if ($agentName === '' && preg_match('/^(.+?)\s+joined the chat\.?$/i', $text, $joinMatch)) {
+                $agentName = trim((string) $joinMatch[1]);
+            }
+            $seedRow = [
                 'id' => (int) ($srow['id'] ?? 0),
                 'sender_type' => (string) ($srow['sender_type'] ?? 'system'),
                 'message' => $text,
                 'created_at' => (string) ($srow['created_at'] ?? ''),
-                'agent_name' => $srow['agent_name'] ?? null,
-                'agent_avatar' => function_exists('lc_agent_public') && !empty($srow['agent_name'])
-                    ? (lc_agent_public((string) $srow['agent_name'], $srow['agent_avatar'] ?? null)['avatar'] ?? null)
+                'agent_name' => $agentName !== '' ? $agentName : null,
+                'agent_avatar' => function_exists('lc_agent_public') && $agentName !== ''
+                    ? (lc_agent_public($agentName, $srow['agent_avatar'] ?? null)['avatar'] ?? null)
                     : null,
             ];
+            if ($agentName !== '' && preg_match('/joined the chat\.?$/i', $text)) {
+                $seedRow['event'] = 'agent_join';
+            }
+            $seedMessages[] = $seedRow;
         }
     } catch (Throwable $e) {
         $seedMessages = [];
