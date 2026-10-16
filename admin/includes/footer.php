@@ -31,7 +31,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=148"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=149"></script>
 <?php endforeach; ?>
 </body>
 </html>

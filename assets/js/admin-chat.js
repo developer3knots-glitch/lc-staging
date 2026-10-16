@@ -2957,10 +2957,13 @@
     }
 
     function setReopenBarVisible(on) {
-        var btn = document.getElementById('lc-reopen-chat');
+        var bar = document.getElementById('lc-reopen-bar');
         var compose = document.getElementById('lc-chat-compose');
-        if (btn) btn.hidden = !on;
-        if (compose) compose.classList.toggle('is-can-open', !!on);
+        if (bar) {
+            bar.hidden = !on;
+            bar.classList.toggle('is-on', !!on);
+        }
+        if (compose) compose.classList.toggle('is-hidden-for-reopen', !!on);
     }
 
     function reopenSelectedChat() {
