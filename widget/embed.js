@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 160;
+    var LC_WIDGET_BUILD = 161;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -2519,6 +2519,28 @@
             .catch(function () { return ''; });
     }
 
+    function paintInviteTranscript(seedMsgs, greeting) {
+        var list = (seedMsgs || []).slice().sort(function (a, b) {
+            return (parseInt(a && a.id, 10) || 0) - (parseInt(b && b.id, 10) || 0);
+        });
+        if (greeting && greeting.message) {
+            var gid = parseInt(greeting.id, 10) || 0;
+            var have = false;
+            for (var i = 0; i < list.length; i++) {
+                if (gid > 0 && (parseInt(list[i].id, 10) || 0) === gid) {
+                    have = true;
+                    break;
+                }
+            }
+            if (!have) list.push(greeting);
+        }
+        list.forEach(function (m) {
+            try { appendMessage(m, { suppressAgentState: true, forceScroll: true }); } catch (eSeed) {}
+        });
+        var box = document.getElementById('lc-panel-messages');
+        if (box) box.scrollTop = box.scrollHeight;
+    }
+
     function acceptProactiveInvite(payload) {
         var cid = parseInt(payload && payload.conversation_id, 10) || 0;
         if (cid < 1) return;
@@ -2537,9 +2559,7 @@
                 updateStatus('Chatting with ' + inviteAgent.name, true);
                 setWaitingState(false);
             }
-            seedMsgs.forEach(function (m) {
-                try { appendMessage(m, { suppressAgentState: true }); } catch (eSeed) {}
-            });
+            paintInviteTranscript(seedMsgs, payload && payload.greeting);
             playJoinChime();
             // Re-bind / catch join+welcome that may have published before presence heard invite
             if (typeof initVisitorRealtime === 'function') {
@@ -2573,10 +2593,8 @@
             updateStatus('Connecting...', true);
         }
         showChatLoading('Connecting...', 'Agent is joining');
-        seedMsgs.forEach(function (m) {
-            try { appendMessage(m, { suppressAgentState: !!inviteAgent }); } catch (eSeed2) {}
-        });
-        if (seedMsgs.length) {
+        paintInviteTranscript(seedMsgs, payload && payload.greeting);
+        if (seedMsgs.length || (payload && payload.greeting)) {
             hideChatLoading();
         }
         playJoinChime();

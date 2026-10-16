@@ -216,6 +216,7 @@ try {
     // Join / audit notes: insert quietly first — publish AFTER invite so visitor
     // isn't blocked waiting on multi-channel message fanout.
     $pendingPublishIds = [];
+    $greetingPayload = null;
     $currentAgent = (int) ($conv['agent_id'] ?? 0);
     if ($currentAgent === $agentId) {
         // Fresh join line for both Start chat and the pencil button.
@@ -245,6 +246,14 @@ try {
             $greetId = (int) $db->lastInsertId();
             if ($greetId > 0) {
                 $pendingPublishIds[] = $greetId;
+                $greetingPayload = [
+                    'id' => $greetId,
+                    'sender_type' => 'agent',
+                    'sender_id' => $agentId,
+                    'message' => 'Hello How are you doing?',
+                    'agent_name' => (string) ($agent['name'] ?? 'Agent'),
+                    'agent_avatar' => null,
+                ];
                 if (function_exists('lc_touch_conversation')) {
                     lc_touch_conversation($convId);
                 }
@@ -261,6 +270,10 @@ try {
         $agent['avatar'] ?? null,
         $agent['tagline'] ?? null
     );
+    if (is_array($greetingPayload)) {
+        $greetingPayload['agent_name'] = (string) ($agentPublic['name'] ?? $greetingPayload['agent_name']);
+        $greetingPayload['agent_avatar'] = $agentPublic['avatar'] ?? null;
+    }
 
     // Seed transcript for the visitor widget (paint immediately on chat.invite —
     // do not wait for widget-init + poll, which left a blank Admin header).
@@ -338,6 +351,7 @@ try {
         $brand,
         $agentPublic,
         $seedMessages,
+        $greetingPayload,
         $pendingPublishIds,
         $created,
         $visitorId,
@@ -351,6 +365,7 @@ try {
                 'agent' => $agentPublic,
                 'proactive' => true,
                 'messages' => $seedMessages,
+                'greeting' => $greetingPayload,
             ];
             foreach (array_keys($inviteUids) as $uid) {
                 lc_realtime_publish(lc_realtime_channel_visitor($uid), 'chat.invite', $invitePayload, 250);
