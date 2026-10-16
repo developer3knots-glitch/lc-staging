@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 161;
+    var LC_WIDGET_BUILD = 162;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -5473,6 +5473,29 @@
         }
     }
 
+    function placeInTranscript(box, node, messageId) {
+        if (!box) return;
+        var id = parseInt(messageId, 10) || 0;
+        if (id < 1) {
+            box.appendChild(node);
+            return;
+        }
+        var marked = box.querySelectorAll('[data-msg-id]');
+        for (var i = 0; i < marked.length; i++) {
+            var otherId = parseInt(marked[i].getAttribute('data-msg-id'), 10) || 0;
+            if (otherId < 1 || otherId <= id) continue;
+            var anchor = marked[i];
+            while (anchor.parentNode && anchor.parentNode !== box) {
+                anchor = anchor.parentNode;
+            }
+            if (anchor.parentNode === box) {
+                box.insertBefore(node, anchor);
+                return;
+            }
+        }
+        box.appendChild(node);
+    }
+
     function appendMessage(m, options) {
         options = options || {};
         var msgKey = m.id ? String(m.id) : (m._tempId || '');
@@ -5533,7 +5556,7 @@
             var joinAvatar = resolveMessageAvatar(m, joinName);
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> joined the conversation</div>';
-            box.appendChild(div);
+            placeInTranscript(box, div, m.id);
         } else if (isAgentLeaveMessage(m)) {
             var div = document.createElement('div');
             div.className = 'lcw-msg lcw-system lcw-leave-event';
@@ -5541,7 +5564,7 @@
             var leaveMatch = String(m.message || '').match(/^(.+?)\s+left the (?:chat|conversation)\.?$/i);
             var leaveName = leaveMatch ? leaveMatch[1] : (m.agent_name || 'Agent');
             div.innerHTML = '<strong>' + esc(leaveName) + '</strong> left the conversation';
-            box.appendChild(div);
+            placeInTranscript(box, div, m.id);
         } else if (isTakeoverMessage(m)) {
             var takeoverMatch = String(m.message || '').match(/^(.+?)\s+took over the chat from\s+(.+?)\.?$/i);
             var takerName = takeoverMatch ? takeoverMatch[1] : (m.agent_name || 'Agent');
@@ -5564,7 +5587,7 @@
             var joinAvatar = resolveMessageAvatar(m, takerName);
             joinDiv.innerHTML = renderAvatar(joinAvatar, takerName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(takerName) + '</strong> joined the conversation</div>';
-            box.appendChild(joinDiv);
+            placeInTranscript(box, joinDiv, m.id);
         } else if (m.sender_type === 'agent') {
             if (!options.suppressAgentState) {
                 setWaitingState(false);
@@ -5584,7 +5607,7 @@
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
                 '</div></div>';
-            box.appendChild(row);
+            placeInTranscript(box, row, m.id);
         } else if (m.sender_type === 'visitor') {
             var wrap = document.createElement('div');
             wrap.className = 'lcw-msg-wrap lcw-visitor-wrap' + (m._pending ? ' lcw-msg-pending' : '');
@@ -5597,7 +5620,7 @@
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
                 '</div>' +
                 '<div class="lcw-msg-status-out">' + ticks + '</div>';
-            box.appendChild(wrap);
+            placeInTranscript(box, wrap, m.id);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
                 return;
@@ -5610,7 +5633,7 @@
                 sys.setAttribute('data-ticket-ref-msg', '1');
             }
             sys.innerHTML = esc(m.message);
-            box.appendChild(sys);
+            placeInTranscript(box, sys, m.id);
         }
         // Only pin to bottom when visitor is already near bottom (or forced — own send)
         scrollMessagesToBottom(!!options.forceScroll);
