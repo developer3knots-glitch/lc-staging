@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 159;
+    var LC_WIDGET_BUILD = 160;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -2540,6 +2540,7 @@
             seedMsgs.forEach(function (m) {
                 try { appendMessage(m, { suppressAgentState: true }); } catch (eSeed) {}
             });
+            playJoinChime();
             // Re-bind / catch join+welcome that may have published before presence heard invite
             if (typeof initVisitorRealtime === 'function') {
                 loadRealtimeScript(function () { initVisitorRealtime(); });
@@ -2578,11 +2579,7 @@
         if (seedMsgs.length) {
             hideChatLoading();
         }
-        if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-            try { window.LCNotifySound.play({ force: true }); } catch (eS) {}
-        } else {
-            try { playNotifySound(); } catch (eP) {}
-        }
+        playJoinChime();
 
         var payloadInit = {
             visitor_uid: visitorUid,
@@ -5211,6 +5208,16 @@
         typingIdleTimer = setTimeout(function () {
             stopOwnTyping();
         }, 6000);
+    }
+
+    function playJoinChime() {
+        loadNotifySoundScript();
+        try {
+            if (window.LCNotifySound && typeof window.LCNotifySound.unlock === 'function') {
+                window.LCNotifySound.unlock();
+            }
+        } catch (eUnlock) {}
+        try { playNotifySound(true); } catch (eChime) {}
     }
 
     function playNotifySound(force) {

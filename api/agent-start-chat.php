@@ -218,20 +218,16 @@ try {
     $pendingPublishIds = [];
     $currentAgent = (int) ($conv['agent_id'] ?? 0);
     if ($currentAgent === $agentId) {
-        // Both Start chat and the pencil join should tell the visitor this agent joined.
-        // Only collapse an immediate double-click. Compare with NOW() — created_at is local time.
-        $recentJoin = $db->prepare("
-            SELECT id FROM messages
-            WHERE conversation_id = ? AND sender_type = 'system' AND sender_id = ?
-              AND message LIKE '%joined the chat%'
-              AND created_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
-            LIMIT 1
-        ");
-        $recentJoin->execute([$convId, $agentId]);
-        $joinId = (int) ($recentJoin->fetchColumn() ?: 0);
-        if ($joinId < 1) {
-            $joinId = lc_add_agent_join_message($convId, $agentId, false);
-        }
+        // Fresh join line for both Start chat and the pencil button.
+        // Skip only when this request is a double-click and the latest row is already that join.
+        $tail = $db->prepare('SELECT id, sender_id, message FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1');
+        $tail->execute([$convId]);
+        $tailRow = $tail->fetch(PDO::FETCH_ASSOC) ?: null;
+        $tailText = (string) ($tailRow['message'] ?? '');
+        $justJoined = $tailRow
+            && (int) ($tailRow['sender_id'] ?? 0) === $agentId
+            && preg_match('/joined the chat/i', $tailText);
+        $joinId = $justJoined ? (int) $tailRow['id'] : lc_add_agent_join_message($convId, $agentId, false);
         if ($joinId > 0 && !in_array($joinId, $pendingPublishIds, true)) {
             $pendingPublishIds[] = $joinId;
         }
@@ -276,11 +272,12 @@ try {
             FROM messages m
             LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
             WHERE m.conversation_id = ?
-            ORDER BY m.id ASC
-            LIMIT 20
+            ORDER BY m.id DESC
+            LIMIT 30
         ");
         $seedStmt->execute([$convId]);
-        while ($srow = $seedStmt->fetch(PDO::FETCH_ASSOC)) {
+        $seedRows = array_reverse($seedStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+        foreach ($seedRows as $srow) {
             $text = (string) ($srow['message'] ?? '');
             if ($text !== '' && function_exists('lc_message_hidden_from_visitor')
                 && lc_message_hidden_from_visitor($text)) {
