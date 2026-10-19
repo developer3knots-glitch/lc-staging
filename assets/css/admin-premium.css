@@ -10358,6 +10358,43 @@ body.lc-page-dashboard .lc-team-status {
         grid-template-columns: 1fr 1fr;
     }
 
+    .lc-home-week {
+        padding: 1rem 0.95rem 0.9rem;
+    }
+
+    .lc-home-week-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.85rem;
+    }
+
+    .lc-home-week-total {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.2rem;
+    }
+
+    .lc-home-week-total strong {
+        font-size: 2.5rem;
+    }
+
+    .lc-home-week-delta {
+        line-height: 1.35;
+    }
+
+    .lc-home-week-link {
+        white-space: nowrap;
+    }
+
+    .lc-home-week-tabs {
+        width: 100%;
+    }
+
+    .lc-home-week-tab {
+        flex: 1 1 0;
+        text-align: center;
+    }
+
     .lc-home-banner {
         padding: 1.35rem 1.25rem 1.4rem;
         min-height: 0;
