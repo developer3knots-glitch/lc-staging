@@ -9397,7 +9397,7 @@ body.lc-page-dashboard .lc-content {
     box-sizing: border-box;
     width: 100%;
     max-width: 1280px;
-    min-width: 960px;
+    min-width: 0;
     margin: 0 auto;
     padding: 50px 32px;
     font-size: 14px;
@@ -10334,8 +10334,33 @@ body.lc-page-dashboard .lc-team-status {
 @media (max-width: 960px) {
     .lc-home {
         min-width: 0;
-        max-width: none;
+        max-width: 100%;
         padding: 32px 16px;
+        overflow-x: hidden;
+    }
+
+    .lc-home-grid,
+    .lc-home-panel,
+    .lc-conv-feed,
+    .lc-conv-item,
+    .lc-conv-item-main,
+    .lc-conv-item-body {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .lc-conv-item-msg {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+    }
+
+    .lc-conv-item-meta span {
+        max-width: 100%;
+        overflow-wrap: anywhere;
     }
 
     body.lc-page-dashboard .lc-content {
