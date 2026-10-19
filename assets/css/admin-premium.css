@@ -15548,9 +15548,6 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
         display: inline-flex;
     }
 
-    .lc-sidebar-brand {
-        padding-right: 3rem;
-    }
 
     body.lc-page-chats .lc-chat-inbox-head {
         min-height: 0;
@@ -15693,7 +15690,7 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
         flex-direction: row;
         justify-content: flex-start;
         align-items: center;
-        padding: 0.9rem 3rem 0.9rem 0.9rem;
+        padding: 0.9rem;
         gap: 0.7rem;
     }
 

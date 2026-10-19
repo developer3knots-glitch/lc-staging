@@ -123,30 +123,16 @@
     var toggle = document.getElementById('lc-sidebar-toggle');
     var backdrop = document.getElementById('lc-sidebar-backdrop');
 
-    function syncSidebarToggle() {
-        var open = !!(app && app.classList.contains('lc-sidebar-open'));
-        if (!toggle) return;
-        toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-        var icon = toggle.querySelector('i');
-        if (icon) icon.className = open ? 'ti ti-x' : 'ti ti-menu-2';
-    }
-
     function closeSidebar() {
         if (app) app.classList.remove('lc-sidebar-open');
-        syncSidebarToggle();
     }
 
     if (toggle && app) {
         toggle.addEventListener('click', function () {
             app.classList.toggle('lc-sidebar-open');
-            syncSidebarToggle();
         });
     }
     if (backdrop) backdrop.addEventListener('click', closeSidebar);
-    var sidebarClose = document.getElementById('lc-sidebar-close');
-    if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
-    var topbarClose = document.getElementById('lc-topbar-close');
-    if (topbarClose) topbarClose.addEventListener('click', closeSidebar);
     document.querySelectorAll('.lc-nav-link').forEach(function (link) {
         link.addEventListener('click', closeSidebar);
     });

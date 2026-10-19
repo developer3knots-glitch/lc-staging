@@ -31,7 +31,6 @@ if ($agent['role'] === 'admin') {
 <div class="lc-app" id="lc-app">
     <div class="lc-sidebar-backdrop" id="lc-sidebar-backdrop"></div>
         <aside class="lc-sidebar lc-sidebar-rail" id="lc-sidebar">
-        <button type="button" class="lc-sidebar-drawer-close" id="lc-sidebar-close" aria-label="Close menu"><i class="ti ti-x"></i></button>
         <a href="<?= lc_admin_url('') ?>" class="lc-sidebar-brand lc-tip" data-tip="<?= lc_sanitize(LC_APP_NAME) ?>" aria-label="<?= lc_sanitize(LC_APP_NAME) ?>">
             <div class="lc-brand-icon"><i class="ti ti-message-circle-2"></i></div>
             <div class="lc-sidebar-brand-text">
@@ -135,7 +134,6 @@ if ($agent['role'] === 'admin') {
                     <?= lc_avatar_html($agent['avatar'] ?? null, $agent['name'] ?? 'Agent', 'lc-avatar lc-avatar-topbar') ?>
                     <span class="lc-topbar-avatar-dot <?= lc_sanitize($agent['status'] ?? 'offline') ?>" aria-hidden="true"></span>
                 </div>
-                <button type="button" class="lc-topbar-close" id="lc-topbar-close" aria-label="Close menu"><i class="ti ti-x"></i></button>
             </div>
         </header>
         <div class="lc-cmdk-backdrop" id="lc-cmdk-backdrop" hidden data-cmdk-close></div>
