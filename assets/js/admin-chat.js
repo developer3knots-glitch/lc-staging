@@ -856,7 +856,13 @@
             html += '<li class="lc-details-page-item' + (i === steps.length - 1 ? ' is-current' : '') + '">';
             html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
             html += '<div class="lc-details-page-body">';
+            var copyUrl = pageHref || pageLink;
+            html += '<div class="lc-details-page-title-row">';
             html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
+            if (copyUrl) {
+                html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(copyUrl) + '" aria-label="Copy page link"><i class="ti ti-copy"></i></button>';
+            }
+            html += '</div>';
             if (pageLink && pageLink.toLowerCase() !== String(label || '').toLowerCase()) {
                 if (pageHref) {
                     html += '<a class="lc-details-page-link" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink) + '">' + esc(pageLink) + '</a>';
@@ -1015,6 +1021,7 @@
         setText('lc-details-ip', formatDisplayIp(c.visitor_ip || currentVisitorIp, c.visitor_ipv4) || '-');
         setText('lc-details-agent', c.agent_name || (extraNote === 'Chat closed' ? '-' : 'Unassigned'));
         setText('lc-details-ticket', c.reference || currentReference || '-');
+        refreshMetaCopyButtons(document.getElementById('lc-chat-details'));
 
         updateDetailsMap(geo);
         updateHeaderAvatar(displayName);
@@ -1036,6 +1043,66 @@
         }
         setText('lc-details-ticket', ref);
     }
+
+    function refreshMetaCopyButtons(root) {
+        if (!root) return;
+        root.querySelectorAll('.lc-meta-copy[data-copy-target]').forEach(function (btn) {
+            var el = document.getElementById(btn.getAttribute('data-copy-target'));
+            var shown = el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '';
+            var empty = !shown || shown === '-' || shown === ' - ';
+            btn.hidden = empty;
+            btn.setAttribute('data-copy', empty ? '' : shown);
+        });
+    }
+
+    function copyPlainText(text, btn) {
+        text = String(text || '').trim();
+        if (!text || text === '-' || text === ' - ') return;
+        var mark = function () {
+            if (!btn) return;
+            btn.classList.add('is-copied');
+            var icon = btn.querySelector('i');
+            if (icon) icon.className = 'ti ti-check';
+            setTimeout(function () {
+                btn.classList.remove('is-copied');
+                if (icon) icon.className = 'ti ti-copy';
+            }, 1200);
+        };
+        var fallback = function () {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); mark(); } catch (err) {}
+            document.body.removeChild(ta);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(mark).catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.lc-meta-copy');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var text = btn.getAttribute('data-copy') || '';
+        var inputId = btn.getAttribute('data-copy-input');
+        if (inputId) {
+            var input = document.getElementById(inputId);
+            text = input ? input.value : '';
+        } else if (!text) {
+            var targetId = btn.getAttribute('data-copy-target');
+            var target = targetId ? document.getElementById(targetId) : null;
+            text = target ? target.textContent : '';
+        }
+        copyPlainText(text, btn);
+    });
 
     function copyChatReference() {
         if (!currentReference) {
@@ -3846,10 +3913,13 @@
         if (visitorDetailsEl) {
             var html = '';
             if (c && (c.visitor_ip || currentVisitorIp)) {
-                html += '<span class="is-ip"><i class="ti ti-world"></i> ' + esc(c.visitor_ip || currentVisitorIp) + '</span>';
+                var chipIp = formatDisplayIp(c.visitor_ip || currentVisitorIp, c.visitor_ipv4) || (c.visitor_ip || currentVisitorIp);
+                html += '<span class="is-ip"><i class="ti ti-world"></i> <span>' + esc(chipIp) + '</span>';
+                html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(chipIp) + '" aria-label="Copy IP"><i class="ti ti-copy"></i></button></span>';
             }
             if (c && c.visitor_country) {
-                html += '<span class="is-country"><i class="ti ti-map-pin"></i> ' + esc(c.visitor_country) + '</span>';
+                html += '<span class="is-country"><i class="ti ti-map-pin"></i> <span>' + esc(c.visitor_country) + '</span>';
+                html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(c.visitor_country) + '" aria-label="Copy location"><i class="ti ti-copy"></i></button></span>';
             }
             visitorDetailsEl.innerHTML = html;
         }

@@ -320,8 +320,14 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-details-hero">
                     <div class="lc-details-hero-av" id="lc-details-av">V</div>
                     <h3 class="lc-details-hero-name" id="lc-details-name">Visitor</h3>
-                    <p class="lc-details-hero-location" id="lc-details-location">-</p>
-                    <p class="lc-details-hero-sub" id="lc-details-local-time"></p>
+                    <p class="lc-details-hero-location lc-details-copyline">
+                        <span id="lc-details-location">-</span>
+                        <button type="button" class="lc-meta-copy" data-copy-target="lc-details-location" aria-label="Copy location" hidden><i class="ti ti-copy"></i></button>
+                    </p>
+                    <p class="lc-details-hero-sub lc-details-copyline">
+                        <span id="lc-details-local-time"></span>
+                        <button type="button" class="lc-meta-copy" data-copy-target="lc-details-local-time" aria-label="Copy IP" hidden><i class="ti ti-copy"></i></button>
+                    </p>
                     <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-details-email-btn" id="lc-details-email-chat">
                         <i class="ti ti-mail"></i> Email chat to customer
                     </button>
@@ -330,11 +336,20 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-details-contact" id="lc-details-contact">
                     <h4 class="lc-details-contact-title">Contact</h4>
                     <label class="lc-details-contact-label" for="lc-details-name-input">Name</label>
-                    <input type="text" id="lc-details-name-input" class="lc-details-contact-input" placeholder="Add customer name" autocomplete="off" maxlength="120">
+                    <div class="lc-details-contact-copy">
+                        <input type="text" id="lc-details-name-input" class="lc-details-contact-input" placeholder="Add customer name" autocomplete="off" maxlength="120">
+                        <button type="button" class="lc-meta-copy" data-copy-input="lc-details-name-input" aria-label="Copy name"><i class="ti ti-copy"></i></button>
+                    </div>
                     <label class="lc-details-contact-label" for="lc-details-email-input">Email</label>
-                    <input type="email" id="lc-details-email-input" class="lc-details-contact-input" placeholder="Add email address" autocomplete="off" inputmode="email">
+                    <div class="lc-details-contact-copy">
+                        <input type="email" id="lc-details-email-input" class="lc-details-contact-input" placeholder="Add email address" autocomplete="off" inputmode="email">
+                        <button type="button" class="lc-meta-copy" data-copy-input="lc-details-email-input" aria-label="Copy email"><i class="ti ti-copy"></i></button>
+                    </div>
                     <label class="lc-details-contact-label" for="lc-details-phone-input">Phone</label>
-                    <input type="tel" id="lc-details-phone-input" class="lc-details-contact-input" placeholder="Add phone number" autocomplete="off" inputmode="tel">
+                    <div class="lc-details-contact-copy">
+                        <input type="tel" id="lc-details-phone-input" class="lc-details-contact-input" placeholder="Add phone number" autocomplete="off" inputmode="tel">
+                        <button type="button" class="lc-meta-copy" data-copy-input="lc-details-phone-input" aria-label="Copy phone"><i class="ti ti-copy"></i></button>
+                    </div>
                     <div class="lc-details-contact-actions">
                         <div id="lc-details-contact-readonly-note" class="lc-details-contact-readonly-note" style="display:none"><i class="ti ti-lock"></i> <span>View only (Supervising)</span></div>
                         <button type="button" class="lc-btn lc-btn-sm lc-btn-primary" id="lc-details-contact-save">Save contact</button>
@@ -355,35 +370,35 @@ require __DIR__ . '/includes/header.php';
                         <dl class="lc-details-kv-list">
                             <div class="lc-details-kv">
                                 <dt>Returning visitor</dt>
-                                <dd id="lc-details-returning">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-returning">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-returning" aria-label="Copy returning visitor" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Last seen</dt>
-                                <dd id="lc-details-last-seen">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-last-seen">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-last-seen" aria-label="Copy last seen" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Came from</dt>
-                                <dd id="lc-details-came-from">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-came-from">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-came-from" aria-label="Copy came from" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Chat duration</dt>
-                                <dd id="lc-details-chat-duration">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-chat-duration">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-chat-duration" aria-label="Copy chat duration" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Groups</dt>
-                                <dd id="lc-details-groups">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-groups">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-groups" aria-label="Copy group" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Ticket</dt>
-                                <dd id="lc-details-ticket">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-ticket">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-ticket" aria-label="Copy ticket" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>Agent</dt>
-                                <dd id="lc-details-agent">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-agent">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-agent" aria-label="Copy agent" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv">
                                 <dt>IP address</dt>
-                                <dd id="lc-details-ip">-</dd>
+                                <dd class="lc-details-copyline"><span id="lc-details-ip">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-ip" aria-label="Copy IP address" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                         </dl>
                     </div>

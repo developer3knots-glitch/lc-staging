@@ -12217,6 +12217,64 @@ body.lc-page-chats .lc-chat-empty-state p {
     word-break: break-word;
 }
 
+.lc-details-copyline,
+.lc-details-page-title-row,
+.lc-details-contact-copy {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.lc-details-copyline > span,
+.lc-details-page-title-row .lc-details-page-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.lc-details-contact-copy {
+    align-items: center;
+}
+
+.lc-details-contact-copy .lc-details-contact-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+}
+
+.lc-meta-copy {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: #f3f4f6;
+    color: #4b5563;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.lc-meta-copy:hover {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.lc-meta-copy.is-copied {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.lc-visitor-details .lc-meta-copy {
+    width: 16px;
+    height: 16px;
+    background: transparent;
+    color: inherit;
+}
+
 .lc-details-group-pill {
     display: inline-flex;
     align-items: center;
