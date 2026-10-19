@@ -19,6 +19,9 @@ require __DIR__ . '/includes/header.php';
                 </div>
                 <span id="lc-waiting-badge" class="lc-chat-inbox-waiting" style="display:none">0</span>
             </div>
+            <div class="lc-inbox-return-bar">
+                <button type="button" class="lc-inbox-return" id="lc-inbox-return" aria-label="Close chat list"><i class="ti ti-x"></i></button>
+            </div>
             <div class="lc-chat-inbox-search-wrap">
                 <i class="ti ti-search"></i>
                 <input type="search" id="lc-inbox-search" placeholder="Search name, email, phone, ticket (incl. closed)..." autocomplete="off" aria-label="Search conversations">
