@@ -15358,16 +15358,6 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
     }
 }
 
-.lc-prior-bar {
-    display: none;
-}
-.lc-prior-body {
-    display: block;
-}
-.lc-prior-close {
-    display: none;
-}
-
 .lc-sidebar-drawer-close {
     display: none;
 }
@@ -15447,47 +15437,6 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
 
     body.lc-page-chats .lc-session-divider {
         margin: 0.45rem 0 !important;
-    }
-
-    body.lc-page-chats .lc-prior-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.4rem;
-        margin: 0.15rem 0 0.45rem;
-    }
-
-    body.lc-page-chats .lc-prior-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        border: 1px solid #e5e7eb;
-        background: #fff;
-        color: #374151;
-        border-radius: 999px;
-        padding: 0.28rem 0.7rem;
-        font: inherit;
-        font-size: 0.75rem;
-        font-weight: 650;
-        cursor: pointer;
-    }
-
-    body.lc-page-chats .lc-prior-wrap:not(.is-open) .lc-prior-body {
-        display: none;
-    }
-
-    body.lc-page-chats .lc-prior-wrap.is-open .lc-prior-close {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        border: 0;
-        border-radius: 999px;
-        background: #fff;
-        color: #64748b;
-        box-shadow: 0 0 0 1px #e5e7eb;
-        cursor: pointer;
     }
 
     body.lc-page-chats .lc-chat-compose-pro {
