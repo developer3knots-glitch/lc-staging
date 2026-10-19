@@ -765,6 +765,9 @@ function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = [
         'status' => 'waiting',
         'notify' => true,
         'is_incoming' => true,
+        'returning' => !empty($conv['is_returning']),
+        'continued' => !empty($extra['continued']),
+        'queued' => ((int) ($conv['agent_id'] ?? 0)) < 1,
     ], $extra));
 }
 

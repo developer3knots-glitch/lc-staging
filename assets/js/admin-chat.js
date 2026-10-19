@@ -223,13 +223,31 @@
     var typingIdleTimer = null;
     var lastTypingPostAt = 0;
 
-    function playIncomingSound() {
+    var recentNotifyAt = {};
+
+    function playNotifyEvent(eventName, dedupeKey) {
+        var key = String(dedupeKey || eventName || '');
+        var now = Date.now();
+        if (key && recentNotifyAt[key] && (now - recentNotifyAt[key]) < 2500) {
+            return false;
+        }
+        if (key) recentNotifyAt[key] = now;
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-            window.LCNotifySound.play({ event: 'new_message' });
+            window.LCNotifySound.play({ force: true, event: eventName || 'message_here' });
         }
         if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
             window.LCTabNotify.pulse();
         }
+        return true;
+    }
+
+    function recentContinue(cid) {
+        var t = recentNotifyAt['cont:' + (parseInt(cid, 10) || 0)];
+        return !!(t && (Date.now() - t) < 3000);
+    }
+
+    function playIncomingSound(eventName, dedupeKey) {
+        playNotifyEvent(eventName || 'message_here', dedupeKey);
     }
 
     function setPeerTypingVisible(show, name, preview) {
@@ -2420,12 +2438,23 @@
                 var waiting = parseInt(data.waiting_count, 10) || 0;
                 // New queue / returning visitor / unread (not first paint)
                 if (inboxSoundReady) {
-                    if (returningWaiting > lastReturningWaiting) {
-                        playIncomingSound();
+                    var continuedJustNow = false;
+                    Object.keys(recentNotifyAt).forEach(function (k) {
+                        if (k.indexOf('cont:') === 0 && (Date.now() - recentNotifyAt[k]) < 3000) {
+                            continuedJustNow = true;
+                        }
+                    });
+                    if (!continuedJustNow && returningWaiting > lastReturningWaiting) {
+                        playIncomingSound('chat_return', 'queue-return');
                         showReturningVisitorToast(returningName);
-                    } else if (waiting > lastInboxWaiting || unreadTotal > lastInboxUnread) {
-                        playIncomingSound();
-                        if (waiting > lastInboxWaiting && window.Notification && Notification.permission === 'granted') {
+                    } else if (!continuedJustNow && waiting > lastInboxWaiting) {
+                        var queuedUnknown = true;
+                        (data.conversations || []).forEach(function (c) {
+                            if (c.status !== 'waiting' || isReturningVisitor(c)) return;
+                            if (c.is_returning !== undefined || c.visitor_kind) queuedUnknown = false;
+                        });
+                        playIncomingSound(queuedUnknown ? 'queue_waiting' : 'chat_new', 'queue-new');
+                        if (window.Notification && Notification.permission === 'granted') {
                             try {
                                 var n = new Notification('Incoming chat', {
                                     body: (returningName || 'A visitor') + ' is waiting in the queue',
@@ -2442,6 +2471,8 @@
                                 }, 10000);
                             } catch (eN) { /* ignore */ }
                         }
+                    } else if (unreadTotal > lastInboxUnread) {
+                        playIncomingSound('message_other', 'inbox-unread');
                     }
                 } else {
                     inboxSoundReady = true;
@@ -3956,8 +3987,8 @@
                     if (added > 0) {
                         scrollMessagesToBottom(false);
                     }
-                    if (playSound) {
-                        playIncomingSound();
+                    if (playSound && !recentContinue(conversationId)) {
+                        playIncomingSound('message_here', 'open-msg:' + conversationId + ':' + lastMsgId);
                         setPeerTypingVisible(false);
                     }
                     // Never re-lock from a stale close bubble if visitor already continued
@@ -5713,8 +5744,11 @@
         } else {
             scrollMessagesToBottom(false);
         }
-        if (m.sender_type === 'visitor') {
-            playIncomingSound();
+        if (m.sender_type === 'visitor' && !recentContinue(selectedId)) {
+            playIncomingSound('message_here', 'msg:' + mid);
+            setPeerTypingVisible(false);
+            markPriorAgentTicksRead(mid);
+        } else if (m.sender_type === 'visitor') {
             setPeerTypingVisible(false);
             markPriorAgentTicksRead(mid);
         }
@@ -5824,7 +5858,15 @@
                     syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
                 }
                 if (cid && patchInboxRowActivity(cid, msg)) {
-                    playIncomingSound();
+                    if (!(msg && msg.sender_type === 'visitor' && recentContinue(cid))) {
+                        var otherEvent = (msg && isContinueSystemMessage(msg))
+                            ? 'chat_continued'
+                            : (cid === selectedId ? 'message_here' : 'message_other');
+                        var otherKey = otherEvent === 'chat_continued'
+                            ? ('cont:' + cid)
+                            : ('msg:' + (msg && msg.id ? msg.id : cid));
+                        playIncomingSound(otherEvent, otherKey);
+                    }
                     return;
                 }
                 if (!cid || !msg) {
@@ -5887,6 +5929,9 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
+                if (presence && String(presence.status || '').toLowerCase() === 'left') {
+                    playNotifyEvent('visitor_left', 'left:' + cid);
+                }
                 applyVisitorPresenceToInbox(cid, presence);
                 if (selectedId && cid === selectedId) {
                     setVisitorPresenceBadge(presence, { source: 'ws' });
@@ -5920,6 +5965,12 @@
                     loadConversations();
                 }
                 if (payload && payload.status === 'closed' && cid) {
+                    var closedBy = String(payload.closed_by || '');
+                    if (closedBy === 'visitor') {
+                        playNotifyEvent('chat_closed', 'close:' + cid);
+                    } else if (closedBy === 'leave') {
+                        playNotifyEvent('visitor_left', 'left:' + cid);
+                    }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
                     if (selectedId && cid === selectedId) {
                         pollMessages({ skipJourney: true });
@@ -5929,6 +5980,9 @@
                     return;
                 }
                 if (payload && (payload.status === 'waiting' || payload.reopened_by === 'visitor') && cid) {
+                    if (payload.reopened_by === 'visitor') {
+                        playNotifyEvent('chat_continued', 'cont:' + cid);
+                    }
                     applyConversationWaitingLocally(cid, { force: true });
                     if (selectedId && cid === selectedId) {
                         pollMessages({ skipJourney: true });

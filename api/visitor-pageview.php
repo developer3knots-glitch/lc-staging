@@ -206,6 +206,7 @@ try {
             'page_path' => $pagePath,
             'notify' => $shouldNotify,
             'is_new' => $isNewVisitor,
+            'returning' => !$isNewVisitor,
         ]);
     }
 

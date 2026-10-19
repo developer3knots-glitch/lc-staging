@@ -153,7 +153,7 @@ try {
                     ]);
                 }
                 if ($status === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-                    lc_realtime_publish_incoming_chat($conversationId);
+                    lc_realtime_publish_incoming_chat($conversationId, $publishReopened ? ['continued' => true] : []);
                 }
             } catch (Throwable $e) {
             }

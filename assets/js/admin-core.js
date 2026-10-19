@@ -461,7 +461,16 @@
             }
             var presence = String(payload.presence || 'browsing').toLowerCase();
             if (presence === 'left') {
-                unmarkKnown(payload.visitor_id || payload.visitor_uid || '');
+                var leftId = payload.visitor_id || payload.visitor_uid || '';
+                if (canNotifyVisitor('left:' + leftId)) {
+                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                        window.LCNotifySound.play({ force: true, event: 'visitor_left' });
+                    }
+                    if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                        window.LCTabNotify.pulse(1);
+                    }
+                }
+                unmarkKnown(leftId);
                 return false;
             }
 
@@ -475,7 +484,9 @@
             showLandToast(name, detail);
             fireBrowserPush(name, detail, vid);
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true, event: 'visitor_land' });
+                var landReturning = payload.returning === true || payload.returning === 1 || payload.returning === '1'
+                    || payload.is_new === false || payload.is_new === 0 || payload.is_new === '0';
+                window.LCNotifySound.play({ force: true, event: landReturning ? 'visitor_return' : 'visitor_new' });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);
@@ -505,7 +516,14 @@
                 url: chatUrl
             });
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true, event: 'incoming_chat' });
+                var incomingReturning = payload.returning === true || payload.returning === 1 || payload.returning === '1'
+                    || payload.is_returning === true || payload.is_returning === 1 || payload.is_returning === '1';
+                var incomingContinued = payload.continued === true || payload.continued === 1 || payload.continued === '1';
+                var incomingKnown = payload.returning !== undefined || payload.is_returning !== undefined || incomingContinued;
+                var incomingEvent = incomingContinued
+                    ? 'chat_continued'
+                    : (incomingReturning ? 'chat_return' : (incomingKnown ? 'chat_new' : 'queue_waiting'));
+                window.LCNotifySound.play({ force: true, event: incomingEvent });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);
@@ -684,7 +702,8 @@
                                 visitor_uid: v.visitor_uid,
                                 name: v.name,
                                 ip: v.ip,
-                                page_path: v.page_path || v.page_url
+                                page_path: v.page_path || v.page_url,
+                                returning: !!v.returning
                             }, 'poll');
                         }
                     });

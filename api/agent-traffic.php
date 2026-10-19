@@ -401,6 +401,7 @@ try {
             'time_on_pages_seconds' => $timeSec,
             'time_on_pages_label' => lc_format_duration_label($timeSec) ?: '0s',
             'last_seen' => !empty($row['last_seen']) ? lc_to_iso8601($row['last_seen']) : null,
+            'returning' => !empty($row['visitor_created_at']) && strtotime((string) $row['visitor_created_at'] . ' UTC') !== false && (time() - strtotime((string) $row['visitor_created_at'] . ' UTC')) > 180,
             'chat_url' => $row['conversation_id']
                 ? lc_admin_url('chats', ['id' => (int) $row['conversation_id']])
                 : null,

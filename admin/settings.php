@@ -383,7 +383,11 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-notify-sound-list">
                             <?php
                             $notifySounds = lc_notify_sound_map($accountId);
-                            foreach (lc_notify_sound_events() as $eventKey => $eventMeta):
+                            foreach (lc_notify_sound_event_groups() as $eventGroupLabel => $eventGroup):
+                            ?>
+                            <h4 class="lc-notify-sound-group"><?= lc_sanitize($eventGroupLabel) ?></h4>
+                            <?php
+                                foreach ($eventGroup as $eventKey => $eventMeta):
                                 $selectedSound = $notifySounds[$eventKey] ?? 'default';
                                 $selectId = 'lc-sound-' . $eventKey;
                             ?>
@@ -403,6 +407,7 @@ require __DIR__ . '/includes/header.php';
                                 </select>
                                 <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-notify-sound-preview" data-sound-for="<?= lc_sanitize($selectId) ?>">Preview</button>
                             </div>
+                            <?php endforeach; ?>
                             <?php endforeach; ?>
                         </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save notification sounds</button>

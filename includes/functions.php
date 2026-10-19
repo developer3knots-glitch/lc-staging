@@ -352,16 +352,45 @@ function lc_notify_sound_options(): array
 }
 
 /**
+ * @return array<string, array<string, array{0: string, 1: string}>>
+ */
+function lc_notify_sound_event_groups(): array
+{
+    return [
+        'On the website' => [
+            'visitor_new' => ['New visitor on site', 'Someone opens the website for the first time'],
+            'visitor_return' => ['Returning visitor on site', 'Someone who has been here before comes back'],
+            'visitor_left' => ['Visitor left the site', 'They leave the website'],
+        ],
+        'Chat start' => [
+            'chat_new' => ['New visitor starts a chat', 'A first-time visitor starts a chat'],
+            'chat_return' => ['Returning visitor starts a chat', 'Someone who chatted before starts again'],
+            'queue_waiting' => ['Chat waiting in queue', 'An unassigned chat is waiting and the visitor type is unknown'],
+        ],
+        'During the chat' => [
+            'message_here' => ['New message in open chat', 'A visitor sends a message in the chat you are viewing'],
+            'message_other' => ['Message in another chat', 'A visitor sends a message in a chat you are not viewing'],
+            'chat_continued' => ['Visitor continued a closed chat', 'They reopen a chat they had ended'],
+            'chat_closed' => ['Visitor closed the chat', 'They end the conversation'],
+        ],
+        'Assignment' => [
+            'chat_transfer' => ['Chat transferred to you', 'Another agent transfers a chat to you'],
+        ],
+    ];
+}
+
+/**
  * @return array<string, array{0: string, 1: string}>
  */
 function lc_notify_sound_events(): array
 {
-    return [
-        'visitor_land' => ['Visitor on site', 'Someone opens the website'],
-        'incoming_chat' => ['Incoming chat', 'A visitor starts a chat'],
-        'chat_transfer' => ['Chat transferred', 'A chat is transferred to an agent'],
-        'new_message' => ['New message', 'A visitor sends a message'],
-    ];
+    $flat = [];
+    foreach (lc_notify_sound_event_groups() as $group) {
+        foreach ($group as $key => $meta) {
+            $flat[$key] = $meta;
+        }
+    }
+    return $flat;
 }
 
 /**
@@ -379,7 +408,7 @@ function lc_notify_sound_map(int $accountId): array
     }
     $out = [];
     foreach (lc_notify_sound_events() as $key => $meta) {
-        $val = (string) ($saved[$key] ?? 'default');
+        $val = (isset($saved[$key]) && $saved[$key] !== '') ? (string) $saved[$key] : 'default';
         $out[$key] = in_array($val, $allowed, true) ? $val : 'default';
     }
     return $out;

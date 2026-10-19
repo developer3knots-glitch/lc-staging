@@ -5452,6 +5452,17 @@ body.lc-avatar-modal-open {
     box-shadow: var(--lc-shadow-sm);
 }
 
+.lc-notify-sound-group {
+    margin: 0.35rem 0 0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.lc-notify-sound-group:first-child {
+    margin-top: 0;
+}
 .lc-notify-sound-list {
     display: flex;
     flex-direction: column;
