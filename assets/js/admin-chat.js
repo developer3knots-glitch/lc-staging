@@ -37,6 +37,7 @@
 
     function prependPriorThreads(threads, conversation) {
         if (!messagesEl || !threads || !threads.length) return;
+        if (messagesEl.querySelector('.lc-prior-wrap')) return;
         var html = buildPriorThreadsHtml(threads, conversation || null);
         if (!html) return;
         var keepBottom = stickToBottom;
@@ -2113,6 +2114,8 @@
             cls += ' is-history';
         }
         var label = sender === 'agent' ? (m.agent_name || 'Agent') : (sender === 'visitor' ? 'Visitor' : '');
+        var rawText = String(m.message || '').replace(/\s+/g, ' ').trim();
+        if (!rawText && !m.attachment) return '';
         var bodyHtml = (window.LCChatFiles && m.attachment)
             ? window.LCChatFiles.renderAttachmentHtml(m.attachment, m.message)
             : esc(m.message);
@@ -2199,6 +2202,10 @@
             '<div class="lc-session-divider-inner">' + joinSessionParts(parts) + '</div></div>';
     }
 
+    function priorChatsLabel(count) {
+        return count === 1 ? '1 earlier chat' : (count + ' earlier chats');
+    }
+
     /**
      * Paint prior closed threads + markers into a string (not clickable cards).
      * lastMsgId is intentionally left alone - only current conversation drives polling.
@@ -2213,10 +2220,18 @@
             });
             html += renderSessionDivider('ended', thread);
         });
-        if (currentConv) {
-            html += renderSessionDivider('current', currentConv);
-        }
-        return html;
+        var current = currentConv ? renderSessionDivider('current', currentConv) : '';
+        var label = priorChatsLabel(threads.length);
+        return '<section class="lc-prior-wrap">' +
+            '<div class="lc-prior-bar">' +
+                '<button type="button" class="lc-prior-toggle" aria-expanded="false">' +
+                    '<i class="ti ti-history" aria-hidden="true"></i>' +
+                    '<span>' + esc(label) + '</span>' +
+                '</button>' +
+                '<button type="button" class="lc-prior-close" aria-label="Hide earlier chats"><i class="ti ti-x"></i></button>' +
+            '</div>' +
+            '<div class="lc-prior-body">' + html + '</div>' +
+        '</section>' + current;
     }
 
     function formatDuration(seconds) {
@@ -6023,6 +6038,18 @@
 
     if (messagesEl) {
         messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });
+        messagesEl.addEventListener('click', function (e) {
+            var wrap = e.target.closest ? e.target.closest('.lc-prior-wrap') : null;
+            if (!wrap || !messagesEl.contains(wrap)) return;
+            var toggleBtn = e.target.closest('.lc-prior-toggle');
+            var closeBtn = e.target.closest('.lc-prior-close');
+            if (!toggleBtn && !closeBtn) return;
+            var open = !!toggleBtn && !wrap.classList.contains('is-open');
+            wrap.classList.toggle('is-open', open);
+            if (toggleBtn) toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            var toggle = wrap.querySelector('.lc-prior-toggle');
+            if (closeBtn && toggle) toggle.setAttribute('aria-expanded', 'false');
+        });
     }
 
     window.addEventListener('popstate', function (e) {

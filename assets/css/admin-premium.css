@@ -15357,3 +15357,194 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
         max-width: calc(100vw - 1rem);
     }
 }
+
+.lc-prior-bar {
+    display: none;
+}
+.lc-prior-body {
+    display: block;
+}
+.lc-prior-close {
+    display: none;
+}
+
+.lc-sidebar-drawer-close {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .lc-sidebar-drawer-close {
+        display: none;
+        position: absolute;
+        top: 0.7rem;
+        right: 0.55rem;
+        z-index: 2;
+        width: 36px;
+        height: 36px;
+        border: 0;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+    }
+
+    .lc-app.lc-sidebar-open .lc-sidebar-drawer-close {
+        display: inline-flex;
+    }
+
+    body.lc-page-chats .lc-chat-ref {
+        display: none !important;
+    }
+
+    body.lc-page-chats .lc-chat-header-pro {
+        min-height: 52px !important;
+        padding: 0.35rem 0.45rem !important;
+        background: #fff !important;
+    }
+
+    body.lc-page-chats .lc-chat-header-av {
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        font-size: 0.68rem !important;
+        box-shadow: none !important;
+    }
+
+    body.lc-page-chats .lc-visitor-kind-badge {
+        margin-left: 0.2rem;
+        padding: 0.05rem 0.38rem;
+        font-size: 0.58rem;
+    }
+
+    body.lc-page-chats #lc-chat-transfer-badge {
+        flex: 0 1 auto;
+        max-width: 42vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    body.lc-page-chats .lc-chat-messages-pro {
+        background: #f7f8fa !important;
+        padding: 0.7rem 0.65rem 0.35rem !important;
+        gap: 0.28rem !important;
+    }
+
+    body.lc-page-chats .lc-chats-pro .lc-msg {
+        max-width: 86% !important;
+        padding: 0.42rem 0.65rem !important;
+        border-radius: 14px !important;
+        box-shadow: none !important;
+        font-size: 0.9rem;
+    }
+
+    body.lc-page-chats .lc-chats-pro .lc-msg.system {
+        padding: 0.25rem 0.4rem !important;
+        font-size: 0.72rem;
+    }
+
+    body.lc-page-chats .lc-session-divider {
+        margin: 0.45rem 0 !important;
+    }
+
+    body.lc-page-chats .lc-prior-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.4rem;
+        margin: 0.15rem 0 0.45rem;
+    }
+
+    body.lc-page-chats .lc-prior-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        color: #374151;
+        border-radius: 999px;
+        padding: 0.28rem 0.7rem;
+        font: inherit;
+        font-size: 0.75rem;
+        font-weight: 650;
+        cursor: pointer;
+    }
+
+    body.lc-page-chats .lc-prior-wrap:not(.is-open) .lc-prior-body {
+        display: none;
+    }
+
+    body.lc-page-chats .lc-prior-wrap.is-open .lc-prior-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 999px;
+        background: #fff;
+        color: #64748b;
+        box-shadow: 0 0 0 1px #e5e7eb;
+        cursor: pointer;
+    }
+
+    body.lc-page-chats .lc-chat-compose-pro {
+        background: #fff !important;
+        border-top: 1px solid #eef0f3 !important;
+        padding: 0.35rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom)) !important;
+    }
+
+    body.lc-page-chats .lc-compose-shell {
+        gap: 0.3rem !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+
+    body.lc-page-chats .lc-compose-toolbar {
+        min-height: 0;
+    }
+
+    body.lc-page-chats .lc-compose-mode-tabs {
+        background: transparent;
+        border: 0;
+        padding: 0;
+    }
+
+    body.lc-page-chats .lc-compose-mode-tab span,
+    body.lc-page-chats .lc-chat-canned-toggle span,
+    body.lc-page-chats .lc-compose-footer,
+    body.lc-page-chats .lc-chat-compose-hint {
+        display: none !important;
+    }
+
+    body.lc-page-chats .lc-chat-compose-inner {
+        border: 1px solid #e5e7eb !important;
+        border-radius: 22px !important;
+        background: #f8fafc !important;
+        min-height: 44px;
+        padding: 0.1rem 0.15rem 0.1rem 0.2rem !important;
+        box-shadow: none !important;
+    }
+
+    body.lc-page-chats .lc-chat-compose-pro textarea,
+    body.lc-page-chats #lc-reply-input {
+        min-height: 36px !important;
+        max-height: 96px !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.45rem !important;
+    }
+
+    body.lc-page-chats .lc-details-drawer-close {
+        display: inline-flex !important;
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        background: #f3f4f6;
+        color: #111827;
+    }
+}

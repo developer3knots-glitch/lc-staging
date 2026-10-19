@@ -133,6 +133,8 @@
         });
     }
     if (backdrop) backdrop.addEventListener('click', closeSidebar);
+    var sidebarClose = document.getElementById('lc-sidebar-close');
+    if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
     document.querySelectorAll('.lc-nav-link').forEach(function (link) {
         link.addEventListener('click', closeSidebar);
     });
