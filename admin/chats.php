@@ -78,6 +78,9 @@ require __DIR__ . '/includes/header.php';
 
             <div id="lc-chat-active" class="lc-chat-active-pro" style="display:none">
                 <div class="lc-chat-header lc-chat-header-pro">
+                    <button type="button" class="lc-chat-back" id="lc-chat-back" aria-label="Back to chats">
+                        <i class="ti ti-arrow-left"></i>
+                    </button>
                     <div class="lc-chat-header-visitor">
                         <div class="lc-chat-header-av" id="lc-chat-header-av" aria-hidden="true">V</div>
                         <div class="lc-chat-header-info">

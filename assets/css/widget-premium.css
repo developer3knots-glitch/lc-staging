@@ -1853,23 +1853,57 @@
     background: color-mix(in srgb, var(--lcw-primary) 8%, #fff);
 }
 
-/* ????????? Mobile fullscreen ????????? */
-@media (max-width: 480px) {
-    #lc-widget-root { right: 12px; bottom: 12px; }
-    #lc-panel, .lcw-panel {
+/* Mobile / small tablet: chat fills the screen, clear of notches and the home bar */
+@media (max-width: 760px) {
+    #lc-widget-root {
+        right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel,
+    #lc-panel,
+    .lcw-panel,
+    #lc-panel.lcw-mode-prechat {
         position: fixed;
-        bottom: 0;
+        top: 0;
         right: 0;
+        bottom: 0;
         left: 0;
         width: 100%;
         max-width: 100%;
-        height: 100%;
-        max-height: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
         border-radius: 0;
+        border: none;
         animation: lcw-slide-up-mobile 0.3s ease;
     }
-    #lc-panel.lcw-mode-prechat { height: 100%; max-height: 100%; }
-    .lcw-teaser { max-width: calc(100vw - 48px); bottom: calc(var(--lcw-bubble-size) + 12px); }
+    #lc-panel-head,
+    .lcw-toolbar {
+        padding-top: calc(0.7rem + env(safe-area-inset-top));
+    }
+    .lcw-compose,
+    #lc-panel-compose {
+        padding-left: max(0.7rem, env(safe-area-inset-left));
+        padding-right: max(0.7rem, env(safe-area-inset-right));
+        padding-bottom: calc(0.65rem + env(safe-area-inset-bottom));
+    }
+    #lc-input,
+    .lcw-compose textarea,
+    .lcw-prechat-form input,
+    .lcw-prechat-form textarea {
+        font-size: 16px;
+    }
+    .lcw-msg-row {
+        max-width: 92%;
+    }
+    .lcw-prechat,
+    #lc-panel-messages {
+        padding-left: max(0.75rem, env(safe-area-inset-left));
+        padding-right: max(0.75rem, env(safe-area-inset-right));
+    }
+    .lcw-teaser {
+        max-width: calc(100vw - 48px);
+        bottom: calc(var(--lcw-bubble-size) + 12px);
+    }
     @keyframes lcw-slide-up-mobile {
         from { opacity: 0; transform: translateY(100%); }
         to { opacity: 1; transform: translateY(0); }
@@ -2939,4 +2973,127 @@ button.lcw-head-menu-item:focus-visible {
     font-size: 0.68rem;
     font-weight: 600;
     color: #0369a1;
+}
+
+/* Phone + short touch screens: chat is a full-screen sheet and stays above the keyboard */
+@media (max-width: 840px), ((max-height: 520px) and (pointer: coarse)) {
+    #lc-widget-root.lcw-panel-open {
+        top: var(--lcw-vv-top, 0);
+        right: 0;
+        bottom: auto;
+        left: 0;
+        width: 100%;
+        height: var(--lcw-vvh, 100dvh);
+        max-height: var(--lcw-vvh, 100dvh);
+    }
+    #lc-widget-root.lcw-panel-open #lc-bubble {
+        display: none !important;
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-dark,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-light,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-mode-prechat,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-chat-active {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        animation: none;
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel-head,
+    #lc-widget-root.lcw-panel-open .lcw-toolbar,
+    #lc-widget-root.lcw-panel-open .lcw-chat-head {
+        padding-top: calc(0.7rem + env(safe-area-inset-top));
+        padding-left: max(0.75rem, env(safe-area-inset-left));
+        padding-right: max(0.55rem, env(safe-area-inset-right));
+    }
+    #lc-widget-root.lcw-panel-open .lcw-head-main,
+    #lc-widget-root.lcw-panel-open .lcw-head-copy {
+        min-width: 0;
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel-agent-name,
+    #lc-widget-root.lcw-panel-open #lc-panel-head strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-head-btn,
+    #lc-widget-root.lcw-panel-open .lcw-head-icon-btn {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel-messages,
+    #lc-widget-root.lcw-panel-open .lcw-prechat,
+    #lc-widget-root.lcw-panel-open #lc-panel-ended {
+        padding-left: max(0.8rem, env(safe-area-inset-left));
+        padding-right: max(0.8rem, env(safe-area-inset-right));
+        -webkit-overflow-scrolling: touch;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-msg-row {
+        max-width: min(88%, 520px);
+    }
+    #lc-widget-root.lcw-panel-open .lcw-msg,
+    #lc-widget-root.lcw-panel-open .lcw-agent,
+    #lc-widget-root.lcw-panel-open .lcw-visitor {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    #lc-widget-root.lcw-panel-open #lc-panel-compose,
+    #lc-widget-root.lcw-panel-open .lcw-compose,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-dark.lcw-chat-active #lc-panel-compose,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-light.lcw-chat-active #lc-panel-compose {
+        padding-left: max(0.7rem, env(safe-area-inset-left)) !important;
+        padding-right: max(0.7rem, env(safe-area-inset-right)) !important;
+        padding-bottom: calc(0.55rem + env(safe-area-inset-bottom)) !important;
+    }
+    #lc-widget-root.lcw-panel-open #lc-input,
+    #lc-widget-root.lcw-panel-open .lcw-compose textarea,
+    #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-dark.lcw-chat-active #lc-input,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form input,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea {
+        font-size: 16px !important;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-compose-plus,
+    #lc-widget-root.lcw-panel-open .lcw-compose-emoji,
+    #lc-widget-root.lcw-panel-open .lcw-attach-btn,
+    #lc-widget-root.lcw-panel-open #lc-send {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-emoji-picker {
+        max-height: min(34vh, 220px);
+    }
+    #lc-widget-root.lcw-panel-open .lcw-form-card,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form input,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-sheet-overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-sheet,
+    #lc-widget-root.lcw-panel-open .lcw-sheet-wide {
+        width: 100%;
+        max-width: none;
+        border-radius: 18px 18px 0 0;
+        padding-bottom: calc(1.15rem + env(safe-area-inset-bottom));
+    }
+    #lc-widget-root.lcw-panel-open .lcw-teaser {
+        max-width: calc(100vw - 88px);
+        right: 0;
+    }
+    #lc-widget-root.lcw-panel-open .lcw-attach-link-text strong,
+    #lc-widget-root.lcw-panel-open .lcw-attach-file-body strong {
+        max-width: 46vw;
+    }
 }

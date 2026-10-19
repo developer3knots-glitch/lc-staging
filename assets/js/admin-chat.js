@@ -77,6 +77,12 @@
     var messagesEl = document.getElementById('lc-messages');
     var emptyEl = document.getElementById('lc-chat-empty');
     var activeEl = document.getElementById('lc-chat-active');
+
+    function setChatThreadOpen(open) {
+        if (activeEl) activeEl.style.display = open ? 'flex' : 'none';
+        if (emptyEl) emptyEl.style.display = open ? 'none' : 'flex';
+        document.body.classList.toggle('lc-mobile-thread', !!open);
+    }
     var replyInput = document.getElementById('lc-reply-input');
     var visitorNameEl = document.getElementById('lc-chat-visitor-name');
     var visitorMetaEl = document.getElementById('lc-chat-visitor-meta');
@@ -2621,8 +2627,7 @@
                     selectedId = 0;
                     syncRealtimeConversationChannel(0);
                     syncBrowserState(0, currentTab);
-                    activeEl.style.display = 'none';
-                    emptyEl.style.display = 'flex';
+                    setChatThreadOpen(false);
                     messagesEl.innerHTML = '';
                     lastMsgId = 0;
                     chatTransferredAway = false;
@@ -3554,8 +3559,7 @@
         maxKnownDeliveredAgentMsgId = 0;
         clearReceiptSyncBursts();
         messagesEl.innerHTML = '';
-        emptyEl.style.display = 'none';
-        activeEl.style.display = 'flex';
+        setChatThreadOpen(true);
         lastJourneyId = 0;
         chatTransferredAway = false;
         closeTransferPanel();
@@ -3868,8 +3872,7 @@
                     if (data.error === 'Forbidden') {
                         selectedId = 0;
                         syncBrowserState(0, currentTab);
-                        activeEl.style.display = 'none';
-                        emptyEl.style.display = 'flex';
+                        setChatThreadOpen(false);
                         messagesEl.innerHTML = '';
                         lastMsgId = 0;
                         needsFullHistory = false;
@@ -4867,8 +4870,7 @@
             if (selectedId === id) {
                 selectedId = 0;
                 syncBrowserState(0, currentTab);
-                if (activeEl) activeEl.style.display = 'none';
-                if (emptyEl) emptyEl.style.display = 'flex';
+                setChatThreadOpen(false);
             }
             lastConversations = (lastConversations || []).filter(function (row) {
                 return (parseInt(row.id, 10) || 0) !== id;
@@ -6049,10 +6051,21 @@
             openConversation(popId);
         } else if (!popId && selectedId > 0) {
             selectedId = 0;
-            if (activeEl) activeEl.style.display = 'none';
-            if (emptyEl) emptyEl.style.display = 'flex';
+            setChatThreadOpen(false);
         }
     });
+
+    var chatBackBtn = document.getElementById('lc-chat-back');
+    if (chatBackBtn) {
+        chatBackBtn.addEventListener('click', function () {
+            if (typeof closeMoreMenu === 'function') closeMoreMenu();
+            if (typeof closeTransferPanel === 'function') closeTransferPanel();
+            selectedId = 0;
+            syncRealtimeConversationChannel(0);
+            syncBrowserState(0, currentTab);
+            setChatThreadOpen(false);
+        });
+    }
 
     if (selectedId) openConversation(selectedId);
 })();

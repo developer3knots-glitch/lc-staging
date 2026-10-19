@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 162;
+    var LC_WIDGET_BUILD = 163;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -619,7 +619,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=67';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=69';
         document.head.appendChild(link);
     }
 
@@ -651,6 +651,29 @@
     var ICON_EMOJI = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
     var ICON_SEND_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
     var ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+    function bindMobileChatViewport() {
+        var vv = window.visualViewport;
+        var root = document.getElementById('lc-widget-root');
+        if (!vv || !root) return;
+        var query = window.matchMedia('(max-width: 840px), ((max-height: 520px) and (pointer: coarse))');
+        var apply = function () {
+            if (!query.matches) {
+                root.style.removeProperty('--lcw-vvh');
+                root.style.removeProperty('--lcw-vv-top');
+                return;
+            }
+            root.style.setProperty('--lcw-vvh', Math.max(240, Math.round(vv.height)) + 'px');
+            root.style.setProperty('--lcw-vv-top', Math.max(0, Math.round(vv.offsetTop)) + 'px');
+        };
+        vv.addEventListener('resize', apply);
+        vv.addEventListener('scroll', apply);
+        if (query.addEventListener) query.addEventListener('change', apply);
+        window.addEventListener('orientationchange', function () {
+            setTimeout(apply, 80);
+        });
+        apply();
+    }
 
     function buildWidget() {
         injectStyles();
@@ -914,6 +937,7 @@
                     '</div>' +
                 '</div>' +            '</div>';
         document.body.appendChild(root);
+        bindMobileChatViewport();
 
         var msgScrollBox = document.getElementById('lc-panel-messages');
         if (msgScrollBox) {
