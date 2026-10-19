@@ -90,6 +90,16 @@
         syncPollControls();
     }
 
+    document.querySelectorAll('.lc-notify-sound-preview').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var select = document.getElementById(btn.getAttribute('data-sound-for') || '');
+            var sound = select ? select.value : 'default';
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true, sound: sound });
+            }
+        });
+    });
+
     var navLinks = document.querySelectorAll('.lc-settings-nav-link');
     var sections = document.querySelectorAll('.lc-settings-section');
     if (navLinks.length && sections.length) {

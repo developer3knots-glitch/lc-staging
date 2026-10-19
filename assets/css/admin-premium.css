@@ -5452,6 +5452,47 @@ body.lc-avatar-modal-open {
     box-shadow: var(--lc-shadow-sm);
 }
 
+.lc-notify-sound-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+.lc-notify-sound-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1rem;
+    border: 1px solid #e8edf3;
+    border-radius: 12px;
+    background: #fff;
+}
+.lc-notify-sound-copy {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+.lc-notify-sound-copy strong {
+    display: block;
+    font-size: 0.92rem;
+    color: #111827;
+}
+.lc-notify-sound-copy span {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+.lc-notify-sound-row select {
+    min-width: 160px;
+    height: 36px;
+    border: 1px solid #d6dee8;
+    border-radius: 8px;
+    padding: 0 0.6rem;
+    background: #fff;
+    color: #111827;
+}
+
 .lc-settings-nav-link {
     display: inline-flex;
     align-items: center;

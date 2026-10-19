@@ -475,7 +475,7 @@
             showLandToast(name, detail);
             fireBrowserPush(name, detail, vid);
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true });
+                window.LCNotifySound.play({ force: true, event: 'visitor_land' });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);
@@ -505,7 +505,7 @@
                 url: chatUrl
             });
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true });
+                window.LCNotifySound.play({ force: true, event: 'incoming_chat' });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);
@@ -543,7 +543,7 @@
                 url: chatUrl
             });
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true });
+                window.LCNotifySound.play({ force: true, event: 'chat_transfer' });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);

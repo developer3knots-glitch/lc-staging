@@ -29,12 +29,48 @@
         } catch (e) { /* ignore */ }
     }
 
+    var PRESETS = {
+        default: [
+            { freq: 880, delay: 0, dur: 0.42 },
+            { freq: 1318.5, delay: 0.1, dur: 0.48 }
+        ],
+        bell: [
+            { freq: 1046, delay: 0, dur: 0.62, type: 'triangle', peak: 0.22 }
+        ],
+        ping: [
+            { freq: 1568, delay: 0, dur: 0.14, type: 'sine', peak: 0.16 }
+        ],
+        pop: [
+            { freq: 330, delay: 0, dur: 0.1, type: 'square', peak: 0.07 }
+        ],
+        soft: [
+            { freq: 523, delay: 0, dur: 0.36, peak: 0.12 },
+            { freq: 659, delay: 0.14, dur: 0.42, peak: 0.1 }
+        ],
+        rise: [
+            { freq: 440, delay: 0, dur: 0.16 },
+            { freq: 554, delay: 0.12, dur: 0.16 },
+            { freq: 659, delay: 0.24, dur: 0.28 }
+        ]
+    };
+
+    function resolveSound(opts) {
+        if (opts.sound) return String(opts.sound);
+        var eventName = opts.event ? String(opts.event) : '';
+        var map = global.LC_NOTIFY_SOUNDS || {};
+        if (eventName && map[eventName]) return String(map[eventName]);
+        return 'default';
+    }
+
     /**
-     * Soft “ding-dong” bell for new incoming messages.
-     * @param {{ force?: boolean }} [opts]
+     * @param {{ force?: boolean, sound?: string, event?: string }} [opts]
      */
     function play(opts) {
         opts = opts || {};
+        var soundId = resolveSound(opts);
+        if (soundId === 'none' || soundId === 'off' || soundId === 'silent') {
+            return;
+        }
         var now = Date.now();
         if (!opts.force && now - lastPlayAt < minGapMs) {
             return;
@@ -54,29 +90,24 @@
             master.gain.value = 0.55;
             master.connect(c.destination);
 
-            // Two-note chime: ~A5 then ~E6 (soft bell)
-            var notes = [
-                { freq: 880, delay: 0, dur: 0.42 },
-                { freq: 1318.5, delay: 0.1, dur: 0.48 }
-            ];
-
+            var notes = PRESETS[soundId] || PRESETS.default;
             notes.forEach(function (note) {
                 var t0 = c.currentTime + note.delay;
                 var osc = c.createOscillator();
                 var gain = c.createGain();
                 var filter = c.createBiquadFilter();
+                var peak = note.peak || 0.18;
 
-                osc.type = 'sine';
+                osc.type = note.type || 'sine';
                 osc.frequency.setValueAtTime(note.freq, t0);
-                // slight pitch drop like a real chime
-                osc.frequency.exponentialRampToValueAtTime(note.freq * 0.97, t0 + note.dur);
+                osc.frequency.exponentialRampToValueAtTime(Math.max(40, note.freq * 0.97), t0 + note.dur);
 
                 filter.type = 'lowpass';
                 filter.frequency.value = 3200;
 
                 gain.gain.setValueAtTime(0.0001, t0);
-                gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.018);
-                gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.12);
+                gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.018);
+                gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.33), t0 + Math.min(0.12, note.dur * 0.45));
                 gain.gain.exponentialRampToValueAtTime(0.0001, t0 + note.dur);
 
                 osc.connect(filter);

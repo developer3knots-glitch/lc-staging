@@ -156,6 +156,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $flashError = 'Unable to block that IP.';
             }
+        } elseif ($action === 'save_notifications') {
+            $allowed = array_keys(lc_notify_sound_options());
+            $map = [];
+            foreach (array_keys(lc_notify_sound_events()) as $eventKey) {
+                $val = (string) ($_POST['sound_' . $eventKey] ?? 'default');
+                $map[$eventKey] = in_array($val, $allowed, true) ? $val : 'default';
+            }
+            lc_set_account_setting($accountId, 'notify_sounds', json_encode($map));
+            $flashMessage = 'Notification sounds saved.';
+            $redirectHash = '#lc-settings-notify';
         } elseif ($action === 'unblock_ip') {
             $ip = trim((string) ($_POST['ip_address'] ?? ''));
             if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
@@ -251,6 +261,7 @@ require __DIR__ . '/includes/header.php';
 
     <nav class="lc-settings-nav" aria-label="Settings sections">
         <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
+        <a href="#lc-settings-notify" class="lc-settings-nav-link"><i class="ti ti-bell"></i> Notifications</a>
         <a href="#lc-settings-email" class="lc-settings-nav-link"><i class="ti ti-mail"></i> Email</a>
         <a href="#lc-settings-tickets" class="lc-settings-nav-link"><i class="ti ti-ticket"></i> Tickets</a>
         <a href="#lc-settings-geo" class="lc-settings-nav-link"><i class="ti ti-world-off"></i> Countries</a>
@@ -357,6 +368,41 @@ require __DIR__ . '/includes/header.php';
                                 </div>
                             </div>                        </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-notify">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-bell"></i> Notification sounds</h3>
+                    <span class="lc-card-sub">Each alert can use its own sound</span>
+                </div>
+                <div class="lc-card-body">
+                    <form method="post" class="lc-form" id="lc-notify-sounds-form">
+                        <input type="hidden" name="action" value="save_notifications">
+                        <div class="lc-notify-sound-list">
+                            <?php
+                            $notifySounds = lc_notify_sound_map($accountId);
+                            $notifyOptions = lc_notify_sound_options();
+                            foreach (lc_notify_sound_events() as $eventKey => $eventMeta):
+                                $selectedSound = $notifySounds[$eventKey] ?? 'default';
+                                $selectId = 'lc-sound-' . $eventKey;
+                            ?>
+                            <div class="lc-notify-sound-row">
+                                <div class="lc-notify-sound-copy">
+                                    <strong><?= lc_sanitize($eventMeta[0]) ?></strong>
+                                    <span><?= lc_sanitize($eventMeta[1]) ?></span>
+                                </div>
+                                <select name="sound_<?= lc_sanitize($eventKey) ?>" id="<?= lc_sanitize($selectId) ?>">
+                                    <?php foreach ($notifyOptions as $soundKey => $soundLabel): ?>
+                                    <option value="<?= lc_sanitize($soundKey) ?>"<?= $selectedSound === $soundKey ? ' selected' : '' ?>><?= lc_sanitize($soundLabel) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-notify-sound-preview" data-sound-for="<?= lc_sanitize($selectId) ?>">Preview</button>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save notification sounds</button>
                     </form>
                 </div>
             </section>

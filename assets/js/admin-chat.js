@@ -225,7 +225,7 @@
 
     function playIncomingSound() {
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-            window.LCNotifySound.play();
+            window.LCNotifySound.play({ event: 'new_message' });
         }
         if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
             window.LCTabNotify.pulse();

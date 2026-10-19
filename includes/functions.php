@@ -285,6 +285,58 @@ function lc_uid(): string
 }
 
 /**
+ * Built-in notification tones. Keys must match assets/js/lc-notify-sound.js.
+ *
+ * @return array<string, string>
+ */
+function lc_notify_sound_options(): array
+{
+    return [
+        'default' => 'Default chime',
+        'bell' => 'Bell',
+        'ping' => 'Ping',
+        'pop' => 'Pop',
+        'soft' => 'Soft',
+        'rise' => 'Rising',
+        'none' => 'Silent',
+    ];
+}
+
+/**
+ * @return array<string, array{0: string, 1: string}>
+ */
+function lc_notify_sound_events(): array
+{
+    return [
+        'visitor_land' => ['Visitor on site', 'Someone opens the website'],
+        'incoming_chat' => ['Incoming chat', 'A visitor starts a chat'],
+        'chat_transfer' => ['Chat transferred', 'A chat is transferred to an agent'],
+        'new_message' => ['New message', 'A visitor sends a message'],
+    ];
+}
+
+/**
+ * @return array<string, string>
+ */
+function lc_notify_sound_map(int $accountId): array
+{
+    $allowed = array_keys(lc_notify_sound_options());
+    $raw = function_exists('lc_account_setting')
+        ? lc_account_setting($accountId, 'notify_sounds', '')
+        : lc_setting('notify_sounds', '');
+    $saved = json_decode($raw, true);
+    if (!is_array($saved)) {
+        $saved = [];
+    }
+    $out = [];
+    foreach (lc_notify_sound_events() as $key => $meta) {
+        $val = (string) ($saved[$key] ?? 'default');
+        $out[$key] = in_array($val, $allowed, true) ? $val : 'default';
+    }
+    return $out;
+}
+
+/**
  * Logged-in agents ping last_seen about every 45s.
  * No ping for 2 minutes means logout was missed: browser closed or session expired.
  * Manual Away stays while the session is still alive.
