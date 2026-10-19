@@ -136,6 +136,7 @@ if ($agent['role'] === 'admin') {
                     <span class="lc-topbar-avatar-dot <?= lc_sanitize($agent['status'] ?? 'offline') ?>" aria-hidden="true"></span>
                 </div>
                 <button type="button" class="lc-topbar-close" id="lc-topbar-close" aria-label="Close menu"><i class="ti ti-x"></i></button>
+                <button type="button" class="lc-inbox-return" id="lc-inbox-return" aria-label="Close chat list"><i class="ti ti-x"></i></button>
             </div>
         </header>
         <div class="lc-cmdk-backdrop" id="lc-cmdk-backdrop" hidden data-cmdk-close></div>

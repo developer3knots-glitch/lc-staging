@@ -82,6 +82,7 @@
         if (activeEl) activeEl.style.display = open ? 'flex' : 'none';
         if (emptyEl) emptyEl.style.display = open ? 'none' : 'flex';
         document.body.classList.toggle('lc-mobile-thread', !!open);
+        if (open || !selectedId) document.body.classList.remove('lc-inbox-can-return');
     }
     var replyInput = document.getElementById('lc-reply-input');
     var visitorNameEl = document.getElementById('lc-chat-visitor-name');
@@ -6062,10 +6063,23 @@
         chatBackBtn.addEventListener('click', function () {
             if (typeof closeMoreMenu === 'function') closeMoreMenu();
             if (typeof closeTransferPanel === 'function') closeTransferPanel();
+            var phone = window.matchMedia('(max-width: 900px)').matches;
+            if (phone && selectedId > 0) {
+                setChatThreadOpen(false);
+                document.body.classList.add('lc-inbox-can-return');
+                return;
+            }
             selectedId = 0;
             syncRealtimeConversationChannel(0);
             syncBrowserState(0, currentTab);
             setChatThreadOpen(false);
+        });
+    }
+
+    var inboxReturnBtn = document.getElementById('lc-inbox-return');
+    if (inboxReturnBtn) {
+        inboxReturnBtn.addEventListener('click', function () {
+            if (selectedId > 0) setChatThreadOpen(true);
         });
     }
 
