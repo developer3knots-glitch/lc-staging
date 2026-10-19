@@ -289,17 +289,66 @@ function lc_uid(): string
  *
  * @return array<string, string>
  */
-function lc_notify_sound_options(): array
+/**
+ * @return array<string, array<string, string>>
+ */
+function lc_notify_sound_groups(): array
 {
     return [
-        'default' => 'Default chime',
-        'bell' => 'Bell',
-        'ping' => 'Ping',
-        'pop' => 'Pop',
-        'soft' => 'Soft',
-        'rise' => 'Rising',
-        'none' => 'Silent',
+        'Classic' => [
+            'default' => 'Default chime',
+            'doorbell' => 'Doorbell',
+            'bell' => 'Bell',
+            'message' => 'Message',
+            'success' => 'Success',
+        ],
+        'Bright' => [
+            'glass' => 'Glass',
+            'crystal' => 'Crystal',
+            'ping' => 'Ping',
+            'coin' => 'Coin',
+            'sparkle' => 'Sparkle',
+            'xylophone' => 'Xylophone',
+        ],
+        'Soft' => [
+            'soft' => 'Soft',
+            'calm' => 'Calm',
+            'piano' => 'Piano',
+            'marimba' => 'Marimba',
+            'harp' => 'Harp',
+            'gong' => 'Gong',
+        ],
+        'Short' => [
+            'pop' => 'Pop',
+            'bubble' => 'Bubble',
+            'knock' => 'Knock',
+            'tap' => 'Tap',
+        ],
+        'Patterns' => [
+            'rise' => 'Rising',
+            'drop' => 'Falling',
+            'chirp' => 'Chirp',
+            'whistle' => 'Whistle',
+            'triple' => 'Triple beep',
+            'digital' => 'Digital',
+            'alert' => 'Alert',
+            'urgent' => 'Urgent',
+        ],
+        'Off' => [
+            'none' => 'Silent',
+        ],
     ];
+}
+
+function lc_notify_sound_options(): array
+{
+    $flat = [];
+    foreach (lc_notify_sound_groups() as $group) {
+        foreach ($group as $key => $label) {
+            $flat[$key] = $label;
+        }
+    }
+    return $flat;
 }
 
 /**

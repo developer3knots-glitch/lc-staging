@@ -383,7 +383,6 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-notify-sound-list">
                             <?php
                             $notifySounds = lc_notify_sound_map($accountId);
-                            $notifyOptions = lc_notify_sound_options();
                             foreach (lc_notify_sound_events() as $eventKey => $eventMeta):
                                 $selectedSound = $notifySounds[$eventKey] ?? 'default';
                                 $selectId = 'lc-sound-' . $eventKey;
@@ -394,8 +393,12 @@ require __DIR__ . '/includes/header.php';
                                     <span><?= lc_sanitize($eventMeta[1]) ?></span>
                                 </div>
                                 <select name="sound_<?= lc_sanitize($eventKey) ?>" id="<?= lc_sanitize($selectId) ?>">
-                                    <?php foreach ($notifyOptions as $soundKey => $soundLabel): ?>
-                                    <option value="<?= lc_sanitize($soundKey) ?>"<?= $selectedSound === $soundKey ? ' selected' : '' ?>><?= lc_sanitize($soundLabel) ?></option>
+                                    <?php foreach (lc_notify_sound_groups() as $groupLabel => $groupSounds): ?>
+                                    <optgroup label="<?= lc_sanitize($groupLabel) ?>">
+                                        <?php foreach ($groupSounds as $soundKey => $soundLabel): ?>
+                                        <option value="<?= lc_sanitize($soundKey) ?>"<?= $selectedSound === $soundKey ? ' selected' : '' ?>><?= lc_sanitize($soundLabel) ?></option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
                                     <?php endforeach; ?>
                                 </select>
                                 <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-notify-sound-preview" data-sound-for="<?= lc_sanitize($selectId) ?>">Preview</button>

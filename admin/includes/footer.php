@@ -20,7 +20,7 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 }, $navItems ?? []), JSON_UNESCAPED_SLASHES) ?>;
 </script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-time.js?v=41"></script>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=41"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=42"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-tab-notify.js?v=41"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-realtime.js?v=13"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=47"></script>
