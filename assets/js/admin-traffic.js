@@ -36,6 +36,9 @@
     var seenOnSite = {};
     var seenFilterKey = '';
     var allSessionRows = [];
+    var openMetaId = 0;
+    var openMetaToken = 0;
+    var metaMapKey = '';
 
     var AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#6366f1'];
 
@@ -354,10 +357,12 @@
             var time = row.time_on_pages_label || '—';
             var status = row.status || 'left';
             var blocked = !!row.ip_blocked;
+            var vid = parseInt(row.visitor_id, 10) || 0;
             return (
                 '<tr data-status="' + esc(status) + '"' +
+                    (vid ? ' data-visitor-id="' + vid + '"' : '') +
                     (ip ? ' data-ip="' + esc(ip) + '"' : '') +
-                    ' class="lc-traffic-row is-' + esc(status) + (blocked ? ' is-ip-blocked' : '') + '">' +
+                    ' class="lc-traffic-row is-' + esc(status) + (blocked ? ' is-ip-blocked' : '') + (vid && vid === openMetaId ? ' is-meta-open' : '') + '">' +
                     '<td>' +
                         '<div class="lc-traffic-person">' +
                             '<span class="lc-traffic-av" style="background:' + colorFor(name) + '">' + esc(row.initials || '?') + '</span>' +
@@ -642,14 +647,279 @@
                 return;
             }
             var btn = e.target.closest('[data-start-chat]');
-            if (!btn) return;
-            e.preventDefault();
-            startChatWithVisitor(
-                btn.getAttribute('data-start-chat'),
-                btn.getAttribute('data-brand-id'),
-                btn,
-                btn.getAttribute('data-greeting') === '1'
+            if (btn) {
+                e.preventDefault();
+                startChatWithVisitor(
+                    btn.getAttribute('data-start-chat'),
+                    btn.getAttribute('data-brand-id'),
+                    btn,
+                    btn.getAttribute('data-greeting') === '1'
+                );
+                return;
+            }
+            if (e.target.closest('a, button')) return;
+            var rowEl = e.target.closest('tr[data-visitor-id]');
+            if (!rowEl) return;
+            openVisitorMeta(parseInt(rowEl.getAttribute('data-visitor-id'), 10) || 0);
+        });
+    }
+
+    var metaPanel = document.getElementById('lc-traffic-meta');
+    var metaBackdrop = document.getElementById('lc-traffic-meta-backdrop');
+    var metaClose = document.getElementById('lc-traffic-meta-close');
+
+    function findVisitor(id) {
+        id = parseInt(id, 10) || 0;
+        for (var i = 0; i < allVisitors.length; i++) {
+            if ((parseInt(allVisitors[i].visitor_id, 10) || 0) === id) return allVisitors[i];
+        }
+        return null;
+    }
+
+    function readUrlParam(url, key) {
+        if (!url) return '';
+        try {
+            var parsed = new URL(url, window.location.origin);
+            return parsed.searchParams.get(key) || '';
+        } catch (e) {
+            var match = String(url).match(new RegExp('[?&]' + key + '=([^&#]+)'));
+            return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : '';
+        }
+    }
+
+    function stripUrlParam(url, key) {
+        if (!url) return '';
+        try {
+            var parsed = new URL(url, window.location.origin);
+            parsed.searchParams.delete(key);
+            var query = parsed.searchParams.toString();
+            return parsed.origin + parsed.pathname + (query ? '?' + query : '') + (parsed.hash || '');
+        } catch (e) {
+            return String(url).replace(new RegExp('([?&])' + key + '=[^&#]*&?'), '$1').replace(/[?&]$/, '');
+        }
+    }
+
+    function findGclid(pages, pageUrl) {
+        var urls = [pageUrl || ''];
+        (pages || []).forEach(function (page) {
+            urls.push(page.page_url || '', page.referrer || '');
+        });
+        for (var i = 0; i < urls.length; i++) {
+            var value = readUrlParam(urls[i], 'gclid');
+            if (value) return value;
+        }
+        return '';
+    }
+
+    function setMetaText(id, value) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var text = String(value || '').trim();
+        el.textContent = text || '—';
+    }
+
+    function refreshMetaCopy(rootEl) {
+        if (!rootEl) return;
+        rootEl.querySelectorAll('.lc-meta-copy').forEach(function (btn) {
+            var targetId = btn.getAttribute('data-copy-target');
+            var target = targetId ? document.getElementById(targetId) : null;
+            var text = target ? String(target.textContent || '').trim() : '';
+            var empty = !text || text === '-' || text === '—' || text === ' - ';
+            btn.hidden = empty;
+        });
+    }
+
+    function paintMetaMap(geo) {
+        var wrap = document.getElementById('lc-traffic-meta-map-wrap');
+        var iframe = document.getElementById('lc-traffic-meta-map');
+        if (!wrap || !iframe) return;
+        geo = geo || {};
+        var lat = geo.lat;
+        var lon = geo.lon;
+        var label = String(geo.label || geo.country || '').trim();
+        var source = String(geo.source || 'ip').toLowerCase();
+        var key = source === 'browser' && lat && lon
+            ? ('gps:' + lat + ',' + lon)
+            : (label && label !== 'Unknown' ? ('ip:' + label) : ((lat && lon) ? ('ipxy:' + lat + ',' + lon) : ''));
+        if (!key) {
+            metaMapKey = '';
+            iframe.removeAttribute('src');
+            wrap.hidden = true;
+            return;
+        }
+        wrap.hidden = false;
+        if (key === metaMapKey) return;
+        metaMapKey = key;
+        if (source === 'browser' && lat && lon) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+        } else if (label && label !== 'Unknown') {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+        } else {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
+        }
+    }
+
+    function paintMetaPages(pages) {
+        var list = document.getElementById('lc-traffic-pages');
+        var empty = document.getElementById('lc-traffic-pages-empty');
+        if (!list) return;
+        pages = pages || [];
+        if (!pages.length) {
+            list.innerHTML = '';
+            if (empty) empty.hidden = false;
+            return;
+        }
+        if (empty) empty.hidden = true;
+        list.innerHTML = pages.map(function (page, index) {
+            var raw = page.page_url || '';
+            var clean = stripUrlParam(raw, 'gclid');
+            var title = page.page_title || page.page_path || clean || 'Page';
+            var current = index === pages.length - 1;
+            return (
+                '<li class="lc-details-page-item' + (current ? ' is-current' : '') + '">' +
+                    '<span class="lc-details-page-dot" aria-hidden="true"></span>' +
+                    '<div class="lc-details-page-copy">' +
+                        '<div class="lc-details-page-title-row">' +
+                            '<a href="' + esc(clean || raw) + '" target="_blank" rel="noopener noreferrer">' + esc(title) + '</a>' +
+                            (clean ? '<button type="button" class="lc-meta-copy" data-copy="' + esc(clean) + '" aria-label="Copy page link"><i class="ti ti-copy"></i></button>' : '') +
+                        '</div>' +
+                    '</div>' +
+                '</li>'
             );
+        }).join('');
+    }
+
+    function formatSeen(iso) {
+        if (!iso) return '';
+        if (window.LCTime && window.LCTime.formatRelative) {
+            return window.LCTime.formatRelative(iso);
+        }
+        return iso;
+    }
+
+    function paintVisitorMeta(row, extra) {
+        extra = extra || {};
+        var name = extra.name || row.name || 'Visitor';
+        var ip = extra.ip || row.ip || '';
+        var email = extra.email || row.email || '';
+        var phone = extra.phone || '';
+        var location = (extra.geo && extra.geo.label) || row.country || '';
+        var pages = extra.pages || [];
+        var pageUrl = extra.page_url || row.page_url || '';
+        var gclid = findGclid(pages, pageUrl);
+        var deviceBits = [];
+        if (row.device && row.device !== 'Unknown') deviceBits.push(row.device);
+        if (row.device_browser && row.device_browser !== 'Unknown') deviceBits.push(row.device_browser);
+        if (row.device_os && row.device_os !== 'Unknown') deviceBits.push(row.device_os);
+        var av = document.getElementById('lc-traffic-meta-av');
+        if (av) {
+            av.textContent = extra.initials || row.initials || '?';
+            av.style.background = colorFor(name);
+        }
+        setMetaText('lc-traffic-meta-name', name);
+        setMetaText('lc-traffic-meta-location', location);
+        setMetaText('lc-traffic-meta-ip', ip ? ('IP ' + ip) : '');
+        var ipBtn = metaPanel ? metaPanel.querySelector('[data-copy-target="lc-traffic-meta-ip"]') : null;
+        if (ipBtn) ipBtn.setAttribute('data-copy', ip || '');
+        setMetaText('lc-traffic-meta-contact-name', name === 'Visitor' ? '' : name);
+        setMetaText('lc-traffic-meta-email', email);
+        setMetaText('lc-traffic-meta-phone', phone);
+        setMetaText('lc-traffic-meta-status', extra.activity_label || row.activity_label || '');
+        setMetaText('lc-traffic-meta-returning', (extra.returning || row.returning) ? 'Yes' : 'No');
+        setMetaText('lc-traffic-meta-seen', formatSeen(extra.last_seen || row.last_seen));
+        setMetaText('lc-traffic-meta-from', stripUrlParam(extra.referrer || '', 'gclid'));
+        setMetaText('lc-traffic-meta-gclid', gclid);
+        var gclidRow = document.getElementById('lc-traffic-meta-gclid-row');
+        if (gclidRow) gclidRow.hidden = !gclid;
+        setMetaText('lc-traffic-meta-time', row.time_on_pages_label || '');
+        setMetaText('lc-traffic-meta-page', stripUrlParam(pageUrl, 'gclid'));
+        setMetaText('lc-traffic-meta-group', extra.brand_name || row.brand_name || '');
+        setMetaText('lc-traffic-meta-ticket', extra.ticket || '');
+        setMetaText('lc-traffic-meta-agent', extra.agent_name || row.agent_name || '');
+        setMetaText('lc-traffic-meta-device', deviceBits.join(' · '));
+        paintMetaPages(pages);
+        paintMetaMap(extra.geo || null);
+        refreshMetaCopy(metaPanel);
+    }
+
+    function markOpenRow() {
+        if (!bodyEl) return;
+        bodyEl.querySelectorAll('tr[data-visitor-id]').forEach(function (tr) {
+            var id = parseInt(tr.getAttribute('data-visitor-id'), 10) || 0;
+            tr.classList.toggle('is-meta-open', openMetaId > 0 && id === openMetaId);
+        });
+    }
+
+    function closeVisitorMeta() {
+        openMetaId = 0;
+        openMetaToken++;
+        metaMapKey = '';
+        if (metaPanel) metaPanel.hidden = true;
+        if (metaBackdrop) metaBackdrop.hidden = true;
+        document.body.classList.remove('lc-traffic-meta-open');
+        markOpenRow();
+    }
+
+    function openVisitorMeta(id) {
+        id = parseInt(id, 10) || 0;
+        var row = findVisitor(id);
+        if (!id || !row || !metaPanel) return;
+        openMetaId = id;
+        if (metaPanel) metaPanel.hidden = false;
+        if (metaBackdrop) metaBackdrop.hidden = false;
+        document.body.classList.add('lc-traffic-meta-open');
+        markOpenRow();
+        paintVisitorMeta(row, {});
+        var token = ++openMetaToken;
+        fetch(base + '/api/agent-visitor-meta.php?visitor_id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (token !== openMetaToken || openMetaId !== id) return;
+                if (!data || !data.success || !data.visitor) return;
+                paintVisitorMeta(row, data.visitor);
+            })
+            .catch(function () {});
+    }
+
+    if (metaClose) {
+        metaClose.addEventListener('click', function () { closeVisitorMeta(); });
+    }
+    if (metaBackdrop) {
+        metaBackdrop.addEventListener('click', function () { closeVisitorMeta(); });
+    }
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && openMetaId) closeVisitorMeta();
+    });
+    if (metaPanel) {
+        metaPanel.addEventListener('click', function (e) {
+            var btn = e.target.closest('.lc-meta-copy');
+            if (!btn || !metaPanel.contains(btn)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var text = btn.getAttribute('data-copy') || '';
+            if (!text) {
+                var targetId = btn.getAttribute('data-copy-target');
+                var target = targetId ? document.getElementById(targetId) : null;
+                text = target ? String(target.textContent || '').trim() : '';
+            }
+            if (!text || text === '—') return;
+            var done = function () {
+                var icon = btn.querySelector('i');
+                if (icon) {
+                    icon.className = 'ti ti-check';
+                    setTimeout(function () { icon.className = 'ti ti-copy'; }, 1200);
+                }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(function () {});
+                return;
+            }
+            var area = document.createElement('textarea');
+            area.value = text;
+            document.body.appendChild(area);
+            area.select();
+            try { document.execCommand('copy'); done(); } catch (err) {}
+            area.remove();
         });
     }
 
