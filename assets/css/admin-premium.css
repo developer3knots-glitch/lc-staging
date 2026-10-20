@@ -2645,6 +2645,16 @@ div.lc-conv-item:hover {
     font-size: 0.95rem;
 }
 
+.lc-conv-supervise.is-on,
+.lc-conv-supervise.is-on:hover {
+    background: #ecfdf3;
+    color: #166534;
+    border-color: #86efac;
+    box-shadow: none;
+    transform: none;
+    cursor: default;
+}
+
 .lc-conv-item-arrow-link {
     display: inline-flex;
     align-items: center;

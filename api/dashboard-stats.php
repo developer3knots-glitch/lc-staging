@@ -113,6 +113,24 @@ try {
     }
     $recent = array_slice($recent, 0, 20);
 
+    $supervisedIds = [];
+    if (function_exists('lc_ensure_supervisors_schema')) {
+        lc_ensure_supervisors_schema();
+        try {
+            $supStmt = $db->prepare('
+                SELECT conversation_id
+                FROM conversation_supervisors
+                WHERE agent_id = ? AND dismissed_at IS NULL
+            ');
+            $supStmt->execute([$agentId]);
+            foreach ($supStmt->fetchAll(PDO::FETCH_COLUMN) as $supConvId) {
+                $supervisedIds[(int) $supConvId] = true;
+            }
+        } catch (Throwable $e) {
+            $supervisedIds = [];
+        }
+    }
+
     $recentFormatted = [];
     foreach ($recent as $r) {
         $msg = $r['last_msg'] ?? '-';
@@ -137,6 +155,7 @@ try {
             'id' => (int) $r['id'],
             'agent_id' => $rAgentId,
             'can_supervise' => $canSupervise,
+            'is_supervising' => $canSupervise && isset($supervisedIds[(int) $r['id']]),
             'transferred_to_me' => $transferredToMe,
             'visitor_name' => $name,
             'visitor_initials' => lc_avatar_initials($name),

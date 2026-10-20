@@ -116,6 +116,24 @@ if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
 }
 $recent = array_slice($recent, 0, 20);
 
+$homeSupervisedIds = [];
+if (function_exists('lc_ensure_supervisors_schema')) {
+    lc_ensure_supervisors_schema();
+    try {
+        $supStmt = $db->prepare('
+            SELECT conversation_id
+            FROM conversation_supervisors
+            WHERE agent_id = ? AND dismissed_at IS NULL
+        ');
+        $supStmt->execute([$agentId]);
+        foreach ($supStmt->fetchAll(PDO::FETCH_COLUMN) as $supConvId) {
+            $homeSupervisedIds[(int) $supConvId] = true;
+        }
+    } catch (Throwable $e) {
+        $homeSupervisedIds = [];
+    }
+}
+
 $hour = (int) date('G');
 if ($hour < 12) {
     $greeting = 'Good morning';
@@ -376,7 +394,6 @@ require __DIR__ . '/includes/header.php';
                     <?php else: foreach ($recent as $r):
                         $name = $r['visitor_name'] ?: 'Visitor';
                         $chatUrl = lc_admin_url('chats', ['id' => (int) $r['id']]);
-                        $superviseUrl = lc_admin_url('chats', ['id' => (int) $r['id'], 'supervise' => 1]);
                         $msg = function_exists('mb_strimwidth') ? mb_strimwidth($r['last_msg'] ?? '-', 0, 72, '...') : substr((string) ($r['last_msg'] ?? '-'), 0, 72);
                         $itemUnread = (int) ($r['unread'] ?? 0);
                         $dayRaw = (string) ($r['started_at'] ?? $r['last_message_at'] ?? '');
@@ -391,6 +408,7 @@ require __DIR__ . '/includes/header.php';
                         $deviceLabel = (string) ($deviceInfo['label'] ?? $deviceInfo['device'] ?? '');
                         $rAgentId = (int) ($r['agent_id'] ?? 0);
                         $canSupervise = ($r['status'] === 'active' && $rAgentId > 0 && $rAgentId !== $agentId);
+                        $isSupervising = $canSupervise && isset($homeSupervisedIds[(int) $r['id']]);
                     ?>
                     <div class="lc-conv-item<?= $itemUnread > 0 ? ' has-unread' : '' ?>" data-chat-url="<?= lc_sanitize($chatUrl) ?>">
                         <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item-main">
@@ -421,9 +439,9 @@ require __DIR__ . '/includes/header.php';
                         </a>
                         <div class="lc-conv-item-actions">
                             <?php if ($canSupervise): ?>
-                                <a href="<?= lc_sanitize($superviseUrl) ?>" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise" title="Supervise this chat">
-                                    <i class="ti ti-shield-check"></i> Supervise
-                                </a>
+                                <button type="button" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise<?= $isSupervising ? ' is-on' : '' ?>" data-supervise-id="<?= (int) $r['id'] ?>"<?= $isSupervising ? ' aria-pressed="true"' : '' ?> title="<?= $isSupervising ? 'You are supervising this chat' : 'Supervise this chat' ?>">
+                                    <i class="ti ti-shield-check"></i> <?= $isSupervising ? 'Supervised' : 'Supervise' ?>
+                                </button>
                             <?php endif; ?>
                             <a href="<?= lc_sanitize($chatUrl) ?>" class="lc-conv-item-arrow-link" aria-label="Open conversation">
                                 <i class="ti ti-chevron-right lc-conv-item-arrow"></i>

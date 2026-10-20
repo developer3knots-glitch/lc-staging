@@ -21,6 +21,7 @@
         waiting: '',
         team: ''
     };
+    var supervisingIds = {};
     var refreshInFlight = false;
     var pollTimer = null;
     var wsConnected = false;
@@ -86,6 +87,7 @@
                 r.id,
                 r.status,
                 r.can_supervise ? '1' : '0',
+                (r.is_supervising || supervisingIds[parseInt(r.id, 10) || 0]) ? '1' : '0',
                 r.transferred_to_me ? '1' : '0',
                 r.unread || 0,
                 r.last_msg || '',
@@ -180,9 +182,11 @@
         html += '</div></div>';
         html += '</a>';
         html += '<div class="lc-conv-item-actions">';
-        if (r.can_supervise && r.supervise_url) {
-            html += '<a href="' + esc(r.supervise_url) + '" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise" title="Supervise this chat">';
-            html += '<i class="ti ti-shield-check"></i> Supervise</a>';
+        if (r.can_supervise) {
+            var convId = parseInt(r.id, 10) || 0;
+            var supervising = !!r.is_supervising || !!supervisingIds[convId];
+            html += '<button type="button" class="lc-btn lc-btn-secondary lc-btn-xs lc-conv-supervise' + (supervising ? ' is-on' : '') + '" data-supervise-id="' + convId + '"' + (supervising ? ' aria-pressed="true"' : '') + ' title="' + (supervising ? 'You are supervising this chat' : 'Supervise this chat') + '">';
+            html += '<i class="ti ti-shield-check"></i> ' + (supervising ? 'Supervised' : 'Supervise') + '</button>';
         }
         html += '<a href="' + esc(r.chat_url) + '" class="lc-conv-item-arrow-link" aria-label="Open conversation">';
         html += '<i class="ti ti-chevron-right lc-conv-item-arrow"></i>';
@@ -529,10 +533,47 @@
         });
     });
 
+    function startSupervise(btn) {
+        var convId = parseInt(btn.getAttribute('data-supervise-id'), 10) || 0;
+        if (convId < 1 || btn.classList.contains('is-on') || btn.disabled) return;
+        btn.disabled = true;
+        fetch(base + '/api/agent-supervise.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: convId })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success) {
+                    throw new Error((data && data.error) || 'Could not start supervise');
+                }
+                supervisingIds[convId] = true;
+                var live = document.querySelector('.lc-conv-supervise[data-supervise-id="' + convId + '"]') || btn;
+                live.disabled = false;
+                live.classList.add('is-on');
+                live.setAttribute('aria-pressed', 'true');
+                live.title = 'You are supervising this chat';
+                live.innerHTML = '<i class="ti ti-shield-check"></i> Supervised';
+                lastSig.recent = '';
+                refreshDashboard(false);
+            })
+            .catch(function (err) {
+                btn.disabled = false;
+                window.alert(err && err.message ? err.message : 'Could not start supervise');
+            });
+    }
+
     var recentFeed = document.getElementById('lc-recent-feed');
     if (recentFeed) {
         recentFeed.addEventListener('click', function (e) {
-            if (e.target.closest('.lc-conv-supervise')) return;
+            var superviseBtn = e.target.closest('.lc-conv-supervise');
+            if (superviseBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                startSupervise(superviseBtn);
+                return;
+            }
             if (e.target.closest('.lc-conv-item-main')) return;
             if (e.target.closest('.lc-conv-item-arrow-link')) return;
             var item = e.target.closest('.lc-conv-item');
