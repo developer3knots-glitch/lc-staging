@@ -791,6 +791,10 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
             return ['1=0', []];
         }
 
+        if ($tab === 'search') {
+            return ['1=1' . $accountFilter, $accountParams];
+        }
+
         if ($tab === 'waiting') {
             // Unassigned / incoming only. Supervised chats live on the All tab.
             return [
@@ -813,7 +817,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
         }
 
         return [
-            "({$a}.agent_id = ? OR {$a}.status = 'waiting' OR {$a}.agent_id IS NULL OR {$a}.agent_id = 0 OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
+            "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
             array_merge([$agentId, $agentId, $agentId], $accountParams),
         ];
     }
@@ -824,6 +828,10 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     if ($accountId > 0) {
         $extra .= " AND {$a}.brand_id IN (SELECT id FROM brands WHERE account_id = ?)";
         $extraParams[] = $accountId;
+    }
+
+    if ($tab === 'search') {
+        return ['1=1' . $extra, $extraParams];
     }
 
     if ($tab === 'waiting') {
@@ -848,7 +856,7 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
     }
 
     return [
-        "({$a}.agent_id = ? OR {$a}.status = 'waiting' OR {$a}.agent_id IS NULL OR {$a}.agent_id = 0 OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
+        "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
         array_merge([$agentId, $agentId, $agentId], $extraParams),
     ];
 }

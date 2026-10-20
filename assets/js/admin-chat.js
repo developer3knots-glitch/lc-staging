@@ -1193,7 +1193,7 @@
             return isUnassigned;
         }
         if (tab === 'all') {
-            return true;
+            return status !== 'closed';
         }
         return true;
     }
@@ -1708,12 +1708,15 @@
             if (other.length) {
                 html += section('Active', other, 'Other agents');
             }
-            if (closed.length) {
+            if (closed.length && inboxSearch) {
                 html += section('Closed', closed, '');
             }
         }
         if (!html) {
             conversations.forEach(function (c) {
+                if (!inboxSearch && String(c.status || '') === 'closed') {
+                    return;
+                }
                 html += renderConversationItem(c);
             });
         }

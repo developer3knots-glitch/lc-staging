@@ -56,7 +56,7 @@ try {
     }
 
     // Search finds any status (incl. closed) by name / email / phone / ticket
-    $inboxTab = ($searchQ !== '') ? 'all' : $tab;
+    $inboxTab = ($searchQ !== '') ? 'search' : $tab;
     [$where, $params] = lc_agent_inbox_sql($agent, $inboxTab, 'c');
 
     if ($searchQ !== '') {
@@ -179,7 +179,7 @@ try {
                 ");
                 $one->execute([$selectedId]);
                 $extra = $one->fetch(PDO::FETCH_ASSOC);
-                if ($extra) {
+                if ($extra && ($searchQ !== '' || ($extra['status'] ?? '') !== 'closed')) {
                     $conversations[] = $extra;
                     $extraAgent = (int) ($extra['agent_id'] ?? 0);
                     if ($extraAgent > 0 && $extraAgent !== $agentId && ($extra['status'] ?? '') === 'active') {
