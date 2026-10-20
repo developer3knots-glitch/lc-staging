@@ -667,6 +667,12 @@
     var metaPanel = document.getElementById('lc-traffic-meta');
     var metaBackdrop = document.getElementById('lc-traffic-meta-backdrop');
     var metaClose = document.getElementById('lc-traffic-meta-close');
+    if (metaBackdrop && metaBackdrop.parentNode !== document.body) {
+        document.body.appendChild(metaBackdrop);
+    }
+    if (metaPanel && metaPanel.parentNode !== document.body) {
+        document.body.appendChild(metaPanel);
+    }
 
     function findVisitor(id) {
         id = parseInt(id, 10) || 0;
@@ -854,9 +860,9 @@
         openMetaId = 0;
         openMetaToken++;
         metaMapKey = '';
-        if (metaPanel) metaPanel.hidden = true;
-        if (metaBackdrop) metaBackdrop.hidden = true;
         document.body.classList.remove('lc-traffic-meta-open');
+        if (metaPanel) metaPanel.setAttribute('aria-hidden', 'true');
+        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'true');
         markOpenRow();
     }
 
@@ -865,9 +871,9 @@
         var row = findVisitor(id);
         if (!id || !row || !metaPanel) return;
         openMetaId = id;
-        if (metaPanel) metaPanel.hidden = false;
-        if (metaBackdrop) metaBackdrop.hidden = false;
         document.body.classList.add('lc-traffic-meta-open');
+        if (metaPanel) metaPanel.setAttribute('aria-hidden', 'false');
+        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'false');
         markOpenRow();
         paintVisitorMeta(row, {});
         var token = ++openMetaToken;

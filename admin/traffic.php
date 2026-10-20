@@ -135,7 +135,7 @@ require __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <aside class="lc-traffic-meta lc-details-rail" id="lc-traffic-meta" hidden aria-label="Visitor details">
+    <aside class="lc-traffic-meta lc-details-rail" id="lc-traffic-meta" aria-hidden="true" aria-label="Visitor details">
         <div class="lc-details-rail-top">
             <div class="lc-details-rail-tabs">
                 <button type="button" class="lc-details-rail-tab is-active" aria-label="Visitor profile"><i class="ti ti-user"></i></button>
@@ -206,7 +206,7 @@ require __DIR__ . '/includes/header.php';
     </aside>
     </div>
 </div>
-<div class="lc-traffic-meta-backdrop" id="lc-traffic-meta-backdrop" hidden></div>
+<div class="lc-traffic-meta-backdrop" id="lc-traffic-meta-backdrop" aria-hidden="true"></div>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>
 

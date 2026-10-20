@@ -15833,28 +15833,50 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
 }
 
 .lc-traffic-meta {
-    flex: 0 0 340px;
-    width: 340px;
-    max-height: calc(100vh - 7.5rem);
-    position: sticky;
-    top: 0.75rem;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 90;
+    width: min(380px, 92vw);
     display: flex;
     flex-direction: column;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
-    overflow: hidden;
     background: #fff;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    border-left: 1px solid #e5e7eb;
+    border-radius: 0;
+    box-shadow: -16px 0 40px rgba(15, 23, 42, 0.18);
+    transform: translateX(105%);
+    transition: transform 0.28s ease;
+    pointer-events: none;
 }
 
-.lc-traffic-meta[hidden] {
-    display: none !important;
+body.lc-traffic-meta-open .lc-traffic-meta {
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+.lc-traffic-meta .lc-details-rail-top {
+    flex: 0 0 auto;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #fff;
+}
+
+.lc-traffic-meta .lc-details-drawer-close {
+    display: inline-flex !important;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #0f172a;
 }
 
 .lc-traffic-meta .lc-chat-details-body {
     flex: 1 1 auto;
     min-height: 0;
-    max-height: calc(100vh - 11rem);
+    max-height: none;
 }
 
 .lc-traffic-meta .lc-details-acc-head {
@@ -15862,30 +15884,17 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note .lc-msg-time,
 }
 
 .lc-traffic-meta-backdrop {
-    display: none;
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    background: rgba(15, 23, 42, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
 }
 
-@media (max-width: 1100px) {
-    .lc-traffic-meta {
-        position: fixed;
-        top: 48px;
-        right: 0;
-        bottom: 0;
-        z-index: 80;
-        width: min(360px, 92vw);
-        max-height: none;
-        border-radius: 0;
-    }
-
-    .lc-traffic-meta .lc-chat-details-body {
-        max-height: none;
-    }
-
-    body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
-        display: block;
-        position: fixed;
-        inset: 0;
-        background: rgba(15, 23, 42, 0.35);
-        z-index: 70;
-    }
+body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
+    opacity: 1;
+    pointer-events: auto;
 }
