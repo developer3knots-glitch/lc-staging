@@ -3124,13 +3124,13 @@ button.lcw-head-menu-item:focus-visible {
 }
 
 #lc-widget-root .lcw-reacts {
-    position: absolute;
-    bottom: -8px;
+    position: static;
     z-index: 2;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin: 0;
+    margin: 4px 0 0;
+    clear: both;
 }
 
 #lc-widget-root .lcw-reacts[hidden] {
@@ -3145,8 +3145,8 @@ button.lcw-head-menu-item:focus-visible {
     left: 4px;
 }
 
-#lc-widget-root .lcw-msg-wrap:has(.lcw-reacts:not([hidden])) .lcw-msg-status-out {
-    margin-top: 14px;
+#lc-widget-root .lcw-msg-status-out {
+    margin-top: 2px;
 }
 
 #lc-widget-root .lcw-react-chip,

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 169;
+    var LC_WIDGET_BUILD = 170;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -627,7 +627,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=71';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=72';
         document.head.appendChild(link);
     }
 
@@ -5633,9 +5633,8 @@
         var host = node.querySelector('.lcw-reacts');
         var addBtn = node.querySelector('.lcw-react-add');
         if (!host) {
-            var bubble = node.querySelector('.lcw-msg');
-            if (bubble) bubble.insertAdjacentHTML('afterend', html);
-            else node.insertAdjacentHTML('beforeend', html);
+            var wrap = node.querySelector('.lcw-msg-wrap') || node;
+            wrap.insertAdjacentHTML('beforeend', html);
             return;
         }
         if (allow && !addBtn) {
@@ -5884,8 +5883,9 @@
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions, false) : '') +
-                '<div class="lcw-msg-status-out">' + ticks + '</div>';
+                '</div>' +
+                '<div class="lcw-msg-status-out">' + ticks + '</div>' +
+                ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions, false) : '');
             placeInTranscript(box, wrap, m.id);
         } else {
             if (!ticketDisplayEnabled && isTicketReferenceMessage(m)) {
