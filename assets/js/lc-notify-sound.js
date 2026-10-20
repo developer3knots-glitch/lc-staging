@@ -155,13 +155,14 @@
     };
 
     var VOICE_PRESETS = {
-        'voice-aria': { pitch: 1.15, rate: 1.02, index: 0, hint: /samantha|victoria|zira|aria|susan|female/i },
-        'voice-nova': { pitch: 1.28, rate: 1.08, index: 1, hint: /google uk english female|fiona|moira|karen/i },
-        'voice-maya': { pitch: 1.0, rate: 0.9, index: 2, hint: /allison|ava|serena|veena/i },
-        'voice-leo': { pitch: 0.9, rate: 1.0, index: 3, hint: /daniel|alex|david|male/i },
-        'voice-kai': { pitch: 0.72, rate: 0.96, index: 4, hint: /fred|rishi|ralph|gordon/i },
-        'voice-sage': { pitch: 1.02, rate: 0.86, index: 5, hint: /aaron|arthur|tom|lee/i }
+        'voice-aria': { gender: 'female', pitch: 1.16, rate: 1.02 },
+        'voice-nova': { gender: 'female', pitch: 1.28, rate: 1.08 },
+        'voice-maya': { gender: 'female', pitch: 1.05, rate: 0.92 },
+        'voice-leo': { gender: 'male', pitch: 0.86, rate: 1.0 },
+        'voice-kai': { gender: 'male', pitch: 0.7, rate: 0.96 },
+        'voice-sage': { gender: 'male', pitch: 1.0, rate: 0.86 }
     };
+    var pinnedVoices = {};
 
     var VOICE_LINES = {
         visitor_new: 'New visitor on the site',
@@ -177,21 +178,39 @@
         chat_transfer: 'A chat was transferred to you'
     };
 
-    function pickSpokenVoice(preset) {
+    function voiceGender(voice) {
+        var name = ((voice && voice.name) || '') + ' ' + ((voice && voice.voiceURI) || '');
+        name = name.toLowerCase();
+        if (/\bfemale\b|woman|\bzira\b|samantha|victoria|susan|fiona|moira|karen|hazel|libby|sonia|natasha|allison|\bava\b|serena|veena|salli|ivy|joanna|kimberly|kendra/.test(name)) {
+            return 'female';
+        }
+        if (/\bmale\b|\bdavid\b|\bmark\b|daniel|\balex\b|\bfred\b|rishi|george|\bguy\b|ryan|james|brian|matthew|justin|joey/.test(name)) {
+            return 'male';
+        }
+        return '';
+    }
+
+    function pickSpokenVoice(soundId, preset) {
         if (!global.speechSynthesis || !preset) return null;
+        if (pinnedVoices[soundId]) return pinnedVoices[soundId];
         var voices = global.speechSynthesis.getVoices() || [];
+        if (!voices.length) return null;
         var english = voices.filter(function (voice) {
             return /^en/i.test(voice.lang || '');
         });
         var pool = english.length ? english : voices;
-        var i;
-        for (i = 0; i < pool.length; i++) {
-            if (preset.hint && preset.hint.test(pool[i].name || '')) {
-                return pool[i];
-            }
+        var wanted = preset.gender === 'male' ? 'male' : 'female';
+        var matched = pool.filter(function (voice) {
+            return voiceGender(voice) === wanted;
+        });
+        if (!matched.length) {
+            matched = voices.filter(function (voice) {
+                return voiceGender(voice) === wanted;
+            });
         }
-        if (!pool.length) return null;
-        return pool[(preset.index || 0) % pool.length];
+        var chosen = matched[0] || null;
+        if (chosen) pinnedVoices[soundId] = chosen;
+        return chosen;
     }
 
     function speak(soundId, eventName) {
@@ -201,19 +220,45 @@
         var preset = VOICE_PRESETS[soundId];
         if (!preset) return false;
         var line = VOICE_LINES[eventName] || 'Notification';
-        try {
-            global.speechSynthesis.cancel();
-            var utterance = new global.SpeechSynthesisUtterance(line);
-            utterance.lang = 'en-US';
-            utterance.pitch = preset.pitch;
-            utterance.rate = preset.rate;
-            var voice = pickSpokenVoice(preset);
-            if (voice) utterance.voice = voice;
-            global.speechSynthesis.speak(utterance);
-            return true;
-        } catch (e) {
-            return false;
+
+        function say() {
+            var voice = pickSpokenVoice(soundId, preset);
+            if (!voice) {
+                return false;
+            }
+            try {
+                var utterance = new global.SpeechSynthesisUtterance(line);
+                utterance.pitch = preset.pitch;
+                utterance.rate = preset.rate;
+                utterance.volume = 1;
+                if (voice) {
+                    utterance.voice = voice;
+                    utterance.lang = voice.lang || 'en-US';
+                } else {
+                    utterance.lang = 'en-US';
+                }
+                if (global.speechSynthesis.speaking || global.speechSynthesis.pending) {
+                    global.speechSynthesis.cancel();
+                }
+                global.setTimeout(function () {
+                    try { global.speechSynthesis.speak(utterance); } catch (e) {}
+                }, 60);
+                return true;
+            } catch (e) {
+                return false;
+            }
         }
+
+        if (!(global.speechSynthesis.getVoices() || []).length) {
+            var onVoices = function () {
+                global.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+                say();
+            };
+            global.speechSynthesis.addEventListener('voiceschanged', onVoices);
+            try { global.speechSynthesis.getVoices(); } catch (e) {}
+            return true;
+        }
+        return say();
     }
 
     function playNote(c, master, note) {
@@ -284,9 +329,8 @@
         lastPlayAt = now;
 
         if (VOICE_PRESETS[soundId]) {
-            if (speak(soundId, opts.event ? String(opts.event) : '')) {
-                return;
-            }
+            speak(soundId, opts.event ? String(opts.event) : '');
+            return;
         }
 
         try {
