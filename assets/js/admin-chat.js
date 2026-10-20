@@ -2398,11 +2398,11 @@
         picker._msg = msgEl;
         picker.hidden = false;
         var rect = anchor.getBoundingClientRect();
-        var width = 308;
-        var height = 340;
-        var left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.left - 20));
+        var width = 320;
+        var height = 300;
+        var left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.left - 8));
         var top = rect.top - height - 8;
-        if (top < 8) top = Math.min(window.innerHeight - height - 8, rect.bottom + 8);
+        if (top < 12) top = Math.min(window.innerHeight - height - 12, rect.bottom + 8);
         picker.style.left = left + 'px';
         picker.style.top = top + 'px';
     }

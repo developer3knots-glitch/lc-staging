@@ -3224,104 +3224,96 @@ button.lcw-head-menu-item:focus-visible {
 }
 
 #lc-widget-root .lcw-react-native {
-    font-size: 16px;
+    font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 15px;
     line-height: 1;
 }
 
-#lc-widget-root .lcw-react-picker {
-    position: fixed;
-    z-index: 2147483001;
-    display: flex;
-    gap: 4px;
-    padding: 6px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.96);
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
-    backdrop-filter: blur(10px);
-}
-
 #lc-widget-root .lcw-react-picker.is-emoji-panel {
-    width: 308px;
-    max-width: calc(100vw - 16px);
+    position: absolute;
+    z-index: 30;
+    display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px;
+    gap: 0;
+    margin: 0;
+    padding: 6px 6px 4px;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+    overflow: hidden;
 }
 
 #lc-widget-root .lcw-react-picker[hidden] {
-    display: none;
-}
-
-#lc-widget-root .lcw-react-picker button {
-    width: 40px;
-    height: 40px;
-    border: 0;
-    border-radius: 12px;
-    background: transparent;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.15s ease, background 0.15s ease;
-}
-
-#lc-widget-root .lcw-react-picker .lcw-react-glyph,
-#lc-widget-root .lcw-react-picker .lcw-react-glyph svg {
-    width: 22px;
-    height: 22px;
-    flex-basis: 22px;
-}
-
-#lc-widget-root .lcw-react-picker button:hover {
-    background: #f8fafc;
-    transform: translateY(-2px) scale(1.06);
-}
-
-#lc-widget-root .lc-emoji-tabs {
-    display: flex;
-    gap: 2px;
-    overflow-x: auto;
-}
-
-#lc-widget-root .lc-emoji-tab {
-    flex: 0 0 32px;
-    width: 32px;
-    height: 32px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    font-size: 16px;
-    cursor: pointer;
-}
-
-#lc-widget-root .lc-emoji-tab.is-on {
-    background: #f1f5f9;
+    display: none !important;
 }
 
 #lc-widget-root .lc-emoji-grid {
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 2px;
-    max-height: 250px;
+    align-content: start;
+    gap: 1px;
     overflow-y: auto;
+    padding: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: #e2e8f0 transparent;
 }
 
 #lc-widget-root .lc-emoji-grid button {
     width: 100%;
     height: 34px;
+    margin: 0;
+    padding: 0;
     border: 0;
     border-radius: 8px;
     background: transparent;
-    font-size: 20px;
-    line-height: 1;
     cursor: pointer;
-    transform: none;
+    font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 20px;
+    line-height: 34px;
+    text-align: center;
 }
 
 #lc-widget-root .lc-emoji-grid button:hover {
     background: #f1f5f9;
-    transform: none;
+}
+
+#lc-widget-root .lc-emoji-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 4px 2px 2px;
+    border-top: 1px solid #f1f5f9;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+#lc-widget-root .lc-emoji-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+#lc-widget-root .lc-emoji-tab {
+    flex: 1 0 28px;
+    width: auto;
+    height: 30px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 30px;
+    opacity: 0.55;
+}
+
+#lc-widget-root .lc-emoji-tab.is-on {
+    opacity: 1;
+    background: #f1f5f9;
 }
 
 @media (hover: none) {

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 172;
+    var LC_WIDGET_BUILD = 173;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -627,7 +627,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=74';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=75';
         document.head.appendChild(link);
     }
 
@@ -5602,7 +5602,7 @@
             return;
         }
         var script = document.createElement('script');
-        script.src = siteUrl + '/assets/js/lc-emoji.js?v=1';
+        script.src = siteUrl + '/assets/js/lc-emoji.js?v=2';
         script.async = true;
         script.setAttribute('data-lc-emoji', '1');
         script.onload = function () { done(); };
@@ -5704,15 +5704,18 @@
         picker._msgId = 0;
     }
 
-    function placeEmojiPicker(picker, anchor) {
-        var rect = anchor.getBoundingClientRect();
-        var width = 308;
-        var height = 340;
-        var left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.right - width));
-        var top = rect.top - height - 8;
-        if (top < 8) top = Math.min(window.innerHeight - height - 8, rect.bottom + 8);
-        picker.style.left = left + 'px';
-        picker.style.top = top + 'px';
+    function placeEmojiPicker(picker) {
+        var panel = document.getElementById('lc-panel');
+        var compose = document.getElementById('lc-panel-compose');
+        if (panel && picker.parentNode !== panel) panel.appendChild(picker);
+        var bottom = 78;
+        if (compose) bottom = compose.offsetHeight + 10;
+        picker.style.left = '10px';
+        picker.style.right = '10px';
+        picker.style.top = 'auto';
+        picker.style.width = 'auto';
+        picker.style.height = '268px';
+        picker.style.bottom = bottom + 'px';
     }
 
     function openWidgetReactPicker(anchor, messageId) {
@@ -5727,7 +5730,7 @@
                 picker.className = 'lcw-react-picker is-emoji-panel';
                 picker.hidden = true;
                 picker.innerHTML = window.LCEmoji.shell('lcw-emoji-btn');
-                root.appendChild(picker);
+                (document.getElementById('lc-panel') || root).appendChild(picker);
                 window.LCEmoji.bind(picker, 'lcw-emoji-btn');
                 picker.addEventListener('click', function (ev) {
                     var btn = ev.target.closest('[data-emoji]');
@@ -5740,7 +5743,7 @@
             }
             picker._msgId = messageId;
             picker.hidden = false;
-            placeEmojiPicker(picker, anchor);
+            placeEmojiPicker(picker);
         });
     }
 
