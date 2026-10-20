@@ -144,8 +144,12 @@ function lc_set_message_reaction(int $conversationId, int $messageId, string $re
     if (!$msg) {
         return ['ok' => false, 'error' => 'Message not found'];
     }
-    if (!in_array((string) $msg['sender_type'], ['visitor', 'agent'], true)) {
-        return ['ok' => false, 'error' => 'Cannot react to this message'];
+    $senderType = (string) $msg['sender_type'];
+    if ($reactorType === 'agent' && $senderType !== 'visitor') {
+        return ['ok' => false, 'error' => 'Agents can only react to visitor messages'];
+    }
+    if ($reactorType === 'visitor' && $senderType !== 'agent') {
+        return ['ok' => false, 'error' => 'Visitors can only react to agent messages'];
     }
     $existing = $db->prepare('SELECT id, emoji FROM message_reactions WHERE message_id = ? AND reactor_type = ? AND reactor_id = ? LIMIT 1');
     $existing->execute([$messageId, $reactorType, $reactorId]);

@@ -2282,15 +2282,20 @@
         return order.map(function (emoji) { return groups[emoji]; });
     }
 
-    function reactionBarHtml(reactions, history) {
+    function reactionBarHtml(reactions, canReact) {
         var groups = groupAgentReactions(reactions);
-        if (!groups.length && history) return '';
+        if (!groups.length && !canReact) return '';
         var html = '<div class="lc-reacts">';
         groups.forEach(function (g) {
-            html += '<button type="button" class="lc-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
-                g.emoji + (g.count > 1 ? '<span>' + g.count + '</span>' : '') + '</button>';
+            var cls = 'lc-react-chip' + (g.mine ? ' is-mine' : '');
+            var count = g.count > 1 ? '<span>' + g.count + '</span>' : '';
+            if (canReact) {
+                html += '<button type="button" class="' + cls + '" data-emoji="' + g.emoji + '">' + g.emoji + count + '</button>';
+            } else {
+                html += '<span class="' + cls + '">' + g.emoji + count + '</span>';
+            }
         });
-        if (!history) {
+        if (canReact) {
             html += '<button type="button" class="lc-react-add" aria-label="React with emoji">+</button>';
         }
         html += '</div>';
@@ -2299,8 +2304,8 @@
 
     function paintAgentReactions(el, reactions) {
         if (!el || el.classList.contains('system')) return;
-        var history = el.hasAttribute('data-history');
-        var html = reactionBarHtml(reactions, history);
+        var canReact = el.classList.contains('visitor') && !el.hasAttribute('data-history');
+        var html = reactionBarHtml(reactions, canReact);
         var host = el.querySelector('.lc-reacts');
         if (!html) {
             if (host) host.remove();
@@ -2329,7 +2334,7 @@
     }
 
     function sendMessageReaction(msgEl, emoji) {
-        if (!msgEl || !selectedId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        if (!msgEl || !msgEl.classList.contains('visitor') || !selectedId || REACT_EMOJIS.indexOf(emoji) < 0) return;
         var messageId = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
         if (messageId < 1) return;
         var convId = selectedId;
@@ -2428,7 +2433,7 @@
         }
         html += '</div>';
         if ((sender === 'visitor' || sender === 'agent') && (parseInt(m.id, 10) || 0) > 0) {
-            html += reactionBarHtml(m.reactions || [], !!opts.history);
+            html += reactionBarHtml(m.reactions || [], sender === 'visitor' && !opts.history);
         }
         html += '</div>';
         return html;
@@ -6424,7 +6429,7 @@
                 ev.preventDefault();
                 ev.stopPropagation();
                 var msg = addBtn.closest('.lc-msg');
-                if (!msg || msg.hasAttribute('data-history')) return;
+                if (!msg || !msg.classList.contains('visitor') || msg.hasAttribute('data-history')) return;
                 openReactPicker(addBtn, msg);
                 return;
             }
@@ -6432,7 +6437,7 @@
                 ev.preventDefault();
                 ev.stopPropagation();
                 var chipMsg = chip.closest('.lc-msg');
-                if (!chipMsg || chipMsg.hasAttribute('data-history')) return;
+                if (!chipMsg || !chipMsg.classList.contains('visitor') || chipMsg.hasAttribute('data-history')) return;
                 sendMessageReaction(chipMsg, chip.getAttribute('data-emoji') || '');
             }
         });

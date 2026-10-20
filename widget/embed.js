@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 168;
+    var LC_WIDGET_BUILD = 169;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -5593,14 +5593,26 @@
         return order.map(function (emoji) { return groups[emoji]; });
     }
 
-    function widgetReactionHtml(reactions) {
+    function widgetCanReact(node) {
+        if (!node) return false;
+        if (node.classList.contains('lcw-visitor-wrap') || node.classList.contains('lcw-visitor')) return false;
+        return node.classList.contains('lcw-agent-row') || !!node.querySelector('.lcw-msg.lcw-agent');
+    }
+
+    function widgetReactionHtml(reactions, allowAdd) {
         var groups = groupWidgetReactions(reactions);
+        if (!groups.length && !allowAdd) return '';
         var chips = '';
         groups.forEach(function (g) {
-            chips += '<button type="button" class="lcw-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
-                g.emoji + (g.count > 1 ? '<span>' + g.count + '</span>' : '') + '</button>';
+            var cls = 'lcw-react-chip' + (g.mine ? ' is-mine' : '');
+            var count = g.count > 1 ? '<span>' + g.count + '</span>' : '';
+            if (allowAdd) {
+                chips += '<button type="button" class="' + cls + '" data-emoji="' + g.emoji + '">' + g.emoji + count + '</button>';
+            } else {
+                chips += '<span class="' + cls + '">' + g.emoji + count + '</span>';
+            }
         });
-        return '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button>' +
+        return (allowAdd ? '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button>' : '') +
             '<div class="lcw-reacts"' + (groups.length ? '' : ' hidden') + '>' + chips + '</div>';
     }
 
@@ -5609,7 +5621,15 @@
         if (id < 1) return;
         var node = document.querySelector('#lc-panel-messages [data-msg-id="' + id + '"]');
         if (!node || node.classList.contains('lcw-system') || node.classList.contains('lcw-join-event')) return;
-        var html = widgetReactionHtml(reactions);
+        var allow = widgetCanReact(node);
+        var html = widgetReactionHtml(reactions, allow);
+        if (!html) {
+            var oldAdd = node.querySelector('.lcw-react-add');
+            var oldHost = node.querySelector('.lcw-reacts');
+            if (oldAdd) oldAdd.remove();
+            if (oldHost) oldHost.remove();
+            return;
+        }
         var host = node.querySelector('.lcw-reacts');
         var addBtn = node.querySelector('.lcw-react-add');
         if (!host) {
@@ -5618,9 +5638,10 @@
             else node.insertAdjacentHTML('beforeend', html);
             return;
         }
-        if (!addBtn) {
+        if (allow && !addBtn) {
             host.insertAdjacentHTML('beforebegin', '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button>');
         }
+        if (!allow && addBtn) addBtn.remove();
         var next = document.createElement('div');
         next.innerHTML = html;
         var nextHost = next.querySelector('.lcw-reacts');
@@ -5686,6 +5707,8 @@
     function sendWidgetReaction(messageId, emoji) {
         messageId = parseInt(messageId, 10) || 0;
         if (messageId < 1 || !conversationId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        var node = document.querySelector('#lc-panel-messages [data-msg-id="' + messageId + '"]');
+        if (!widgetCanReact(node)) return;
         fetch(siteUrl + '/api/visitor-react.php', {
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),
@@ -5715,7 +5738,7 @@
                 ev.stopPropagation();
                 var row = addBtn.closest('[data-msg-id]');
                 var id = row ? (parseInt(row.getAttribute('data-msg-id'), 10) || 0) : 0;
-                if (id > 0) openWidgetReactPicker(addBtn, id);
+                if (id > 0 && widgetCanReact(row)) openWidgetReactPicker(addBtn, id);
                 return;
             }
             if (chip) {
@@ -5723,7 +5746,7 @@
                 ev.stopPropagation();
                 var chipRow = chip.closest('[data-msg-id]');
                 var chipId = chipRow ? (parseInt(chipRow.getAttribute('data-msg-id'), 10) || 0) : 0;
-                if (chipId > 0) sendWidgetReaction(chipId, chip.getAttribute('data-emoji') || '');
+                if (chipId > 0 && widgetCanReact(chipRow)) sendWidgetReaction(chipId, chip.getAttribute('data-emoji') || '');
             }
         });
         document.addEventListener('click', function (ev) {
@@ -5849,7 +5872,7 @@
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions) : '') + '</div>';
+                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions, true) : '') + '</div>';
             placeInTranscript(box, row, m.id);
         } else if (m.sender_type === 'visitor') {
             var wrap = document.createElement('div');
@@ -5861,7 +5884,7 @@
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions) : '') +
+                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions, false) : '') +
                 '<div class="lcw-msg-status-out">' + ticks + '</div>';
             placeInTranscript(box, wrap, m.id);
         } else {
