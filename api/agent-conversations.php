@@ -37,8 +37,8 @@ try {
     lc_ensure_ticket_schema();
     $db = lc_db();
 
-    // Open chat assigned to someone else → keep supervising so it stays on Unassigned tab
-    // under "Supervising" (not only when opened via ?supervise=1).
+    // Open chat assigned to someone else → keep supervising so it stays on the All tab
+    // under "Supervising" until the close button (not only when opened via ?supervise=1).
     if ($selectedId > 0 && function_exists('lc_record_agent_supervising')) {
         try {
             $selStmt = $db->prepare('SELECT status, agent_id FROM conversations WHERE id = ? LIMIT 1');

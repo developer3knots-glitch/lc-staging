@@ -30,11 +30,7 @@ require __DIR__ . '/includes/header.php';
             $requestedTab = (string) ($_GET['tab'] ?? '');
             $defaultTab = (($agent['role'] ?? '') === 'admin') ? 'all' : 'waiting';
             if ($requestedTab !== '' && in_array($requestedTab, ['all', 'waiting', 'active'], true)) {
-                if (($agent['role'] ?? '') !== 'admin' && $requestedTab === 'all') {
-                    $defaultTab = 'waiting';
-                } else {
-                    $defaultTab = $requestedTab;
-                }
+                $defaultTab = $requestedTab;
             }
             $isSuperviseReq = !empty($_GET['supervise']);
             if ($selectedId > 0) {
@@ -48,7 +44,7 @@ require __DIR__ . '/includes/header.php';
                             $defaultTab = 'active';
                         } elseif ($isSuperviseReq && function_exists('lc_record_agent_supervising')) {
                             lc_record_agent_supervising($selectedId, (int) $agent['id']);
-                            $defaultTab = 'waiting';
+                            $defaultTab = 'all';
                         }
                     }
                 } catch (Throwable $e) {}
@@ -60,6 +56,7 @@ require __DIR__ . '/includes/header.php';
                     <button type="button" class="lc-chat-tab <?= $defaultTab === 'waiting' ? 'active' : '' ?>" data-tab="waiting" role="tab">Unassigned</button>
                     <button type="button" class="lc-chat-tab <?= $defaultTab === 'active' ? 'active' : '' ?>" data-tab="active" role="tab">My chats</button>
                 <?php else: ?>
+                    <button type="button" class="lc-chat-tab <?= $defaultTab === 'all' ? 'active' : '' ?>" data-tab="all" role="tab">All</button>
                     <button type="button" class="lc-chat-tab <?= $defaultTab === 'waiting' ? 'active' : '' ?>" data-tab="waiting" role="tab">Unassigned</button>
                     <button type="button" class="lc-chat-tab <?= $defaultTab === 'active' ? 'active' : '' ?>" data-tab="active" role="tab">My chats</button>
                 <?php endif; ?>

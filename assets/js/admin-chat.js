@@ -1183,18 +1183,14 @@
         if (!c) return false;
         var status = String(c.status || '');
         var assignedId = parseInt(c.agent_id || 0, 10);
-        var cid = parseInt(c.id, 10) || 0;
         var isMine = status === 'active' && assignedId === myAgentId;
         var isUnassigned = status === 'waiting' || (status === 'active' && assignedId === 0);
-        var isSupervised = status === 'active' && assignedId > 0 && assignedId !== myAgentId
-            && (!!c.is_supervising || (selectedId > 0 && cid === selectedId));
 
         if (tab === 'active') {
             return isMine;
         }
         if (tab === 'waiting') {
-            // Unassigned queue + chats you are supervising (incl. currently open)
-            return isUnassigned || isSupervised;
+            return isUnassigned;
         }
         if (tab === 'all') {
             return true;
@@ -1314,7 +1310,10 @@
         }
         html += '</div></div>';
         if (status !== 'closed') {
-            var closeTitle = (status === 'active' && c.agent_id && parseInt(c.agent_id, 10) !== myAgentId && !isAdmin) ? 'Stop supervising' : 'Close chat';
+            var rowAssignedId = parseInt(c.agent_id || 0, 10);
+            var rowIsSupervised = status === 'active' && rowAssignedId > 0 && rowAssignedId !== myAgentId
+                && (!!c.is_supervising || (selectedId > 0 && (parseInt(c.id, 10) || 0) === selectedId));
+            var closeTitle = rowIsSupervised ? 'Stop supervising' : 'Close chat';
             html += '<button type="button" class="lc-chat-item-close" data-close-id="' + esc(String(c.id)) + '"' +
                 ' title="' + esc(closeTitle) + '" aria-label="' + esc(closeTitle) + '"><i class="ti ti-x" aria-hidden="true"></i></button>';
         }
@@ -1697,9 +1696,6 @@
         var html = '';
         if (currentTab === 'waiting') {
             html = section('Unassigned', unassigned, 'Incoming');
-            if (supervised.length) {
-                html += section('Supervising', supervised, 'Live');
-            }
         } else if (currentTab === 'active') {
             html = section('My chats', mine, 'Active');
         } else {
@@ -3243,7 +3239,14 @@
             isSupervising = true;
             chatTransferredAway = false;
             setUnassignedMode(false);
-            // Keep this chat on the Unassigned tab under "Supervising"
+            // Keep every supervised chat on the All tab until its close button
+            if (currentTab !== 'all') {
+                currentTab = 'all';
+                document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
+                    t.classList.toggle('active', t.dataset.tab === 'all');
+                });
+                syncBrowserState(selectedId, currentTab);
+            }
             if (c) {
                 c.is_supervising = true;
             }
@@ -4978,7 +4981,7 @@
                 if ((parseInt(lastConversations[ci].id, 10) || 0) === id) {
                     var cRow = lastConversations[ci];
                     var cAid = parseInt(cRow.agent_id || 0, 10);
-                    if (!isAdmin && cRow.status === 'active' && cAid > 0 && cAid !== myAgentId) {
+                    if (cRow.status === 'active' && cAid > 0 && cAid !== myAgentId && (cRow.is_supervising || id === selectedId)) {
                         isSupervisedChat = true;
                     }
                     break;

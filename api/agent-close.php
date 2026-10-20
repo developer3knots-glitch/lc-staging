@@ -25,7 +25,6 @@ try {
     $agentId = (int) ($agent['id'] ?? 0);
     $assignedAgentId = (int) ($conv['agent_id'] ?? 0);
     $status = (string) ($conv['status'] ?? '');
-    $isAdmin = (string) ($agent['role'] ?? '') === 'admin';
     $isSupervising = ($status === 'active') && ($assignedAgentId > 0) && ($assignedAgentId !== $agentId);
 
     // Already closed — archive click is idempotent
@@ -37,8 +36,9 @@ try {
         ]);
     }
 
-    // Supervising another agent's active chat: leave supervision, do not close for visitor
-    if ($isSupervising && !$isAdmin) {
+    // Supervising another agent's active chat: leave supervision, do not close for visitor.
+    // The row stays on the All tab until this close button is used.
+    if ($isSupervising) {
         if (function_exists('lc_stop_agent_supervising')) {
             lc_stop_agent_supervising($conversationId, $agentId);
         }
