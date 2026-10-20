@@ -26,7 +26,11 @@ function lc_ensure_message_reactions_schema(): void
             KEY idx_conv (conversation_id),
             KEY idx_message (message_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        lc_db()->exec('ALTER TABLE message_reactions MODIFY emoji VARCHAR(32) NOT NULL');
+        $col = lc_db()->query("SHOW COLUMNS FROM message_reactions LIKE 'emoji'")->fetch(PDO::FETCH_ASSOC);
+        $type = strtolower((string) ($col['Type'] ?? ''));
+        if ($type !== '' && strpos($type, 'varchar(32)') === false) {
+            lc_db()->exec('ALTER TABLE message_reactions MODIFY emoji VARCHAR(32) NOT NULL');
+        }
     } catch (Throwable $e) {
     }
 }

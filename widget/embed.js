@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 173;
+    var LC_WIDGET_BUILD = 174;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -956,6 +956,21 @@
             var panel = document.getElementById('lc-panel');
             if (!panel || panel.style.display === 'none') return;
             if (!root.contains(e.target)) return;
+            var reactPicker = e.target.closest ? e.target.closest('#lcw-react-picker') : null;
+            if (reactPicker) {
+                var reactGrid = reactPicker.querySelector('.lc-emoji-grid');
+                if (reactGrid) reactGrid.scrollTop += e.deltaY;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            var emojiScroller = e.target.closest ? e.target.closest('.lc-emoji-grid, #lc-emoji-picker') : null;
+            if (emojiScroller) {
+                emojiScroller.scrollTop += e.deltaY;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             var box = document.getElementById('lc-panel-messages');
             if (box && (box === e.target || box.contains(e.target))) {
                 box.scrollTop += e.deltaY;
@@ -5747,11 +5762,46 @@
         });
     }
 
+    function readWidgetReactionRows(node) {
+        var rows = [];
+        if (!node) return rows;
+        node.querySelectorAll('.lcw-react-chip').forEach(function (chip) {
+            var emoji = chip.getAttribute('data-emoji') || '';
+            if (!emoji) return;
+            var countEl = chip.querySelector('span:not(.lcw-react-native)');
+            var count = countEl ? (parseInt(countEl.textContent, 10) || 1) : 1;
+            var mine = chip.classList.contains('is-mine');
+            var others = mine ? Math.max(0, count - 1) : count;
+            var i;
+            for (i = 0; i < others; i++) rows.push({ emoji: emoji, reactor_type: 'agent', reactor_id: 0 });
+            if (mine) rows.push({ emoji: emoji, reactor_type: 'visitor', reactor_id: 1 });
+        });
+        return rows;
+    }
+
+    function optimisticWidgetReaction(messageId, emoji) {
+        var node = document.querySelector('#lc-panel-messages [data-msg-id="' + messageId + '"]');
+        if (!node) return;
+        var next = [];
+        var hadMine = false;
+        readWidgetReactionRows(node).forEach(function (row) {
+            if (row.reactor_type === 'visitor') {
+                hadMine = true;
+                if (row.emoji !== emoji) next.push({ emoji: emoji, reactor_type: 'visitor', reactor_id: 1 });
+                return;
+            }
+            next.push(row);
+        });
+        if (!hadMine) next.push({ emoji: emoji, reactor_type: 'visitor', reactor_id: 1 });
+        paintWidgetReactions(messageId, next);
+    }
+
     function sendWidgetReaction(messageId, emoji) {
         messageId = parseInt(messageId, 10) || 0;
         if (messageId < 1 || !conversationId || !window.LCEmoji || !window.LCEmoji.has(emoji)) return;
         var node = document.querySelector('#lc-panel-messages [data-msg-id="' + messageId + '"]');
         if (!widgetCanReact(node)) return;
+        optimisticWidgetReaction(messageId, emoji);
         fetch(siteUrl + '/api/visitor-react.php', {
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),

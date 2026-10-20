@@ -2348,11 +2348,40 @@
         });
     }
 
+    function readAgentReactionRows(el) {
+        var rows = [];
+        if (!el) return rows;
+        el.querySelectorAll('.lc-react-chip').forEach(function (chip) {
+            var emoji = chip.getAttribute('data-emoji') || '';
+            if (!emoji) return;
+            var countEl = chip.querySelector('span:not(.lc-react-native)');
+            var count = countEl ? (parseInt(countEl.textContent, 10) || 1) : 1;
+            var mine = chip.classList.contains('is-mine');
+            var others = mine ? Math.max(0, count - 1) : count;
+            var i;
+            for (i = 0; i < others; i++) rows.push({ emoji: emoji, reactor_type: 'visitor', reactor_id: 0 });
+            if (mine) rows.push({ emoji: emoji, reactor_type: 'agent', reactor_id: myAgentId });
+        });
+        return rows;
+    }
+
     function sendMessageReaction(msgEl, emoji) {
         if (!iAmChatAssignee || !msgEl || !msgEl.classList.contains('visitor') || !selectedId || !window.LCEmoji || !window.LCEmoji.has(emoji)) return;
         var messageId = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
         if (messageId < 1) return;
         var convId = selectedId;
+        var next = [];
+        var hadMine = false;
+        readAgentReactionRows(msgEl).forEach(function (row) {
+            if (row.reactor_type === 'agent' && (parseInt(row.reactor_id, 10) || 0) === myAgentId) {
+                hadMine = true;
+                if (row.emoji !== emoji) next.push({ emoji: emoji, reactor_type: 'agent', reactor_id: myAgentId });
+                return;
+            }
+            next.push(row);
+        });
+        if (!hadMine) next.push({ emoji: emoji, reactor_type: 'agent', reactor_id: myAgentId });
+        paintAgentReactions(msgEl, next);
         fetch(base + '/api/agent-react.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
