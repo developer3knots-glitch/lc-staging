@@ -254,7 +254,10 @@ function lc_presence_chat_line(string $status, string $prevStatus): string
 {
     $status = strtolower(trim($status));
     $prevStatus = strtolower(trim($prevStatus));
-    if ($status === '' || $status === $prevStatus || $prevStatus === '') {
+    if ($status === '' || $status === $prevStatus) {
+        return '';
+    }
+    if ($prevStatus === '' && $status === 'active') {
         return '';
     }
     switch ($status) {

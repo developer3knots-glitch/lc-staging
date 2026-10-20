@@ -538,6 +538,7 @@
             page_visible: flagOn(presence.page_visible, true),
             window_focused: flagOn(presence.window_focused, status !== 'window'),
             left_site: !!presence.left_site,
+            from_status: String(presence.from_status || '').toLowerCase(),
             presence_ts: ts
         };
     }
@@ -565,20 +566,41 @@
 
     function absorbPresenceLog(text, messageId) {
         if (!messagesEl) return false;
-        text = String(text || '').trim();
+        text = String(text || '').replace(/\s+/g, ' ').trim();
         if (!text || !isPresenceLogText(text)) return false;
-        var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence, .lc-msg.system');
-        for (var i = nodes.length - 1; i >= 0; i--) {
-            var body = nodes[i].querySelector('.lc-msg-body');
-            var current = (body ? body.textContent : nodes[i].textContent) || '';
-            if (current.replace(/\s+/g, ' ').trim() !== text) continue;
-            if (messageId && !nodes[i].getAttribute('data-id')) {
-                nodes[i].setAttribute('data-id', String(messageId));
-                nodes[i].classList.add('is-presence');
-            }
-            return true;
+        var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
+        if (!nodes.length) return false;
+        var last = nodes[nodes.length - 1];
+        if (last.getAttribute('data-id')) return false;
+        var current = String(last.textContent || '').replace(/\s+/g, ' ').trim();
+        if (current !== text) return false;
+        if (messageId) {
+            last.setAttribute('data-id', String(messageId));
         }
-        return false;
+        return true;
+    }
+
+    function keepUnsavedPresenceLogs() {
+        if (!messagesEl) return [];
+        var saved = [];
+        messagesEl.querySelectorAll('.lc-msg.system.is-presence').forEach(function (node) {
+            if (!node.getAttribute('data-id')) saved.push(node.outerHTML);
+        });
+        return saved;
+    }
+
+    function restoreUnsavedPresenceLogs(saved) {
+        if (!messagesEl || !saved || !saved.length) return;
+        saved.forEach(function (html) {
+            var tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            var text = String(tmp.textContent || '').replace(/\s+/g, ' ').trim();
+            var bodies = messagesEl.querySelectorAll('.lc-msg.system .lc-msg-body');
+            var lastBody = bodies.length ? String(bodies[bodies.length - 1].textContent || '').replace(/\s+/g, ' ').trim() : '';
+            if (lastBody === text) return;
+            messagesEl.insertAdjacentHTML('beforeend', html);
+        });
+        scrollMessagesToBottom(false);
     }
 
     function appendPresenceSystemMessage(presence, prevStatus) {
@@ -684,9 +706,10 @@
             livePresenceSource = source;
         }
 
-        var prev = lastPresenceStatusKey;
+        var fromStatus = String(presence.from_status || '');
+        var prev = fromStatus || lastPresenceStatusKey;
         var next = String(presence.status || '');
-        var statusChanged = prev !== next;
+        var statusChanged = !!prev && prev !== next && lastPresenceStatusKey !== next;
         lastPresenceStatusKey = next;
         // Presence log lives only inside the chat transcript, not the header strip.
         if (bar) {
@@ -697,7 +720,7 @@
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
         }
-        if (statusChanged && prev) {
+        if (statusChanged) {
             appendPresenceSystemMessage(presence, prev);
         }
     }
@@ -4093,7 +4116,9 @@
                             html += renderMessage(entry.item);
                         }
                     });
+                    var unsavedPresence = keepUnsavedPresenceLogs();
                     messagesEl.innerHTML = html;
+                    restoreUnsavedPresenceLogs(unsavedPresence);
                     needsFullHistory = false;
                     loadPriorThreads(selectedId);
                     // Never jump lastMsgId to message_cursor — that skips unpainted rows

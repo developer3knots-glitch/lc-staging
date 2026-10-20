@@ -104,8 +104,34 @@ try {
         $presenceTs *= 1000;
     }
 
-    // Reject out-of-order pulses (slow minimize after open)
+    $clientStatusEarly = strtolower(trim((string) ($input['status'] ?? '')));
+    $fromStatusEarly = strtolower(trim((string) ($input['from_status'] ?? '')));
+    $allowedStatusEarly = ['active', 'minimized', 'away', 'window', 'left', 'disconnected'];
+    // A slow minimize can arrive after maximize. Still write that log.
+    // Only the stored flags stay on the newer pulse.
     if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
+        if ($conversationId > 0
+            && in_array($clientStatusEarly, $allowedStatusEarly, true)
+            && in_array($fromStatusEarly, $allowedStatusEarly, true)
+            && function_exists('lc_presence_chat_line')
+            && function_exists('lc_add_system_message')) {
+            $staleLine = lc_presence_chat_line($clientStatusEarly, $fromStatusEarly);
+            if ($staleLine !== '') {
+                try {
+                    $dup = $db->prepare("
+                        SELECT message FROM messages
+                        WHERE conversation_id = ? AND sender_type = 'system'
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ");
+                    $dup->execute([$conversationId]);
+                    if ((string) $dup->fetchColumn() !== $staleLine) {
+                        lc_add_system_message($conversationId, $staleLine, true);
+                    }
+                } catch (Throwable $e) {
+                }
+            }
+        }
         $presence = lc_visitor_engagement_status([
             'left_site_at' => $leftAt,
             'widget_open' => $widgetOpen,
@@ -178,9 +204,13 @@ try {
         $presence['status'] = $clientStatus;
     }
     $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : $prevTs;
-    $statusChanged = $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
+    $fromStatus = strtolower(trim((string) ($input['from_status'] ?? '')));
+    if (!in_array($fromStatus, $allowedStatus, true)) {
+        $fromStatus = $prevStatus;
+    }
+    $statusChanged = $fromStatus !== (string) ($presence['status'] ?? '');
     if ($conversationId > 0 && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
-        $presenceLine = lc_presence_chat_line((string) ($presence['status'] ?? ''), $prevStatus);
+        $presenceLine = lc_presence_chat_line((string) ($presence['status'] ?? ''), $fromStatus);
         if ($presenceLine !== '') {
             try {
                 $dup = $db->prepare("

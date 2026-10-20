@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 163;
+    var LC_WIDGET_BUILD = 164;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -376,6 +376,7 @@
         var presenceSeq = 0;
         var windowFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
         var windowBlurTimer = null;
+        var lastReportedStatus = '';
 
         function nextPresenceTs() {
             presenceSeq += 1;
@@ -413,10 +414,11 @@
             };
         }
 
-        function pushPresenceOverWs(fields, ts) {
+        function pushPresenceOverWs(fields, ts, fromStatus) {
             var cid = parseInt(conversationId, 10) || 0;
             if (cid < 1) return false;
             var payload = localPresencePayload(fields, ts);
+            payload.from_status = fromStatus || '';
             var clients = [realtimeClient, presenceClient];
             for (var i = 0; i < clients.length; i++) {
                 var client = clients[i];
@@ -445,7 +447,7 @@
                 presenceFlushTimer = null;
                 if (!pendingPresenceFields) return;
                 var ts = pendingPresenceFields._ts || nextPresenceTs();
-                if (pushPresenceOverWs(pendingPresenceFields, ts)) {
+                if (pushPresenceOverWs(pendingPresenceFields, ts, pendingPresenceFields._from || '')) {
                     lastPresenceKey = presenceKey(pendingPresenceFields);
                     pendingPresenceFields = null;
                     return;
@@ -454,8 +456,9 @@
             }, 120);
         }
 
-        function persistPresenceHttp(fields, useBeacon, ts) {
+        function persistPresenceHttp(fields, useBeacon, ts, fromStatus) {
             var cid = parseInt(conversationId, 10) || 0;
+            var local = localPresencePayload(fields, ts);
             var payload = {
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
@@ -463,7 +466,8 @@
                 chat_open: fields.chat_open,
                 page_visible: fields.page_visible,
                 window_focused: fields.window_focused ? 1 : 0,
-                status: localPresencePayload(fields, ts).status,
+                status: local.status,
+                from_status: fromStatus || '',
                 left_site: fields.left_site ? 1 : 0,
                 presence_ts: ts || nextPresenceTs(),
                 public_ipv4: publicIpv4,
@@ -510,16 +514,20 @@
                 return;
             }
             var ts = nextPresenceTs();
+            var fromStatus = lastReportedStatus || '';
+            var nextStatus = localPresencePayload(fields, ts).status;
             fields._ts = ts;
-            // Instant WS first (live agent UI). HTTP is DB-only ordered by presence_ts.
-            if (pushPresenceOverWs(fields, ts)) {
+            fields._from = fromStatus;
+            // Instant WS first (live agent UI). HTTP saves every transition.
+            if (pushPresenceOverWs(fields, ts, fromStatus)) {
                 lastPresenceKey = key;
                 pendingPresenceFields = null;
             } else {
                 pendingPresenceFields = fields;
                 schedulePresenceWsRetry();
             }
-            persistPresenceHttp(fields, !!useBeacon, ts);
+            persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
+            lastReportedStatus = nextStatus;
         };
 
         // Expose flush for realtime connected handlers outside this closure
