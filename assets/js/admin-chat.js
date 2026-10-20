@@ -8,6 +8,7 @@
     var pollMs = window.LC_POLL_INTERVAL || 1500;
     var pollDisabled = !!window.LC_POLL_DISABLED;
     var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
+    var iAmChatAssignee = false;
     var isAdmin = app.dataset.agentRole === 'admin';
     var selectedId = parseInt(app.dataset.selected, 10) || 0;
     var initialTabBtn = document.querySelector('.lc-chat-tab.active');
@@ -2304,7 +2305,7 @@
 
     function paintAgentReactions(el, reactions) {
         if (!el || el.classList.contains('system')) return;
-        var canReact = el.classList.contains('visitor') && !el.hasAttribute('data-history');
+        var canReact = iAmChatAssignee && el.classList.contains('visitor') && !el.hasAttribute('data-history');
         var html = reactionBarHtml(reactions, canReact);
         var host = el.querySelector('.lc-reacts');
         if (!html) {
@@ -2334,7 +2335,7 @@
     }
 
     function sendMessageReaction(msgEl, emoji) {
-        if (!msgEl || !msgEl.classList.contains('visitor') || !selectedId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        if (!iAmChatAssignee || !msgEl || !msgEl.classList.contains('visitor') || !selectedId || REACT_EMOJIS.indexOf(emoji) < 0) return;
         var messageId = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
         if (messageId < 1) return;
         var convId = selectedId;
@@ -2433,7 +2434,7 @@
         }
         html += '</div>';
         if ((sender === 'visitor' || sender === 'agent') && (parseInt(m.id, 10) || 0) > 0) {
-            html += reactionBarHtml(m.reactions || [], sender === 'visitor' && !opts.history);
+            html += reactionBarHtml(m.reactions || [], iAmChatAssignee && sender === 'visitor' && !opts.history);
         }
         html += '</div>';
         return html;
@@ -3864,6 +3865,15 @@
         stopOwnTyping();
         setPeerTypingVisible(false);
         selectedId = id;
+        iAmChatAssignee = false;
+        if (lastConversations && lastConversations.length) {
+            for (var ri = 0; ri < lastConversations.length; ri++) {
+                if ((parseInt(lastConversations[ri].id, 10) || 0) !== id) continue;
+                var rowAgent = parseInt(lastConversations[ri].agent_id, 10) || 0;
+                iAmChatAssignee = rowAgent > 0 && rowAgent === myAgentId && lastConversations[ri].status !== 'closed';
+                break;
+            }
+        }
         syncBrowserState(id, currentTab);
         syncRealtimeConversationChannel(id);
         lastMsgId = 0;
@@ -4385,6 +4395,7 @@
                     updateChatReference(c.reference);
                 }
                 setVisitorMeta(formatVisitorMeta(c), true);
+                iAmChatAssignee = (parseInt(c.agent_id, 10) || 0) === myAgentId && c.status !== 'closed';
                 updateChatActions(c, data.can_compose);
                 loadChatTags(selectedId);
 
@@ -6429,7 +6440,7 @@
                 ev.preventDefault();
                 ev.stopPropagation();
                 var msg = addBtn.closest('.lc-msg');
-                if (!msg || !msg.classList.contains('visitor') || msg.hasAttribute('data-history')) return;
+                if (!iAmChatAssignee || !msg || !msg.classList.contains('visitor') || msg.hasAttribute('data-history')) return;
                 openReactPicker(addBtn, msg);
                 return;
             }
@@ -6437,7 +6448,7 @@
                 ev.preventDefault();
                 ev.stopPropagation();
                 var chipMsg = chip.closest('.lc-msg');
-                if (!chipMsg || !chipMsg.classList.contains('visitor') || chipMsg.hasAttribute('data-history')) return;
+                if (!iAmChatAssignee || !chipMsg || !chipMsg.classList.contains('visitor') || chipMsg.hasAttribute('data-history')) return;
                 sendMessageReaction(chipMsg, chip.getAttribute('data-emoji') || '');
             }
         });
