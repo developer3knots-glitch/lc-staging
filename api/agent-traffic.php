@@ -306,13 +306,17 @@ try {
         $pagesDur = max(0, (int) ($row['pages_duration_seconds'] ?? 0));
         $openPage = max(0, (int) ($row['open_page_seconds'] ?? 0));
         $recentSpan = max(0, (int) ($row['recent_span_seconds'] ?? 0));
-        // Prefer measured page durations (+ current open page). Never use visitor lifetime
-        // (created_at → last_seen) — that was showing multi-day totals like 146h.
-        $timeSec = $pagesDur + $openPage;
-        if ($timeSec < 1 && $recentSpan > 0) {
-            $timeSec = $recentSpan;
+        $sinceSeen = max(0, (int) ($row['seconds_since_seen'] ?? 0));
+        $onSite = $status !== 'left';
+        // Current visit up to now. Page-duration sums freeze while the visitor stays on a page.
+        if ($onSite && $recentSpan > 0) {
+            $timeSec = $recentSpan + $sinceSeen;
+        } else {
+            $timeSec = $pagesDur + $openPage;
+            if ($timeSec < 1 && $recentSpan > 0) {
+                $timeSec = $recentSpan;
+            }
         }
-        // Cap display to one continuous visit window (4h query already scopes rows)
         if ($timeSec > 4 * 3600) {
             $timeSec = 4 * 3600;
         }

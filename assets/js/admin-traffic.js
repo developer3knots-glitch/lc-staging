@@ -354,7 +354,7 @@
             var ip = row.ip || '';
             var email = row.email || '';
             var page = row.page_path || row.page_url || '—';
-            var time = row.time_on_pages_label || '—';
+            var time = formatSiteTime(rowTimeSeconds(row));
             var status = row.status || 'left';
             var blocked = !!row.ip_blocked;
             var vid = parseInt(row.visitor_id, 10) || 0;
@@ -377,7 +377,7 @@
                     '<td>' + countryLabel(row) + '</td>' +
                     '<td class="lc-traffic-td-actions">' + actionCell(row) + '</td>' +
                     '<td>' + agentCell(row.agent_name) + '</td>' +
-                    '<td><span class="lc-traffic-time">' + esc(time) + '</span></td>' +
+                    '<td><span class="lc-traffic-time" data-visitor-id="' + (parseInt(row.visitor_id, 10) || 0) + '">' + esc(time) + '</span></td>' +
                     '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
                     '<td>' + deviceCell(row) + '</td>' +
                 '</tr>'
@@ -435,8 +435,56 @@
         return out;
     }
 
+    function formatSiteTime(total) {
+        total = Math.max(0, parseInt(total, 10) || 0);
+        var s = total % 60;
+        var m = Math.floor(total / 60);
+        if (total < 60) return total + 's';
+        if (total < 3600) return m + 'm ' + s + 's';
+        return Math.floor(m / 60) + 'h ' + (m % 60) + 'm ' + s + 's';
+    }
+
+    function rowTimeSeconds(row) {
+        if (!row) return 0;
+        var base = parseInt(row._timeBase, 10);
+        if (isNaN(base)) base = parseInt(row.time_on_pages_seconds, 10) || 0;
+        if (row._timeTicking && row._timeAt) {
+            base += Math.max(0, Math.floor((Date.now() - row._timeAt) / 1000));
+        }
+        return base;
+    }
+
+    function stampVisitTimer(row) {
+        if (!row) return;
+        var ticking = row.status && row.status !== 'left';
+        if (row._timeAt && row._timeTicking && !ticking) {
+            row._timeBase = rowTimeSeconds(row);
+            row._timeTicking = false;
+            return;
+        }
+        row._timeBase = parseInt(row.time_on_pages_seconds, 10) || 0;
+        row._timeAt = Date.now();
+        row._timeTicking = !!ticking;
+    }
+
+    function tickVisitTimers() {
+        if (bodyEl) {
+            bodyEl.querySelectorAll('.lc-traffic-time[data-visitor-id]').forEach(function (el) {
+                var row = findVisitor(parseInt(el.getAttribute('data-visitor-id'), 10) || 0);
+                if (!row) return;
+                el.textContent = formatSiteTime(rowTimeSeconds(row));
+            });
+        }
+        if (openMetaId) {
+            var open = findVisitor(openMetaId);
+            var meta = document.getElementById('lc-traffic-meta-time');
+            if (open && meta) meta.textContent = formatSiteTime(rowTimeSeconds(open));
+        }
+    }
+
     function setVisitors(visitors, keepPage) {
         allVisitors = visitors || [];
+        allVisitors.forEach(stampVisitTimer);
         if (!keepPage || resetPageOnNextLoad) {
             currentPage = 1;
         }
@@ -842,7 +890,7 @@
         setMetaText('lc-traffic-meta-gclid', gclid);
         var gclidRow = document.getElementById('lc-traffic-meta-gclid-row');
         if (gclidRow) gclidRow.hidden = !gclid;
-        setMetaText('lc-traffic-meta-time', row.time_on_pages_label || '');
+        setMetaText('lc-traffic-meta-time', formatSiteTime(rowTimeSeconds(row)));
         setMetaText('lc-traffic-meta-page', stripUrlParam(pageUrl, 'gclid'));
         setMetaText('lc-traffic-meta-group', extra.brand_name || row.brand_name || '');
         setMetaText('lc-traffic-meta-ticket', extra.ticket || '');
@@ -934,6 +982,7 @@
         });
     }
 
+    setInterval(tickVisitTimers, 1000);
     setTab('all');
     load({ resetPage: true });
     initTrafficRealtime();
