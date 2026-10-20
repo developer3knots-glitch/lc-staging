@@ -932,7 +932,10 @@
 
         var steps = consolidateJourney(journeyViewsRaw);
         if (!steps.length) {
-            list.innerHTML = '';
+            if (list.dataset.paint !== '') {
+                list.dataset.paint = '';
+                list.innerHTML = '';
+            }
             if (empty) empty.hidden = false;
             return;
         }
@@ -974,6 +977,8 @@
             }
             html += '</div></li>';
         }
+        if (list.dataset.paint === html) return;
+        list.dataset.paint = html;
         list.innerHTML = html;
         if (window.LCTime) {
             window.LCTime.scan(list);
@@ -1115,7 +1120,11 @@
         if (groupsEl) {
             var brand = c.brand_name || 'General';
             var initial = brand.charAt(0).toUpperCase();
-            groupsEl.innerHTML = '<span class="lc-details-group-pill"><span class="lc-details-group-icon">' + esc(initial) + '</span><span>' + esc(brand) + '</span></span>';
+            var groupsHtml = '<span class="lc-details-group-pill"><span class="lc-details-group-icon">' + esc(initial) + '</span><span>' + esc(brand) + '</span></span>';
+            if (groupsEl.dataset.paint !== groupsHtml) {
+                groupsEl.dataset.paint = groupsHtml;
+                groupsEl.innerHTML = groupsHtml;
+            }
         }
 
         setText('lc-details-ip', formatDisplayIp(c.visitor_ip || currentVisitorIp, c.visitor_ipv4) || '-');
@@ -2330,6 +2339,7 @@
             el.insertAdjacentHTML('beforeend', html);
             return;
         }
+        if (host.outerHTML === html) return;
         host.outerHTML = html;
     }
 
@@ -3091,10 +3101,16 @@
             notesCountEl.textContent = String(notes.length);
         }
         if (!notes.length) {
-            notesListEl.innerHTML = '<p class="lc-details-notes-empty" id="lc-details-notes-empty">No internal notes yet</p>';
+            if (notesListEl.dataset.notesKey !== 'empty') {
+                notesListEl.dataset.notesKey = 'empty';
+                notesListEl.innerHTML = '<p class="lc-details-notes-empty" id="lc-details-notes-empty">No internal notes yet</p>';
+            }
             return;
         }
-        notesListEl.innerHTML = notes.map(renderChatNoteItem).join('');
+        var notesHtml = notes.map(renderChatNoteItem).join('');
+        if (notesListEl.dataset.notesKey === notesHtml) return;
+        notesListEl.dataset.notesKey = notesHtml;
+        notesListEl.innerHTML = notesHtml;
         notesListEl.scrollTop = notesListEl.scrollHeight;
     }
 
@@ -3463,7 +3479,10 @@
         }
 
         if (isAssignedToOther) {
-            // Supervise Mode: The supervisor observes and writes internal notes
+            // Supervise Mode: The supervisor observes and writes internal notes.
+            // Only the first entry may reload the inbox and restart timers.
+            // Doing that on every poll flashes the composer and the side panel.
+            var enteringSupervise = !isSupervising;
             isSupervising = true;
             chatTransferredAway = false;
             setUnassignedMode(false);
@@ -3491,25 +3510,33 @@
             }
             setTakeoverMenuVisible(true);
             var moreCloseBtn = document.getElementById('lc-close-chat');
-            if (moreCloseBtn) moreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Stop supervising';
-            setComposeMode('note');
+            if (moreCloseBtn && moreCloseBtn.dataset.superviseLabel !== '1') {
+                moreCloseBtn.dataset.superviseLabel = '1';
+                moreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Stop supervising';
+            }
+            if (composeMode !== 'note') setComposeMode('note');
             replyInput.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
             if (transferWrap) transferWrap.style.display = 'none';
-            closeTransferPanel();
-            // Persist supervise ASAP so message/note fanout includes this supervisor
-            try {
-                paintConversationList(filterConversations(lastConversations));
-            } catch (ePaint) {}
-            loadConversations();
-            resetPollTimers();
+            if (enteringSupervise) {
+                closeTransferPanel();
+                try {
+                    paintConversationList(filterConversations(lastConversations));
+                } catch (ePaint) {}
+                loadConversations();
+                resetPollTimers();
+            }
             return;
         }
 
         var defaultMoreCloseBtn = document.getElementById('lc-close-chat');
-        if (defaultMoreCloseBtn) defaultMoreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Close chat';
+        if (defaultMoreCloseBtn && defaultMoreCloseBtn.dataset.superviseLabel === '1') {
+            defaultMoreCloseBtn.dataset.superviseLabel = '0';
+            defaultMoreCloseBtn.innerHTML = '<i class="ti ti-x"></i> Close chat';
+        }
 
         // Active Chatting Agent Mode
+        var leavingSupervise = isSupervising;
         isSupervising = false;
         chatTransferredAway = false;
         setUnassignedMode(false);
@@ -3522,6 +3549,7 @@
         if (sendBtn) sendBtn.disabled = false;
         if (transferWrap) transferWrap.style.display = transfer ? 'block' : 'none';
         if (!transfer) closeTransferPanel();
+        if (leavingSupervise) resetPollTimers();
     }
 
     function applyCannedReply(message) {
@@ -4220,7 +4248,10 @@
                 html += '<span class="is-country"><i class="ti ti-map-pin"></i> <span>' + esc(c.visitor_country) + '</span>';
                 html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(c.visitor_country) + '" aria-label="Copy location"><i class="ti ti-copy"></i></button></span>';
             }
-            visitorDetailsEl.innerHTML = html;
+            if (visitorDetailsEl.dataset.paint !== html) {
+                visitorDetailsEl.dataset.paint = html;
+                visitorDetailsEl.innerHTML = html;
+            }
         }
         if (c) {
             renderDetailsRail(c);
@@ -4424,7 +4455,9 @@
 
                 replyInput.disabled = false;
                 document.getElementById('lc-send-reply').disabled = false;
-                replyInput.placeholder = 'Type a message...';
+                if (composeMode !== 'note') {
+                    replyInput.placeholder = 'Type a message...';
+                }
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
                 setVisitorPresenceBadge(c, { source: 'poll' });
@@ -5001,10 +5034,15 @@
         }
         if (noteEl) {
             if (readOnly) {
+                var noteHtml = '<i class="ti ti-lock"></i> <span>' + (reason || 'View only (Supervising)') + '</span>';
                 noteEl.style.display = 'block';
-                noteEl.innerHTML = '<i class="ti ti-lock"></i> <span>' + (reason || 'View only (Supervising)') + '</span>';
-            } else {
+                if (noteEl.dataset.noteHtml !== noteHtml) {
+                    noteEl.dataset.noteHtml = noteHtml;
+                    noteEl.innerHTML = noteHtml;
+                }
+            } else if (noteEl.style.display !== 'none') {
                 noteEl.style.display = 'none';
+                noteEl.dataset.noteHtml = '';
                 noteEl.innerHTML = '';
             }
         }
