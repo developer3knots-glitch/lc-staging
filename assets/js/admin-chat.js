@@ -821,6 +821,56 @@
         return '';
     }
 
+    function readUrlParam(url, key) {
+        var raw = String(url || '').trim();
+        if (!raw) return '';
+        try {
+            return new URL(raw, window.location.origin).searchParams.get(key) || '';
+        } catch (err) {
+            var match = raw.match(new RegExp('[?&]' + key + '=([^&#]*)', 'i'));
+            if (!match) return '';
+            try {
+                return decodeURIComponent(match[1].replace(/\+/g, ' '));
+            } catch (e2) {
+                return match[1];
+            }
+        }
+    }
+
+    function stripUrlParam(url, key) {
+        var raw = String(url || '').trim();
+        if (!raw || !readUrlParam(raw, key)) return raw;
+        try {
+            var parsed = new URL(raw, window.location.origin);
+            parsed.searchParams.delete(key);
+            if (/^https?:\/\//i.test(raw)) return parsed.toString();
+            return (parsed.pathname || '/') + parsed.search + parsed.hash;
+        } catch (err) {
+            return raw
+                .replace(new RegExp('([?&])' + key + '=[^&#]*', 'i'), '$1')
+                .replace(/[?&](?=#|$)/, '')
+                .replace(/\?&/, '?')
+                .replace(/&&/g, '&');
+        }
+    }
+
+    function findVisitorGclid(c) {
+        var urls = [];
+        if (c) {
+            urls.push(c.visitor_page || '', c.page_url || '');
+            var stats = c.visitor_stats || {};
+            urls.push(stats.entry_referrer || '');
+        }
+        (journeyViewsRaw || []).forEach(function (view) {
+            urls.push((view && view.page_url) || '', (view && view.referrer) || '');
+        });
+        for (var i = 0; i < urls.length; i++) {
+            var gclid = readUrlParam(urls[i], 'gclid');
+            if (gclid) return gclid;
+        }
+        return '';
+    }
+
     function journeyPageLinkText(view) {
         var url = String((view && view.page_url) || '').trim();
         if (url) {
@@ -847,8 +897,8 @@
             var step = steps[i];
             var view = step.last_view || {};
             var label = journeyStepLabel(step);
-            var pageLink = journeyPageLinkText(view);
-            var pageHref = journeyPageHref(view);
+            var pageLink = stripUrlParam(journeyPageLinkText(view), 'gclid');
+            var pageHref = stripUrlParam(journeyPageHref(view), 'gclid');
             var dur = view.duration_label || '';
             if (!dur && view.duration_seconds) {
                 dur = formatDurationSeconds(view.duration_seconds);
@@ -1008,6 +1058,10 @@
         }
         var cameFrom = ref ? hostFromUrl(ref) : (page ? hostFromUrl(page) : '-');
         setText('lc-details-came-from', cameFrom || '-');
+        var gclid = findVisitorGclid(c);
+        var gclidRow = document.getElementById('lc-details-gclid-row');
+        setText('lc-details-gclid', gclid || '-');
+        if (gclidRow) gclidRow.hidden = !gclid;
 
         setText('lc-details-chat-duration', formatChatDuration(c));
 
@@ -2419,6 +2473,11 @@
             window.LCTime.scan(journeyListEl);
         }
         paintDetailsPagesList();
+        var gclid = findVisitorGclid(currentConversationMeta);
+        var gclidRow = document.getElementById('lc-details-gclid-row');
+        setText('lc-details-gclid', gclid || '-');
+        if (gclidRow) gclidRow.hidden = !gclid;
+        refreshMetaCopyButtons(document.getElementById('lc-chat-details'));
     }
 
     function updateJourneySummary() {

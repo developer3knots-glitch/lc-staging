@@ -380,6 +380,10 @@ require __DIR__ . '/includes/header.php';
                                 <dt>Came from</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-came-from">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-came-from" aria-label="Copy came from" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
+                            <div class="lc-details-kv" id="lc-details-gclid-row" hidden>
+                                <dt>GCLID</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-gclid">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
                             <div class="lc-details-kv">
                                 <dt>Chat duration</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-chat-duration">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-chat-duration" aria-label="Copy chat duration" hidden><i class="ti ti-copy"></i></button></dd>
