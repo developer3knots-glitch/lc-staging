@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 167;
+    var LC_WIDGET_BUILD = 168;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -5128,12 +5128,8 @@
                 : text.textContent;
         }
         if (card) {
-            // Big spinner card only for a fresh connect — never on page-refresh resume
-            if (waiting && !chatClosed && !soft) {
-                card.hidden = false;
-            } else {
-                card.hidden = true;
-            }
+            // The waiting bar already says connecting. Don't repeat it as a card.
+            card.hidden = true;
         }
         if (waiting && !chatClosed) {
             updateStatus(soft ? 'Waiting for an agent...' : 'Connecting to live agent...', agentsOnline > 0);
