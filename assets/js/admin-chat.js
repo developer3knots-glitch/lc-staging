@@ -1985,50 +1985,30 @@
         }
 
         var orderKey = currentTab + ':' + inboxOrderKey(conversations);
-        var existingMap = {};
-        listEl.querySelectorAll('.lc-chat-item[data-id]').forEach(function (el) {
-            existingMap[el.getAttribute('data-id')] = el;
-        });
-        var canReuse = Object.keys(existingMap).length > 0
-            && conversations.every(function (c) {
-                return !!existingMap[String(c.id)];
-            })
-            && Object.keys(existingMap).length === conversations.length;
-
-        if (canReuse) {
-            // Rebuild structure but reuse unchanged row nodes (cuts blink on reorder)
-            var wrap = document.createElement('div');
-            wrap.innerHTML = buildInboxHtml(conversations);
-            wrap.querySelectorAll('.lc-chat-item[data-id]').forEach(function (ph) {
-                var id = ph.getAttribute('data-id');
-                var existing = existingMap[id];
-                if (!existing || !ph.parentNode) return;
-                var row = null;
-                for (var i = 0; i < conversations.length; i++) {
-                    if (String(conversations[i].id) === id) {
-                        row = conversations[i];
-                        break;
-                    }
+        if (listEl.dataset.inboxOrder === orderKey && listEl.querySelector('.lc-chat-item[data-id]')) {
+            var missing = false;
+            conversations.forEach(function (c) {
+                var el = listEl.querySelector('.lc-chat-item[data-id="' + c.id + '"]');
+                if (!el) {
+                    missing = true;
+                    return;
                 }
-                if (!row) return;
-                var sig = conversationItemSignature(row);
-                if (existing.dataset.sig === sig) {
-                    syncConversationItemEl(existing, row);
-                    ph.parentNode.replaceChild(existing, ph);
+                var sig = conversationItemSignature(c);
+                if (el.dataset.sig === sig) {
+                    syncConversationItemEl(el, c);
+                    return;
                 }
-                // else keep freshly rendered placeholder
+                var holder = document.createElement('div');
+                holder.innerHTML = renderConversationItem(c);
+                if (holder.firstChild) el.replaceWith(holder.firstChild);
             });
-            while (listEl.firstChild) {
-                listEl.removeChild(listEl.firstChild);
+            if (!missing) {
+                listEl.dataset.paintKey = paintKey;
+                return;
             }
-            while (wrap.firstChild) {
-                listEl.appendChild(wrap.firstChild);
-            }
-            listEl.dataset.inboxOrder = orderKey;
-            listEl.dataset.paintKey = paintKey;
-            return;
         }
 
+        listEl.classList.add('is-quiet');
         listEl.innerHTML = buildInboxHtml(conversations);
         listEl.dataset.inboxOrder = orderKey;
         listEl.dataset.paintKey = paintKey;
@@ -2772,7 +2752,10 @@
             });
     }
 
+    var inboxLoadedAt = 0;
+
     function loadConversations() {
+        inboxLoadedAt = Date.now();
         var url = base + '/api/agent-conversations.php?tab=' + encodeURIComponent(currentTab);
         if (selectedId) {
             url += '&selected_id=' + encodeURIComponent(selectedId);
@@ -3520,10 +3503,6 @@
             if (transferWrap) transferWrap.style.display = 'none';
             if (enteringSupervise) {
                 closeTransferPanel();
-                try {
-                    paintConversationList(filterConversations(lastConversations));
-                } catch (ePaint) {}
-                loadConversations();
                 resetPollTimers();
             }
             return;
@@ -6218,7 +6197,7 @@
                 if (selectedId) syncRealtimeConversationChannel(selectedId);
                 // Pick up any read receipts missed while socket was down
                 if (selectedId) pollMessages();
-                loadConversations();
+                if (Date.now() - inboxLoadedAt > 1500) loadConversations();
             });
             realtimeClient.on('disconnected', function () {
                 resetPollTimers(); // switches to poll fallback

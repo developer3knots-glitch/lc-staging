@@ -61,9 +61,7 @@ require __DIR__ . '/includes/header.php';
                     <button type="button" class="lc-chat-tab <?= $defaultTab === 'active' ? 'active' : '' ?>" data-tab="active" role="tab">My chats</button>
                 <?php endif; ?>
             </div>
-            <div class="lc-chat-items" id="lc-conversation-list">
-                <div class="lc-loading-inline" id="lc-list-loading"><i class="ti ti-loader-2"></i> Loading...</div>
-            </div>
+            <div class="lc-chat-items" id="lc-conversation-list"></div>
         </aside>
 
         <div class="lc-chat-panel lc-chat-panel-pro">

@@ -1312,7 +1312,6 @@ body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
     padding: 0.85rem 1rem;
     border-bottom: 1px solid #f1f5f9;
     cursor: pointer;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
 .lc-chat-item:hover,
@@ -6301,7 +6300,6 @@ body.lc-page-chats .lc-content {
     letter-spacing: 0;
     color: var(--lc-muted);
     background: transparent;
-    transition: color 0.12s, border-color 0.12s;
 }
 
 .lc-chat-tabs-pro .lc-chat-tab i {
@@ -6340,7 +6338,6 @@ body.lc-page-chats .lc-content {
     border-bottom: 1px solid #f1f5f9;
     border-left: 3px solid transparent;
     cursor: pointer;
-    transition: background 0.12s, border-color 0.12s;
     position: relative;
 }
 
@@ -11082,6 +11079,7 @@ body.lc-page-chats .lc-chat-item-pro {
     border: 0;
     border-radius: 10px;
     background: transparent;
+    transition: none;
 }
 
 body.lc-page-chats .lc-chat-item-pro:hover {
