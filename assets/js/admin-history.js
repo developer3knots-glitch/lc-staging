@@ -23,6 +23,32 @@
         });
     }
 
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.lc-meta-copy');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var text = btn.getAttribute('data-copy') || '';
+        if (!text) {
+            var target = document.getElementById(btn.getAttribute('data-copy-target') || '');
+            text = target ? target.textContent : '';
+        }
+        text = String(text || '').trim();
+        if (!text || text === '—' || text === '-') return;
+        var mark = function () {
+            btn.classList.add('is-copied');
+            var icon = btn.querySelector('i');
+            if (icon) icon.className = 'ti ti-check';
+            setTimeout(function () {
+                btn.classList.remove('is-copied');
+                if (icon) icon.className = 'ti ti-copy';
+            }, 1200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(mark).catch(function () {});
+        }
+    });
+
     document.querySelectorAll('.lc-rpt-collapse').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var id = btn.getAttribute('data-target');
@@ -355,6 +381,63 @@
             if (el) el.textContent = value && String(value).trim() !== '' ? String(value) : '—';
         }
 
+        var archiveConv = null;
+        var archiveViews = [];
+
+        function readUrlParam(url, key) {
+            var raw = String(url || '').trim();
+            if (!raw) return '';
+            try {
+                return new URL(raw, window.location.origin).searchParams.get(key) || '';
+            } catch (err) {
+                var match = raw.match(new RegExp('[?&]' + key + '=([^&#]*)', 'i'));
+                if (!match) return '';
+                try { return decodeURIComponent(match[1].replace(/\+/g, ' ')); } catch (e2) { return match[1]; }
+            }
+        }
+
+        function stripUrlParam(url, key) {
+            var raw = String(url || '').trim();
+            if (!raw || !readUrlParam(raw, key)) return raw;
+            try {
+                var parsed = new URL(raw, window.location.origin);
+                parsed.searchParams.delete(key);
+                if (/^https?:\/\//i.test(raw)) return parsed.toString();
+                return (parsed.pathname || '/') + parsed.search + parsed.hash;
+            } catch (err) {
+                return raw;
+            }
+        }
+
+        function findArchiveGclid(c, views) {
+            var urls = [];
+            if (c) {
+                urls.push(c.page_url || '', c.visitor_page || '');
+                var stats = c.visitor_stats || {};
+                urls.push(stats.referrer || '');
+            }
+            (views || []).forEach(function (view) {
+                urls.push((view && view.page_url) || '', (view && view.referrer) || '', (view && view.page_path) || '');
+            });
+            for (var i = 0; i < urls.length; i++) {
+                var gclid = readUrlParam(urls[i], 'gclid');
+                if (gclid) return gclid;
+            }
+            return '';
+        }
+
+        function paintArchiveGclid() {
+            var gclid = findArchiveGclid(archiveConv, archiveViews);
+            setDetail('lc-hx-d-gclid', gclid);
+            var row = document.getElementById('lc-hx-gclid-row');
+            if (row) row.hidden = !gclid;
+            var btn = row ? row.querySelector('.lc-meta-copy') : null;
+            if (btn) {
+                btn.hidden = !gclid;
+                btn.setAttribute('data-copy', gclid || '');
+            }
+        }
+
         function hostFromUrl(url) {
             if (!url) return '';
             try {
@@ -435,8 +518,10 @@
             var list = document.getElementById('lc-hx-pages');
             var empty = document.getElementById('lc-hx-pages-empty');
             if (views === null) {
+                archiveViews = [];
                 if (list) list.innerHTML = '';
                 if (empty) empty.hidden = true;
+                paintArchiveGclid();
                 return;
             }
             views = views || [];
@@ -451,19 +536,22 @@
             for (var i = views.length - 1; i >= 0; i--) {
                 var view = views[i] || {};
                 var title = (view.page_title || view.page_path || '/').trim();
-                var href = (view.page_url || '').trim();
+                var href = stripUrlParam((view.page_url || '').trim(), 'gclid');
+                var shownPath = stripUrlParam(view.page_path || href, 'gclid');
                 var when = timeLabel(view.visited_at);
                 html += '<li class="lc-details-page-item' + (i === views.length - 1 ? ' is-current' : '') + '">';
                 html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
                 html += '<div class="lc-details-page-body">';
                 html += '<span class="lc-details-page-title">' + esc(title) + '</span>';
                 if (href && href !== title) {
-                    html += '<a class="lc-details-page-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(view.page_path || href) + '</a>';
+                    html += '<a class="lc-details-page-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(shownPath || href) + '</a>';
                 }
                 if (when) html += '<span class="lc-details-page-time">' + esc(when) + '</span>';
                 html += '</div></li>';
             }
             list.innerHTML = html;
+            archiveViews = views;
+            paintArchiveGclid();
         }
 
         function paintArchiveMeta(meta, conversation, notes) {
@@ -493,6 +581,7 @@
                 returningLine = (returning ? 'Returning' : 'New visitor') + ', ' + chats + ' chat' + (chats === 1 ? '' : 's');
                 if (pages > 0) returningLine += ', ' + pages + ' page' + (pages === 1 ? '' : 's');
             }
+            archiveConv = c;
             var came = hostFromUrl(stats.referrer || '') || hostFromUrl(c.visitor_page || c.page_url || '');
             var device = c.visitor_device || {};
             var deviceLabel = device.label || [device.device, device.os, device.browser].filter(Boolean).join(' · ');
@@ -514,7 +603,8 @@
             setDetail('lc-hx-d-returning', returningLine);
             setDetail('lc-hx-d-seen', timeLabel(c.visitor_last_seen || c.last_message_at));
             setDetail('lc-hx-d-from', came);
-            setDetail('lc-hx-d-page', c.page_url || c.visitor_page || '');
+            setDetail('lc-hx-d-page', stripUrlParam(c.page_url || c.visitor_page || '', 'gclid'));
+            paintArchiveGclid();
             setDetail('lc-hx-d-device', deviceLabel);
             setDetail('lc-hx-d-group', c.brand_name || '');
             setDetail('lc-hx-d-ticket', ticket);

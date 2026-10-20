@@ -446,6 +446,7 @@ require __DIR__ . '/includes/header.php';
                     <div><dt>Last seen</dt><dd id="lc-hx-d-seen">—</dd></div>
                     <div><dt>Came from</dt><dd id="lc-hx-d-from">—</dd></div>
                     <div><dt>Chat page</dt><dd id="lc-hx-d-page">—</dd></div>
+                    <div id="lc-hx-gclid-row" hidden><dt>GCLID</dt><dd class="lc-details-copyline"><span id="lc-hx-d-gclid">—</span><button type="button" class="lc-meta-copy" data-copy-target="lc-hx-d-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd></div>
                     <div><dt>Device</dt><dd id="lc-hx-d-device">—</dd></div>
                     <div><dt>Groups</dt><dd id="lc-hx-d-group">—</dd></div>
                     <div><dt>Ticket</dt><dd id="lc-hx-d-ticket">—</dd></div>
