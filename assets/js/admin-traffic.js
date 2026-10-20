@@ -777,18 +777,23 @@
         }
         if (empty) empty.hidden = true;
         list.innerHTML = pages.map(function (page, index) {
-            var raw = page.page_url || '';
+            var raw = page.page_url || page.page_path || '';
             var clean = stripUrlParam(raw, 'gclid');
             var title = page.page_title || page.page_path || clean || 'Page';
             var current = index === pages.length - 1;
+            var linkHtml = '';
+            if (clean) {
+                linkHtml = '<a class="lc-details-page-link" href="' + esc(clean) + '" target="_blank" rel="noopener noreferrer" title="' + esc(clean) + '">' + esc(clean) + '</a>';
+            }
             return (
                 '<li class="lc-details-page-item' + (current ? ' is-current' : '') + '">' +
                     '<span class="lc-details-page-dot" aria-hidden="true"></span>' +
-                    '<div class="lc-details-page-copy">' +
+                    '<div class="lc-details-page-body">' +
                         '<div class="lc-details-page-title-row">' +
-                            '<a href="' + esc(clean || raw) + '" target="_blank" rel="noopener noreferrer">' + esc(title) + '</a>' +
+                            '<span class="lc-details-page-title">' + esc(title) + '</span>' +
                             (clean ? '<button type="button" class="lc-meta-copy" data-copy="' + esc(clean) + '" aria-label="Copy page link"><i class="ti ti-copy"></i></button>' : '') +
                         '</div>' +
+                        linkHtml +
                     '</div>' +
                 '</li>'
             );
