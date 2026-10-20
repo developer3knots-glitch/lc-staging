@@ -169,11 +169,10 @@ try {
         lc_assign_conversation_ticket($convId);
 
         $welcome = trim((string) ($brand['welcome_message'] ?? ''));
-        if ($welcome === '') {
-            $welcome = 'Hi! How can we help you today?';
-        }
         $msg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
-        $msg->execute([$convId, 'system', $welcome]);
+        if ($welcome !== '') {
+            $msg->execute([$convId, 'system', $welcome]);
+        }
         $brandAccountId = (int) ($brand['account_id'] ?? 0);
         if (lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null)) {
             $msg->execute([$convId, 'system', lc_conversation_reference_message($convId)]);

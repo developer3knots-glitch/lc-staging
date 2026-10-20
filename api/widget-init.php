@@ -378,9 +378,11 @@ try {
             lc_set_conversation_client_ip($convId, $ip);
         }
         lc_assign_conversation_ticket($convId);
-        $welcome = $brand['welcome_message'] ?: 'Hi! How can we help you today?';
+        $welcome = trim((string) ($brand['welcome_message'] ?? ''));
         $msg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
-        $msg->execute([$convId, 'system', $welcome]);
+        if ($welcome !== '') {
+            $msg->execute([$convId, 'system', $welcome]);
+        }
         if (lc_ticket_display_enabled($brandAccountId > 0 ? $brandAccountId : null)) {
             $msg->execute([$convId, 'system', lc_conversation_reference_message($convId)]);
         }

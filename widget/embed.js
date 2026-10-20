@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 165;
+    var LC_WIDGET_BUILD = 166;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -861,7 +861,7 @@
                     '</div>' +
                     '<div class="lcw-idle-msg">' +
                         '<div id="lc-idle-msg-avatar" class="lcw-idle-msg-avatar" aria-hidden="true"></div>' +
-                        '<div class="lcw-idle-bubble" id="lc-idle-bubble-text">Hi! How can we help you today?</div>' +
+                        '<div class="lcw-idle-bubble" id="lc-idle-bubble-text"></div>' +
                     '</div>' +
                     '<button type="button" id="lc-lets-chat" class="lcw-lets-chat">Let\'s chat</button>' +
                 '</div>' +
@@ -1705,9 +1705,11 @@
         var nameEl = document.getElementById('lc-idle-agent-name');
         var roleEl = document.getElementById('lc-idle-agent-role');
         var bubbleEl = document.getElementById('lc-idle-bubble-text');
+        var bubbleRow = bubbleEl ? bubbleEl.closest('.lcw-idle-msg') : null;
         if (nameEl) nameEl.textContent = team;
         if (roleEl) roleEl.textContent = role;
         if (bubbleEl) bubbleEl.textContent = welcome;
+        if (bubbleRow) bubbleRow.style.display = welcome ? '' : 'none';
 
         var avatars = document.getElementById('lc-idle-avatars');
         if (avatars) {
@@ -2907,6 +2909,7 @@
         startSettingsSync();
         syncTicketFeatureUi();
         updatePrechatStatus(data.agents_online || 0);
+        syncIdleWelcomeFromBrand();
     }
 
     function fetchWidgetSettings(done) {
@@ -3128,13 +3131,40 @@
         });
     }
 
+    function brandWelcomeText() {
+        return String((settings && settings.welcome_message) || '').trim();
+    }
+
     function idleWelcomeText() {
-        var welcome = String((settings && settings.welcome_message) || '').trim();
+        var welcome = brandWelcomeText();
         var offline = String((settings && settings.offline_message) || '').trim();
-        if (agentsOnline > 0) {
-            return welcome || 'Hi! How can we help you today?';
+        if ((parseInt(agentsOnline, 10) || 0) > 0) {
+            return welcome;
         }
-        return offline || welcome || 'We\'re away right now. Leave a message and we\'ll get back to you.';
+        return offline || welcome;
+    }
+
+    function isRemovedBrandWelcome(m) {
+        if (!m || m._idlePreview || (m.sender_type || '') !== 'system') return false;
+        if (brandWelcomeText() !== '') return false;
+        return String(m.message || '').trim() === 'Hi! How can we help you today?';
+    }
+
+    function syncIdleWelcomeFromBrand() {
+        var text = idleWelcomeText();
+        var bubble = document.getElementById('lc-idle-bubble-text');
+        var row = bubble ? bubble.closest('.lcw-idle-msg') : null;
+        if (bubble) bubble.textContent = text;
+        if (row) row.style.display = text ? '' : 'none';
+        if ((parseInt(conversationId, 10) || 0) > 0 || !chatComposerActive()) return;
+        if (text) {
+            var preview = document.querySelector('#lc-panel-messages [data-idle-preview="1"]');
+            if (!preview || (preview.textContent || '').trim() !== text) {
+                showIdleWelcomePreview();
+            }
+            return;
+        }
+        clearIdleWelcomePreview();
     }
 
     function clearIdleWelcomePreview() {
@@ -3143,6 +3173,12 @@
         box.querySelectorAll('[data-idle-preview="1"]').forEach(function (el) {
             el.remove();
         });
+        if (!box.querySelector('.lcw-msg, .lcw-msg-row, .lcw-msg-wrap, .lcw-join-event')) {
+            box.querySelectorAll('.lcw-date-divider').forEach(function (el) {
+                el.remove();
+            });
+            lastDateLabel = '';
+        }
     }
 
     function showIdleWelcomePreview() {
@@ -5729,7 +5765,10 @@
                 m = Object.assign({}, m, { message: transferMatch[1].replace(/\.\s*$/, '') + '.' });
             }
         }
-        if (m.created_at) maybeAppendDateDivider(m.created_at);
+        if (isRemovedBrandWelcome(m)) {
+            return;
+        }
+        if (m.created_at && !m._idlePreview) maybeAppendDateDivider(m.created_at);
 
         var box = document.getElementById('lc-panel-messages');
         if (!box) return;
