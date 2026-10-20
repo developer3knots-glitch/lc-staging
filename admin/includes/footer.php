@@ -19,6 +19,7 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
     ];
 }, $navItems ?? []), JSON_UNESCAPED_SLASHES) ?>;
 </script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-emoji.js?v=1"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-time.js?v=41"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=44"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-tab-notify.js?v=41"></script>
@@ -32,7 +33,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=172"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=173"></script>
 <?php endforeach; ?>
 </body>
 </html>

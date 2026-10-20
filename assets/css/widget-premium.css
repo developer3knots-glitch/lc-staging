@@ -3223,6 +3223,11 @@ button.lcw-head-menu-item:focus-visible {
     opacity: 1;
 }
 
+#lc-widget-root .lcw-react-native {
+    font-size: 16px;
+    line-height: 1;
+}
+
 #lc-widget-root .lcw-react-picker {
     position: fixed;
     z-index: 2147483001;
@@ -3234,6 +3239,14 @@ button.lcw-head-menu-item:focus-visible {
     border: 1px solid rgba(15, 23, 42, 0.08);
     box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
     backdrop-filter: blur(10px);
+}
+
+#lc-widget-root .lcw-react-picker.is-emoji-panel {
+    width: 308px;
+    max-width: calc(100vw - 16px);
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
 }
 
 #lc-widget-root .lcw-react-picker[hidden] {
@@ -3263,6 +3276,52 @@ button.lcw-head-menu-item:focus-visible {
 #lc-widget-root .lcw-react-picker button:hover {
     background: #f8fafc;
     transform: translateY(-2px) scale(1.06);
+}
+
+#lc-widget-root .lc-emoji-tabs {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+}
+
+#lc-widget-root .lc-emoji-tab {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+#lc-widget-root .lc-emoji-tab.is-on {
+    background: #f1f5f9;
+}
+
+#lc-widget-root .lc-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+#lc-widget-root .lc-emoji-grid button {
+    width: 100%;
+    height: 34px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    transform: none;
+}
+
+#lc-widget-root .lc-emoji-grid button:hover {
+    background: #f1f5f9;
+    transform: none;
 }
 
 @media (hover: none) {

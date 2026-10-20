@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 171;
+    var LC_WIDGET_BUILD = 172;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -627,7 +627,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=73';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=74';
         document.head.appendChild(link);
     }
 
@@ -5575,33 +5575,45 @@
         box.appendChild(node);
     }
 
-    var REACT_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '👎', '🎉', '🔥', '✅', '😍', '👏'];
-    var REACT_PICKER = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-    var REACT_GLYPHS = {
-        '👍': '<svg viewBox="0 0 24 24"><path fill="#2563EB" d="M8.2 10.2V19a1 1 0 0 1-1 1H5.4A1.4 1.4 0 0 1 4 18.6v-7a1.4 1.4 0 0 1 1.4-1.4h2.8zm2.1-5.8c.4-.7 1.5-.4 1.6.4l.5 3.4h4.8a1.8 1.8 0 0 1 1.8 2.1l-.9 5.8a1.8 1.8 0 0 1-1.8 1.5H9.4a1 1 0 0 1-1-1V9.4c0-.3.1-.5.3-.7l1.6-3.3z"/></svg>',
-        '👎': '<svg viewBox="0 0 24 24"><path fill="#64748B" d="M15.8 13.8V5a1 1 0 0 1 1-1h1.8A1.4 1.4 0 0 1 20 5.4v7a1.4 1.4 0 0 1-1.4 1.4h-2.8zm-2.1 5.8c-.4.7-1.5.4-1.6-.4l-.5-3.4H6.8a1.8 1.8 0 0 1-1.8-2.1l.9-5.8A1.8 1.8 0 0 1 7.7 6.4h6.9a1 1 0 0 1 1 1v8.2c0 .3-.1.5-.3.7l-1.6 3.3z"/></svg>',
-        '❤️': '<svg viewBox="0 0 24 24"><path fill="#E11D48" d="M12 19.4s-6.4-3.9-6.4-8.2C5.6 8.6 7.3 7 9.2 7c1.2 0 2.2.6 2.8 1.5.6-.9 1.6-1.5 2.8-1.5 1.9 0 3.6 1.6 3.6 4.2 0 4.3-6.4 8.2-6.4 8.2z"/></svg>',
-        '😂': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#F5B942"/><path fill="#7C4A12" d="M8.2 10.2a1.1 1.1 0 1 0 0-2.2 1.1 1.1 0 0 0 0 2.2zm7.6 0a1.1 1.1 0 1 0 0-2.2 1.1 1.1 0 0 0 0 2.2z"/><path fill="none" stroke="#7C4A12" stroke-width="1.4" stroke-linecap="round" d="M8.4 13.2c.9 1.6 2.1 2.3 3.6 2.3s2.7-.7 3.6-2.3"/><path fill="#7DD3FC" d="M6.2 11.2l-2 .8.4 1.6 2.2-1.1zm11.6 0l2 .8-.4 1.6-2.2-1.1z"/></svg>',
-        '😮': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#F5B942"/><circle cx="9.2" cy="10.2" r="1.05" fill="#7C4A12"/><circle cx="14.8" cy="10.2" r="1.05" fill="#7C4A12"/><ellipse cx="12" cy="14.6" rx="1.7" ry="2.1" fill="#7C4A12"/></svg>',
-        '😢': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#F5B942"/><circle cx="9.2" cy="10.4" r="1.05" fill="#7C4A12"/><circle cx="14.8" cy="10.4" r="1.05" fill="#7C4A12"/><path fill="none" stroke="#7C4A12" stroke-width="1.4" stroke-linecap="round" d="M9 15.2c.8-1.1 1.8-1.6 3-1.6s2.2.5 3 1.6"/><path fill="#38BDF8" d="M16.2 12.2c.5 1.5.2 2.8-.6 3.4-.3-1.2-.1-2.3.6-3.4z"/></svg>',
-        '🙏': '<svg viewBox="0 0 24 24"><path fill="#F59E0B" d="M12 4.2c.6 0 1 .5 1 1.1V13l2.2-2.4a1.1 1.1 0 0 1 1.6 1.5L13 16.6V18a2 2 0 0 1-2 2h-.2a2 2 0 0 1-2-1.8v-1.6L7.2 12.1a1.1 1.1 0 1 1 1.6-1.5L11 13V5.3c0-.6.4-1.1 1-1.1z"/><path fill="#FBBF24" d="M11 8.5 9.2 6.8a1.1 1.1 0 0 0-1.6 1.5L9.2 10"/></svg>',
-        '🎉': '<svg viewBox="0 0 24 24"><path fill="#8B5CF6" d="M4 20l6.2-2.2L6.2 13.8 4 20z"/><path fill="#F59E0B" d="m13 4 1.2 2.6L17 8l-2.8 1.2L13 12l-1.2-2.8L9 8l2.8-1.4z"/><circle cx="18" cy="5" r="1.2" fill="#E11D48"/><circle cx="18.5" cy="14" r="1.1" fill="#2563EB"/></svg>',
-        '🔥': '<svg viewBox="0 0 24 24"><path fill="#F97316" d="M12 3s1.2 3.2-.2 5.4C10.2 10.2 9 11 9 13a3 3 0 0 0 6 0c0-1.2-.6-2.2-1.2-3.2C16.6 11 18 12.6 18 15a6 6 0 1 1-12 0c0-3.2 2.2-5.4 3.4-8.2C10.2 5.2 12 3 12 3z"/><path fill="#FBBF24" d="M12 13.2c.8.8 1.2 1.6 1.2 2.6a1.2 1.2 0 0 1-2.4 0c0-.6.3-1.2.8-1.8.2-.2.3-.4.4-.8z"/></svg>',
-        '✅': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#16A34A"/><path fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M8.2 12.2l2.4 2.4 5.2-5.4"/></svg>',
-        '😍': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#F5B942"/><path fill="#E11D48" d="M8.2 11.2c.7-.9 1.8-.9 2.4 0-.6.8-1.7.8-2.4 0zm5.2 0c.7-.9 1.8-.9 2.4 0-.6.8-1.7.8-2.4 0z"/><path fill="none" stroke="#7C4A12" stroke-width="1.4" stroke-linecap="round" d="M9 14.4c.8 1 1.8 1.5 3 1.5s2.2-.5 3-1.5"/></svg>',
-        '👏': '<svg viewBox="0 0 24 24"><path fill="#F59E0B" d="M8 8.5V16a1 1 0 0 0 1 1h.2M11 7.2V15M14 8.2V15M16.5 10.2V15a3 3 0 0 1-3 3h-2.2A3.2 3.2 0 0 1 8 14.8"/><path fill="none" stroke="#B45309" stroke-width="1.4" stroke-linecap="round" d="M8 8.5V16M11 7.2V15M14 8.2V15"/></svg>'
-    };
     var REACT_ADD_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9.2" cy="10.2" r="1" fill="currentColor"/><circle cx="14.8" cy="10.2" r="1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M8.8 13.4c.8 1.2 1.9 1.8 3.2 1.8s2.4-.6 3.2-1.8"/></svg>';
 
-    function reactGlyph(emoji) {
-        return '<span class="lcw-react-glyph">' + (REACT_GLYPHS[emoji] || '') + '</span>';
+    function emojiAllowed(emoji) {
+        if (!emoji || /[<>&"']/.test(emoji)) return false;
+        if (window.LCEmoji && window.LCEmoji.has(emoji)) return true;
+        try {
+            return /\p{Extended_Pictographic}/u.test(emoji);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function reactFace(emoji) {
+        return '<span class="lcw-react-native">' + emoji + '</span>';
+    }
+
+    function ensureEmojiLib(done) {
+        if (window.LCEmoji) {
+            done();
+            return;
+        }
+        var existing = document.querySelector('script[data-lc-emoji]');
+        if (existing) {
+            existing.addEventListener('load', function () { done(); });
+            return;
+        }
+        var script = document.createElement('script');
+        script.src = siteUrl + '/assets/js/lc-emoji.js?v=1';
+        script.async = true;
+        script.setAttribute('data-lc-emoji', '1');
+        script.onload = function () { done(); };
+        document.head.appendChild(script);
     }
 
     function groupWidgetReactions(list) {
         var groups = {};
         var order = [];
         (list || []).forEach(function (r) {
-            var emoji = r && REACT_EMOJIS.indexOf(r.emoji) >= 0 ? r.emoji : '';
+            var emoji = r && emojiAllowed(r.emoji) ? r.emoji : '';
             if (!emoji) return;
             if (!groups[emoji]) {
                 groups[emoji] = { emoji: emoji, count: 0, mine: false };
@@ -5627,9 +5639,9 @@
             var cls = 'lcw-react-chip' + (g.mine ? ' is-mine' : '');
             var count = g.count > 1 ? '<span>' + g.count + '</span>' : '';
             if (allowAdd) {
-                chips += '<button type="button" class="' + cls + '" data-emoji="' + g.emoji + '">' + reactGlyph(g.emoji) + count + '</button>';
+                chips += '<button type="button" class="' + cls + '" data-emoji="' + g.emoji + '">' + reactFace(g.emoji) + count + '</button>';
             } else {
-                chips += '<span class="' + cls + '">' + reactGlyph(g.emoji) + count + '</span>';
+                chips += '<span class="' + cls + '">' + reactFace(g.emoji) + count + '</span>';
             }
         });
         return (allowAdd ? '<button type="button" class="lcw-react-add" aria-label="React">' + REACT_ADD_ICON + '</button>' : '') +
@@ -5692,40 +5704,49 @@
         picker._msgId = 0;
     }
 
+    function placeEmojiPicker(picker, anchor) {
+        var rect = anchor.getBoundingClientRect();
+        var width = 308;
+        var height = 340;
+        var left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.right - width));
+        var top = rect.top - height - 8;
+        if (top < 8) top = Math.min(window.innerHeight - height - 8, rect.bottom + 8);
+        picker.style.left = left + 'px';
+        picker.style.top = top + 'px';
+    }
+
     function openWidgetReactPicker(anchor, messageId) {
         var root = document.getElementById('lc-widget-root');
         if (!root) return;
-        var picker = document.getElementById('lcw-react-picker');
-        if (!picker) {
-            picker = document.createElement('div');
-            picker.id = 'lcw-react-picker';
-            picker.className = 'lcw-react-picker';
-            picker.hidden = true;
-            picker.innerHTML = REACT_PICKER.map(function (emoji) {
-                return '<button type="button" data-emoji="' + emoji + '">' + reactGlyph(emoji) + '</button>';
-            }).join('');
-            root.appendChild(picker);
-            picker.addEventListener('click', function (ev) {
-                var btn = ev.target.closest('button');
-                if (!btn || !picker._msgId) return;
-                ev.preventDefault();
-                ev.stopPropagation();
-                sendWidgetReaction(picker._msgId, btn.getAttribute('data-emoji') || '');
-                closeWidgetReactPicker();
-            });
-        }
-        picker._msgId = messageId;
-        picker.hidden = false;
-        var rect = anchor.getBoundingClientRect();
-        picker.style.left = Math.max(8, rect.left - 8) + 'px';
-        var top = rect.top - 48;
-        if (top < 8) top = rect.bottom + 6;
-        picker.style.top = top + 'px';
+        ensureEmojiLib(function () {
+            if (!window.LCEmoji) return;
+            var picker = document.getElementById('lcw-react-picker');
+            if (!picker) {
+                picker = document.createElement('div');
+                picker.id = 'lcw-react-picker';
+                picker.className = 'lcw-react-picker is-emoji-panel';
+                picker.hidden = true;
+                picker.innerHTML = window.LCEmoji.shell('lcw-emoji-btn');
+                root.appendChild(picker);
+                window.LCEmoji.bind(picker, 'lcw-emoji-btn');
+                picker.addEventListener('click', function (ev) {
+                    var btn = ev.target.closest('[data-emoji]');
+                    if (!btn || !picker._msgId) return;
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    sendWidgetReaction(picker._msgId, btn.getAttribute('data-emoji') || '');
+                    closeWidgetReactPicker();
+                });
+            }
+            picker._msgId = messageId;
+            picker.hidden = false;
+            placeEmojiPicker(picker, anchor);
+        });
     }
 
     function sendWidgetReaction(messageId, emoji) {
         messageId = parseInt(messageId, 10) || 0;
-        if (messageId < 1 || !conversationId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        if (messageId < 1 || !conversationId || !window.LCEmoji || !window.LCEmoji.has(emoji)) return;
         var node = document.querySelector('#lc-panel-messages [data-msg-id="' + messageId + '"]');
         if (!widgetCanReact(node)) return;
         fetch(siteUrl + '/api/visitor-react.php', {

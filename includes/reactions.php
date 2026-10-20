@@ -2,7 +2,7 @@
 
 function lc_reaction_emojis(): array
 {
-    return ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏', '🎉', '🔥', '✅', '😍', '👏'];
+    return [];
 }
 
 function lc_ensure_message_reactions_schema(): void
@@ -19,13 +19,14 @@ function lc_ensure_message_reactions_schema(): void
             conversation_id INT UNSIGNED NOT NULL,
             reactor_type ENUM('visitor','agent') NOT NULL,
             reactor_id INT UNSIGNED NOT NULL,
-            emoji VARCHAR(16) NOT NULL,
+            emoji VARCHAR(32) NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_msg_reactor (message_id, reactor_type, reactor_id),
             KEY idx_conv (conversation_id),
             KEY idx_message (message_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        lc_db()->exec('ALTER TABLE message_reactions MODIFY emoji VARCHAR(32) NOT NULL');
     } catch (Throwable $e) {
     }
 }
@@ -33,13 +34,20 @@ function lc_ensure_message_reactions_schema(): void
 function lc_normalize_reaction_emoji(string $emoji): string
 {
     $emoji = trim($emoji);
-    foreach (lc_reaction_emojis() as $allowed) {
-        if ($emoji === $allowed) {
-            return $allowed;
-        }
+    if ($emoji === '' || mb_strlen($emoji) > 32) {
+        return '';
+    }
+    if (preg_match('/[<>&"\'\\\\\s]/u', $emoji)) {
+        return '';
+    }
+    if (!preg_match('/\p{Extended_Pictographic}/u', $emoji)) {
+        return '';
+    }
+    if (preg_match('/[^\p{Extended_Pictographic}\x{FE0E}\x{FE0F}\x{200D}\x{20E3}\x{1F3FB}-\x{1F3FF}\x{1F1E6}-\x{1F1FF}#*0-9]/u', $emoji)) {
+        return '';
     }
 
-    return '';
+    return $emoji;
 }
 
 function lc_reaction_rows_for_messages(array $messageIds): array
