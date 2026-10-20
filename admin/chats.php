@@ -317,6 +317,17 @@ require __DIR__ . '/includes/header.php';
                     </button>
                 </div>
 
+                <div class="lc-details-acc is-open" id="lc-details-pages-acc">
+                    <button type="button" class="lc-details-acc-head" id="lc-details-pages-toggle" aria-expanded="true" aria-controls="lc-details-pages-body">
+                        <span>Visited pages</span>
+                        <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="lc-details-acc-body" id="lc-details-pages-body">
+                        <ul class="lc-details-pages-list" id="lc-details-pages-list"></ul>
+                        <p class="lc-details-pages-empty" id="lc-details-pages-empty">No pages recorded yet</p>
+                    </div>
+                </div>
+
                 <div class="lc-details-hero">
                     <div class="lc-details-hero-av" id="lc-details-av">V</div>
                     <h3 class="lc-details-hero-name" id="lc-details-name">Visitor</h3>
@@ -405,17 +416,6 @@ require __DIR__ . '/includes/header.php';
                                 <dd class="lc-details-copyline"><span id="lc-details-ip">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-ip" aria-label="Copy IP address" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                         </dl>
-                    </div>
-                </div>
-
-                <div class="lc-details-acc is-open" id="lc-details-pages-acc">
-                    <button type="button" class="lc-details-acc-head" id="lc-details-pages-toggle" aria-expanded="true" aria-controls="lc-details-pages-body">
-                        <span>Visited pages</span>
-                        <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
-                    </button>
-                    <div class="lc-details-acc-body" id="lc-details-pages-body">
-                        <ul class="lc-details-pages-list" id="lc-details-pages-list"></ul>
-                        <p class="lc-details-pages-empty" id="lc-details-pages-empty">No pages recorded yet</p>
                     </div>
                 </div>
 
