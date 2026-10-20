@@ -269,6 +269,23 @@ try {
 
     $visitors = [];
     $blockedIpCache = [];
+    $supervisedIds = [];
+    if (function_exists('lc_ensure_supervisors_schema')) {
+        lc_ensure_supervisors_schema();
+        try {
+            $supStmt = $db->prepare('
+                SELECT conversation_id
+                FROM conversation_supervisors
+                WHERE agent_id = ? AND dismissed_at IS NULL
+            ');
+            $supStmt->execute([(int) $agent['id']]);
+            foreach ($supStmt->fetchAll(PDO::FETCH_COLUMN) as $supConvId) {
+                $supervisedIds[(int) $supConvId] = true;
+            }
+        } catch (Throwable $e) {
+            $supervisedIds = [];
+        }
+    }
     foreach ($rows as $row) {
         $convStatus = (string) ($row['conversation_status'] ?? '');
         $since = (int) ($row['seconds_since_seen'] ?? 999999);
@@ -400,7 +417,9 @@ try {
             'brand_key' => $resolvedBrandKey,
             'conversation_id' => $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null,
             'conversation_status' => $row['conversation_status'] ?? null,
+            'agent_id' => $row['agent_id'] !== null ? (int) $row['agent_id'] : 0,
             'agent_name' => (string) ($row['agent_name'] ?? ''),
+            'is_supervising' => $row['conversation_id'] !== null && isset($supervisedIds[(int) $row['conversation_id']]),
             'brand_name' => (string) ($row['brand_name'] ?? ''),
             'time_on_pages_seconds' => $timeSec,
             'time_on_pages_label' => lc_format_duration_label($timeSec) ?: '0s',

@@ -5082,6 +5082,19 @@ body.lc-avatar-modal-open {
     white-space: nowrap;
 }
 
+.lc-traffic-supervise.is-on {
+    background: #ecfdf3;
+    color: #166534;
+    border-color: #86efac;
+    cursor: default;
+}
+
+.lc-traffic-supervise.is-on:hover {
+    background: #ecfdf3;
+    color: #166534;
+    border-color: #86efac;
+}
+
 .lc-traffic-start {
     display: inline-flex;
     align-items: center;

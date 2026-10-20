@@ -103,6 +103,8 @@
         return html;
     }
 
+    var supervisingIds = {};
+
     function actionCell(row) {
         var parts = [];
         if (row.ip_blocked) {
@@ -125,9 +127,10 @@
         }
         if (row.status === 'chatting' && row.conversation_id) {
             var chatHref = row.chat_url || ('chats.php?id=' + encodeURIComponent(row.conversation_id));
-            var superviseHref = chatHref + (chatHref.indexOf('?') >= 0 ? '&' : '?') + 'supervise=1';
             var rowAgentId = parseInt(row.agent_id || 0, 10);
             var isMyChat = rowAgentId > 0 && rowAgentId === myAgentId;
+            var convId = parseInt(row.conversation_id, 10) || 0;
+            var supervising = !!row.is_supervising || !!supervisingIds[convId];
 
             if (isMyChat) {
                 return (
@@ -141,11 +144,12 @@
 
             return (
                 '<div class="lc-traffic-actions">' +
-                    '<a class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-action-btn" ' +
-                        'href="' + esc(superviseHref) + '" ' +
-                        'title="Supervise this chat">' +
-                        '<i class="ti ti-shield-check" aria-hidden="true"></i> Supervise' +
-                    '</a>' +
+                    '<button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-action-btn lc-traffic-supervise' + (supervising ? ' is-on' : '') + '" ' +
+                        'data-supervise-id="' + esc(String(convId)) + '" ' +
+                        (supervising ? 'aria-pressed="true" ' : '') +
+                        'title="' + (supervising ? 'You are supervising this chat' : 'Supervise this chat') + '">' +
+                        '<i class="ti ti-shield-check" aria-hidden="true"></i> ' + (supervising ? 'Supervised' : 'Supervise') +
+                    '</button>' +
                     (isAdmin ? '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '"><i class="ti ti-message-circle" aria-hidden="true"></i> Open</a>' : '') +
                 '</div>'
             );
@@ -179,6 +183,34 @@
             );
         }
         return '<span class="lc-traffic-muted">—</span>';
+    }
+
+    function startSupervise(btn) {
+        var convId = parseInt(btn.getAttribute('data-supervise-id'), 10) || 0;
+        if (convId < 1 || btn.classList.contains('is-on') || btn.disabled) return;
+        btn.disabled = true;
+        fetch(base + '/api/agent-supervise.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ conversation_id: convId })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success) {
+                    throw new Error((data && data.error) || 'Could not start supervise');
+                }
+                supervisingIds[convId] = true;
+                allVisitors = allVisitors.map(function (row) {
+                    if ((parseInt(row.conversation_id, 10) || 0) !== convId) return row;
+                    return Object.assign({}, row, { is_supervising: true });
+                });
+                paintPage();
+            })
+            .catch(function (err) {
+                btn.disabled = false;
+                window.alert(err && err.message ? err.message : 'Could not start supervise');
+            });
     }
 
     function unblockVisitorIp(btn) {
@@ -692,6 +724,13 @@
             if (unblockBtn && bodyEl.contains(unblockBtn)) {
                 e.preventDefault();
                 unblockVisitorIp(unblockBtn);
+                return;
+            }
+            var superviseBtn = e.target.closest('[data-supervise-id]');
+            if (superviseBtn && bodyEl.contains(superviseBtn)) {
+                e.preventDefault();
+                e.stopPropagation();
+                startSupervise(superviseBtn);
                 return;
             }
             var btn = e.target.closest('[data-start-chat]');
