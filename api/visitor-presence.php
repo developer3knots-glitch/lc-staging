@@ -179,6 +179,24 @@ try {
     }
     $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : $prevTs;
     $statusChanged = $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
+    if ($conversationId > 0 && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
+        $presenceLine = lc_presence_chat_line((string) ($presence['status'] ?? ''), $prevStatus);
+        if ($presenceLine !== '') {
+            try {
+                $dup = $db->prepare("
+                    SELECT message FROM messages
+                    WHERE conversation_id = ? AND sender_type = 'system'
+                    ORDER BY id DESC
+                    LIMIT 1
+                ");
+                $dup->execute([$conversationId]);
+                if ((string) $dup->fetchColumn() !== $presenceLine) {
+                    lc_add_system_message($conversationId, $presenceLine, true);
+                }
+            } catch (Throwable $e) {
+            }
+        }
+    }
 
     // Same confirmed realtime path as typing — not fire-and-forget.
     // Publish on a real status change even if MySQL rowCount was 0 (window focus

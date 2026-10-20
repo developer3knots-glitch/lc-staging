@@ -559,6 +559,28 @@
         }
     }
 
+    function isPresenceLogText(text) {
+        return /^(Visitor maximized the chat|Visitor returned to the tab|Visitor returned to the window|Visitor is active in chat|Visitor minimized the chat \(still on website\)|Visitor switched tab|Visitor switched window|Visitor left the website|Visitor appears disconnected)/.test(String(text || '').trim());
+    }
+
+    function absorbPresenceLog(text, messageId) {
+        if (!messagesEl) return false;
+        text = String(text || '').trim();
+        if (!text || !isPresenceLogText(text)) return false;
+        var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence, .lc-msg.system');
+        for (var i = nodes.length - 1; i >= 0; i--) {
+            var body = nodes[i].querySelector('.lc-msg-body');
+            var current = (body ? body.textContent : nodes[i].textContent) || '';
+            if (current.replace(/\s+/g, ' ').trim() !== text) continue;
+            if (messageId && !nodes[i].getAttribute('data-id')) {
+                nodes[i].setAttribute('data-id', String(messageId));
+                nodes[i].classList.add('is-presence');
+            }
+            return true;
+        }
+        return false;
+    }
+
     function appendPresenceSystemMessage(presence, prevStatus) {
         if (!messagesEl || !presence) return;
         var line = presenceChatLine(presence, prevStatus);
@@ -675,7 +697,7 @@
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
         }
-        if (statusChanged) {
+        if (statusChanged && prev) {
             appendPresenceSystemMessage(presence, prev);
         }
     }
@@ -2229,6 +2251,9 @@
         }
         if (sender === 'system' && (m.message || '').indexOf('Visitor closed the live chat') !== -1) {
             cls += ' is-visitor-close';
+        }
+        if (sender === 'system' && isPresenceLogText(m.message || '')) {
+            cls += ' is-presence';
         }
         if (opts.history) {
             cls += ' is-history';
@@ -4102,6 +4127,10 @@
                         }
                         // Paint anything not in DOM — do not require mid > lastMsgId
                         // (a bad cursor bump used to permanently skip agent bubbles).
+                        if (m.sender_type === 'system' && absorbPresenceLog(m.message, mid)) {
+                            if (mid > lastMsgId) lastMsgId = mid;
+                            return;
+                        }
                         if (m.sender_type === 'agent') {
                             var beforeAgent = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
                             appendLiveMessage(m);
@@ -5874,6 +5903,10 @@
                 return;
             }
         }
+        if (m.sender_type === 'system' && absorbPresenceLog(m.message, mid)) {
+            if (mid > lastMsgId) lastMsgId = mid;
+            return;
+        }
         messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
         if (mid > lastMsgId) lastMsgId = mid;
         if (window.LCTime) window.LCTime.scan(messagesEl);
@@ -5998,6 +6031,9 @@
                     syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
                 }
                 if (cid && patchInboxRowActivity(cid, msg)) {
+                    if (msg && isPresenceLogText(msg.message)) {
+                        return;
+                    }
                     if (!(msg && msg.sender_type === 'visitor' && recentContinue(cid))) {
                         var otherEvent = (msg && isContinueSystemMessage(msg))
                             ? 'chat_continued'

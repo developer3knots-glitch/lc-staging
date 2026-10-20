@@ -248,6 +248,43 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
 }
 
 /**
+ * Transcript line for a real presence change. Empty when there is nothing new to log.
+ */
+function lc_presence_chat_line(string $status, string $prevStatus): string
+{
+    $status = strtolower(trim($status));
+    $prevStatus = strtolower(trim($prevStatus));
+    if ($status === '' || $status === $prevStatus || $prevStatus === '') {
+        return '';
+    }
+    switch ($status) {
+        case 'active':
+            if ($prevStatus === 'minimized') {
+                return 'Visitor maximized the chat';
+            }
+            if ($prevStatus === 'away') {
+                return 'Visitor returned to the tab';
+            }
+            if ($prevStatus === 'window') {
+                return 'Visitor returned to the window';
+            }
+            return 'Visitor is active in chat';
+        case 'minimized':
+            return 'Visitor minimized the chat (still on website)';
+        case 'away':
+            return 'Visitor switched tab';
+        case 'window':
+            return 'Visitor switched window';
+        case 'left':
+            return 'Visitor left the website';
+        case 'disconnected':
+            return 'Visitor appears disconnected';
+        default:
+            return '';
+    }
+}
+
+/**
  * Apply optional chat_open / page_visible from a visitor API payload and notify agents on change.
  *
  * @param array<string,mixed> $input
