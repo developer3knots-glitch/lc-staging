@@ -460,9 +460,9 @@
 
     function setText(id, text) {
         var el = document.getElementById(id);
-        if (el) {
-            el.textContent = text || ' - ';
-        }
+        if (!el) return;
+        var next = text || ' - ';
+        if (el.textContent !== next) el.textContent = next;
     }
 
 
@@ -795,9 +795,11 @@
         var el = document.getElementById(id);
         if (!el) return;
         if (!ts) {
-            el.textContent = '-';
+            if (el.textContent !== '-') el.textContent = '-';
             return;
         }
+        var iso = window.LCTime && window.LCTime.toIso ? window.LCTime.toIso(ts) : '';
+        if (iso && el.getAttribute('data-timestamp') === iso) return;
         el.innerHTML = timeHtml(ts);
         if (window.LCTime) window.LCTime.scan(el);
     }
@@ -824,35 +826,33 @@
         if (!wrap || !iframe) return;
 
         geo = geo || {};
-        var lat = geo.lat;
-        var lon = geo.lon;
+        var lat = parseFloat(geo.lat);
+        var lon = parseFloat(geo.lon);
+        var hasPoint = isFinite(lat) && isFinite(lon);
         var label = (geo.label || geo.country || '').trim();
+        if (/^unknown$/i.test(label)) label = '';
         var source = String(geo.source || 'ip').toLowerCase();
-        var isBrowser = source === 'browser';
-        // IP coords are ISP guesses (often wrong neighborhood). Prefer city/country search.
-        var key = isBrowser && lat && lon
-            ? ('gps:' + String(lat) + ',' + String(lon))
-            : (label ? ('ip:' + label) : ((lat && lon) ? ('ipxy:' + lat + ',' + lon) : ''));
-        if (!key) {
-            if (lastDetailsMapKey !== '') {
-                lastDetailsMapKey = '';
-                iframe.removeAttribute('src');
-            }
-            wrap.hidden = true;
-            return;
-        }
-        wrap.hidden = false;
-        if (key === lastDetailsMapKey) {
-            return;
-        }
-        lastDetailsMapKey = key;
-        if (isBrowser && lat && lon) {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+        var key = '';
+        var src = '';
+        if (source === 'browser' && hasPoint) {
+            key = 'gps:' + lat.toFixed(5) + ',' + lon.toFixed(5);
+            src = 'https://maps.google.com/maps?q=' + encodeURIComponent(lat.toFixed(5) + ',' + lon.toFixed(5)) + '&z=14&output=embed&iwloc=near';
+        } else if (hasPoint) {
+            key = 'ipxy:' + lat.toFixed(3) + ',' + lon.toFixed(3);
+            src = 'https://maps.google.com/maps?q=' + encodeURIComponent(lat.toFixed(3) + ',' + lon.toFixed(3)) + '&z=11&output=embed&iwloc=near';
         } else if (label) {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
-        } else if (lat && lon) {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
+            key = 'ip:' + label.toLowerCase();
+            src = 'https://maps.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed&iwloc=near';
         }
+        if (!src) return;
+        if (iframe.getAttribute('data-map-key') === key && iframe.getAttribute('src')) {
+            wrap.hidden = false;
+            return;
+        }
+        iframe.setAttribute('data-map-key', key);
+        lastDetailsMapKey = key;
+        iframe.src = src;
+        wrap.hidden = false;
     }
 
     function journeyPageHref(view) {
@@ -3908,7 +3908,16 @@
                 }
             }
         }
-        lastDetailsMapKey = '';
+        if (id !== previousId) {
+            lastDetailsMapKey = '';
+            var mapFrame = document.getElementById('lc-details-map');
+            var mapWrap = document.getElementById('lc-details-map-wrap');
+            if (mapFrame) {
+                mapFrame.removeAttribute('data-map-key');
+                mapFrame.removeAttribute('src');
+            }
+            if (mapWrap) mapWrap.hidden = true;
+        }
         lastDetailsMapConvId = id;
         clearPendingAttachment();
         if (id !== previousId && typeof closeEmailPanel === 'function') { try { closeEmailPanel(); } catch (e) {} }

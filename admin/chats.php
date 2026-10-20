@@ -364,7 +364,7 @@ require __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="lc-details-map-wrap" id="lc-details-map-wrap" hidden>
-                    <iframe id="lc-details-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                    <iframe id="lc-details-map" title="Customer location map" loading="eager" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
 
                 <div class="lc-details-acc is-open" id="lc-details-additional-acc">
