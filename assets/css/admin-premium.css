@@ -15898,3 +15898,98 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     opacity: 1;
     pointer-events: auto;
 }
+
+.lc-msg {
+    position: relative;
+}
+
+.lc-reacts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.lc-react-chip,
+.lc-react-add,
+.lc-react-pick {
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+}
+
+.lc-react-chip,
+.lc-react-add {
+    min-height: 22px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    color: inherit;
+}
+
+.lc-msg.visitor .lc-react-chip,
+.lc-msg.visitor .lc-react-add {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    color: #111827;
+}
+
+.lc-react-chip.is-mine {
+    outline: 1px solid currentColor;
+}
+
+.lc-react-chip span {
+    margin-left: 3px;
+    font-size: 11px;
+}
+
+.lc-react-add {
+    opacity: 0;
+    width: 22px;
+    padding: 0;
+}
+
+.lc-msg:hover .lc-react-add,
+.lc-react-add:focus {
+    opacity: 1;
+}
+
+.lc-msg[data-history] .lc-react-add {
+    display: none;
+}
+
+.lc-react-picker {
+    position: fixed;
+    z-index: 80;
+    display: flex;
+    gap: 2px;
+    padding: 6px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+
+.lc-react-picker[hidden] {
+    display: none;
+}
+
+.lc-react-pick {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 18px;
+}
+
+.lc-react-pick:hover {
+    background: #f3f4f6;
+}
+
+@media (hover: none) {
+    .lc-react-add {
+        opacity: 0.8;
+    }
+}

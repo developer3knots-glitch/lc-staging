@@ -68,6 +68,9 @@ try {
         foreach ($rows as $row) {
             $messages[] = lc_format_message_row($row);
         }
+        if (function_exists('lc_hydrate_message_reactions')) {
+            $messages = lc_hydrate_message_reactions($messages);
+        }
     }
 
     $cursorStmt = lc_db()->prepare('SELECT COALESCE(MAX(id), 0) FROM messages WHERE conversation_id = ?');
@@ -132,6 +135,7 @@ try {
             ['ip_blocked' => lc_is_ip_blocked((string) ($conv['visitor_ip'] ?? ''))]
         ),
         'messages' => $messages,
+        'reactions' => function_exists('lc_conversation_reactions') ? lc_conversation_reactions($conversationId) : [],
         'message_cursor' => $messageCursor,
         'receipts' => lc_fetch_message_receipts($conversationId, 'agent'),
         'notes' => function_exists('lc_get_conversation_notes') ? lc_get_conversation_notes($conversationId) : [],

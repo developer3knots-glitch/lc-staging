@@ -2262,6 +2262,131 @@
         stickToBottom = isMessagesNearBottom(120);
     }
 
+    var REACT_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏', '🎉', '🔥', '✅', '😍', '👏'];
+
+    function groupAgentReactions(list) {
+        var groups = {};
+        var order = [];
+        (list || []).forEach(function (r) {
+            var emoji = r && REACT_EMOJIS.indexOf(r.emoji) >= 0 ? r.emoji : '';
+            if (!emoji) return;
+            if (!groups[emoji]) {
+                groups[emoji] = { emoji: emoji, count: 0, mine: false };
+                order.push(emoji);
+            }
+            groups[emoji].count += 1;
+            if (r.reactor_type === 'agent' && (parseInt(r.reactor_id, 10) || 0) === myAgentId) {
+                groups[emoji].mine = true;
+            }
+        });
+        return order.map(function (emoji) { return groups[emoji]; });
+    }
+
+    function reactionBarHtml(reactions, history) {
+        var groups = groupAgentReactions(reactions);
+        if (!groups.length && history) return '';
+        var html = '<div class="lc-reacts">';
+        groups.forEach(function (g) {
+            html += '<button type="button" class="lc-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
+                g.emoji + (g.count > 1 ? '<span>' + g.count + '</span>' : '') + '</button>';
+        });
+        if (!history) {
+            html += '<button type="button" class="lc-react-add" aria-label="React with emoji">+</button>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function paintAgentReactions(el, reactions) {
+        if (!el || el.classList.contains('system')) return;
+        var history = el.hasAttribute('data-history');
+        var html = reactionBarHtml(reactions, history);
+        var host = el.querySelector('.lc-reacts');
+        if (!html) {
+            if (host) host.remove();
+            return;
+        }
+        if (!host) {
+            el.insertAdjacentHTML('beforeend', html);
+            return;
+        }
+        host.outerHTML = html;
+    }
+
+    function applyReactionSnapshot(rows) {
+        if (!messagesEl || !rows) return;
+        var byId = {};
+        rows.forEach(function (r) {
+            var id = parseInt(r.message_id, 10) || 0;
+            if (!id) return;
+            if (!byId[id]) byId[id] = [];
+            byId[id].push(r);
+        });
+        messagesEl.querySelectorAll('.lc-msg.visitor[data-id], .lc-msg.agent[data-id]').forEach(function (el) {
+            var id = parseInt(el.getAttribute('data-id'), 10) || 0;
+            if (id > 0) paintAgentReactions(el, byId[id] || []);
+        });
+    }
+
+    function sendMessageReaction(msgEl, emoji) {
+        if (!msgEl || !selectedId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        var messageId = parseInt(msgEl.getAttribute('data-id'), 10) || 0;
+        if (messageId < 1) return;
+        var convId = selectedId;
+        fetch(base + '/api/agent-react.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                conversation_id: convId,
+                message_id: messageId,
+                emoji: emoji
+            })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (selectedId !== convId || !data || !data.success) return;
+            var node = messagesEl && messagesEl.querySelector('.lc-msg[data-id="' + messageId + '"]');
+            if (node) paintAgentReactions(node, data.reactions || []);
+        }).catch(function () {});
+    }
+
+    function closeReactPicker() {
+        var picker = document.getElementById('lc-react-picker');
+        if (!picker) return;
+        picker.hidden = true;
+        picker._msg = null;
+    }
+
+    function openReactPicker(anchor, msgEl) {
+        var picker = document.getElementById('lc-react-picker');
+        if (!picker) {
+            picker = document.createElement('div');
+            picker.id = 'lc-react-picker';
+            picker.className = 'lc-react-picker';
+            picker.hidden = true;
+            picker.innerHTML = REACT_EMOJIS.map(function (emoji) {
+                return '<button type="button" class="lc-react-pick" data-emoji="' + emoji + '">' + emoji + '</button>';
+            }).join('');
+            document.body.appendChild(picker);
+            picker.addEventListener('click', function (ev) {
+                var btn = ev.target.closest('.lc-react-pick');
+                if (!btn || !picker._msg) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                sendMessageReaction(picker._msg, btn.getAttribute('data-emoji') || '');
+                closeReactPicker();
+            });
+        }
+        picker._msg = msgEl;
+        picker.hidden = false;
+        var rect = anchor.getBoundingClientRect();
+        var width = 248;
+        var left = Math.min(window.innerWidth - width - 8, Math.max(8, rect.left - 8));
+        var top = rect.top - 46;
+        if (top < 8) top = rect.bottom + 6;
+        picker.style.left = left + 'px';
+        picker.style.top = top + 'px';
+    }
+
     function renderMessage(m, opts) {
         opts = opts || {};
         var sender = m.sender_type || 'system';
@@ -2302,6 +2427,9 @@
             html += msgTicksHtml(status);
         }
         html += '</div>';
+        if ((sender === 'visitor' || sender === 'agent') && (parseInt(m.id, 10) || 0) > 0) {
+            html += reactionBarHtml(m.reactions || [], !!opts.history);
+        }
         html += '</div>';
         return html;
     }
@@ -4125,6 +4253,7 @@
                     // (supervisor then never sees attending-agent replies via poll).
                     lastMsgId = maxPaintedMessageId() || lastMsgId;
                     if (data.receipts) applyReceipts(data.receipts);
+                    if (data.reactions) applyReactionSnapshot(data.reactions);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     // Land on current chat (bottom), not with scrollIntoView (causes page jump)
                     stickToBottom = true;
@@ -4177,6 +4306,7 @@
                         appendInlineNote(n);
                     });
                     if (data.receipts) applyReceipts(data.receipts);
+                    if (data.reactions) applyReactionSnapshot(data.reactions);
                     if (window.LCTime) window.LCTime.scan(messagesEl);
                     // Only stick to bottom for new messages when agent is already near bottom
                     if (added > 0) {
@@ -6113,6 +6243,13 @@
                     setPeerTypingVisible(!!payload.typing, payload.name || 'Visitor', payload.preview || '');
                 }
             });
+            realtimeClient.on('message.reaction', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                var mid = parseInt(payload && payload.message_id, 10) || 0;
+                if (!selectedId || cid !== selectedId || mid < 1 || !messagesEl) return;
+                var node = messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]');
+                if (node) paintAgentReactions(node, payload.reactions || []);
+            });
             realtimeClient.on('message.receipts', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!selectedId || cid !== selectedId) return;
@@ -6278,6 +6415,32 @@
             if (selectedId > 0) setChatThreadOpen(true);
         });
     }
+
+    if (messagesEl) {
+        messagesEl.addEventListener('click', function (ev) {
+            var addBtn = ev.target.closest('.lc-react-add');
+            var chip = ev.target.closest('.lc-react-chip');
+            if (addBtn) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var msg = addBtn.closest('.lc-msg');
+                if (!msg || msg.hasAttribute('data-history')) return;
+                openReactPicker(addBtn, msg);
+                return;
+            }
+            if (chip) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var chipMsg = chip.closest('.lc-msg');
+                if (!chipMsg || chipMsg.hasAttribute('data-history')) return;
+                sendMessageReaction(chipMsg, chip.getAttribute('data-emoji') || '');
+            }
+        });
+    }
+    document.addEventListener('click', function (ev) {
+        if (ev.target.closest('#lc-react-picker') || ev.target.closest('.lc-react-add')) return;
+        closeReactPicker();
+    });
 
     if (selectedId) openConversation(selectedId);
 })();

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 164;
+    var LC_WIDGET_BUILD = 165;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -627,7 +627,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=69';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=70';
         document.head.appendChild(link);
     }
 
@@ -2401,6 +2401,10 @@
             startSafetySyncWhileDisconnected();
             startLiveMessageSync();
         });
+        client.on('message.reaction', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            paintWidgetReactions(payload && payload.message_id, payload && payload.reactions);
+        });
         client.on('message.new', function (payload) {
             try {
                 if (chatClosed && lastClosedBy !== 'visitor') {
@@ -2703,6 +2707,10 @@
             } catch (eMsg) {
                 forceMessageCatchup();
             }
+        });
+        client.on('message.reaction', function (payload) {
+            if (!sameConversation(payload && payload.conversation_id)) return;
+            paintWidgetReactions(payload && payload.message_id, payload && payload.reactions);
         });
         client.on('message.receipts', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
@@ -5528,6 +5536,156 @@
         box.appendChild(node);
     }
 
+    var REACT_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏', '🎉', '🔥', '✅', '😍', '👏'];
+
+    function groupWidgetReactions(list) {
+        var groups = {};
+        var order = [];
+        (list || []).forEach(function (r) {
+            var emoji = r && REACT_EMOJIS.indexOf(r.emoji) >= 0 ? r.emoji : '';
+            if (!emoji) return;
+            if (!groups[emoji]) {
+                groups[emoji] = { emoji: emoji, count: 0, mine: false };
+                order.push(emoji);
+            }
+            groups[emoji].count += 1;
+            if (r.reactor_type === 'visitor') groups[emoji].mine = true;
+        });
+        return order.map(function (emoji) { return groups[emoji]; });
+    }
+
+    function widgetReactionHtml(reactions) {
+        var groups = groupWidgetReactions(reactions);
+        var html = '<div class="lcw-reacts">';
+        groups.forEach(function (g) {
+            html += '<button type="button" class="lcw-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
+                g.emoji + (g.count > 1 ? '<span>' + g.count + '</span>' : '') + '</button>';
+        });
+        html += '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button></div>';
+        return html;
+    }
+
+    function paintWidgetReactions(messageId, reactions) {
+        var id = parseInt(messageId, 10) || 0;
+        if (id < 1) return;
+        var node = document.querySelector('#lc-panel-messages [data-msg-id="' + id + '"]');
+        if (!node || node.classList.contains('lcw-system') || node.classList.contains('lcw-join-event')) return;
+        var host = node.querySelector('.lcw-reacts');
+        var html = widgetReactionHtml(reactions);
+        if (!host) {
+            var bubble = node.querySelector('.lcw-msg');
+            if (bubble) bubble.insertAdjacentHTML('afterend', html);
+            else node.insertAdjacentHTML('beforeend', html);
+            return;
+        }
+        host.outerHTML = html;
+    }
+
+    function applyWidgetReactionSnapshot(rows) {
+        var byId = {};
+        (rows || []).forEach(function (r) {
+            var id = parseInt(r.message_id, 10) || 0;
+            if (!id) return;
+            if (!byId[id]) byId[id] = [];
+            byId[id].push(r);
+        });
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        box.querySelectorAll('[data-msg-id]').forEach(function (node) {
+            var id = parseInt(node.getAttribute('data-msg-id'), 10) || 0;
+            if (id > 0 && node.querySelector('.lcw-msg') && !node.classList.contains('lcw-system')) {
+                paintWidgetReactions(id, byId[id] || []);
+            }
+        });
+    }
+
+    function closeWidgetReactPicker() {
+        var picker = document.getElementById('lcw-react-picker');
+        if (!picker) return;
+        picker.hidden = true;
+        picker._msgId = 0;
+    }
+
+    function openWidgetReactPicker(anchor, messageId) {
+        var root = document.getElementById('lc-widget-root');
+        if (!root) return;
+        var picker = document.getElementById('lcw-react-picker');
+        if (!picker) {
+            picker = document.createElement('div');
+            picker.id = 'lcw-react-picker';
+            picker.className = 'lcw-react-picker';
+            picker.hidden = true;
+            picker.innerHTML = REACT_EMOJIS.map(function (emoji) {
+                return '<button type="button" data-emoji="' + emoji + '">' + emoji + '</button>';
+            }).join('');
+            root.appendChild(picker);
+            picker.addEventListener('click', function (ev) {
+                var btn = ev.target.closest('button');
+                if (!btn || !picker._msgId) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                sendWidgetReaction(picker._msgId, btn.getAttribute('data-emoji') || '');
+                closeWidgetReactPicker();
+            });
+        }
+        picker._msgId = messageId;
+        picker.hidden = false;
+        var rect = anchor.getBoundingClientRect();
+        picker.style.left = Math.max(8, rect.left - 8) + 'px';
+        var top = rect.top - 48;
+        if (top < 8) top = rect.bottom + 6;
+        picker.style.top = top + 'px';
+    }
+
+    function sendWidgetReaction(messageId, emoji) {
+        messageId = parseInt(messageId, 10) || 0;
+        if (messageId < 1 || !conversationId || REACT_EMOJIS.indexOf(emoji) < 0) return;
+        fetch(siteUrl + '/api/visitor-react.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                message_id: messageId,
+                emoji: emoji,
+                visitor_uid: visitorUid,
+                chat_token: chatToken || '',
+                brand_key: brandKey
+            })
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data || !data.success) return;
+            paintWidgetReactions(messageId, data.reactions || []);
+        }).catch(function () {});
+    }
+
+    function bindWidgetReactions() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box || box._lcReactBound) return;
+        box._lcReactBound = true;
+        box.addEventListener('click', function (ev) {
+            var addBtn = ev.target.closest('.lcw-react-add');
+            var chip = ev.target.closest('.lcw-react-chip');
+            if (addBtn) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var row = addBtn.closest('[data-msg-id]');
+                var id = row ? (parseInt(row.getAttribute('data-msg-id'), 10) || 0) : 0;
+                if (id > 0) openWidgetReactPicker(addBtn, id);
+                return;
+            }
+            if (chip) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var chipRow = chip.closest('[data-msg-id]');
+                var chipId = chipRow ? (parseInt(chipRow.getAttribute('data-msg-id'), 10) || 0) : 0;
+                if (chipId > 0) sendWidgetReaction(chipId, chip.getAttribute('data-emoji') || '');
+            }
+        });
+        document.addEventListener('click', function (ev) {
+            if (ev.target.closest('#lcw-react-picker') || ev.target.closest('.lcw-react-add')) return;
+            closeWidgetReactPicker();
+        });
+    }
+
     function appendMessage(m, options) {
         options = options || {};
         var msgKey = m.id ? String(m.id) : (m._tempId || '');
@@ -5536,6 +5694,9 @@
                 updateVisitorTicks(msgKey, m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             }
             var existing = document.querySelector('#lc-panel-messages [data-msg-id="' + msgKey + '"]');
+            if (existing && Array.isArray(m.reactions) && (m.sender_type === 'visitor' || m.sender_type === 'agent')) {
+                paintWidgetReactions(m.id, m.reactions);
+            }
             if (existing && (isAgentJoinMessage(m) || isTakeoverMessage(m))) {
                 var joinLabel = m.agent_name || 'Agent';
                 var nextAvatar = renderAvatar(resolveMessageAvatar(m, joinLabel), joinLabel, 'lcw-join-avatar');
@@ -5550,6 +5711,7 @@
         if (!m._idlePreview && (parseInt(m.id, 10) || 0) > 0) {
             clearIdleWelcomePreview();
             if (adoptTempVisitorBubble(m)) {
+                if (Array.isArray(m.reactions)) paintWidgetReactions(m.id, m.reactions);
                 return;
             }
         }
@@ -5638,7 +5800,7 @@
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div></div>';
+                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions) : '') + '</div>';
             placeInTranscript(box, row, m.id);
         } else if (m.sender_type === 'visitor') {
             var wrap = document.createElement('div');
@@ -5650,7 +5812,7 @@
                 '<div class="lcw-msg lcw-visitor' + (m.attachment ? ' has-attachment' : '') + '">' +
                 '<div class="lcw-msg-body">' + messageBodyHtml(m) + '</div>' +
                 '<div class="lcw-msg-foot"><span class="lcw-msg-time">' + timeHtml + '</span></div>' +
-                '</div>' +
+                '</div>' + ((parseInt(m.id, 10) || 0) > 0 ? widgetReactionHtml(m.reactions) : '') +
                 '<div class="lcw-msg-status-out">' + ticks + '</div>';
             placeInTranscript(box, wrap, m.id);
         } else {
@@ -5982,6 +6144,7 @@
                     var exists = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
                     if (exists) {
                         if (m.attachment) hydrateMessageAttachment(m);
+                        if (m.reactions) paintWidgetReactions(mid, m.reactions);
                         advanceLastMsgId(mid);
                         return;
                     }
@@ -6037,6 +6200,7 @@
                 } else {
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
+                if (data.reactions) applyWidgetReactionSnapshot(data.reactions);
                 hideChatLoading();
                 if (viewing === '1') {
                     // Poll already marked read server-side when viewing=1; nudge again if needed
@@ -6541,6 +6705,7 @@
     function bootWidget() {
         // Paint widget ASAP — do not block on access API or attachment script
         buildWidget();
+        bindWidgetReactions();
         resumeChatOnLoad();
         // Presence WS early — agent "Start chat" invite must not wait for settings
         initVisitorPresenceRealtime();

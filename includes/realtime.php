@@ -529,7 +529,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     $brandId = (int) ($conv['brand_id'] ?? 0);
     $agentId = (int) ($conv['agent_id'] ?? ($data['agent_id'] ?? 0));
     $previousAgentId = (int) ($data['previous_agent_id'] ?? 0);
-    $fanoutEvents = ['message.new', 'typing', 'message.receipts', 'conversation.updated'];
+    $fanoutEvents = ['message.new', 'typing', 'message.receipts', 'message.reaction', 'conversation.updated'];
     $isFanout = in_array($event, $fanoutEvents, true);
 
     if (!$inboxOnly) {
@@ -583,7 +583,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
             $changedChannels[] = lc_realtime_channel_agent($previousAgentId);
         }
-        if ($event === 'typing' || $event === 'message.receipts') {
+        if ($event === 'typing' || $event === 'message.receipts' || $event === 'message.reaction') {
             $changedChannels = [];
         }
         if ($changedChannels !== []) {

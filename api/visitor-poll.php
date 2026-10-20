@@ -122,6 +122,9 @@ try {
         }
         $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
     }
+    if (function_exists('lc_hydrate_message_reactions')) {
+        $messages = lc_hydrate_message_reactions($messages);
+    }
 
     // Delivered/read ONLY for messages actually returned to the widget.
     // Never mark unread agent bubbles the visitor never received (false blue ticks).
@@ -184,6 +187,7 @@ try {
     lc_json([
         'success' => true,
         'messages' => $messages,
+        'reactions' => function_exists('lc_conversation_reactions') ? lc_conversation_reactions($conversationId) : [],
         'message_cursor' => $messageCursor,
         'receipts' => $receipts,
         'status' => $conv['status'],

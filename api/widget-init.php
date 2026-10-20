@@ -546,6 +546,9 @@ try {
     } catch (Throwable $e) {
         $initMessages = [];
     }
+    if ($initMessages && function_exists('lc_hydrate_message_reactions')) {
+        $initMessages = lc_hydrate_message_reactions($initMessages);
+    }
 
     lc_json([
         'success' => true,

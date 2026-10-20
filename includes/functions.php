@@ -9,6 +9,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/blocking.php';
 require_once __DIR__ . '/tickets.php';
 require_once __DIR__ . '/attachments.php';
+require_once __DIR__ . '/reactions.php';
 require_once __DIR__ . '/avatars.php';
 require_once __DIR__ . '/pageviews.php';
 require_once __DIR__ . '/superadmin.php';
@@ -1531,6 +1532,11 @@ function lc_agent_prior_threads_with_messages(
                 continue;
             }
             $grouped[$cid][] = lc_format_message_row($row);
+        }
+        if (function_exists('lc_hydrate_message_reactions')) {
+            foreach ($grouped as $cid => $list) {
+                $grouped[$cid] = lc_hydrate_message_reactions($list);
+            }
         }
 
         $threads = [];
