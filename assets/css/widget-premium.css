@@ -1011,14 +1011,30 @@
 
 .lcw-date-divider {
     align-self: center;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0.65rem;
     font-size: 0.68rem;
     font-weight: 600;
     color: var(--lcw-muted);
-    background: rgba(255, 255, 255, 0.85);
-    border: 1px solid var(--lcw-border);
-    border-radius: 999px;
-    padding: 0.28rem 0.75rem;
-    margin: 0.35rem 0;
+    background: transparent;
+    border: 0;
+    padding: 0.2rem 0;
+    margin: 0.15rem 0;
+}
+.lcw-date-divider::before,
+.lcw-date-divider::after {
+    content: '';
+    flex: 1 1 0;
+    height: 1px;
+    background: var(--lcw-border);
+}
+.lcw-date-divider span {
+    flex: 0 0 auto;
+    text-align: center;
 }
 
 .lcw-msg-wrap {
@@ -2237,6 +2253,8 @@
     max-width: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
+    text-align: center;
     gap: 0.65rem;
     background: transparent;
     border: none;
@@ -2628,6 +2646,8 @@
     max-width: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
+    text-align: center;
     gap: 0.65rem;
     background: transparent;
     border: none;
@@ -3098,11 +3118,35 @@ button.lcw-head-menu-item:focus-visible {
     }
 }
 
+#lc-widget-root .lcw-msg-wrap,
+#lc-widget-root .lcw-msg-row {
+    position: relative;
+}
+
 #lc-widget-root .lcw-reacts {
+    position: absolute;
+    bottom: -8px;
+    z-index: 2;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin-top: 4px;
+    margin: 0;
+}
+
+#lc-widget-root .lcw-reacts[hidden] {
+    display: none;
+}
+
+#lc-widget-root .lcw-visitor-wrap .lcw-reacts {
+    right: 4px;
+}
+
+#lc-widget-root .lcw-agent-wrap .lcw-reacts {
+    left: 4px;
+}
+
+#lc-widget-root .lcw-msg-wrap:has(.lcw-reacts:not([hidden])) .lcw-msg-status-out {
+    margin-top: 14px;
 }
 
 #lc-widget-root .lcw-react-chip,
@@ -3129,9 +3173,23 @@ button.lcw-head-menu-item:focus-visible {
 }
 
 #lc-widget-root .lcw-react-add {
+    position: absolute;
+    top: 6px;
+    z-index: 3;
     width: 22px;
+    height: 22px;
+    margin: 0;
     padding: 0;
     opacity: 0;
+}
+
+#lc-widget-root .lcw-visitor-wrap .lcw-react-add {
+    left: -26px;
+}
+
+#lc-widget-root .lcw-agent-wrap .lcw-react-add,
+#lc-widget-root .lcw-agent-row .lcw-react-add {
+    right: -4px;
 }
 
 #lc-widget-root .lcw-msg-row:hover .lcw-react-add,

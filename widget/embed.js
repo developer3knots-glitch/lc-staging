@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 166;
+    var LC_WIDGET_BUILD = 167;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -627,7 +627,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=70';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=71';
         document.head.appendChild(link);
     }
 
@@ -5012,11 +5012,18 @@
     function maybeAppendDateDivider(ts) {
         var label = formatDateLabel(ts);
         if (!label || label === lastDateLabel) return;
+        // A new chat is all from today. Don't stamp "Today" above the first message.
+        // A later day (or a chat that already has an older day) still gets a centered date.
+        if (!lastDateLabel && label === 'Today') {
+            lastDateLabel = label;
+            return;
+        }
         lastDateLabel = label;
         var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
         var div = document.createElement('div');
         div.className = 'lcw-date-divider';
-        div.textContent = label;
+        div.innerHTML = '<span>' + esc(label) + '</span>';
         box.appendChild(div);
     }
 
@@ -5592,13 +5599,13 @@
 
     function widgetReactionHtml(reactions) {
         var groups = groupWidgetReactions(reactions);
-        var html = '<div class="lcw-reacts">';
+        var chips = '';
         groups.forEach(function (g) {
-            html += '<button type="button" class="lcw-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
+            chips += '<button type="button" class="lcw-react-chip' + (g.mine ? ' is-mine' : '') + '" data-emoji="' + g.emoji + '">' +
                 g.emoji + (g.count > 1 ? '<span>' + g.count + '</span>' : '') + '</button>';
         });
-        html += '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button></div>';
-        return html;
+        return '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button>' +
+            '<div class="lcw-reacts"' + (groups.length ? '' : ' hidden') + '>' + chips + '</div>';
     }
 
     function paintWidgetReactions(messageId, reactions) {
@@ -5606,15 +5613,22 @@
         if (id < 1) return;
         var node = document.querySelector('#lc-panel-messages [data-msg-id="' + id + '"]');
         if (!node || node.classList.contains('lcw-system') || node.classList.contains('lcw-join-event')) return;
-        var host = node.querySelector('.lcw-reacts');
         var html = widgetReactionHtml(reactions);
+        var host = node.querySelector('.lcw-reacts');
+        var addBtn = node.querySelector('.lcw-react-add');
         if (!host) {
             var bubble = node.querySelector('.lcw-msg');
             if (bubble) bubble.insertAdjacentHTML('afterend', html);
             else node.insertAdjacentHTML('beforeend', html);
             return;
         }
-        host.outerHTML = html;
+        if (!addBtn) {
+            host.insertAdjacentHTML('beforebegin', '<button type="button" class="lcw-react-add" aria-label="React with emoji">+</button>');
+        }
+        var next = document.createElement('div');
+        next.innerHTML = html;
+        var nextHost = next.querySelector('.lcw-reacts');
+        if (nextHost) host.replaceWith(nextHost);
     }
 
     function applyWidgetReactionSnapshot(rows) {
