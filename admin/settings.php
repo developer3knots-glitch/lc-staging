@@ -375,7 +375,7 @@ require __DIR__ . '/includes/header.php';
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-notify">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-bell"></i> Notification sounds</h3>
-                    <span class="lc-card-sub">Each alert can use its own sound</span>
+                    <span class="lc-card-sub">Each alert can use its own chime or AI voice</span>
                 </div>
                 <div class="lc-card-body">
                     <form method="post" class="lc-form" id="lc-notify-sounds-form">

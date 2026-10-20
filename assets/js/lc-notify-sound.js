@@ -154,6 +154,68 @@
         ]
     };
 
+    var VOICE_PRESETS = {
+        'voice-aria': { pitch: 1.15, rate: 1.02, index: 0, hint: /samantha|victoria|zira|aria|susan|female/i },
+        'voice-nova': { pitch: 1.28, rate: 1.08, index: 1, hint: /google uk english female|fiona|moira|karen/i },
+        'voice-maya': { pitch: 1.0, rate: 0.9, index: 2, hint: /allison|ava|serena|veena/i },
+        'voice-leo': { pitch: 0.9, rate: 1.0, index: 3, hint: /daniel|alex|david|male/i },
+        'voice-kai': { pitch: 0.72, rate: 0.96, index: 4, hint: /fred|rishi|ralph|gordon/i },
+        'voice-sage': { pitch: 1.02, rate: 0.86, index: 5, hint: /aaron|arthur|tom|lee/i }
+    };
+
+    var VOICE_LINES = {
+        visitor_new: 'New visitor on the site',
+        visitor_return: 'Returning visitor on the site',
+        visitor_left: 'Visitor left the site',
+        chat_new: 'New chat started',
+        chat_return: 'Returning visitor started a chat',
+        queue_waiting: 'A chat is waiting in the queue',
+        message_here: 'New message in this chat',
+        message_other: 'New message in another chat',
+        chat_continued: 'Visitor continued the chat',
+        chat_closed: 'Visitor closed the chat',
+        chat_transfer: 'A chat was transferred to you'
+    };
+
+    function pickSpokenVoice(preset) {
+        if (!global.speechSynthesis || !preset) return null;
+        var voices = global.speechSynthesis.getVoices() || [];
+        var english = voices.filter(function (voice) {
+            return /^en/i.test(voice.lang || '');
+        });
+        var pool = english.length ? english : voices;
+        var i;
+        for (i = 0; i < pool.length; i++) {
+            if (preset.hint && preset.hint.test(pool[i].name || '')) {
+                return pool[i];
+            }
+        }
+        if (!pool.length) return null;
+        return pool[(preset.index || 0) % pool.length];
+    }
+
+    function speak(soundId, eventName) {
+        if (!global.speechSynthesis || typeof global.SpeechSynthesisUtterance !== 'function') {
+            return false;
+        }
+        var preset = VOICE_PRESETS[soundId];
+        if (!preset) return false;
+        var line = VOICE_LINES[eventName] || 'Notification';
+        try {
+            global.speechSynthesis.cancel();
+            var utterance = new global.SpeechSynthesisUtterance(line);
+            utterance.lang = 'en-US';
+            utterance.pitch = preset.pitch;
+            utterance.rate = preset.rate;
+            var voice = pickSpokenVoice(preset);
+            if (voice) utterance.voice = voice;
+            global.speechSynthesis.speak(utterance);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function playNote(c, master, note) {
         var t0 = c.currentTime + (note.delay || 0);
         var dur = Math.max(0.04, note.dur || 0.2);
@@ -220,6 +282,12 @@
             return;
         }
         lastPlayAt = now;
+
+        if (VOICE_PRESETS[soundId]) {
+            if (speak(soundId, opts.event ? String(opts.event) : '')) {
+                return;
+            }
+        }
 
         try {
             var c = getCtx();

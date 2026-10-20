@@ -334,6 +334,14 @@ function lc_notify_sound_groups(): array
             'alert' => 'Alert',
             'urgent' => 'Urgent',
         ],
+        'AI voices' => [
+            'voice-aria' => 'Aria',
+            'voice-nova' => 'Nova',
+            'voice-maya' => 'Maya',
+            'voice-leo' => 'Leo',
+            'voice-kai' => 'Kai',
+            'voice-sage' => 'Sage',
+        ],
         'Off' => [
             'none' => 'Silent',
         ],

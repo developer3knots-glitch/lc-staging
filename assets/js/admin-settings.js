@@ -94,8 +94,9 @@
         btn.addEventListener('click', function () {
             var select = document.getElementById(btn.getAttribute('data-sound-for') || '');
             var sound = select ? select.value : 'default';
+            var eventName = select && select.name ? String(select.name).replace(/^sound_/, '') : '';
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true, sound: sound });
+                window.LCNotifySound.play({ force: true, sound: sound, event: eventName });
             }
         });
     });
