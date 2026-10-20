@@ -3128,9 +3128,9 @@ button.lcw-head-menu-item:focus-visible {
     z-index: 2;
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin: 4px 0 0;
-    clear: both;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 2px 2px;
 }
 
 #lc-widget-root .lcw-reacts[hidden] {
@@ -3149,38 +3149,63 @@ button.lcw-head-menu-item:focus-visible {
     margin-top: 2px;
 }
 
+#lc-widget-root .lcw-react-glyph {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+}
+
+#lc-widget-root .lcw-react-glyph svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
 #lc-widget-root .lcw-react-chip,
 #lc-widget-root .lcw-react-add {
-    border: 0;
-    min-height: 22px;
-    padding: 2px 6px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    min-height: 26px;
+    padding: 3px 8px 3px 6px;
     border-radius: 999px;
     background: #fff;
-    color: #0f172a;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+    color: #334155;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
     cursor: pointer;
     font: inherit;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 #lc-widget-root .lcw-react-chip.is-mine {
-    outline: 1px solid var(--lcw-primary, #6FD943);
+    border-color: color-mix(in srgb, var(--lcw-primary, #6FD943) 70%, #fff);
+    background: color-mix(in srgb, var(--lcw-primary, #6FD943) 14%, #fff);
 }
 
-#lc-widget-root .lcw-react-chip span {
-    margin-left: 3px;
+#lc-widget-root .lcw-react-chip > span:not(.lcw-react-glyph) {
     font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
 }
 
 #lc-widget-root .lcw-react-add {
     position: absolute;
-    top: 6px;
+    top: 8px;
     z-index: 3;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     margin: 0;
     padding: 0;
+    justify-content: center;
+    color: #475569;
     opacity: 0;
+}
+
+#lc-widget-root .lcw-react-add svg {
+    width: 16px;
+    height: 16px;
 }
 
 #lc-widget-root .lcw-visitor-wrap .lcw-react-add {
@@ -3202,11 +3227,13 @@ button.lcw-head-menu-item:focus-visible {
     position: fixed;
     z-index: 2147483001;
     display: flex;
-    gap: 2px;
+    gap: 4px;
     padding: 6px;
-    border-radius: 999px;
-    background: #fff;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(10px);
 }
 
 #lc-widget-root .lcw-react-picker[hidden] {
@@ -3214,17 +3241,28 @@ button.lcw-head-menu-item:focus-visible {
 }
 
 #lc-widget-root .lcw-react-picker button {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border: 0;
-    border-radius: 50%;
+    border-radius: 12px;
     background: transparent;
-    font-size: 18px;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+#lc-widget-root .lcw-react-picker .lcw-react-glyph,
+#lc-widget-root .lcw-react-picker .lcw-react-glyph svg {
+    width: 22px;
+    height: 22px;
+    flex-basis: 22px;
 }
 
 #lc-widget-root .lcw-react-picker button:hover {
-    background: #f1f5f9;
+    background: #f8fafc;
+    transform: translateY(-2px) scale(1.06);
 }
 
 @media (hover: none) {
