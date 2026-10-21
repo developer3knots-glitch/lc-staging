@@ -183,35 +183,72 @@
         function sync() {
             if (hiddenConfig) hiddenConfig.value = JSON.stringify(cfg);
         }
+        function widgetAccent() {
+            var form = root.closest('form');
+            var color = form && form.querySelector('input[name="widget_color"]');
+            return (color && color.value) || '#0f172a';
+        }
         function paintPreview() {
             if (!preview) return;
             preview.textContent = '';
-            var card = document.createElement('div');
-            card.className = 'lc-prechat-preview-card';
+            var stage = document.createElement('div');
+            stage.className = 'lc-pc-stage';
+            var phone = document.createElement('div');
+            phone.className = 'lc-pc-phone';
+            var bar = document.createElement('div');
+            bar.className = 'lc-pc-phone-bar';
+            bar.textContent = 'Visitor preview';
+            var widget = document.createElement('div');
+            widget.className = 'lc-pc-widget';
+            widget.style.setProperty('--pc-accent', widgetAccent());
+            var head = document.createElement('div');
+            head.className = 'lc-pc-widget-head';
+            head.innerHTML = '<span></span><strong>Chat</strong>';
+            var body = document.createElement('div');
+            body.className = 'lc-pc-widget-body';
             var heading = document.createElement('h4');
             heading.textContent = titleInput && titleInput.value.trim() ? titleInput.value.trim() : 'Start a conversation';
             var sub = document.createElement('p');
             sub.textContent = subtitleInput ? subtitleInput.value.trim() : '';
-            card.appendChild(heading);
-            card.appendChild(sub);
+            body.appendChild(heading);
+            if (sub.textContent) body.appendChild(sub);
+            var any = false;
             (cfg.fields || []).forEach(function (field) {
                 if (!field.enabled) return;
+                any = true;
+                if (field.type === 'checkbox') {
+                    var check = document.createElement('div');
+                    check.className = 'lc-pc-check';
+                    check.textContent = (field.required ? '* ' : '') + (field.label || 'Confirm');
+                    body.appendChild(check);
+                    return;
+                }
                 var lab = document.createElement('label');
                 lab.textContent = (field.label || 'Field') + (field.required ? ' *' : '');
-                card.appendChild(lab);
-                if (field.type === 'checkbox') return;
+                body.appendChild(lab);
                 var fake = document.createElement('div');
                 fake.className = 'lc-prechat-preview-input' + (field.type === 'textarea' || field.type === 'message' ? ' is-tall' : '');
                 var sample = field.placeholder || '';
                 if (field.type === 'select') sample = (field.options && field.options[0]) || field.placeholder || 'Select';
-                fake.textContent = sample;
-                card.appendChild(fake);
+                fake.textContent = sample || ' ';
+                body.appendChild(fake);
             });
+            if (!any) {
+                var empty = document.createElement('p');
+                empty.className = 'lc-pc-empty';
+                empty.textContent = 'Turn on a field to see it here.';
+                body.appendChild(empty);
+            }
             var btn = document.createElement('div');
             btn.className = 'lc-prechat-preview-btn';
             btn.textContent = buttonInput && buttonInput.value.trim() ? buttonInput.value.trim() : 'Start conversation';
-            card.appendChild(btn);
-            preview.appendChild(card);
+            body.appendChild(btn);
+            widget.appendChild(head);
+            widget.appendChild(body);
+            phone.appendChild(bar);
+            phone.appendChild(widget);
+            stage.appendChild(phone);
+            preview.appendChild(stage);
         }
         function bindText(input, key) {
             if (!input) return;
@@ -244,23 +281,26 @@
                 top.appendChild(badge);
                 var moves = document.createElement('div');
                 moves.className = 'lc-prechat-field-moves';
-                function mini(label, fn, disabled) {
+                function iconBtn(icon, label, fn, disabled, danger) {
                     var b = document.createElement('button');
                     b.type = 'button';
-                    b.textContent = label;
+                    b.className = 'lc-prechat-icon' + (danger ? ' is-danger' : '');
+                    b.title = label;
+                    b.setAttribute('aria-label', label);
                     b.disabled = !!disabled;
+                    b.innerHTML = '<i class="ti ' + icon + '"></i>';
                     b.addEventListener('click', fn);
                     return b;
                 }
-                moves.appendChild(mini('Up', function () { moveField(index, -1); }, index === 0));
-                moves.appendChild(mini('Down', function () { moveField(index, 1); }, index === cfg.fields.length - 1));
+                moves.appendChild(iconBtn('ti-arrow-up', 'Move up', function () { moveField(index, -1); }, index === 0, false));
+                moves.appendChild(iconBtn('ti-arrow-down', 'Move down', function () { moveField(index, 1); }, index === cfg.fields.length - 1, false));
                 if (!builtinIds[field.id]) {
-                    moves.appendChild(mini('Remove', function () {
+                    moves.appendChild(iconBtn('ti-trash', 'Remove field', function () {
                         cfg.fields.splice(index, 1);
                         renderFields();
                         paintPreview();
                         sync();
-                    }, false));
+                    }, false, true));
                 }
                 top.appendChild(moves);
                 row.appendChild(top);
@@ -309,12 +349,20 @@
                 toggles.className = 'lc-prechat-toggles';
                 function toggle(caption, checked, onChange) {
                     var lab = document.createElement('label');
+                    lab.className = 'lc-prechat-switch-row';
+                    var text = document.createElement('span');
+                    text.textContent = caption;
+                    var sw = document.createElement('span');
+                    sw.className = 'lc-prechat-switch';
                     var box = document.createElement('input');
                     box.type = 'checkbox';
                     box.checked = !!checked;
+                    var ui = document.createElement('span');
                     box.addEventListener('change', function () { onChange(box.checked); });
-                    lab.appendChild(box);
-                    lab.appendChild(document.createTextNode(' ' + caption));
+                    sw.appendChild(box);
+                    sw.appendChild(ui);
+                    lab.appendChild(text);
+                    lab.appendChild(sw);
                     return lab;
                 }
                 toggles.appendChild(toggle('Show on form', field.enabled, function (on) {
@@ -371,6 +419,8 @@
                 root.hidden = !enableInput.checked;
             });
         }
+        var colorInput = root.closest('form') && root.closest('form').querySelector('input[name="widget_color"]');
+        if (colorInput) colorInput.addEventListener('input', paintPreview);
         var form = root.closest('form');
         if (form) form.addEventListener('submit', sync);
     }
