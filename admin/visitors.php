@@ -115,4 +115,68 @@ require __DIR__ . '/includes/header.php';
     </section>
 </div>
 
+<aside class="lc-traffic-meta lc-details-rail" id="lc-vis-meta" aria-hidden="true" aria-label="Visitor details">
+    <div class="lc-details-rail-top">
+        <div class="lc-details-rail-tabs">
+            <button type="button" class="lc-details-rail-tab is-active" aria-label="Visitor profile"><i class="ti ti-user"></i></button>
+        </div>
+        <button type="button" class="lc-details-drawer-close" id="lc-vis-meta-close" title="Close" aria-label="Close">
+            <i class="ti ti-x"></i>
+        </button>
+    </div>
+    <div class="lc-chat-details-body lc-details-rail-body" id="lc-vis-meta-body">
+        <div class="lc-details-acc is-open">
+            <div class="lc-details-acc-head" aria-hidden="true"><span>Visited pages</span></div>
+            <div class="lc-details-acc-body">
+                <ul class="lc-details-pages-list" id="lc-vis-meta-pages"></ul>
+                <p class="lc-details-pages-empty" id="lc-vis-meta-pages-empty">No pages recorded yet</p>
+            </div>
+        </div>
+        <div class="lc-details-hero">
+            <div class="lc-details-hero-av" id="lc-vis-meta-av">V</div>
+            <h3 class="lc-details-hero-name" id="lc-vis-meta-name">Visitor</h3>
+            <p class="lc-details-hero-location"><span id="lc-vis-meta-location">—</span></p>
+            <p class="lc-details-hero-sub"><span id="lc-vis-meta-ip">—</span></p>
+        </div>
+        <div class="lc-details-contact">
+            <h4 class="lc-details-contact-title">Contact</h4>
+            <div class="lc-details-kv-list">
+                <div class="lc-details-kv"><dt>Name</dt><dd id="lc-vis-meta-contact-name">—</dd></div>
+                <div class="lc-details-kv"><dt>Email</dt><dd id="lc-vis-meta-email">—</dd></div>
+                <div class="lc-details-kv"><dt>Phone</dt><dd id="lc-vis-meta-phone">—</dd></div>
+            </div>
+        </div>
+        <div class="lc-details-map-wrap" id="lc-vis-meta-map-wrap" hidden>
+            <iframe id="lc-vis-meta-map" title="Visitor location" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        </div>
+        <div class="lc-details-acc is-open">
+            <div class="lc-details-acc-head" aria-hidden="true"><span>Details</span></div>
+            <div class="lc-details-acc-body">
+                <dl class="lc-details-kv-list">
+                    <div class="lc-details-kv"><dt>Clicks</dt><dd id="lc-vis-meta-clicks">—</dd></div>
+                    <div class="lc-details-kv"><dt>Last seen</dt><dd id="lc-vis-meta-seen">—</dd></div>
+                    <div class="lc-details-kv"><dt>Came from</dt><dd id="lc-vis-meta-from">—</dd></div>
+                    <div class="lc-details-kv"><dt>Current page</dt><dd id="lc-vis-meta-page">—</dd></div>
+                    <div class="lc-details-kv"><dt>Brand</dt><dd id="lc-vis-meta-brand">—</dd></div>
+                    <div class="lc-details-kv"><dt>Device</dt><dd id="lc-vis-meta-device">—</dd></div>
+                </dl>
+            </div>
+        </div>
+        <div class="lc-details-acc is-open" id="lc-vis-meta-chat">
+            <div class="lc-details-acc-head" aria-hidden="true"><span>Chat</span></div>
+            <div class="lc-details-acc-body">
+                <p class="lc-vis-chat-empty" id="lc-vis-meta-chat-empty">No chat for this visitor.</p>
+                <div id="lc-vis-meta-chat-box" hidden>
+                    <div class="lc-vis-chat-bar">
+                        <span id="lc-vis-meta-chat-status">—</span>
+                        <a id="lc-vis-meta-chat-link" href="#">Open chat</a>
+                    </div>
+                    <div class="lc-vis-chat-log" id="lc-vis-meta-chat-log"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</aside>
+<div class="lc-traffic-meta-backdrop" id="lc-vis-meta-backdrop" aria-hidden="true"></div>
+
 <?php require __DIR__ . '/includes/footer.php'; ?>

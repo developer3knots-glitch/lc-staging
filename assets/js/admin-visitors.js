@@ -22,6 +22,9 @@
     var searchQ = '';
     var searchTimer = null;
     var seenIds = {};
+    var rowByVisitor = {};
+    var openVisitorId = 0;
+    var openMetaToken = 0;
     var lastSig = '';
     var pollTimer = null;
 
@@ -148,7 +151,8 @@
             var name = row.name || 'Visitor';
             var fresh = hadRows && !seenIds[row.id];
             var page = row.page_title || row.page_path || 'Page';
-            return '<tr class="lc-visitors-row' + (fresh ? ' is-new' : '') + '" data-id="' + esc(row.id) + '">' +
+            var selected = openVisitorId && (parseInt(row.visitor_id, 10) || 0) === openVisitorId;
+            return '<tr class="lc-visitors-row' + (fresh ? ' is-new' : '') + (selected ? ' is-meta-open' : '') + '" data-id="' + esc(row.id) + '" data-visitor-id="' + esc(row.visitor_id || 0) + '" data-ip="' + esc(row.ip || '') + '">' +
                 '<td><code class="lc-visitors-ip">' + esc(row.ip || '') + '</code></td>' +
                 '<td><div class="lc-traffic-person">' +
                     '<span class="lc-traffic-av" style="background:' + colorFor(name) + '">' + esc(row.initials || 'V') + '</span>' +
@@ -160,7 +164,10 @@
                 '<td>' + timeHtml(row.visited_at) + '</td>' +
                 '</tr>';
         }).join('');
-        rows.forEach(function (row) { seenIds[row.id] = true; });
+        rows.forEach(function (row) {
+            seenIds[row.id] = true;
+            if (row.visitor_id) rowByVisitor[row.visitor_id] = row;
+        });
         if (window.LCTime) window.LCTime.scan(bodyEl);
     }
 
@@ -241,6 +248,167 @@
             load();
         });
     }
+
+    var metaPanel = document.getElementById('lc-vis-meta');
+    var metaBackdrop = document.getElementById('lc-vis-meta-backdrop');
+    var metaClose = document.getElementById('lc-vis-meta-close');
+    if (metaBackdrop && metaBackdrop.parentNode !== document.body) document.body.appendChild(metaBackdrop);
+    if (metaPanel && metaPanel.parentNode !== document.body) document.body.appendChild(metaPanel);
+
+    function setMeta(id, value) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var text = String(value || '').trim();
+        el.textContent = text || '—';
+    }
+    function seenLabel(iso) {
+        if (!iso) return '';
+        if (window.LCTime && window.LCTime.formatRelative) return window.LCTime.formatRelative(iso);
+        return iso;
+    }
+    function paintMap(geo) {
+        var wrap = document.getElementById('lc-vis-meta-map-wrap');
+        var iframe = document.getElementById('lc-vis-meta-map');
+        if (!wrap || !iframe) return;
+        geo = geo || {};
+        var label = String(geo.label || geo.country || '').trim();
+        if (!label || label === 'Unknown') {
+            iframe.removeAttribute('src');
+            wrap.hidden = true;
+            return;
+        }
+        wrap.hidden = false;
+        var src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+        if (iframe.getAttribute('src') !== src) iframe.src = src;
+    }
+    function paintPages(pages) {
+        var list = document.getElementById('lc-vis-meta-pages');
+        var empty = document.getElementById('lc-vis-meta-pages-empty');
+        if (!list) return;
+        pages = pages || [];
+        if (!pages.length) {
+            list.innerHTML = '';
+            if (empty) empty.hidden = false;
+            return;
+        }
+        if (empty) empty.hidden = true;
+        list.innerHTML = pages.map(function (page, index) {
+            var url = page.page_url || page.page_path || '';
+            var title = page.page_title || page.page_path || url || 'Page';
+            var current = index === pages.length - 1;
+            return '<li class="lc-details-page-item' + (current ? ' is-current' : '') + '">' +
+                '<span class="lc-details-page-dot" aria-hidden="true"></span>' +
+                '<div class="lc-details-page-body"><span class="lc-details-page-title">' + esc(title) + '</span>' +
+                (url ? '<a class="lc-details-page-link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(page.page_path || url) + '</a>' : '') +
+                '</div></li>';
+        }).join('');
+    }
+    function paintChat(visitor) {
+        var empty = document.getElementById('lc-vis-meta-chat-empty');
+        var box = document.getElementById('lc-vis-meta-chat-box');
+        var log = document.getElementById('lc-vis-meta-chat-log');
+        var link = document.getElementById('lc-vis-meta-chat-link');
+        var status = document.getElementById('lc-vis-meta-chat-status');
+        var hasChat = !!(visitor && visitor.conversation_id);
+        if (empty) empty.hidden = hasChat;
+        if (box) box.hidden = !hasChat;
+        if (!hasChat || !log) return;
+        var label = visitor.conversation_status || 'Chat';
+        if (visitor.agent_name) label += ' · ' + visitor.agent_name;
+        if (status) status.textContent = label;
+        if (link) {
+            link.href = visitor.chat_url || '#';
+            link.hidden = !visitor.chat_url;
+        }
+        var messages = visitor.messages || [];
+        if (!messages.length) {
+            log.innerHTML = '<p class="lc-vis-chat-empty">Chat exists, but there are no messages yet.</p>';
+            return;
+        }
+        log.innerHTML = messages.map(function (msg) {
+            var who = msg.sender === 'agent' ? 'Agent' : 'Visitor';
+            return '<div class="lc-vis-chat-msg is-' + esc(msg.sender || 'visitor') + '">' +
+                '<strong>' + esc(who) + '</strong>' +
+                '<p>' + esc(msg.text || '') + '</p>' +
+                '<small>' + esc(seenLabel(msg.created_at)) + '</small></div>';
+        }).join('');
+        log.scrollTop = log.scrollHeight;
+    }
+    function paintMeta(row, extra) {
+        extra = extra || {};
+        var name = extra.name || (row && row.name) || 'Visitor';
+        var ip = extra.ip || (row && row.ip) || '';
+        var av = document.getElementById('lc-vis-meta-av');
+        if (av) {
+            av.textContent = extra.initials || (row && row.initials) || 'V';
+            av.style.background = colorFor(name);
+        }
+        setMeta('lc-vis-meta-name', name);
+        setMeta('lc-vis-meta-location', (extra.geo && extra.geo.label) || extra.country || (row && row.country) || '');
+        setMeta('lc-vis-meta-ip', ip ? ('IP ' + ip) : '');
+        setMeta('lc-vis-meta-contact-name', name === 'Visitor' ? '' : name);
+        setMeta('lc-vis-meta-email', extra.email || '');
+        setMeta('lc-vis-meta-phone', extra.phone || '');
+        setMeta('lc-vis-meta-clicks', (row && row.clicks) || extra.clicks || '');
+        setMeta('lc-vis-meta-seen', seenLabel(extra.last_seen || ''));
+        setMeta('lc-vis-meta-from', extra.referrer || '');
+        setMeta('lc-vis-meta-page', extra.page_url || (row && row.page_url) || '');
+        setMeta('lc-vis-meta-brand', extra.brand_name || '');
+        setMeta('lc-vis-meta-device', extra.device || '');
+        paintPages(extra.pages || []);
+        paintMap(extra.geo || null);
+        paintChat(extra);
+    }
+    function closeMeta() {
+        openVisitorId = 0;
+        openMetaToken++;
+        document.body.classList.remove('lc-traffic-meta-open');
+        if (metaPanel) metaPanel.setAttribute('aria-hidden', 'true');
+        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'true');
+        if (bodyEl) {
+            bodyEl.querySelectorAll('.lc-visitors-row').forEach(function (tr) {
+                tr.classList.remove('is-meta-open');
+            });
+        }
+    }
+    function openMeta(visitorId, ip) {
+        visitorId = parseInt(visitorId, 10) || 0;
+        if ((!visitorId && !ip) || !metaPanel) return;
+        var row = rowByVisitor[visitorId] || null;
+        openVisitorId = visitorId;
+        document.body.classList.add('lc-traffic-meta-open');
+        metaPanel.setAttribute('aria-hidden', 'false');
+        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'false');
+        if (bodyEl) {
+            bodyEl.querySelectorAll('.lc-visitors-row').forEach(function (tr) {
+                tr.classList.toggle('is-meta-open', (parseInt(tr.getAttribute('data-visitor-id'), 10) || 0) === visitorId);
+            });
+        }
+        paintMeta(row, { ip: ip || (row && row.ip) || '' });
+        var token = ++openMetaToken;
+        var url = base + '/api/agent-visitor-meta.php?' + (visitorId ? ('visitor_id=' + encodeURIComponent(visitorId)) : ('ip=' + encodeURIComponent(ip || '')));
+        fetch(url, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (token !== openMetaToken) return;
+                if (!data || !data.success || !data.visitor) return;
+                paintMeta(row, data.visitor);
+            })
+            .catch(function () {});
+    }
+    if (bodyEl) {
+        bodyEl.addEventListener('click', function (e) {
+            if (e.target.closest('a, button')) return;
+            var row = e.target.closest('.lc-visitors-row');
+            if (!row) return;
+            openMeta(row.getAttribute('data-visitor-id'), row.getAttribute('data-ip'));
+        });
+    }
+    if (metaClose) metaClose.addEventListener('click', closeMeta);
+    if (metaBackdrop) metaBackdrop.addEventListener('click', closeMeta);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && openVisitorId) closeMeta();
+    });
 
     setDates(shiftDays(-6), shiftDays(0));
     load();

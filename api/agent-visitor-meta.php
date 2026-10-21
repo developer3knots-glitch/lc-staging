@@ -23,7 +23,8 @@ if (function_exists('lc_ensure_ticket_schema')) {
 }
 
 $visitorId = (int) ($_GET['visitor_id'] ?? 0);
-if ($visitorId < 1) {
+$ipQuery = trim((string) ($_GET['ip'] ?? ''));
+if ($visitorId < 1 && !preg_match('/^[0-9a-fA-F:.]{3,45}$/', $ipQuery)) {
     lc_json(['success' => false, 'error' => 'Invalid visitor'], 400);
 }
 
@@ -40,6 +41,31 @@ try {
         $scopeParams = [$accountId];
     } else {
         lc_json(['success' => false, 'error' => 'Forbidden'], 403);
+    }
+
+    if ($visitorId < 1) {
+        $find = $db->prepare("
+            SELECT v.id
+            FROM visitors v
+            WHERE v.ip_address = ?
+              AND (
+                EXISTS (
+                    SELECT 1 FROM visitor_page_views pv
+                    WHERE pv.visitor_id = v.id AND pv.{$scopeSql}
+                )
+                OR EXISTS (
+                    SELECT 1 FROM conversations c
+                    WHERE c.visitor_id = v.id AND c.{$scopeSql}
+                )
+              )
+            ORDER BY v.last_seen DESC, v.id DESC
+            LIMIT 1
+        ");
+        $find->execute(array_merge([$ipQuery], $scopeParams, $scopeParams));
+        $visitorId = (int) $find->fetchColumn();
+        if ($visitorId < 1) {
+            lc_json(['success' => false, 'error' => 'Not found'], 404);
+        }
     }
 
     $access = $db->prepare("
@@ -88,6 +114,24 @@ try {
     ");
     $convStmt->execute(array_merge([$visitorId], $scopeParams));
     $conv = $convStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$conv) {
+        $ipForChat = trim((string) ($visitor['ip_address'] ?? $ipQuery));
+        if ($ipForChat !== '') {
+            $ipConv = $db->prepare("
+                SELECT c.id, c.status, c.started_at, c.ticket_reference, c.page_url, c.brand_id,
+                       a.name AS agent_name, b.name AS brand_name
+                FROM conversations c
+                INNER JOIN visitors v ON v.id = c.visitor_id
+                LEFT JOIN agents a ON a.id = c.agent_id
+                LEFT JOIN brands b ON b.id = c.brand_id
+                WHERE v.ip_address = ? AND c.{$scopeSql}
+                ORDER BY CASE WHEN c.status IN ('waiting', 'active') THEN 0 ELSE 1 END, c.id DESC
+                LIMIT 1
+            ");
+            $ipConv->execute(array_merge([$ipForChat], $scopeParams));
+            $conv = $ipConv->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+    }
 
     $pageStmt = $db->prepare("
         SELECT id, page_url, page_title, referrer, duration_seconds, visited_at
@@ -152,6 +196,42 @@ try {
     $returning = ((int) ($stats['chat_count'] ?? 0) > 1)
         || ($createdTs !== false && (time() - $createdTs) > 180);
 
+    $messages = [];
+    if ($conv) {
+        $msgStmt = $db->prepare("
+            SELECT id, sender_type, message, created_at
+            FROM messages
+            WHERE conversation_id = ? AND sender_type IN ('visitor', 'agent')
+            ORDER BY id DESC
+            LIMIT 40
+        ");
+        $msgStmt->execute([(int) $conv['id']]);
+        $msgRows = array_reverse($msgStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+        foreach ($msgRows as $msg) {
+            $text = trim(strip_tags((string) ($msg['message'] ?? '')));
+            if ($text === '') {
+                continue;
+            }
+            $messages[] = [
+                'id' => (int) $msg['id'],
+                'sender' => (string) ($msg['sender_type'] ?? ''),
+                'text' => function_exists('mb_substr') ? mb_substr($text, 0, 500) : substr($text, 0, 500),
+                'created_at' => !empty($msg['created_at']) && function_exists('lc_to_iso8601') ? lc_to_iso8601($msg['created_at']) : null,
+            ];
+        }
+    }
+
+    $device = function_exists('lc_parse_user_agent')
+        ? lc_parse_user_agent((string) ($visitor['user_agent'] ?? ''))
+        : [];
+    $deviceLabel = trim(implode(' · ', array_filter([
+        (string) ($device['device'] ?? ''),
+        (string) ($device['browser'] ?? ''),
+        (string) ($device['os'] ?? ''),
+    ], static function ($part) {
+        return $part !== '' && strcasecmp($part, 'Unknown') !== 0;
+    })));
+
     lc_json([
         'success' => true,
         'visitor' => [
@@ -171,8 +251,12 @@ try {
             'ticket' => $ticket,
             'conversation_id' => $conv ? (int) $conv['id'] : null,
             'conversation_status' => $conv ? (string) ($conv['status'] ?? '') : '',
+            'chat_url' => $conv ? lc_admin_url('chats', ['id' => (int) $conv['id']]) : '',
+            'device' => $deviceLabel,
+            'clicks' => count($pages),
             'geo' => $geo,
             'pages' => $pages,
+            'messages' => $messages,
         ],
     ]);
 } catch (Throwable $e) {

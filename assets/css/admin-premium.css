@@ -16932,6 +16932,31 @@ button.lc-hero-chip {
 .lc-vis-empty { margin: 0.8rem 0 0; color: #94a3b8; font-size: 0.82rem; }
 .lc-vis-feed-head { margin-bottom: 0.85rem; }
 .lc-vis-feed .lc-traffic-search-wrap { min-width: min(100%, 280px); }
+.lc-visitors-row { cursor: pointer; }
+.lc-visitors-row.is-meta-open { background: #f8fafc; }
+.lc-vis-chat-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+}
+.lc-vis-chat-bar a { color: #0f172a; }
+.lc-vis-chat-log { display: flex; flex-direction: column; gap: 0.55rem; max-height: 320px; overflow: auto; }
+.lc-vis-chat-msg {
+    padding: 0.55rem 0.7rem;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+.lc-vis-chat-msg.is-agent { background: #0f172a; color: #fff; border-color: #0f172a; }
+.lc-vis-chat-msg strong { display: block; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.7; }
+.lc-vis-chat-msg p { margin: 0.2rem 0 0; font-size: 0.84rem; line-height: 1.4; white-space: pre-wrap; }
+.lc-vis-chat-msg small { display: block; margin-top: 0.25rem; font-size: 0.68rem; opacity: 0.65; }
+.lc-vis-chat-empty { margin: 0; color: #64748b; font-size: 0.82rem; }
 @media (max-width: 980px) {
     .lc-vis-grid { grid-template-columns: 1fr; }
     .lc-vis-card-chart { grid-row: auto; }

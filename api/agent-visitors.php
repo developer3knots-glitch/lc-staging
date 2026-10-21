@@ -157,6 +157,7 @@ try {
     $listStmt = $db->prepare("
         SELECT
             pv.id,
+            v.id AS visitor_id,
             v.ip_address AS ip,
             NULLIF(TRIM(v.name), '') AS visitor_name,
             NULLIF(TRIM(v.country), '') AS country,
@@ -188,6 +189,7 @@ try {
         }
         $visitors[] = [
             'id' => (int) $row['id'],
+            'visitor_id' => (int) ($row['visitor_id'] ?? 0),
             'ip' => (string) $row['ip'],
             'name' => $name,
             'initials' => function_exists('lc_avatar_initials') ? lc_avatar_initials($name) : 'V',
