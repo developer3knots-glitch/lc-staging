@@ -16113,3 +16113,169 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
         opacity: 0.8;
     }
 }
+
+.lc-prechat-builder {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid #e2e8f0;
+}
+.lc-prechat-builder-head h4 {
+    margin: 0 0 0.3rem;
+    font-size: 1rem;
+}
+.lc-prechat-builder-head p {
+    margin: 0 0 1rem;
+    color: #64748b;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    max-width: 70rem;
+}
+.lc-prechat-builder-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+.lc-prechat-copy,
+.lc-prechat-field {
+    display: grid;
+    gap: 0.65rem;
+}
+.lc-prechat-copy {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 0.85rem;
+}
+.lc-prechat-copy label,
+.lc-prechat-field label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+}
+.lc-prechat-copy input,
+.lc-prechat-field input,
+.lc-prechat-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.48rem 0.65rem;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 400;
+    color: #0f172a;
+    background: #fff;
+}
+.lc-prechat-field {
+    padding: 0.85rem;
+    margin-bottom: 0.65rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+.lc-prechat-field.is-off { opacity: 0.62; }
+.lc-prechat-field-top,
+.lc-prechat-field-moves,
+.lc-prechat-toggles,
+.lc-prechat-add {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.lc-prechat-field-top { justify-content: space-between; }
+.lc-prechat-type {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #0369a1;
+    background: #e0f2fe;
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+}
+.lc-prechat-field-moves button,
+.lc-prechat-add button {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 8px;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.lc-prechat-field-moves button:disabled { opacity: 0.4; cursor: default; }
+.lc-prechat-field small {
+    font-weight: 400;
+    color: #94a3b8;
+}
+.lc-prechat-toggles label {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.lc-prechat-add { margin-top: 0.35rem; }
+.lc-prechat-add span {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #64748b;
+    margin-right: 0.2rem;
+}
+.lc-prechat-preview-card {
+    position: sticky;
+    top: 1rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    padding: 1rem 1rem 0.9rem;
+}
+.lc-prechat-preview-card h4 {
+    margin: 0;
+    font-size: 1rem;
+}
+.lc-prechat-preview-card p {
+    margin: 0.3rem 0 0.8rem;
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+.lc-prechat-preview-card label {
+    display: block;
+    margin: 0.55rem 0 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.lc-prechat-preview-input {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    min-height: 36px;
+    padding: 0.45rem 0.7rem;
+    color: #94a3b8;
+    font-size: 0.82rem;
+    background: #fff;
+}
+.lc-prechat-preview-input.is-tall { min-height: 64px; }
+.lc-prechat-preview-btn {
+    margin-top: 0.85rem;
+    background: #0f172a;
+    color: #fff;
+    text-align: center;
+    border-radius: 10px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+@media (max-width: 980px) {
+    .lc-prechat-builder-grid,
+    .lc-prechat-copy { grid-template-columns: 1fr; }
+    .lc-prechat-preview-card { position: static; }
+}

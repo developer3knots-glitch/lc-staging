@@ -40,6 +40,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_set_account_setting($accountId, 'poll_disabled', isset($_POST['poll_disabled']) ? '1' : '0');
             $prechatOn = isset($_POST['prechat_form_enabled']) ? '1' : '0';
             lc_set_account_setting($accountId, 'prechat_form_enabled', $prechatOn);
+            $prechatPosted = trim((string) ($_POST['prechat_form_config'] ?? ''));
+            if ($prechatPosted !== '' && function_exists('lc_normalize_prechat_form_config')) {
+                $prechatJson = json_encode(
+                    lc_normalize_prechat_form_config($prechatPosted),
+                    JSON_UNESCAPED_UNICODE
+                );
+                if (is_string($prechatJson) && $prechatJson !== '') {
+                    lc_set_account_setting($accountId, 'prechat_form_config', $prechatJson);
+                    if (function_exists('lc_set_setting')) {
+                        lc_set_setting('prechat_form_config', $prechatJson);
+                    }
+                }
+            }
             // Keep global fallback in sync (brands without account_id / legacy installs)
             if (function_exists('lc_set_setting')) {
                 lc_set_setting('prechat_form_enabled', $prechatOn);
@@ -203,6 +216,9 @@ if ($inactivityWarnMinutes < 3 || $inactivityWarnMinutes >= $inactivityCloseMinu
     $inactivityWarnMinutes = max(3, $inactivityCloseMinutes - 3);
 }
 $prechatFormEnabled = lc_prechat_form_enabled($accountId);
+$prechatFormConfig = function_exists('lc_prechat_form_config')
+    ? lc_prechat_form_config($accountId)
+    : [];
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
 $adminTimezone = function_exists('lc_account_timezone') ? lc_account_timezone($accountId) : 'UTC';
@@ -339,7 +355,7 @@ require __DIR__ . '/includes/header.php';
                                         <span class="lc-settings-toggle-ui"></span>
                                         <span class="lc-settings-toggle-text">
                                             <strong>Pre-chat form</strong>
-                                            <small>Require name, email &amp; first message before a <em>new</em> chat. Active chats keep going without the form (LiveChat standard)</small>
+                                            <small>Show a form before a new chat. Customize the heading, button, and every field below. Active chats keep going without the form.</small>
                                         </span>
                                     </label>
                                 </div>
@@ -367,6 +383,38 @@ require __DIR__ . '/includes/header.php';
                                     </div>
                                 </div>
                             </div>                        </div>
+                        <div class="lc-prechat-builder" id="lc-prechat-builder">
+                            <div class="lc-prechat-builder-head">
+                                <h4>Pre-chat form builder</h4>
+                                <p>Rename the heading and button, turn fields on or off, mark them required, and add your own questions. Name, email, and phone are saved on the visitor. The message becomes the first chat message. Other answers show in the chat for your team.</p>
+                            </div>
+                            <div class="lc-prechat-builder-grid">
+                                <div class="lc-prechat-editor">
+                                    <div class="lc-prechat-copy">
+                                        <label>Heading
+                                            <input type="text" id="lc-prechat-title" maxlength="80" autocomplete="off">
+                                        </label>
+                                        <label>Subtitle
+                                            <input type="text" id="lc-prechat-subtitle" maxlength="180" autocomplete="off">
+                                        </label>
+                                        <label>Button
+                                            <input type="text" id="lc-prechat-button" maxlength="40" autocomplete="off">
+                                        </label>
+                                    </div>
+                                    <div id="lc-prechat-field-list"></div>
+                                    <div class="lc-prechat-add">
+                                        <span>Add a field</span>
+                                        <button type="button" data-add-field="text">Short text</button>
+                                        <button type="button" data-add-field="textarea">Long text</button>
+                                        <button type="button" data-add-field="select">Dropdown</button>
+                                        <button type="button" data-add-field="checkbox">Checkbox</button>
+                                    </div>
+                                </div>
+                                <aside class="lc-prechat-preview" id="lc-prechat-preview" aria-hidden="true"></aside>
+                            </div>
+                            <input type="hidden" name="prechat_form_config" id="lc-prechat-config-input" value="">
+                            <script type="application/json" id="lc-prechat-config-data"><?= json_encode($prechatFormConfig, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+                        </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
                     </form>
                 </div>

@@ -195,5 +195,8 @@ function lc_brand_settings(array $brand): array
         'ticket_display_enabled' => lc_ticket_display_enabled($accountId > 0 ? $accountId : null),
         'ticket_resume_enabled' => lc_ticket_resume_enabled($accountId > 0 ? $accountId : null),
         'prechat_form_enabled' => lc_prechat_form_enabled($accountId > 0 ? $accountId : null),
+        'prechat_form' => function_exists('lc_prechat_form_config')
+            ? lc_prechat_form_config($accountId > 0 ? $accountId : null)
+            : null,
     ];
 }

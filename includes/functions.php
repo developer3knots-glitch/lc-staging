@@ -8,6 +8,7 @@ require_once __DIR__ . '/accounts.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/blocking.php';
 require_once __DIR__ . '/tickets.php';
+require_once __DIR__ . '/prechat-form.php';
 require_once __DIR__ . '/attachments.php';
 require_once __DIR__ . '/reactions.php';
 require_once __DIR__ . '/avatars.php';

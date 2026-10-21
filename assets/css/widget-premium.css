@@ -689,6 +689,11 @@
     line-height: 1.45;
 }
 
+#lc-prechat-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
 .lcw-prechat-form {
     display: flex;
     flex-direction: column;
@@ -706,7 +711,8 @@
 }
 .lcw-field label span { color: #ef4444; font-weight: 700; }
 .lcw-prechat-form input,
-.lcw-prechat-form textarea {
+.lcw-prechat-form textarea,
+.lcw-prechat-form select {
     width: 100%;
     box-sizing: border-box;
     border: 1.5px solid #e2e8f0;
@@ -724,10 +730,40 @@
     max-height: 120px;
     resize: none;
 }
+.lcw-prechat-form select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, #94a3b8 50%), linear-gradient(135deg, #94a3b8 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 2rem;
+}
+.lcw-field.is-check { margin-top: 0.15rem; }
+.lcw-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--lcw-ink);
+    line-height: 1.4;
+}
+.lcw-check input {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    padding: 0;
+    margin: 2px 0 0;
+    flex: 0 0 auto;
+    accent-color: var(--lcw-primary);
+}
 .lcw-prechat-form input::placeholder,
 .lcw-prechat-form textarea::placeholder { color: #a8b4c4; }
 .lcw-prechat-form input:focus,
-.lcw-prechat-form textarea:focus {
+.lcw-prechat-form textarea:focus,
+.lcw-prechat-form select:focus {
     outline: none;
     border-color: var(--lcw-primary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--lcw-primary) 14%, transparent);
@@ -1905,7 +1941,8 @@
     #lc-input,
     .lcw-compose textarea,
     .lcw-prechat-form input,
-    .lcw-prechat-form textarea {
+    .lcw-prechat-form textarea,
+    .lcw-prechat-form select {
         font-size: 16px;
     }
     .lcw-msg-row {
@@ -3076,7 +3113,8 @@ button.lcw-head-menu-item:focus-visible {
     #lc-widget-root.lcw-panel-open .lcw-compose textarea,
     #lc-widget-root.lcw-panel-open #lc-panel.lcw-theme-dark.lcw-chat-active #lc-input,
     #lc-widget-root.lcw-panel-open .lcw-prechat-form input,
-    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea {
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form select {
         font-size: 16px !important;
     }
     #lc-widget-root.lcw-panel-open .lcw-compose-plus,
@@ -3091,8 +3129,9 @@ button.lcw-head-menu-item:focus-visible {
         max-height: min(34vh, 220px);
     }
     #lc-widget-root.lcw-panel-open .lcw-form-card,
-    #lc-widget-root.lcw-panel-open .lcw-prechat-form input,
-    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea {
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form input:not([type="checkbox"]),
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form textarea,
+    #lc-widget-root.lcw-panel-open .lcw-prechat-form select {
         width: 100%;
         max-width: 100%;
         box-sizing: border-box;

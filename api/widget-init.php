@@ -47,6 +47,9 @@ try {
     $onlineCount = lc_get_online_agents_count($brandId);
 
     $db = lc_db();
+    if (function_exists('lc_ensure_visitor_phone_schema')) {
+        try { lc_ensure_visitor_phone_schema(); } catch (Throwable $e) {}
+    }
     $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ?');
     $stmt->execute([$visitorUid]);
     $visitor = $stmt->fetch();
@@ -61,6 +64,21 @@ try {
 
     $brandAccountId = (int) ($brand['account_id'] ?? 0);
     $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
+    $prechatConfig = function_exists('lc_prechat_form_config')
+        ? lc_prechat_form_config($brandAccountId > 0 ? $brandAccountId : null)
+        : [];
+    $prechatChecked = null;
+    $submittedPhone = '';
+    if ($prechatRequired && !empty($input['prechat_submit']) && !$settingsOnly && function_exists('lc_prechat_validate_submission')) {
+        $prechatChecked = lc_prechat_validate_submission($prechatConfig, $input);
+        if (empty($prechatChecked['ok'])) {
+            lc_json(['success' => false, 'error' => (string) ($prechatChecked['error'] ?? 'Please check the form.')], 400);
+        }
+        $name = (string) $prechatChecked['name'];
+        $email = (string) $prechatChecked['email'];
+        $initialMessage = (string) $prechatChecked['message'];
+        $submittedPhone = (string) $prechatChecked['phone'];
+    }
 
     if (!$visitor && $settingsOnly) {
         // New browser uid: still skip form if THIS public IP already filled name+email.
@@ -72,6 +90,11 @@ try {
             : null;
         // Unknown browser uid: only surface LIVE chats by IP — never another person's closed screen
         $hasLive = $liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true);
+        $knownName = trim((string) ($known['name'] ?? ''));
+        $knownEmail = trim((string) ($known['email'] ?? ''));
+        $knownReady = function_exists('lc_prechat_identity_ready')
+            ? lc_prechat_identity_ready($prechatConfig, $knownName, $knownEmail, '')
+            : ($known !== null);
         lc_json([
             'success' => true,
             'settings' => $brandSettings,
@@ -80,9 +103,10 @@ try {
             'conversation_status' => $hasLive ? (string) ($liveByIp['status'] ?? '') : '',
             'visitor_uid' => $visitorUid,
             'visitor_uid_rotated' => $visitorUidRotated,
-            'visitor_identity_complete' => $known !== null,
-            'visitor_name' => $known['name'] ?? '',
-            'visitor_email' => $known['email'] ?? '',
+            'visitor_identity_complete' => $knownReady,
+            'visitor_name' => $knownReady ? $knownName : '',
+            'visitor_email' => $knownReady ? $knownEmail : '',
+            'visitor_phone' => '',
             'agents_online' => $onlineCount,
             'realtime' => lc_realtime_client_config($brandId),
         ]);
@@ -137,6 +161,16 @@ try {
         $visitorEmail = $email !== '' ? $email : trim((string) ($visitor['email'] ?? ''));
     }
 
+    $visitorPhone = $submittedPhone !== ''
+        ? $submittedPhone
+        : trim((string) (is_array($visitor) ? ($visitor['phone'] ?? '') : ''));
+    if ($submittedPhone !== '' && $visitorId > 0) {
+        try {
+            $db->prepare('UPDATE visitors SET phone = ? WHERE id = ?')->execute([$submittedPhone, $visitorId]);
+        } catch (Throwable $e) {
+        }
+    }
+
     // Same IP already has form data → only reuse as a pair when THIS visitor
     // is still anonymous. Never copy another person's name onto a different email
     // (shared office/NAT IPs were overwriting names like "Aliza" onto other users).
@@ -171,9 +205,9 @@ try {
         }
     }
 
-    $identityComplete = $visitorName !== ''
-        && $visitorEmail !== ''
-        && filter_var($visitorEmail, FILTER_VALIDATE_EMAIL);
+    $identityComplete = function_exists('lc_prechat_identity_ready')
+        ? lc_prechat_identity_ready($prechatConfig, $visitorName, $visitorEmail, $visitorPhone)
+        : ($visitorName !== '' && $visitorEmail !== '' && (bool) filter_var($visitorEmail, FILTER_VALIDATE_EMAIL));
 
     if (!$settingsOnly && function_exists('lc_mark_visitor_on_site')) {
         lc_mark_visitor_on_site($visitorId);
@@ -231,6 +265,7 @@ try {
             'visitor_identity_complete' => $identityComplete,
             'visitor_name' => $identityComplete ? $visitorName : '',
             'visitor_email' => $identityComplete ? $visitorEmail : '',
+            'visitor_phone' => $identityComplete ? $visitorPhone : '',
             'agents_online' => $onlineCount,
             'realtime' => lc_realtime_client_config($brandId),
         ]);
@@ -355,17 +390,9 @@ try {
             $email = $visitorEmail;
         }
 
-        // Form required unless this IP already has identity (rule 3)
-        if ($prechatRequired && !$identityComplete) {
-            if ($initialMessage === '') {
-                lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
-            }
-            if ($name === '') {
-                lc_json(['success' => false, 'error' => 'Name is required'], 400);
-            }
-            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                lc_json(['success' => false, 'error' => 'Valid email is required'], 400);
-            }
+        // Form required unless the required name/email/phone fields are already known.
+        if ($prechatRequired && !$prechatChecked && !$identityComplete) {
+            lc_json(['success' => false, 'error' => 'Pre-chat form required'], 400);
         } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $email = '';
         }
@@ -438,6 +465,17 @@ try {
             $assignedId = lc_assign_agent($convId);
             if ($assignedId) {
                 $status = 'active';
+            }
+        }
+    }
+
+    if (!empty($prechatChecked['answers']) && function_exists('lc_prechat_answers_note')) {
+        $prechatNote = lc_prechat_answers_note($prechatChecked['answers']);
+        if ($prechatNote !== '') {
+            try {
+                $db->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)')
+                    ->execute([$convId, 'system', $prechatNote]);
+            } catch (Throwable $e) {
             }
         }
     }

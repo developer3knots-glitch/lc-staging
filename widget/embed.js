@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 174;
+    var LC_WIDGET_BUILD = 175;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -61,6 +61,7 @@
         serverIdentityComplete = false;
         serverVisitorName = '';
         serverVisitorEmail = '';
+        serverVisitorPhone = '';
         entryRouted = false;
         persistConversationId(null);
         persistChatToken('');
@@ -137,6 +138,9 @@
     var serverIdentityComplete = false;
     var serverVisitorName = '';
     var serverVisitorEmail = '';
+    var serverVisitorPhone = '';
+    var prechatFormConfig = null;
+    var prechatPaintKey = '';
     var serverLiveConversationId = 0;
     var serverLiveConversationStatus = '';
     var pendingResumeConvId = null;
@@ -627,7 +631,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=75';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=76';
         document.head.appendChild(link);
     }
 
@@ -784,18 +788,7 @@
                             '<p class="lcw-form-subtitle">Tell us a little about yourself - our team will take it from here.</p>' +
                         '</div>' +
                         '<form id="lc-prechat-form" class="lcw-prechat-form" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
-                            '<div class="lcw-field">' +
-                                '<label for="lc-prechat-name">Full name <span>*</span></label>' +
-                                '<input type="text" id="lc-prechat-name" name="lc_visitor_name" required placeholder="John Smith" autocomplete="off" autocapitalize="words" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
-                            '</div>' +
-                            '<div class="lcw-field">' +
-                                '<label for="lc-prechat-email">Work email <span>*</span></label>' +
-                                '<input type="email" id="lc-prechat-email" name="lc_visitor_email" required placeholder="you@company.com" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" inputmode="email">' +
-                            '</div>' +
-                            '<div class="lcw-field">' +
-                                '<label for="lc-prechat-message">How can we help? <span>*</span></label>' +
-                                '<textarea id="lc-prechat-message" name="lc_visitor_message" required rows="2" placeholder="Describe your question or request..." autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></textarea>' +
-                            '</div>' +
+                            '<div id="lc-prechat-fields"></div>' +
                             '<div class="lcw-hp-wrap" aria-hidden="true">' +
                                 '<label for="lc-prechat-honeypot">Leave blank</label>' +
                                 '<input type="text" id="lc-prechat-honeypot" class="lcw-hp" name="lc_hp_field" value="" tabindex="-1" autocomplete="new-password" readonly aria-hidden="true" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">' +
@@ -1325,15 +1318,16 @@
             form.setAttribute('data-lpignore', 'true');
             form.setAttribute('data-1p-ignore', 'true');
         }
-        ['lc-prechat-name', 'lc-prechat-email', 'lc-prechat-message'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            el.setAttribute('autocomplete', 'off');
-            el.setAttribute('data-lpignore', 'true');
-            el.setAttribute('data-1p-ignore', 'true');
-            el.setAttribute('data-bwignore', 'true');
-            el.setAttribute('data-form-type', 'other');
-        });
+        var prechatHost = document.getElementById('lc-prechat-fields');
+        if (prechatHost) {
+            prechatHost.querySelectorAll('input, textarea, select').forEach(function (el) {
+                el.setAttribute('autocomplete', 'off');
+                el.setAttribute('data-lpignore', 'true');
+                el.setAttribute('data-1p-ignore', 'true');
+                el.setAttribute('data-bwignore', 'true');
+                el.setAttribute('data-form-type', 'other');
+            });
+        }
         hardenHoneypotFields();
     }
 
@@ -1550,12 +1544,24 @@
         return serverVisitorEmail;
     }
 
-    /** Name+email already known this session (or confirmed by server) — never flash the form. */
+    /** Required name, email, or phone already known — skip the form on the next chat. */
     function visitorHasKnownIdentity() {
         if (serverIdentityComplete) return true;
-        var n = String(serverVisitorName || '').trim();
-        var e = String(serverVisitorEmail || '').trim();
-        return n !== '' && e !== '' && e.indexOf('@') !== -1;
+        var fields = (prechatConfig().fields || []);
+        var needs = false;
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            if (!field || !field.enabled || !field.required) continue;
+            if (field.type !== 'name' && field.type !== 'email' && field.type !== 'phone') continue;
+            needs = true;
+            if (field.type === 'name' && !String(serverVisitorName || '').trim()) return false;
+            if (field.type === 'email') {
+                var em = String(serverVisitorEmail || '').trim();
+                if (em.indexOf('@') < 1) return false;
+            }
+            if (field.type === 'phone' && String(serverVisitorPhone || '').replace(/\D/g, '').length < 7) return false;
+        }
+        return needs;
     }
 
     /** Single entry paint for a fresh chat (idle compose or prechat — never both). */
@@ -1585,10 +1591,163 @@
         }
     }
 
+    function defaultPrechatConfig() {
+        return {
+            title: 'Start a conversation',
+            subtitle: 'Tell us a little about yourself - our team will take it from here.',
+            button: 'Start conversation',
+            fields: [
+                { id: 'name', type: 'name', enabled: true, required: true, label: 'Full name', placeholder: 'John Smith', options: [] },
+                { id: 'email', type: 'email', enabled: true, required: true, label: 'Work email', placeholder: 'you@company.com', options: [] },
+                { id: 'phone', type: 'phone', enabled: false, required: false, label: 'Phone', placeholder: '+1 555 0100', options: [] },
+                { id: 'message', type: 'message', enabled: true, required: true, label: 'How can we help?', placeholder: 'Describe your question or request...', options: [] }
+            ]
+        };
+    }
+
+    function prechatConfig() {
+        var cfg = prechatFormConfig;
+        if (!cfg || !cfg.fields || !cfg.fields.length) return defaultPrechatConfig();
+        return cfg;
+    }
+
+    function prechatButtonLabel() {
+        if (awayFormMode) return 'Send message';
+        return String(prechatConfig().button || 'Start conversation');
+    }
+
+    function paintPrechatChrome() {
+        if (awayFormMode) return;
+        var cfg = prechatConfig();
+        var title = document.querySelector('#lc-prechat-start-panel .lcw-form-title');
+        var sub = document.querySelector('#lc-prechat-start-panel .lcw-form-subtitle');
+        var btnLabel = document.querySelector('#lc-prechat-submit .lcw-btn-label');
+        if (title) title.textContent = cfg.title || 'Start a conversation';
+        if (sub) sub.textContent = cfg.subtitle || '';
+        if (btnLabel && !(document.getElementById('lc-prechat-submit') || {}).classList.contains('is-loading')) {
+            btnLabel.textContent = prechatButtonLabel();
+        }
+    }
+
+    function prechatFieldControl(field) {
+        var type = field.type;
+        var input;
+        if (type === 'message' || type === 'textarea') {
+            input = document.createElement('textarea');
+            input.rows = 2;
+        } else if (type === 'select') {
+            input = document.createElement('select');
+            var empty = document.createElement('option');
+            empty.value = '';
+            empty.textContent = field.placeholder || 'Select';
+            input.appendChild(empty);
+            (field.options || []).forEach(function (opt) {
+                var option = document.createElement('option');
+                option.value = String(opt);
+                option.textContent = String(opt);
+                input.appendChild(option);
+            });
+        } else if (type === 'checkbox') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = '1';
+        } else {
+            input = document.createElement('input');
+            input.type = type === 'email' ? 'email' : 'text';
+            if (type === 'email') input.setAttribute('inputmode', 'email');
+            if (type === 'phone') input.setAttribute('inputmode', 'tel');
+            if (type === 'name') input.setAttribute('autocapitalize', 'words');
+        }
+        if (type !== 'select' && type !== 'checkbox') {
+            input.placeholder = field.placeholder || '';
+        }
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.setAttribute('data-lpignore', 'true');
+        input.setAttribute('data-1p-ignore', 'true');
+        input.setAttribute('data-bwignore', 'true');
+        input.setAttribute('data-form-type', 'other');
+        if (type === 'name') input.id = 'lc-prechat-name';
+        else if (type === 'email') input.id = 'lc-prechat-email';
+        else if (type === 'phone') input.id = 'lc-prechat-phone';
+        else if (type === 'message') input.id = 'lc-prechat-message';
+        else input.id = 'lc-prechat-field-' + field.id;
+        input.setAttribute('data-prechat-id', field.id);
+        if (field.required) input.required = true;
+        return input;
+    }
+
+    function paintPrechatFields(force) {
+        var host = document.getElementById('lc-prechat-fields');
+        if (!host) return;
+        var fields = (prechatConfig().fields || []).filter(function (field) { return field && field.enabled; });
+        var key = fields.map(function (field) {
+            return [field.id, field.type, field.required ? 1 : 0, field.label, field.placeholder, (field.options || []).join('|')].join('~');
+        }).join('||');
+        if (!force && key === prechatPaintKey && host.childElementCount) return;
+        prechatPaintKey = key;
+        host.textContent = '';
+        fields.forEach(function (field) {
+            var wrap = document.createElement('div');
+            wrap.className = 'lcw-field' + (field.type === 'checkbox' ? ' is-check' : '');
+            var control = prechatFieldControl(field);
+            if (field.type === 'checkbox') {
+                var label = document.createElement('label');
+                label.className = 'lcw-check';
+                label.appendChild(control);
+                var text = document.createElement('span');
+                text.textContent = field.label || 'Confirm';
+                if (field.required) {
+                    var star = document.createElement('span');
+                    star.textContent = ' *';
+                    text.appendChild(star);
+                }
+                label.appendChild(text);
+                wrap.appendChild(label);
+            } else {
+                var lab = document.createElement('label');
+                lab.htmlFor = control.id;
+                lab.appendChild(document.createTextNode(field.label || 'Field'));
+                if (field.required) {
+                    var mark = document.createElement('span');
+                    mark.textContent = ' *';
+                    lab.appendChild(mark);
+                }
+                wrap.appendChild(lab);
+                wrap.appendChild(control);
+            }
+            host.appendChild(wrap);
+        });
+        disablePrechatAutofill();
+    }
+
+    function readPrechatSubmission() {
+        var cfg = prechatConfig();
+        var out = { name: '', email: '', phone: '', message: '', fields: {}, error: '' };
+        (cfg.fields || []).forEach(function (field) {
+            if (!field || !field.enabled) return;
+            var el = document.querySelector('#lc-prechat-fields [data-prechat-id="' + field.id + '"]');
+            if (!el) return;
+            var value = field.type === 'checkbox' ? (el.checked ? '1' : '') : String(el.value || '').trim();
+            out.fields[field.id] = value;
+            if (field.required && !value) {
+                if (!out.error) out.error = (field.label || 'This field') + ' is required.';
+            }
+            if (field.type === 'email' && value && value.indexOf('@') < 1) {
+                if (!out.error) out.error = 'Enter a valid email.';
+            }
+            if (field.type === 'name') out.name = value;
+            else if (field.type === 'email') out.email = value;
+            else if (field.type === 'phone') out.phone = value;
+            else if (field.type === 'message') out.message = value;
+        });
+        return out;
+    }
+
     function showAwayForm() {
-        awayFormMode = true;
         try { sessionStorage.removeItem(AWAY_THANKS_KEY); } catch (e) {}
         showPrechatForm(true, true);
+        awayFormMode = true;
         var panel = document.getElementById('lc-panel-prechat');
         if (panel) panel.classList.add('is-away');
         var thanks = document.getElementById('lc-away-thanks');
@@ -1614,8 +1773,8 @@
     }
 
     function showAwayThanks() {
-        awayFormMode = true;
         showPrechatForm(true, true);
+        awayFormMode = true;
         var panel = document.getElementById('lc-panel-prechat');
         if (panel) panel.classList.add('is-away');
         var formCard = document.getElementById('lc-prechat-start-panel');
@@ -1636,6 +1795,7 @@
     }
 
     function showPrechatForm(skipSettingsFetch, skipTicketReset) {
+        awayFormMode = false;
         hideIdleIntro();
         document.getElementById('lc-panel').classList.remove('lcw-chat-active');
         document.getElementById('lc-panel').classList.add('lcw-mode-prechat');
@@ -1647,10 +1807,15 @@
         document.getElementById('lc-panel-ended').style.display = 'none';
         document.getElementById('lc-panel-head').style.display = 'none';
         document.getElementById('lc-panel-toolbar').style.display = 'flex';
-        // Always keep pre-chat form inputs empty.
-        // (Even if server knows identity by IP, prefill here is what looks like "form not filled but still filled".)
-        document.getElementById('lc-prechat-name').value = '';
-        document.getElementById('lc-prechat-email').value = '';
+        paintPrechatFields(true);
+        paintPrechatChrome();
+        var prechatHost = document.getElementById('lc-prechat-fields');
+        if (prechatHost) {
+            prechatHost.querySelectorAll('input, textarea, select').forEach(function (el) {
+                if (el.type === 'checkbox') el.checked = false;
+                else el.value = '';
+            });
+        }
         clearHoneypotFields();
         disablePrechatAutofill();
         if (!skipTicketReset) {
@@ -2854,12 +3019,19 @@
         applyVisitorIdentityFromResponse(data);
         if (!data.settings) return;
         settings = data.settings;
+        if (settings.prechat_form && typeof settings.prechat_form === 'object') {
+            prechatFormConfig = settings.prechat_form;
+            paintPrechatChrome();
+            paintPrechatFields(false);
+        }
         serverIdentityComplete = !!data.visitor_identity_complete;
         var nextName = String(data.visitor_name || '').trim();
         var nextEmail = String(data.visitor_email || '').trim();
+        var nextPhone = String(data.visitor_phone || '').trim();
         // Never wipe a known session identity with empty settings_only payloads.
         if (nextName) serverVisitorName = nextName;
         if (nextEmail) serverVisitorEmail = nextEmail;
+        if (nextPhone) serverVisitorPhone = nextPhone;
         if (serverIdentityComplete || visitorHasKnownIdentity()) {
             serverIdentityComplete = true;
         }
@@ -3425,30 +3597,33 @@
     }
 
     function submitPrechatForm() {
-        var name = document.getElementById('lc-prechat-name').value.trim();
-        var email = document.getElementById('lc-prechat-email').value.trim();
-        var message = document.getElementById('lc-prechat-message').value.trim();
+        var filled = readPrechatSubmission();
         var honeypot = readHoneypotField('lc-prechat-honeypot');
+        var name = filled.name;
+        var email = filled.email;
+        var phone = filled.phone;
+        var message = filled.message;
 
         showPrechatError('');
-        if (!name || !email || !message) {
-            showPrechatError('Please fill in name, email and message.');
+        if (filled.error) {
+            showPrechatError(filled.error);
             return;
         }
 
         var btn = document.getElementById('lc-prechat-submit');
+        var btnLabel = btn ? btn.querySelector('.lcw-btn-label') : null;
         btn.disabled = true;
         btn.classList.add('is-loading');
-        btn.querySelector('.lcw-btn-label').textContent = 'Connecting...';
+        if (btnLabel) btnLabel.textContent = awayFormMode ? 'Sending...' : 'Connecting...';
 
-        serverVisitorName = name;
-        serverVisitorEmail = email;
-        serverIdentityComplete = true;
+        if (name) serverVisitorName = name;
+        if (email) serverVisitorEmail = email;
+        if (phone) serverVisitorPhone = phone;
 
         if (chatInitInFlight || proactiveInviteInFlight) {
             btn.disabled = false;
             btn.classList.remove('is-loading');
-            btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
+            if (btnLabel) btnLabel.textContent = prechatButtonLabel();
             return;
         }
         chatInitInFlight = true;
@@ -3461,7 +3636,10 @@
                 brand_key: brandKey,
                 name: name,
                 email: email,
+                phone: phone,
                 initial_message: message,
+                prechat_submit: 1,
+                prechat_fields: filled.fields,
                 page_url: window.location.href,
                 lc_hp: honeypot,
                 public_ipv4: publicIpv4,
@@ -3475,13 +3653,14 @@
             chatInitInFlight = false;
             btn.disabled = false;
             btn.classList.remove('is-loading');
-            btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
+            if (btnLabel) btnLabel.textContent = prechatButtonLabel();
             if (!data.success) {
                 showPrechatError(data.error || 'Could not start chat. Please try again.');
                 return;
             }
             pendingResumeConvId = null;
             forceNewChat = false;
+            if (visitorHasKnownIdentity()) serverIdentityComplete = true;
             hideTeaser(true);
             var nobodyOnline = awayFormMode || (parseInt(data.agents_online, 10) || 0) < 1;
             if (nobodyOnline) {
@@ -3504,7 +3683,7 @@
             chatInitInFlight = false;
             btn.disabled = false;
             btn.classList.remove('is-loading');
-            btn.querySelector('.lcw-btn-label').textContent = 'Start conversation';
+            if (btnLabel) btnLabel.textContent = prechatButtonLabel();
             showPrechatError('Connection error. Please try again.');
         });
     }
@@ -6076,7 +6255,8 @@
     function isAdminOnlySystemMessage(m) {
         if (!m || m.sender_type !== 'system') return false;
         var t = String(m.message || '');
-        return /Merged\s+\d+\s+earlier chat/i.test(t)
+        return /^Pre-chat details\b/.test(t)
+            || /Merged\s+\d+\s+earlier chat/i.test(t)
             || /from the same visitor into this thread/i.test(t)
             || /returned\. Previous conversation is open again/i.test(t)
             || /Agent reopened this chat to follow up/i.test(t)
