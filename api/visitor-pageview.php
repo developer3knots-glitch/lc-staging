@@ -65,7 +65,27 @@ try {
 
     // Lightweight presence-only pulse (minimize / tab hide / open) — skip geo & traffic.
     if ($event === 'presence' || $event === 'widget') {
+        $presenceWasLeft = false;
+        $presencePrevSeen = null;
+        try {
+            $presenceStmt = $db->prepare('SELECT left_site_at, last_seen FROM visitors WHERE id = ? LIMIT 1');
+            $presenceStmt->execute([$visitorId]);
+            $presenceRow = $presenceStmt->fetch() ?: [];
+            $presenceWasLeft = !empty($presenceRow['left_site_at']);
+            $presencePrevSeen = $presenceRow['last_seen'] ?? null;
+        } catch (Throwable $e) {
+        }
         lc_mark_visitor_on_site($visitorId);
+        $presenceAway = true;
+        if (!$isNewVisitor && $presencePrevSeen) {
+            $presencePrevTs = strtotime((string) $presencePrevSeen . ' UTC');
+            if ($presencePrevTs !== false && (time() - $presencePrevTs) < 90 && !$presenceWasLeft) {
+                $presenceAway = false;
+            }
+        }
+        if ($isNewVisitor || $presenceWasLeft || $presenceAway) {
+            lc_mark_visitor_visit_started($visitorId);
+        }
         $presence = function_exists('lc_apply_visitor_presence_input')
             ? lc_apply_visitor_presence_input($visitorId, $input, $brandId, true)
             : null;

@@ -74,6 +74,7 @@ try {
             v.page_url,
             v.last_seen,
             v.left_site_at,
+            v.visit_started_at,
             v.created_at AS visitor_created_at,
             c.id AS conversation_id,
             c.status AS conversation_status,
@@ -100,13 +101,6 @@ try {
                 LIMIT 1
             ) AS page_brand_key,
             (
-                SELECT COALESCE(SUM(COALESCE(pv.duration_seconds, 0)), 0)
-                FROM visitor_page_views pv
-                WHERE pv.visitor_id = v.id
-                  AND pv.{$brandSql}
-                  AND pv.visited_at >= DATE_SUB(COALESCE(v.last_seen, UTC_TIMESTAMP()), INTERVAL 4 HOUR)
-            ) AS pages_duration_seconds,
-            (
                 SELECT TIMESTAMPDIFF(
                     SECOND,
                     pv.visited_at,
@@ -119,17 +113,6 @@ try {
                 ORDER BY pv.id DESC
                 LIMIT 1
             ) AS open_page_seconds,
-            (
-                SELECT TIMESTAMPDIFF(
-                    SECOND,
-                    MIN(pv.visited_at),
-                    COALESCE(v.last_seen, UTC_TIMESTAMP())
-                )
-                FROM visitor_page_views pv
-                WHERE pv.visitor_id = v.id
-                  AND pv.{$brandSql}
-                  AND pv.visited_at >= DATE_SUB(COALESCE(v.last_seen, UTC_TIMESTAMP()), INTERVAL 4 HOUR)
-            ) AS recent_span_seconds,
             TIMESTAMPDIFF(SECOND, v.last_seen, UTC_TIMESTAMP()) AS seconds_since_seen
         FROM visitors v
         LEFT JOIN (
@@ -166,11 +149,9 @@ try {
         LIMIT 200
     ";
 
-    // Placeholder order: pages SUM, open page, recent span, page_brand_id, page_brand_key,
+    // Placeholder order: page_brand_id, page_brand_key, open page,
     // open-chat filter, EXISTS pv, EXISTS cx, search
     $execParams = array_merge(
-        $brandParams,
-        $brandParams,
         $brandParams,
         $brandParams,
         $brandParams,
@@ -320,22 +301,23 @@ try {
             $name = 'Visitor';
         }
 
-        $pagesDur = max(0, (int) ($row['pages_duration_seconds'] ?? 0));
         $openPage = max(0, (int) ($row['open_page_seconds'] ?? 0));
-        $recentSpan = max(0, (int) ($row['recent_span_seconds'] ?? 0));
-        $sinceSeen = max(0, (int) ($row['seconds_since_seen'] ?? 0));
         $onSite = $status !== 'left';
-        // Current visit up to now. Page-duration sums freeze while the visitor stays on a page.
-        if ($onSite && $recentSpan > 0) {
-            $timeSec = $recentSpan + $sinceSeen;
-        } else {
-            $timeSec = $pagesDur + $openPage;
-            if ($timeSec < 1 && $recentSpan > 0) {
-                $timeSec = $recentSpan;
+        // This visit only. A return (new visit_started_at) starts the clock again.
+        $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
+        $startedTs = $startedRaw !== '' ? strtotime($startedRaw . ' UTC') : false;
+        $endTs = time();
+        if (!$onSite) {
+            $endRaw = !empty($row['left_site_at']) ? (string) $row['left_site_at'] : (string) ($row['last_seen'] ?? '');
+            $parsedEnd = $endRaw !== '' ? strtotime($endRaw . ' UTC') : false;
+            if ($parsedEnd !== false) {
+                $endTs = $parsedEnd;
             }
         }
-        if ($timeSec > 4 * 3600) {
-            $timeSec = 4 * 3600;
+        if ($startedTs !== false) {
+            $timeSec = max(0, $endTs - $startedTs);
+        } else {
+            $timeSec = $onSite ? $openPage : 0;
         }
 
         $pageUrl = (string) ($row['page_url'] ?: ($row['chat_page_url'] ?? ''));
