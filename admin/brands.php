@@ -35,7 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_ensure_brand_widget_columns();
             $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson]);
-            $message = 'Brand created successfully. Copy the embed code and add it to your website.';
+            $message = 'Brand created. Copy its install code and add it to the website.';
+            $openEditId = (int) $db->lastInsertId();
         }
     } elseif ($action === 'edit' && !empty($_POST['id'])) {
         $id = (int) $_POST['id'];
@@ -99,13 +100,10 @@ foreach ($brands as $b) {
     }
 }
 $inactiveCount = count($brands) - $activeCount;
-
-$strLen = static function (string $s): int {
-    return function_exists('mb_strlen') ? mb_strlen($s) : strlen($s);
-};
-$strSub = static function (string $s, int $start, int $len): string {
-    return function_exists('mb_substr') ? mb_substr($s, $start, $len) : substr($s, $start, $len);
-};
+$selectedBrandId = $openEditId;
+if ($selectedBrandId < 1 && $brands) {
+    $selectedBrandId = (int) $brands[0]['id'];
+}
 
 $pageTitle = 'Brands';
 $activeNav = 'brands';
@@ -125,7 +123,7 @@ require __DIR__ . '/includes/header.php';
             <h1 class="lc-hero-title">Chat Brands</h1>
             <p class="lc-hero-sub">Each brand gets its own widget, welcome message, pre-chat form, and inbox.</p>
             <div class="lc-hero-actions">
-                <a href="#lc-brand-create" class="lc-hero-chip"><i class="ti ti-plus"></i> New brand</a>
+                <button type="button" class="lc-hero-chip" id="lc-brand-new-open"><i class="ti ti-plus"></i> New brand</button>
                 <a href="<?= LC_BASE_URL ?>/demo.html" target="_blank" class="lc-hero-chip"><i class="ti ti-external-link"></i> Widget demo</a>
             </div>
         </div>
@@ -145,185 +143,202 @@ require __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <div class="lc-brands-layout">
-        <div class="lc-brands-main">
-            <div class="lc-brands-toolbar">
-                <div class="lc-brands-search-wrap">
-                    <i class="ti ti-search"></i>
-                    <input type="search" id="lc-brands-search" placeholder="Search brands by name or key..." autocomplete="off">
-                </div>
-                <span class="lc-brands-toolbar-count"><?= count($brands) ?> brand<?= count($brands) === 1 ? '' : 's' ?></span>
+    <div class="lc-brands-workspace">
+        <aside class="lc-brands-list" id="lc-brands-grid">
+            <div class="lc-brands-search-wrap">
+                <i class="ti ti-search"></i>
+                <input type="search" id="lc-brands-search" placeholder="Search brands..." autocomplete="off">
             </div>
-
-            <div class="lc-brands-grid" id="lc-brands-grid">
-                <?php foreach ($brands as $b):
-                    $color = $b['widget_color'] ?? '#6FD943';
-                    $embed = lc_brand_embed_code($b);
-                    $welcome = trim((string) ($b['welcome_message'] ?? ''));
-                    $offline = trim((string) ($b['offline_message'] ?? ''));
-                    $isDefault = ($b['brand_key'] ?? '') === 'default';
-                    $isEditing = $openEditId === (int) $b['id'];
-                ?>
-                <article class="lc-brand-card<?= empty($b['is_active']) ? ' is-inactive' : '' ?>" data-search="<?= lc_sanitize(strtolower($b['name'] . ' ' . $b['brand_key'])) ?>" style="--brand-color: <?= lc_sanitize($color) ?>">
-                    <div class="lc-brand-card-banner">
-                        <div class="lc-brand-card-identity">
-                            <span class="lc-brand-card-dot"></span>
-                            <div>
-                                <h3><?= lc_sanitize($b['name']) ?></h3>
-                                <code><?= lc_sanitize($b['brand_key']) ?></code>
-                            </div>
-                        </div>
-                        <div class="lc-brand-card-badges">
-                            <?php if (!empty($b['is_active'])): ?>
-                                <span class="lc-badge lc-badge-active">Active</span>
-                            <?php else: ?>
-                                <span class="lc-badge lc-badge-waiting">Inactive</span>
-                            <?php endif; ?>
-                            <?php if ($isDefault): ?><span class="lc-brand-default-tag">Default</span><?php endif; ?>
-                            <?php if (lc_brand_prechat_enabled($b)): ?><span class="lc-brand-default-tag">Pre-chat</span><?php endif; ?>
-                        </div>
-                    </div>
-
-                    <div class="lc-brand-card-body">
-                        <div class="lc-brand-preview-grid">
-                            <div class="lc-brand-preview-item">
-                                <span class="lc-brand-preview-label"><i class="ti ti-message-circle"></i> Welcome</span>
-                                <?php if ($welcome !== ''): ?>
-                                    <p><?= lc_sanitize($strLen($welcome) > 90 ? $strSub($welcome, 0, 90) . '...' : $welcome) ?></p>
-                                <?php else: ?>
-                                    <p class="lc-muted-text">Not set</p>
-                                <?php endif; ?>
-                            </div>
-                            <div class="lc-brand-preview-item">
-                                <span class="lc-brand-preview-label"><i class="ti ti-moon"></i> Offline</span>
-                                <?php if ($offline !== ''): ?>
-                                    <p><?= lc_sanitize($strLen($offline) > 90 ? $strSub($offline, 0, 90) . '...' : $offline) ?></p>
-                                <?php else: ?>
-                                    <p class="lc-muted-text">Not set</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="lc-brand-embed-block">
-                            <div class="lc-brand-embed-head">
-                                <span><i class="ti ti-code"></i> Embed code</span>
-                                <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-brand-copy" data-embed-id="lc-embed-<?= (int) $b['id'] ?>">
-                                    <i class="ti ti-copy"></i> Copy
-                                </button>
-                            </div>
-                            <pre class="lc-brand-embed" id="lc-embed-<?= (int) $b['id'] ?>"><?= lc_sanitize($embed) ?></pre>
-                        </div>
-
-                        <div class="lc-brand-card-actions">
-                            <a href="<?= LC_BASE_URL ?>/demo.html?brand=<?= urlencode($b['brand_key']) ?>" target="_blank" class="lc-btn lc-btn-secondary lc-btn-sm">
-                                <i class="ti ti-external-link"></i> Test widget
-                            </a>
-                            <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-brand-edit-toggle" data-target="lc-brand-edit-<?= (int) $b['id'] ?>" aria-expanded="<?= $isEditing ? 'true' : 'false' ?>">
-                                <i class="ti ti-pencil"></i> Edit
-                            </button>
-                            <?php if (!$isDefault): ?>
-                            <form method="post" class="lc-brand-toggle-form" onsubmit="return confirm('Change brand status?');">
-                                <input type="hidden" name="action" value="toggle">
-                                <input type="hidden" name="id" value="<?= (int) $b['id'] ?>">
-                                <button type="submit" class="lc-btn lc-btn-danger lc-btn-sm">
-                                    <i class="ti ti-power"></i> <?= !empty($b['is_active']) ? 'Deactivate' : 'Activate' ?>
-                                </button>
-                            </form>
-                            <?php endif; ?>
-                        </div>
-
-                        <div class="lc-brand-edit-panel" id="lc-brand-edit-<?= (int) $b['id'] ?>"<?= $isEditing ? '' : ' hidden' ?>>
-                            <form method="post" class="lc-form lc-brand-edit-form">
-                                <input type="hidden" name="action" value="edit">
-                                <input type="hidden" name="id" value="<?= (int) $b['id'] ?>">
-                                <div class="lc-brand-edit-grid">
-                                    <div>
-                                        <label>Brand name</label>
-                                        <input type="text" name="name" value="<?= lc_sanitize($b['name']) ?>" required>
-                                    </div>
-                                    <div>
-                                        <label>Brand key</label>
-                                        <input type="text" name="brand_key" value="<?= lc_sanitize($b['brand_key']) ?>" required>
-                                    </div>
-                                    <div class="lc-brand-color-field">
-                                        <label>Widget color</label>
-                                        <div class="lc-brand-color-input">
-                                            <input type="color" name="widget_color" value="<?= lc_sanitize($color) ?>">
-                                            <span><?= lc_sanitize($color) ?></span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label>Widget theme</label>
-                                        <select name="widget_theme">
-                                            <option value="dark" <?= (strtolower((string)($b['widget_theme'] ?? 'dark')) === 'dark') ? 'selected' : '' ?>>Dark (LiveChat style)</option>
-                                            <option value="light" <?= (strtolower((string)($b['widget_theme'] ?? '')) === 'light') ? 'selected' : '' ?>>Light</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <label>Welcome message</label>
-                                <textarea name="welcome_message" rows="2"><?= lc_sanitize($b['welcome_message']) ?></textarea>
-                                <label>Offline message</label>
-                                <textarea name="offline_message" rows="2"><?= lc_sanitize($b['offline_message']) ?></textarea>
-                                <?= lc_prechat_builder_markup(lc_brand_prechat_config($b), lc_brand_prechat_enabled($b)) ?>
-                                <label class="lc-brand-check">
-                                    <input type="checkbox" name="is_active" <?= !empty($b['is_active']) ? 'checked' : '' ?>> Brand is active
-                                </label>
-                                <div class="lc-brand-edit-actions">
-                                    <button type="submit" class="lc-btn lc-btn-primary lc-btn-sm"><i class="ti ti-device-floppy"></i> Save changes</button>
-                                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-brand-edit-close" data-target="lc-brand-edit-<?= (int) $b['id'] ?>">Cancel</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </article>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <aside class="lc-brands-aside" id="lc-brand-create">
-            <div class="lc-card lc-card-pro lc-brands-compose">
-                <div class="lc-card-head">
-                    <h3><i class="ti ti-plus"></i> Create Brand</h3>
-                </div>
-                <div class="lc-card-body">
-                    <form method="post" class="lc-form lc-brand-create-form">
-                        <input type="hidden" name="action" value="add">
-                        <label>Brand name</label>
-                        <input type="text" name="name" required placeholder="e.g. 3Knots Digital">
-                        <label>Brand key <small>(optional)</small></label>
-                        <input type="text" name="brand_key" placeholder="Auto-generated from name">
-                        <label>Widget color</label>
-                        <div class="lc-brand-color-input lc-brand-color-input-full">
-                            <input type="color" name="widget_color" value="#6FD943" id="lc-new-brand-color">
-                            <span id="lc-new-brand-color-val">#6FD943</span>
-                        </div>
-                        <label>Widget theme</label>
-                        <select name="widget_theme">
-                            <option value="dark" selected>Dark (LiveChat style)</option>
-                            <option value="light">Light</option>
-                        </select>
-                        <label>Welcome message</label>
-                        <textarea name="welcome_message" rows="3" placeholder="Hi! How can we help you today?"></textarea>
-                        <label>Offline message</label>
-                        <textarea name="offline_message" rows="2" placeholder="We are offline. Leave a message and we will reply soon."></textarea>
-                        <?= lc_prechat_builder_markup(lc_prechat_form_defaults(), false) ?>
-                        <button type="submit" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-plus"></i> Create brand &amp; widget</button>
-                    </form>
-                </div>
-            </div>
-
-            <div class="lc-card lc-card-pro">
-                <div class="lc-card-body">
-                    <div class="lc-brands-tip">
-                        <i class="ti ti-info-circle"></i>
-                        <div>
-                            <strong>How to install</strong>
-                            <p>Copy the embed code from any brand card and paste it before <code>&lt;/body&gt;</code> on that website. Each site should use its own brand code.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <button type="button" class="lc-brand-pick lc-brand-pick-new" id="lc-brand-new-side" data-pick="new">
+                <i class="ti ti-plus"></i>
+                <span><strong>New brand</strong><small>Add another website</small></span>
+            </button>
+            <?php if (!$brands): ?>
+                <p class="lc-brands-list-empty">No brands yet. Create the first one.</p>
+            <?php endif; ?>
+            <?php foreach ($brands as $b):
+                $color = $b['widget_color'] ?? '#6FD943';
+                $bid = (int) $b['id'];
+                $isSelected = $selectedBrandId === $bid;
+            ?>
+            <button type="button" class="lc-brand-pick<?= $isSelected ? ' is-active' : '' ?><?= empty($b['is_active']) ? ' is-inactive' : '' ?>" data-pick="<?= $bid ?>" data-search="<?= lc_sanitize(strtolower($b['name'] . ' ' . $b['brand_key'])) ?>" style="--brand-color: <?= lc_sanitize($color) ?>">
+                <span class="lc-brand-pick-dot"></span>
+                <span class="lc-brand-pick-copy">
+                    <strong><?= lc_sanitize($b['name']) ?></strong>
+                    <small><?= lc_sanitize($b['brand_key']) ?></small>
+                </span>
+                <?php if (empty($b['is_active'])): ?>
+                    <span class="lc-brand-pick-flag">Off</span>
+                <?php elseif (lc_brand_prechat_enabled($b)): ?>
+                    <span class="lc-brand-pick-flag is-form">Form</span>
+                <?php endif; ?>
+            </button>
+            <?php endforeach; ?>
         </aside>
+
+        <div class="lc-brands-stage">
+            <section class="lc-brand-editor lc-brand-create" id="lc-brand-create" data-brand-panel="new"<?= $brands ? ' hidden' : '' ?>>
+                <header class="lc-brand-editor-head">
+                    <div>
+                        <p class="lc-brand-kicker">New brand</p>
+                        <h2>Create a widget</h2>
+                        <p>Name the site, choose a color, then add messages or a pre-chat form if you want them.</p>
+                    </div>
+                </header>
+                <form method="post" class="lc-form lc-brand-create-form">
+                    <input type="hidden" name="action" value="add">
+                    <div class="lc-brand-editor-body">
+                        <div class="lc-brand-tabs" role="tablist">
+                            <button type="button" class="is-active" data-brand-tab="widget">Widget</button>
+                            <button type="button" data-brand-tab="messages">Messages</button>
+                            <button type="button" data-brand-tab="prechat">Pre-chat</button>
+                        </div>
+                        <section class="lc-brand-pane is-active" data-brand-pane="widget">
+                            <p class="lc-brand-pane-lead">This is what visitors see on the chat bubble.</p>
+                            <div class="lc-brand-edit-grid">
+                                <div>
+                                    <label>Brand name</label>
+                                    <input type="text" name="name" required placeholder="e.g. 3Knots Digital">
+                                </div>
+                                <div>
+                                    <label>Brand key <small>(optional)</small></label>
+                                    <input type="text" name="brand_key" placeholder="Auto-generated from the name">
+                                </div>
+                                <div class="lc-brand-color-field">
+                                    <label>Widget color</label>
+                                    <div class="lc-brand-color-input">
+                                        <input type="color" name="widget_color" value="#6FD943" id="lc-new-brand-color">
+                                        <span id="lc-new-brand-color-val">#6FD943</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label>Widget theme</label>
+                                    <select name="widget_theme">
+                                        <option value="dark" selected>Dark</option>
+                                        <option value="light">Light</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="lc-brand-pane" data-brand-pane="messages">
+                            <p class="lc-brand-pane-lead">Welcome shows when a new chat starts. Offline shows when every agent is away.</p>
+                            <label>Welcome message</label>
+                            <textarea name="welcome_message" rows="3" placeholder="Leave blank if you do not want a greeting"></textarea>
+                            <label>Offline message</label>
+                            <textarea name="offline_message" rows="3" placeholder="We are away right now. Leave a message and we will reply."></textarea>
+                        </section>
+                        <section class="lc-brand-pane" data-brand-pane="prechat">
+                            <p class="lc-brand-pane-lead">Turn this on only for this brand. Other brands keep their own forms.</p>
+                            <?= lc_prechat_builder_markup(lc_prechat_form_defaults(), false) ?>
+                        </section>
+                    </div>
+                    <div class="lc-brand-editor-foot">
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-plus"></i> Create brand</button>
+                    </div>
+                </form>
+            </section>
+
+            <?php foreach ($brands as $b):
+                $color = $b['widget_color'] ?? '#6FD943';
+                $embed = lc_brand_embed_code($b);
+                $bid = (int) $b['id'];
+                $isDefault = ($b['brand_key'] ?? '') === 'default';
+                $theme = strtolower((string) ($b['widget_theme'] ?? 'dark'));
+                $isSelected = $selectedBrandId === $bid;
+            ?>
+            <section class="lc-brand-editor" id="lc-brand-edit-<?= $bid ?>" data-brand-panel="<?= $bid ?>"<?= $isSelected ? '' : ' hidden' ?>>
+                <header class="lc-brand-editor-head">
+                    <div>
+                        <p class="lc-brand-kicker"><?= !empty($b['is_active']) ? 'Active brand' : 'Inactive brand' ?></p>
+                        <h2><?= lc_sanitize($b['name']) ?></h2>
+                        <p>Changes here apply only to <code><?= lc_sanitize($b['brand_key']) ?></code>.</p>
+                    </div>
+                    <div class="lc-brand-editor-tools">
+                        <a href="<?= LC_BASE_URL ?>/demo.html?brand=<?= urlencode($b['brand_key']) ?>" target="_blank" class="lc-btn lc-btn-secondary lc-btn-sm">
+                            <i class="ti ti-external-link"></i> Test
+                        </a>
+                        <?php if (!$isDefault): ?>
+                        <form method="post" onsubmit="return confirm('Change brand status?');">
+                            <input type="hidden" name="action" value="toggle">
+                            <input type="hidden" name="id" value="<?= $bid ?>">
+                            <button type="submit" class="lc-btn lc-btn-secondary lc-btn-sm">
+                                <i class="ti ti-power"></i> <?= !empty($b['is_active']) ? 'Deactivate' : 'Activate' ?>
+                            </button>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                </header>
+                <form method="post" class="lc-form lc-brand-edit-form">
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="id" value="<?= $bid ?>">
+                    <div class="lc-brand-editor-body">
+                        <div class="lc-brand-tabs" role="tablist">
+                            <button type="button" class="is-active" data-brand-tab="widget">Widget</button>
+                            <button type="button" data-brand-tab="messages">Messages</button>
+                            <button type="button" data-brand-tab="prechat">Pre-chat</button>
+                            <button type="button" data-brand-tab="install">Install</button>
+                        </div>
+                        <section class="lc-brand-pane is-active" data-brand-pane="widget">
+                            <p class="lc-brand-pane-lead">Name, color, and theme for this website only.</p>
+                            <div class="lc-brand-edit-grid">
+                                <div>
+                                    <label>Brand name</label>
+                                    <input type="text" name="name" value="<?= lc_sanitize($b['name']) ?>" required>
+                                </div>
+                                <div>
+                                    <label>Brand key</label>
+                                    <input type="text" name="brand_key" value="<?= lc_sanitize($b['brand_key']) ?>" required>
+                                </div>
+                                <div class="lc-brand-color-field">
+                                    <label>Widget color</label>
+                                    <div class="lc-brand-color-input">
+                                        <input type="color" name="widget_color" value="<?= lc_sanitize($color) ?>">
+                                        <span><?= lc_sanitize($color) ?></span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label>Widget theme</label>
+                                    <select name="widget_theme">
+                                        <option value="dark" <?= $theme === 'dark' ? 'selected' : '' ?>>Dark</option>
+                                        <option value="light" <?= $theme === 'light' ? 'selected' : '' ?>>Light</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <label class="lc-brand-check">
+                                <input type="checkbox" name="is_active" <?= !empty($b['is_active']) ? 'checked' : '' ?>> Brand is active
+                            </label>
+                        </section>
+                        <section class="lc-brand-pane" data-brand-pane="messages">
+                            <p class="lc-brand-pane-lead">Welcome is the first line in a new chat. Leave it blank for no greeting. Offline is the away note.</p>
+                            <label>Welcome message</label>
+                            <textarea name="welcome_message" rows="3"><?= lc_sanitize($b['welcome_message']) ?></textarea>
+                            <label>Offline message</label>
+                            <textarea name="offline_message" rows="3"><?= lc_sanitize($b['offline_message']) ?></textarea>
+                        </section>
+                        <section class="lc-brand-pane" data-brand-pane="prechat">
+                            <p class="lc-brand-pane-lead">Ask for details before a new chat. This form is not shared with other brands.</p>
+                            <?= lc_prechat_builder_markup(lc_brand_prechat_config($b), lc_brand_prechat_enabled($b)) ?>
+                        </section>
+                        <section class="lc-brand-pane" data-brand-pane="install">
+                            <p class="lc-brand-pane-lead">Paste this before <code>&lt;/body&gt;</code> on this brand's website.</p>
+                            <div class="lc-brand-embed-block">
+                                <div class="lc-brand-embed-head">
+                                    <span><i class="ti ti-code"></i> Embed code</span>
+                                    <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-brand-copy" data-embed-id="lc-embed-<?= $bid ?>">
+                                        <i class="ti ti-copy"></i> Copy
+                                    </button>
+                                </div>
+                                <pre class="lc-brand-embed" id="lc-embed-<?= $bid ?>"><?= lc_sanitize($embed) ?></pre>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="lc-brand-editor-foot">
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save this brand</button>
+                    </div>
+                </form>
+            </section>
+            <?php endforeach; ?>
+        </div>
     </div>
 </div>
 

@@ -9,12 +9,50 @@
     function filterBrands(q) {
         if (!grid) return;
         q = (q || '').trim().toLowerCase();
-        var cards = grid.querySelectorAll('.lc-brand-card');
-        cards.forEach(function (card) {
+        grid.querySelectorAll('.lc-brand-pick[data-search]').forEach(function (card) {
             var hay = card.getAttribute('data-search') || '';
             card.style.display = !q || hay.indexOf(q) !== -1 ? '' : 'none';
         });
     }
+
+    function showBrandPanel(id) {
+        document.querySelectorAll('[data-brand-panel]').forEach(function (panel) {
+            panel.hidden = String(panel.getAttribute('data-brand-panel')) !== String(id);
+        });
+        document.querySelectorAll('.lc-brand-pick').forEach(function (btn) {
+            btn.classList.toggle('is-active', btn.getAttribute('data-pick') === String(id));
+        });
+        var stage = document.querySelector('.lc-brands-stage');
+        if (stage && window.matchMedia('(max-width: 860px)').matches) {
+            stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    document.querySelectorAll('.lc-brand-pick').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showBrandPanel(btn.getAttribute('data-pick') || '');
+        });
+    });
+    var newOpen = document.getElementById('lc-brand-new-open');
+    if (newOpen) {
+        newOpen.addEventListener('click', function () { showBrandPanel('new'); });
+    }
+
+    document.querySelectorAll('.lc-brand-tabs').forEach(function (tabs) {
+        tabs.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-brand-tab]');
+            if (!btn || !tabs.contains(btn)) return;
+            var shell = tabs.parentElement;
+            if (!shell) return;
+            var name = btn.getAttribute('data-brand-tab');
+            tabs.querySelectorAll('[data-brand-tab]').forEach(function (tab) {
+                tab.classList.toggle('is-active', tab === btn);
+            });
+            shell.querySelectorAll('[data-brand-pane]').forEach(function (pane) {
+                pane.classList.toggle('is-active', pane.getAttribute('data-brand-pane') === name);
+            });
+        });
+    });
 
     if (searchInput) {
         searchInput.addEventListener('input', function () {

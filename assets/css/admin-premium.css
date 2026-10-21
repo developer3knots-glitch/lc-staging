@@ -16318,7 +16318,186 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     border-radius: 14px;
     background: #fff;
 }
+button.lc-hero-chip {
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.lc-brands-workspace {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+.lc-brands-list {
+    position: sticky;
+    top: 5.25rem;
+    max-height: calc(100vh - 6.5rem);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 16px;
+    padding: 0.75rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+.lc-brands-list .lc-brands-search-wrap {
+    max-width: none;
+    margin-bottom: 0.55rem;
+}
+.lc-brands-list-empty {
+    margin: 0.6rem 0.4rem 0;
+    color: #64748b;
+    font-size: 0.84rem;
+}
+.lc-brand-pick {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    border-radius: 12px;
+    padding: 0.62rem 0.65rem;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+}
+.lc-brand-pick + .lc-brand-pick { margin-top: 0.15rem; }
+.lc-brand-pick:hover { background: #f8fafc; }
+.lc-brand-pick.is-active {
+    background: #f8fafc;
+    box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+.lc-brand-pick.is-inactive { opacity: 0.62; }
+.lc-brand-pick-new {
+    margin-bottom: 0.35rem;
+    background: #f8fafc;
+    color: #0f172a;
+}
+.lc-brand-pick-new i {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0f172a;
+    color: #fff;
+    flex-shrink: 0;
+}
+.lc-brand-pick-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--brand-color, #6FD943);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-color, #6FD943) 22%, white);
+    flex-shrink: 0;
+}
+.lc-brand-pick-copy { min-width: 0; flex: 1; }
+.lc-brand-pick-copy strong,
+.lc-brand-pick-copy small { display: block; }
+.lc-brand-pick-copy strong {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lc-brand-pick-copy small {
+    color: #64748b;
+    font-size: 0.74rem;
+}
+.lc-brand-pick-flag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #64748b;
+    background: #f1f5f9;
+    border-radius: 999px;
+    padding: 0.15rem 0.4rem;
+}
+.lc-brand-pick-flag.is-form { color: #0369a1; background: #e0f2fe; }
+.lc-brands-stage { min-width: 0; }
+.lc-brand-editor {
+    background: #fff;
+    border: 1px solid var(--lc-border);
+    border-radius: 18px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
+    padding: 1.15rem 1.2rem 1rem;
+}
+.lc-brand-editor[hidden] { display: none !important; }
+.lc-brand-editor-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+.lc-brand-kicker {
+    margin: 0 0 0.2rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.lc-brand-editor-head h2 { margin: 0; font-size: 1.35rem; }
+.lc-brand-editor-head p { margin: 0.3rem 0 0; color: #64748b; font-size: 0.86rem; }
+.lc-brand-editor-tools { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.lc-brand-tabs {
+    display: flex;
+    gap: 0.3rem;
+    padding: 0.3rem;
+    background: #f1f5f9;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+}
+.lc-brand-tabs button {
+    border: 0;
+    background: transparent;
+    color: #475569;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    border-radius: 9px;
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.lc-brand-tabs button.is-active {
+    background: #fff;
+    color: #0f172a;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.lc-brand-pane { display: none; }
+.lc-brand-pane.is-active { display: block; }
+.lc-brand-pane-lead {
+    margin: 0 0 0.85rem;
+    color: #64748b;
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+.lc-brand-editor-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid #e2e8f0;
+}
+.lc-brand-pane .lc-prechat-builder {
+    margin-top: 0.75rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
 @media (max-width: 860px) {
+    .lc-brands-workspace { grid-template-columns: 1fr; }
+    .lc-brands-list {
+        position: static;
+        max-height: 280px;
+    }
     .lc-settings-shell {
         grid-template-columns: 1fr;
     }
