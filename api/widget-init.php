@@ -63,9 +63,11 @@ try {
     $visitorUidRotated = !empty($ipBind['rotated']);
 
     $brandAccountId = (int) ($brand['account_id'] ?? 0);
-    $prechatRequired = lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
-    $prechatConfig = function_exists('lc_prechat_form_config')
-        ? lc_prechat_form_config($brandAccountId > 0 ? $brandAccountId : null)
+    $prechatRequired = function_exists('lc_brand_prechat_enabled')
+        ? lc_brand_prechat_enabled($brand)
+        : lc_prechat_form_enabled($brandAccountId > 0 ? $brandAccountId : null);
+    $prechatConfig = function_exists('lc_brand_prechat_config')
+        ? lc_brand_prechat_config($brand)
         : [];
     $prechatChecked = null;
     $submittedPhone = '';

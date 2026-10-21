@@ -16279,3 +16279,57 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     .lc-prechat-copy { grid-template-columns: 1fr; }
     .lc-prechat-preview-card { position: static; }
 }
+
+.lc-settings-shell {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 1.15rem;
+    align-items: start;
+}
+.lc-settings-shell > .lc-settings-nav {
+    position: sticky;
+    top: 5.25rem;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 0;
+    padding: 0.4rem;
+}
+.lc-settings-shell > .lc-settings-nav .lc-settings-nav-link {
+    width: 100%;
+    justify-content: flex-start;
+}
+.lc-settings-shell .lc-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+.lc-settings-shell .lc-settings-section {
+    display: none;
+}
+.lc-settings-shell .lc-settings-section.is-active {
+    display: block;
+}
+.lc-prechat-enable {
+    margin: 0.85rem 0 0.35rem;
+}
+.lc-brand-edit-panel .lc-prechat-builder,
+.lc-brand-create-form .lc-prechat-builder {
+    margin-top: 0.75rem;
+    padding: 0.9rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+}
+@media (max-width: 860px) {
+    .lc-settings-shell {
+        grid-template-columns: 1fr;
+    }
+    .lc-settings-shell > .lc-settings-nav {
+        position: static;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    .lc-settings-shell > .lc-settings-nav .lc-settings-nav-link {
+        width: auto;
+        white-space: nowrap;
+    }
+}

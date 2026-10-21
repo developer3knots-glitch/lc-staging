@@ -26,6 +26,9 @@ function lc_ensure_brand_widget_columns(): void
         lc_db()->exec("ALTER TABLE brands ADD COLUMN widget_theme VARCHAR(10) NOT NULL DEFAULT 'dark'");
     } catch (Throwable $e) {
     }
+    if (function_exists('lc_ensure_brand_prechat_columns')) {
+        lc_ensure_brand_prechat_columns();
+    }
 }
 
 function lc_ensure_brands_schema(): void
@@ -194,9 +197,11 @@ function lc_brand_settings(array $brand): array
         'poll_interval_ms' => $poll,
         'ticket_display_enabled' => lc_ticket_display_enabled($accountId > 0 ? $accountId : null),
         'ticket_resume_enabled' => lc_ticket_resume_enabled($accountId > 0 ? $accountId : null),
-        'prechat_form_enabled' => lc_prechat_form_enabled($accountId > 0 ? $accountId : null),
-        'prechat_form' => function_exists('lc_prechat_form_config')
-            ? lc_prechat_form_config($accountId > 0 ? $accountId : null)
+        'prechat_form_enabled' => function_exists('lc_brand_prechat_enabled')
+            ? lc_brand_prechat_enabled($brand)
+            : lc_prechat_form_enabled($accountId > 0 ? $accountId : null),
+        'prechat_form' => function_exists('lc_brand_prechat_config')
+            ? lc_brand_prechat_config($brand)
             : null,
     ];
 }

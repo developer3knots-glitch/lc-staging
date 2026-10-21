@@ -38,24 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_set_account_setting($accountId, 'auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             lc_set_account_setting($accountId, 'poll_interval_ms', (string) $poll);
             lc_set_account_setting($accountId, 'poll_disabled', isset($_POST['poll_disabled']) ? '1' : '0');
-            $prechatOn = isset($_POST['prechat_form_enabled']) ? '1' : '0';
-            lc_set_account_setting($accountId, 'prechat_form_enabled', $prechatOn);
-            $prechatPosted = trim((string) ($_POST['prechat_form_config'] ?? ''));
-            if ($prechatPosted !== '' && function_exists('lc_normalize_prechat_form_config')) {
-                $prechatJson = json_encode(
-                    lc_normalize_prechat_form_config($prechatPosted),
-                    JSON_UNESCAPED_UNICODE
-                );
-                if (is_string($prechatJson) && $prechatJson !== '') {
-                    lc_set_account_setting($accountId, 'prechat_form_config', $prechatJson);
-                    if (function_exists('lc_set_setting')) {
-                        lc_set_setting('prechat_form_config', $prechatJson);
-                    }
-                }
-            }
-            // Keep global fallback in sync (brands without account_id / legacy installs)
             if (function_exists('lc_set_setting')) {
-                lc_set_setting('prechat_form_enabled', $prechatOn);
                 lc_set_setting('auto_assign', isset($_POST['auto_assign']) ? '1' : '0');
             }
             $inactOn = isset($_POST['inactivity_close_enabled']) ? '1' : '0';
@@ -215,10 +198,6 @@ if ($inactivityCloseMinutes < 5) { $inactivityCloseMinutes = 15; }
 if ($inactivityWarnMinutes < 3 || $inactivityWarnMinutes >= $inactivityCloseMinutes) {
     $inactivityWarnMinutes = max(3, $inactivityCloseMinutes - 3);
 }
-$prechatFormEnabled = lc_prechat_form_enabled($accountId);
-$prechatFormConfig = function_exists('lc_prechat_form_config')
-    ? lc_prechat_form_config($accountId)
-    : [];
 $ticketDisplayEnabled = lc_ticket_display_enabled($accountId);
 $ticketResumeEnabled = lc_ticket_resume_enabled($accountId);
 $adminTimezone = function_exists('lc_account_timezone') ? lc_account_timezone($accountId) : 'UTC';
@@ -249,7 +228,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-adjustments"></i> Control Center</div>
             <h1 class="lc-hero-title">Settings</h1>
-            <p class="lc-hero-sub">System performance, geo-blocking, and IP restrictions - secure your chat widget and fine-tune how your team operates.</p>
+            <p class="lc-hero-sub">One section at a time. Widget look and the pre-chat form are set separately on each brand.</p>
             <div class="lc-hero-actions">
                 <a href="<?= lc_admin_url('brands') ?>" class="lc-hero-chip"><i class="ti ti-tags"></i> Brand widgets</a>
                 <a href="#lc-settings-security" class="lc-hero-chip"><i class="ti ti-shield"></i> Security</a>
@@ -275,6 +254,7 @@ require __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <div class="lc-settings-shell">
     <nav class="lc-settings-nav" aria-label="Settings sections">
         <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
         <a href="#lc-settings-notify" class="lc-settings-nav-link"><i class="ti ti-bell"></i> Notifications</a>
@@ -286,7 +266,7 @@ require __DIR__ . '/includes/header.php';
 
     <div class="lc-settings-layout">
         <div class="lc-settings-main">
-            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-system">
+            <section class="lc-card lc-card-pro lc-settings-section is-active" id="lc-settings-system">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-settings"></i> System Settings</h3>
                     <span class="lc-card-sub">Real-time &amp; routing</span>
@@ -350,14 +330,9 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-settings-tile">
                                 <div class="lc-settings-tile-icon blue"><i class="ti ti-forms"></i></div>
                                 <div class="lc-settings-tile-body">
-                                    <label class="lc-settings-toggle">
-                                        <input type="checkbox" name="prechat_form_enabled" <?= $prechatFormEnabled ? 'checked' : '' ?>>
-                                        <span class="lc-settings-toggle-ui"></span>
-                                        <span class="lc-settings-toggle-text">
-                                            <strong>Pre-chat form</strong>
-                                            <small>Show a form before a new chat. Customize the heading, button, and every field below. Active chats keep going without the form.</small>
-                                        </span>
-                                    </label>
+                                    <strong>Pre-chat form</strong>
+                                    <p class="lc-settings-tile-hint">Each brand has its own form. Set the heading, button, and fields on that brand.</p>
+                                    <a href="<?= lc_admin_url('brands') ?>" class="lc-btn lc-btn-secondary lc-btn-sm"><i class="ti ti-tags"></i> Open brands</a>
                                 </div>
                             </div>
                             <div class="lc-settings-tile">
@@ -382,38 +357,7 @@ require __DIR__ . '/includes/header.php';
                                         </label>
                                     </div>
                                 </div>
-                            </div>                        </div>
-                        <div class="lc-prechat-builder" id="lc-prechat-builder">
-                            <div class="lc-prechat-builder-head">
-                                <h4>Pre-chat form builder</h4>
-                                <p>Rename the heading and button, turn fields on or off, mark them required, and add your own questions. Name, email, and phone are saved on the visitor. The message becomes the first chat message. Other answers show in the chat for your team.</p>
                             </div>
-                            <div class="lc-prechat-builder-grid">
-                                <div class="lc-prechat-editor">
-                                    <div class="lc-prechat-copy">
-                                        <label>Heading
-                                            <input type="text" id="lc-prechat-title" maxlength="80" autocomplete="off">
-                                        </label>
-                                        <label>Subtitle
-                                            <input type="text" id="lc-prechat-subtitle" maxlength="180" autocomplete="off">
-                                        </label>
-                                        <label>Button
-                                            <input type="text" id="lc-prechat-button" maxlength="40" autocomplete="off">
-                                        </label>
-                                    </div>
-                                    <div id="lc-prechat-field-list"></div>
-                                    <div class="lc-prechat-add">
-                                        <span>Add a field</span>
-                                        <button type="button" data-add-field="text">Short text</button>
-                                        <button type="button" data-add-field="textarea">Long text</button>
-                                        <button type="button" data-add-field="select">Dropdown</button>
-                                        <button type="button" data-add-field="checkbox">Checkbox</button>
-                                    </div>
-                                </div>
-                                <aside class="lc-prechat-preview" id="lc-prechat-preview" aria-hidden="true"></aside>
-                            </div>
-                            <input type="hidden" name="prechat_form_config" id="lc-prechat-config-input" value="">
-                            <script type="application/json" id="lc-prechat-config-data"><?= json_encode($prechatFormConfig, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
                         </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save system settings</button>
                     </form>
@@ -650,9 +594,7 @@ require __DIR__ . '/includes/header.php';
                     </form>
                 </div>
             </section>
-        </div>
 
-        <aside class="lc-settings-aside">
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-security">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-ban"></i> IP Blocking</h3>
@@ -696,19 +638,8 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
             </section>
-
-            <div class="lc-card lc-card-pro">
-                <div class="lc-card-body">
-                    <div class="lc-settings-tip">
-                        <i class="ti ti-info-circle"></i>
-                        <div>
-                            <strong>Brand-specific settings</strong>
-                            <p>Widget color, welcome message, and offline text are managed per brand on the <a href="<?= lc_admin_url('brands') ?>">Brands</a> page.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
+        </div>
+    </div>
     </div>
 </div>
 

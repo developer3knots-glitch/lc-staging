@@ -23,6 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $welcome = trim($_POST['welcome_message'] ?? '');
         $offline = trim($_POST['offline_message'] ?? '');
+        lc_ensure_brand_prechat_columns();
+        $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
+        $prechatJson = lc_prechat_config_from_post();
 
         if ($name === '') {
             $error = 'Brand name is required.';
@@ -30,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
             lc_ensure_brand_widget_columns();
-            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message) VALUES (?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline]);
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson]);
             $message = 'Brand created successfully. Copy the embed code and add it to your website.';
         }
     } elseif ($action === 'edit' && !empty($_POST['id'])) {
@@ -52,7 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!in_array($theme, ['light', 'dark'], true)) {
                 $theme = 'dark';
             }
-            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ? WHERE id = ?';
+            lc_ensure_brand_prechat_columns();
+            $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
+            $prechatJson = lc_prechat_config_from_post();
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ? WHERE id = ?';
             $params = [
                 $name,
                 $key,
@@ -61,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 trim($_POST['welcome_message'] ?? ''),
                 trim($_POST['offline_message'] ?? ''),
                 isset($_POST['is_active']) ? 1 : 0,
+                $prechatOn,
+                $prechatJson,
                 $id,
             ];
             if ($accountId > 0) {
@@ -115,7 +123,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-hero-main">
             <div class="lc-hero-eyebrow"><i class="ti ti-tags"></i> Multi-Brand Workspace</div>
             <h1 class="lc-hero-title">Chat Brands</h1>
-            <p class="lc-hero-sub">Each brand gets its own widget color, welcome message, and isolated chat inbox - one dashboard, unlimited sites.</p>
+            <p class="lc-hero-sub">Each brand gets its own widget, welcome message, pre-chat form, and inbox.</p>
             <div class="lc-hero-actions">
                 <a href="#lc-brand-create" class="lc-hero-chip"><i class="ti ti-plus"></i> New brand</a>
                 <a href="<?= LC_BASE_URL ?>/demo.html" target="_blank" class="lc-hero-chip"><i class="ti ti-external-link"></i> Widget demo</a>
@@ -172,6 +180,7 @@ require __DIR__ . '/includes/header.php';
                                 <span class="lc-badge lc-badge-waiting">Inactive</span>
                             <?php endif; ?>
                             <?php if ($isDefault): ?><span class="lc-brand-default-tag">Default</span><?php endif; ?>
+                            <?php if (lc_brand_prechat_enabled($b)): ?><span class="lc-brand-default-tag">Pre-chat</span><?php endif; ?>
                         </div>
                     </div>
 
@@ -255,6 +264,7 @@ require __DIR__ . '/includes/header.php';
                                 <textarea name="welcome_message" rows="2"><?= lc_sanitize($b['welcome_message']) ?></textarea>
                                 <label>Offline message</label>
                                 <textarea name="offline_message" rows="2"><?= lc_sanitize($b['offline_message']) ?></textarea>
+                                <?= lc_prechat_builder_markup(lc_brand_prechat_config($b), lc_brand_prechat_enabled($b)) ?>
                                 <label class="lc-brand-check">
                                     <input type="checkbox" name="is_active" <?= !empty($b['is_active']) ? 'checked' : '' ?>> Brand is active
                                 </label>
@@ -296,6 +306,7 @@ require __DIR__ . '/includes/header.php';
                         <textarea name="welcome_message" rows="3" placeholder="Hi! How can we help you today?"></textarea>
                         <label>Offline message</label>
                         <textarea name="offline_message" rows="2" placeholder="We are offline. Leave a message and we will reply soon."></textarea>
+                        <?= lc_prechat_builder_markup(lc_prechat_form_defaults(), false) ?>
                         <button type="submit" class="lc-btn lc-btn-primary lc-btn-block"><i class="ti ti-plus"></i> Create brand &amp; widget</button>
                     </form>
                 </div>

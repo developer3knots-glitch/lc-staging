@@ -69,6 +69,98 @@ function lc_prechat_form_defaults(): array
     ];
 }
 
+function lc_ensure_brand_prechat_columns(): void
+{
+    static $done = false;
+    if ($done || !function_exists('lc_brands_table_exists') || !lc_brands_table_exists()) {
+        return;
+    }
+    $done = true;
+    try {
+        lc_db()->exec('ALTER TABLE brands ADD COLUMN prechat_form_enabled TINYINT(1) NOT NULL DEFAULT 0');
+    } catch (Throwable $e) {
+    }
+    try {
+        lc_db()->exec('ALTER TABLE brands ADD COLUMN prechat_form_config MEDIUMTEXT NULL');
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_brand_prechat_saved(array $brand): bool
+{
+    return array_key_exists('prechat_form_config', $brand)
+        && $brand['prechat_form_config'] !== null
+        && trim((string) $brand['prechat_form_config']) !== '';
+}
+
+function lc_brand_prechat_enabled(array $brand): bool
+{
+    lc_ensure_brand_prechat_columns();
+    if (lc_brand_prechat_saved($brand)) {
+        return (int) ($brand['prechat_form_enabled'] ?? 0) === 1;
+    }
+    $accountId = (int) ($brand['account_id'] ?? 0);
+
+    return lc_prechat_form_enabled($accountId > 0 ? $accountId : null);
+}
+
+function lc_brand_prechat_config(array $brand): array
+{
+    lc_ensure_brand_prechat_columns();
+    if (lc_brand_prechat_saved($brand)) {
+        return lc_normalize_prechat_form_config((string) $brand['prechat_form_config']);
+    }
+    $accountId = (int) ($brand['account_id'] ?? 0);
+
+    return lc_prechat_form_config($accountId > 0 ? $accountId : null);
+}
+
+function lc_prechat_config_from_post(): string
+{
+    $posted = trim((string) ($_POST['prechat_form_config'] ?? ''));
+    $config = lc_normalize_prechat_form_config($posted !== '' ? $posted : lc_prechat_form_defaults());
+    $json = json_encode($config, JSON_UNESCAPED_UNICODE);
+
+    return is_string($json) ? $json : '{}';
+}
+
+function lc_prechat_builder_markup(array $config, bool $enabled): string
+{
+    $config = lc_normalize_prechat_form_config($config);
+    $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+    if (!is_string($json)) {
+        $json = '{}';
+    }
+    $checked = $enabled ? ' checked' : '';
+    $hidden = $enabled ? '' : ' hidden';
+
+    return '<label class="lc-brand-check lc-prechat-enable">'
+        . '<input type="checkbox" name="prechat_form_enabled" class="lc-prechat-enable-input"' . $checked . '>'
+        . ' Pre-chat form for this brand'
+        . '</label>'
+        . '<div class="lc-prechat-builder"' . $hidden . '>'
+        . '<div class="lc-prechat-builder-head"><h4>Form for this brand</h4>'
+        . '<p>Heading, button, and fields apply only to this brand\'s widget.</p></div>'
+        . '<div class="lc-prechat-builder-grid"><div class="lc-prechat-editor">'
+        . '<div class="lc-prechat-copy">'
+        . '<label>Heading <input type="text" class="lc-prechat-title" maxlength="80" autocomplete="off"></label>'
+        . '<label>Subtitle <input type="text" class="lc-prechat-subtitle" maxlength="180" autocomplete="off"></label>'
+        . '<label>Button <input type="text" class="lc-prechat-button" maxlength="40" autocomplete="off"></label>'
+        . '</div>'
+        . '<div class="lc-prechat-field-list"></div>'
+        . '<div class="lc-prechat-add"><span>Add a field</span>'
+        . '<button type="button" data-add-field="text">Short text</button>'
+        . '<button type="button" data-add-field="textarea">Long text</button>'
+        . '<button type="button" data-add-field="select">Dropdown</button>'
+        . '<button type="button" data-add-field="checkbox">Checkbox</button>'
+        . '</div></div>'
+        . '<aside class="lc-prechat-preview" aria-hidden="true"></aside>'
+        . '</div>'
+        . '<input type="hidden" name="prechat_form_config" class="lc-prechat-config-input" value="">'
+        . '<script type="application/json" class="lc-prechat-config-data">' . $json . '</script>'
+        . '</div>';
+}
+
 function lc_prechat_form_config(?int $accountId = null): array
 {
     if ($accountId === null) {
