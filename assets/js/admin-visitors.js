@@ -12,8 +12,9 @@
     var statClicks = document.getElementById('lc-visitors-stat-clicks');
     var searchQ = '';
     var searchTimer = null;
-    var openIp = '';
-    var clickCache = {};
+    var seenIds = {};
+    var lastSig = '';
+    var pollTimer = null;
 
     function esc(value) {
         return String(value == null ? '' : value)
@@ -48,48 +49,11 @@
         return parts.length ? url + '?' + parts.join('&') : url;
     }
 
-    function paintClicks(ip, clicks) {
-        var host = bodyEl.querySelector('[data-click-list="' + ip.replace(/"/g, '') + '"]');
-        if (!host) return;
-        if (!clicks.length) {
-            host.innerHTML = '<p class="lc-visitors-clicks-empty">No pages recorded for this IP.</p>';
-            return;
-        }
-        host.innerHTML = '<ol class="lc-visitors-clicks">' + clicks.map(function (click) {
-            var title = click.page_title || click.page_path || click.page_url || 'Page';
-            var path = click.page_path || click.page_url || '';
-            return '<li>' +
-                '<div><strong>' + esc(title) + '</strong>' +
-                (path ? '<span>' + esc(path) + '</span>' : '') +
-                '</div>' +
-                timeHtml(click.visited_at) +
-                '</li>';
-        }).join('') + '</ol>';
-        if (window.LCTime) window.LCTime.scan(host);
-    }
-
-    function loadClicks(ip) {
-        if (clickCache[ip]) {
-            paintClicks(ip, clickCache[ip]);
-            return;
-        }
-        var host = bodyEl.querySelector('[data-click-list]');
-        if (host) host.innerHTML = '<p class="lc-visitors-clicks-empty">Loading clicks…</p>';
-        fetch(buildUrl(ip), { credentials: 'same-origin' })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var clicks = (data && data.clicks) || [];
-                clickCache[ip] = clicks;
-                paintClicks(ip, clicks);
-            })
-            .catch(function () {
-                var node = bodyEl.querySelector('[data-click-list]');
-                if (node) node.innerHTML = '<p class="lc-visitors-clicks-empty">Could not load clicks.</p>';
-            });
-    }
-
     function render(rows) {
         if (!bodyEl) return;
+        var sig = rows.map(function (row) { return String(row.id) + ':' + String(row.clicks); }).join('|');
+        if (sig === lastSig) return;
+        lastSig = sig;
         if (!rows.length) {
             bodyEl.innerHTML = '';
             if (emptyEl) emptyEl.hidden = false;
@@ -100,33 +64,29 @@
         if (emptyEl) emptyEl.hidden = true;
         var wrapOn = root.querySelector('.lc-traffic-table-wrap');
         if (wrapOn) wrapOn.hidden = false;
+        var hadRows = Object.keys(seenIds).length > 0;
         bodyEl.innerHTML = rows.map(function (row) {
-            var ip = row.ip || '';
-            var open = openIp === ip;
             var name = row.name || 'Visitor';
-            return '<tr class="lc-visitors-row' + (open ? ' is-open' : '') + '" data-ip="' + esc(ip) + '">' +
-                '<td><code class="lc-visitors-ip">' + esc(ip) + '</code></td>' +
+            var fresh = hadRows && !seenIds[row.id];
+            var page = row.page_title || row.page_path || 'Page';
+            return '<tr class="lc-visitors-row' + (fresh ? ' is-new' : '') + '" data-id="' + esc(row.id) + '">' +
+                '<td><code class="lc-visitors-ip">' + esc(row.ip || '') + '</code></td>' +
                 '<td><div class="lc-traffic-person">' +
                     '<span class="lc-traffic-av" style="background:' + colorFor(name) + '">' + esc(row.initials || 'V') + '</span>' +
                     '<div class="lc-traffic-person-text"><strong>' + esc(name) + '</strong>' +
                     (row.country ? '<span>' + esc(row.country) + '</span>' : '') +
-                    (row.people > 1 ? '<span>' + esc(row.people) + ' visitors</span>' : '') +
                     '</div></div></td>' +
-                '<td><strong>' + esc(row.clicks || 0) + '</strong></td>' +
-                '<td><span class="lc-traffic-page" title="' + esc(row.last_page || '') + '">' + esc(row.last_path || '—') + '</span></td>' +
-                '<td>' + timeHtml(row.last_click_at) + '</td>' +
-                '<td class="lc-visitors-open"><i class="ti ' + (open ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i></td>' +
-                '</tr>' +
-                (open
-                    ? '<tr class="lc-visitors-detail"><td colspan="6"><div class="lc-visitors-detail-card" data-click-list="' + esc(ip) + '"><p class="lc-visitors-clicks-empty">Loading clicks…</p></div></td></tr>'
-                    : '');
+                '<td><strong class="lc-visitors-clicks-num">' + esc(row.clicks || 0) + '</strong></td>' +
+                '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
+                '<td>' + timeHtml(row.visited_at) + '</td>' +
+                '</tr>';
         }).join('');
+        rows.forEach(function (row) { seenIds[row.id] = true; });
         if (window.LCTime) window.LCTime.scan(bodyEl);
-        if (openIp) loadClicks(openIp);
     }
 
-    function load() {
-        if (refreshBtn) refreshBtn.classList.add('is-spinning');
+    function load(quiet) {
+        if (refreshBtn && !quiet) refreshBtn.classList.add('is-spinning');
         fetch(buildUrl(''), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -137,21 +97,11 @@
                 render(data.visitors || []);
             })
             .catch(function () {
-                if (bodyEl) bodyEl.innerHTML = '<tr><td colspan="6">Could not load visitors.</td></tr>';
+                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="5">Could not load visitors.</td></tr>';
             })
             .finally(function () {
-                if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+                if (refreshBtn && !quiet) refreshBtn.classList.remove('is-spinning');
             });
-    }
-
-    if (bodyEl) {
-        bodyEl.addEventListener('click', function (e) {
-            var row = e.target.closest('.lc-visitors-row');
-            if (!row) return;
-            var ip = row.getAttribute('data-ip') || '';
-            openIp = openIp === ip ? '' : ip;
-            load();
-        });
     }
 
     if (searchInput) {
@@ -159,25 +109,30 @@
             if (searchTimer) clearTimeout(searchTimer);
             searchTimer = setTimeout(function () {
                 searchQ = (searchInput.value || '').trim();
-                openIp = '';
-                clickCache = {};
+                seenIds = {};
+                lastSig = '';
                 load();
             }, 280);
         });
     }
     if (brandSelect) {
         brandSelect.addEventListener('change', function () {
-            openIp = '';
-            clickCache = {};
+            seenIds = {};
+            lastSig = '';
             load();
         });
     }
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function () {
-            clickCache = {};
+            seenIds = {};
+            lastSig = '';
             load();
         });
     }
 
     load();
+    pollTimer = setInterval(function () {
+        if (document.hidden) return;
+        load(true);
+    }, 3000);
 })();

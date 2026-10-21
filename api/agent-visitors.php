@@ -109,58 +109,50 @@ try {
 
     $listStmt = $db->prepare("
         SELECT
+            pv.id,
             v.ip_address AS ip,
-            COUNT(pv.id) AS clicks,
-            COUNT(DISTINCT v.id) AS people,
-            MAX(pv.visited_at) AS last_click_at,
-            MAX(NULLIF(TRIM(v.country), '')) AS country,
+            NULLIF(TRIM(v.name), '') AS visitor_name,
+            NULLIF(TRIM(v.country), '') AS country,
+            pv.page_url,
+            pv.page_title,
+            pv.visited_at,
             (
-                SELECT pv2.page_url
-                FROM visitor_page_views pv2
-                INNER JOIN visitors v2 ON v2.id = pv2.visitor_id
-                WHERE v2.ip_address = v.ip_address AND pv2.{$brandSql}
-                ORDER BY pv2.id DESC
-                LIMIT 1
-            ) AS last_page,
-            (
-                SELECT NULLIF(TRIM(v3.name), '')
-                FROM visitors v3
-                INNER JOIN visitor_page_views pv3 ON pv3.visitor_id = v3.id
-                WHERE v3.ip_address = v.ip_address
-                  AND pv3.{$brandSql}
-                  AND NULLIF(TRIM(v3.name), '') IS NOT NULL
-                ORDER BY pv3.id DESC
-                LIMIT 1
-            ) AS visitor_name
+                SELECT COUNT(*)
+                FROM visitor_page_views c
+                INNER JOIN visitors cv ON cv.id = c.visitor_id
+                WHERE cv.ip_address = v.ip_address
+                  AND c.{$brandSql}
+                  AND c.id <= pv.id
+            ) AS click_no
         FROM visitor_page_views pv
         INNER JOIN visitors v ON v.id = pv.visitor_id
         WHERE pv.{$brandSql}
           AND v.ip_address IS NOT NULL
           AND TRIM(v.ip_address) <> ''
           {$searchSql}
-        GROUP BY v.ip_address
-        ORDER BY last_click_at DESC
+        ORDER BY pv.id DESC
         LIMIT 200
     ");
-    $listStmt->execute(array_merge($brandParams, $brandParams, $brandParams, $searchParams));
+    $listStmt->execute(array_merge($brandParams, $brandParams, $searchParams));
 
     $visitors = [];
     foreach ($listStmt->fetchAll() as $row) {
-        $url = (string) ($row['last_page'] ?? '');
+        $url = (string) ($row['page_url'] ?? '');
         $name = trim((string) ($row['visitor_name'] ?? ''));
         if ($name === '') {
             $name = 'Visitor';
         }
         $visitors[] = [
+            'id' => (int) $row['id'],
             'ip' => (string) $row['ip'],
             'name' => $name,
             'initials' => function_exists('lc_avatar_initials') ? lc_avatar_initials($name) : 'V',
             'country' => (string) ($row['country'] ?? ''),
-            'clicks' => (int) $row['clicks'],
-            'people' => (int) $row['people'],
-            'last_page' => $url,
-            'last_path' => $pagePath($url),
-            'last_click_at' => !empty($row['last_click_at']) ? lc_to_iso8601($row['last_click_at']) : null,
+            'clicks' => (int) $row['click_no'],
+            'page_url' => $url,
+            'page_path' => $pagePath($url),
+            'page_title' => (string) ($row['page_title'] ?? ''),
+            'visited_at' => !empty($row['visited_at']) ? lc_to_iso8601($row['visited_at']) : null,
         ];
     }
 

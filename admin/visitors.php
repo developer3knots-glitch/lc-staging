@@ -27,7 +27,7 @@ require __DIR__ . '/includes/header.php';
                 Click trail
             </div>
             <h3 class="lc-traffic-title">Visitors</h3>
-            <p class="lc-traffic-sub">Every page open from your widget, grouped by IP. Open a row to see that visitor’s clicks.</p>
+            <p class="lc-traffic-sub">Each visit is a new row at the top. Clicks is how many times that IP has opened a page.</p>
         </div>
         <div class="lc-visitors-stats">
             <div class="lc-visitors-stat">
@@ -68,14 +68,13 @@ require __DIR__ . '/includes/header.php';
                             <th>IP</th>
                             <th>Visitor</th>
                             <th>Clicks</th>
-                            <th>Last page</th>
-                            <th>Last click</th>
-                            <th class="lc-visitors-th-open"></th>
+                            <th>Page</th>
+                            <th>When</th>
                         </tr>
                     </thead>
                     <tbody id="lc-visitors-body">
                         <tr>
-                            <td colspan="6">Loading visitors…</td>
+                            <td colspan="5">Loading visitors…</td>
                         </tr>
                     </tbody>
                 </table>

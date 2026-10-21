@@ -16795,8 +16795,16 @@ button.lc-hero-chip {
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
-.lc-visitors-row { cursor: pointer; }
-.lc-visitors-row.is-open { background: #f8fafc; }
+.lc-visitors-row.is-new { background: #f0fdf4; }
+.lc-visitors-clicks-num {
+    display: inline-flex;
+    min-width: 1.6rem;
+    justify-content: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #166534;
+}
 .lc-visitors-ip {
     font-size: 0.82rem;
     color: #0f172a;
