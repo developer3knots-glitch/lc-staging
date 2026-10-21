@@ -27,7 +27,7 @@ require __DIR__ . '/includes/header.php';
                 Live monitor
             </div>
             <h3 class="lc-traffic-title">Traffic</h3>
-            <p class="lc-traffic-sub">Visitors on your site — browsing, incoming, chatting, or left.</p>
+            <p class="lc-traffic-sub">Visitors on your site — browsing, incoming, or chatting.</p>
         </div>
     </div>
 
@@ -69,11 +69,6 @@ require __DIR__ . '/includes/header.php';
             <i class="ti ti-eye" aria-hidden="true"></i>
             <span class="lc-traffic-tab-label">Browsing</span>
             <span class="lc-traffic-tab-count" data-count="browsing">0</span>
-        </button>
-        <button type="button" class="lc-traffic-tab" data-traffic-tab="left" role="tab" aria-selected="false">
-            <i class="ti ti-logout" aria-hidden="true"></i>
-            <span class="lc-traffic-tab-label">Left</span>
-            <span class="lc-traffic-tab-count" data-count="left">0</span>
         </button>
     </div>
 
