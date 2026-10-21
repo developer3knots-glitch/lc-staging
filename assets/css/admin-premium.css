@@ -16846,6 +16846,29 @@ button.lc-hero-chip {
     gap: 0.75rem;
     flex-wrap: wrap;
 }
+.lc-vis-dates { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.lc-vis-dates label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.lc-vis-dates input {
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #0f172a;
+    border-radius: 10px;
+    padding: 0.38rem 0.55rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
 .lc-vis-range { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 .lc-vis-range button {
     border: 1px solid #e2e8f0;

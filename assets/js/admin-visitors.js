@@ -16,6 +16,8 @@
     var chartNote = document.getElementById('lc-vis-chart-note');
     var pagesEl = document.getElementById('lc-vis-pages');
     var countriesEl = document.getElementById('lc-vis-countries');
+    var fromInput = document.getElementById('lc-visitors-from');
+    var toInput = document.getElementById('lc-visitors-to');
     var range = '7d';
     var searchQ = '';
     var searchTimer = null;
@@ -49,7 +51,12 @@
         var url = base + '/api/agent-visitors.php';
         var parts = [];
         if (ip) parts.push('ip=' + encodeURIComponent(ip));
-        parts.push('range=' + encodeURIComponent(range));
+        if (fromInput && toInput && fromInput.value && toInput.value) {
+            parts.push('from=' + encodeURIComponent(fromInput.value));
+            parts.push('to=' + encodeURIComponent(toInput.value));
+        } else {
+            parts.push('range=' + encodeURIComponent(range));
+        }
         if (searchQ) parts.push('q=' + encodeURIComponent(searchQ));
         if (brandSelect && brandSelect.value && brandSelect.value !== '0') {
             parts.push('brand=' + encodeURIComponent(brandSelect.value));
@@ -57,11 +64,28 @@
         return parts.length ? url + '?' + parts.join('&') : url;
     }
 
+    function localYmd(date) {
+        var m = String(date.getMonth() + 1).padStart(2, '0');
+        var d = String(date.getDate()).padStart(2, '0');
+        return date.getFullYear() + '-' + m + '-' + d;
+    }
+    function shiftDays(days) {
+        var date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() + days);
+        return localYmd(date);
+    }
+    function setDates(from, to) {
+        if (fromInput) fromInput.value = from || '';
+        if (toInput) toInput.value = to || '';
+    }
     function rangeNote() {
-        if (range === 'today') return 'Today, by hour';
-        if (range === '30d') return 'Last 30 days';
+        if (fromInput && toInput && fromInput.value && toInput.value) {
+            if (fromInput.value === toInput.value) return 'Selected day, by hour';
+            return fromInput.value + ' to ' + toInput.value;
+        }
         if (range === 'all') return 'Last 14 days';
-        return 'Last 7 days';
+        return 'Selected range';
     }
 
     function paintRanks(el, items, emptyText) {
@@ -168,11 +192,29 @@
             root.querySelectorAll('[data-range]').forEach(function (other) {
                 other.classList.toggle('is-on', other === btn);
             });
+            var today = shiftDays(0);
+            if (range === 'today') setDates(today, today);
+            else if (range === '7d') setDates(shiftDays(-6), today);
+            else if (range === '30d') setDates(shiftDays(-29), today);
+            else setDates('', '');
             seenIds = {};
             lastSig = '';
             load();
         });
     });
+
+    function onCustomDates() {
+        if (!fromInput || !toInput || !fromInput.value || !toInput.value) return;
+        root.querySelectorAll('[data-range]').forEach(function (btn) {
+            btn.classList.remove('is-on');
+        });
+        range = 'custom';
+        seenIds = {};
+        lastSig = '';
+        load();
+    }
+    if (fromInput) fromInput.addEventListener('change', onCustomDates);
+    if (toInput) toInput.addEventListener('change', onCustomDates);
 
     if (searchInput) {
         searchInput.addEventListener('input', function () {
@@ -200,6 +242,7 @@
         });
     }
 
+    setDates(shiftDays(-6), shiftDays(0));
     load();
     pollTimer = setInterval(function () {
         if (document.hidden) return;

@@ -41,6 +41,10 @@ require __DIR__ . '/includes/header.php';
             <button type="button" data-range="30d">30 days</button>
             <button type="button" data-range="all">All</button>
         </div>
+        <div class="lc-vis-dates">
+            <label>From <input type="date" id="lc-visitors-from" aria-label="From date"></label>
+            <label>To <input type="date" id="lc-visitors-to" aria-label="To date"></label>
+        </div>
         <div class="lc-vis-toolbar-tools">
             <?php if ($agentBrandId === null && !empty($brands)): ?>
             <select id="lc-visitors-brand" class="lc-traffic-brand" aria-label="Filter by brand">

@@ -91,13 +91,48 @@ try {
         lc_json(['success' => true, 'ip' => $ip, 'clicks' => $clicks]);
     }
 
-    $rangeSql = '';
-    if ($range === 'today') {
-        $rangeSql = ' AND pv.visited_at >= UTC_DATE()';
+    $tzName = function_exists('lc_account_timezone') ? lc_account_timezone($accountId > 0 ? $accountId : null) : 'UTC';
+    try {
+        $tz = new DateTimeZone($tzName);
+    } catch (Throwable $e) {
+        $tz = new DateTimeZone('UTC');
+    }
+    $todayLocal = new DateTimeImmutable('now', $tz);
+    $fromIn = trim((string) ($_GET['from'] ?? ''));
+    $toIn = trim((string) ($_GET['to'] ?? ''));
+    $fromDay = null;
+    $toDay = null;
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromIn) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $toIn)) {
+        $fromDay = $fromIn;
+        $toDay = $toIn;
+        if ($fromDay > $toDay) {
+            $swap = $fromDay;
+            $fromDay = $toDay;
+            $toDay = $swap;
+        }
+        $range = 'custom';
+    } elseif ($range === 'today') {
+        $fromDay = $toDay = $todayLocal->format('Y-m-d');
     } elseif ($range === '30d') {
-        $rangeSql = ' AND pv.visited_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)';
+        $fromDay = $todayLocal->modify('-29 days')->format('Y-m-d');
+        $toDay = $todayLocal->format('Y-m-d');
     } elseif ($range === '7d') {
-        $rangeSql = ' AND pv.visited_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)';
+        $fromDay = $todayLocal->modify('-6 days')->format('Y-m-d');
+        $toDay = $todayLocal->format('Y-m-d');
+    }
+
+    $dateSql = '';
+    $dateParams = [];
+    $rangeStart = null;
+    $rangeEnd = null;
+    if ($fromDay !== null && $toDay !== null) {
+        $rangeStart = new DateTimeImmutable($fromDay . ' 00:00:00', $tz);
+        $rangeEnd = (new DateTimeImmutable($toDay . ' 00:00:00', $tz))->modify('+1 day');
+        $dateSql = ' AND pv.visited_at >= ? AND pv.visited_at < ?';
+        $dateParams = [
+            $rangeStart->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+            $rangeEnd->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+        ];
     }
 
     $searchSql = '';
@@ -107,7 +142,8 @@ try {
         $like = '%' . $q . '%';
         $searchParams = [$like, $like, $like, $like, $like];
     }
-    $scopedWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> '' {$rangeSql} {$searchSql}";
+    $scopedWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> '' {$dateSql} {$searchSql}";
+    $scopeParams = array_merge($brandParams, $dateParams, $searchParams);
 
     $statsStmt = $db->prepare("
         SELECT COUNT(DISTINCT v.ip_address) AS ips, COUNT(pv.id) AS clicks
@@ -115,7 +151,7 @@ try {
         INNER JOIN visitors v ON v.id = pv.visitor_id
         WHERE {$scopedWhere}
     ");
-    $statsStmt->execute(array_merge($brandParams, $searchParams));
+    $statsStmt->execute($scopeParams);
     $statsRow = $statsStmt->fetch() ?: ['ips' => 0, 'clicks' => 0];
 
     $listStmt = $db->prepare("
@@ -141,7 +177,7 @@ try {
         ORDER BY pv.id DESC
         LIMIT 200
     ");
-    $listStmt->execute(array_merge($brandParams, $brandParams, $searchParams));
+    $listStmt->execute(array_merge($brandParams, $scopeParams));
 
     $visitors = [];
     foreach ($listStmt->fetchAll() as $row) {
@@ -173,9 +209,11 @@ try {
     $todayStmt->execute(array_merge($brandParams, $searchParams));
     $todayClicks = (int) $todayStmt->fetchColumn();
 
-    $bucketSql = $range === 'today'
-        ? 'HOUR(pv.visited_at)'
-        : 'DATE(pv.visited_at)';
+    $tzOffset = $todayLocal->format('P');
+    $sameDay = $rangeStart !== null && $fromDay === $toDay;
+    $bucketSql = $sameDay
+        ? "HOUR(CONVERT_TZ(pv.visited_at, '+00:00', " . $db->quote($tzOffset) . '))'
+        : "DATE(CONVERT_TZ(pv.visited_at, '+00:00', " . $db->quote($tzOffset) . '))';
     $seriesStmt = $db->prepare("
         SELECT {$bucketSql} AS bucket, COUNT(*) AS clicks
         FROM visitor_page_views pv
@@ -184,30 +222,46 @@ try {
         GROUP BY {$bucketSql}
         ORDER BY bucket ASC
     ");
-    $seriesStmt->execute(array_merge($brandParams, $searchParams));
+    $seriesStmt->execute($scopeParams);
     $bucketMap = [];
     foreach ($seriesStmt->fetchAll() as $bucketRow) {
         $bucketMap[(string) $bucketRow['bucket']] = (int) $bucketRow['clicks'];
     }
 
     $series = [];
-    if ($range === 'today') {
-        $hourNow = (int) gmdate('G');
-        for ($hour = 0; $hour <= $hourNow; $hour++) {
+    if ($rangeStart !== null && $sameDay) {
+        $hourNow = (int) $todayLocal->format('G');
+        $lastHour = $fromDay === $todayLocal->format('Y-m-d') ? $hourNow : 23;
+        for ($hour = 0; $hour <= $lastHour; $hour++) {
             $series[] = [
-                'label' => $hour . ':00 UTC',
+                'label' => $hour . ':00',
                 'tick' => (string) $hour,
                 'clicks' => $bucketMap[(string) $hour] ?? 0,
             ];
         }
-    } else {
-        $days = $range === '30d' ? 30 : ($range === 'all' ? 14 : 7);
-        for ($i = $days - 1; $i >= 0; $i--) {
-            $day = gmdate('Y-m-d', time() - ($i * 86400));
+    } elseif ($rangeStart !== null) {
+        $span = (int) $rangeStart->diff($rangeEnd)->days;
+        $cursor = $span > 120 ? $rangeEnd->modify('-120 days') : $rangeStart;
+        $step = $span > 18 ? (int) ceil($span / 12) : 1;
+        $index = 0;
+        while ($cursor < $rangeEnd) {
+            $key = $cursor->format('Y-m-d');
             $series[] = [
-                'label' => gmdate('D j M', time() - ($i * 86400)),
-                'tick' => gmdate('j', time() - ($i * 86400)),
-                'clicks' => $bucketMap[$day] ?? 0,
+                'label' => $cursor->format('D j M'),
+                'tick' => ($index % $step) === 0 ? $cursor->format('j M') : '',
+                'clicks' => $bucketMap[$key] ?? 0,
+            ];
+            $cursor = $cursor->modify('+1 day');
+            $index++;
+        }
+    } else {
+        for ($i = 13; $i >= 0; $i--) {
+            $day = $todayLocal->modify('-' . $i . ' days');
+            $key = $day->format('Y-m-d');
+            $series[] = [
+                'label' => $day->format('D j M'),
+                'tick' => $day->format('j'),
+                'clicks' => $bucketMap[$key] ?? 0,
             ];
         }
     }
@@ -221,7 +275,7 @@ try {
         ORDER BY clicks DESC
         LIMIT 6
     ");
-    $pageStmt->execute(array_merge($brandParams, $searchParams));
+    $pageStmt->execute($scopeParams);
     $pages = [];
     foreach ($pageStmt->fetchAll() as $pageRow) {
         $url = (string) ($pageRow['page_url'] ?? '');
@@ -241,7 +295,7 @@ try {
         ORDER BY clicks DESC
         LIMIT 5
     ");
-    $countryStmt->execute(array_merge($brandParams, $searchParams));
+    $countryStmt->execute($scopeParams);
     $countries = [];
     foreach ($countryStmt->fetchAll() as $countryRow) {
         $countries[] = [
@@ -262,6 +316,8 @@ try {
         ],
         'report' => [
             'range' => $range,
+            'from' => $fromDay,
+            'to' => $toDay,
             'series' => $series,
             'pages' => $pages,
             'countries' => $countries,
