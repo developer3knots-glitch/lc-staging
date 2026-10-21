@@ -15,6 +15,10 @@ lc_ensure_page_views_schema();
 $q = trim((string) ($_GET['q'] ?? ''));
 $brandFilter = (int) ($_GET['brand'] ?? 0);
 $ip = trim((string) ($_GET['ip'] ?? ''));
+$range = strtolower(trim((string) ($_GET['range'] ?? '7d')));
+if (!in_array($range, ['today', '7d', '30d', 'all'], true)) {
+    $range = '7d';
+}
 
 try {
     $db = lc_db();
@@ -87,6 +91,15 @@ try {
         lc_json(['success' => true, 'ip' => $ip, 'clicks' => $clicks]);
     }
 
+    $rangeSql = '';
+    if ($range === 'today') {
+        $rangeSql = ' AND pv.visited_at >= UTC_DATE()';
+    } elseif ($range === '30d') {
+        $rangeSql = ' AND pv.visited_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)';
+    } elseif ($range === '7d') {
+        $rangeSql = ' AND pv.visited_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)';
+    }
+
     $searchSql = '';
     $searchParams = [];
     if ($q !== '') {
@@ -94,15 +107,13 @@ try {
         $like = '%' . $q . '%';
         $searchParams = [$like, $like, $like, $like, $like];
     }
+    $scopedWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> '' {$rangeSql} {$searchSql}";
 
     $statsStmt = $db->prepare("
         SELECT COUNT(DISTINCT v.ip_address) AS ips, COUNT(pv.id) AS clicks
         FROM visitor_page_views pv
         INNER JOIN visitors v ON v.id = pv.visitor_id
-        WHERE pv.{$brandSql}
-          AND v.ip_address IS NOT NULL
-          AND TRIM(v.ip_address) <> ''
-          {$searchSql}
+        WHERE {$scopedWhere}
     ");
     $statsStmt->execute(array_merge($brandParams, $searchParams));
     $statsRow = $statsStmt->fetch() ?: ['ips' => 0, 'clicks' => 0];
@@ -126,10 +137,7 @@ try {
             ) AS click_no
         FROM visitor_page_views pv
         INNER JOIN visitors v ON v.id = pv.visitor_id
-        WHERE pv.{$brandSql}
-          AND v.ip_address IS NOT NULL
-          AND TRIM(v.ip_address) <> ''
-          {$searchSql}
+        WHERE {$scopedWhere}
         ORDER BY pv.id DESC
         LIMIT 200
     ");
@@ -156,11 +164,107 @@ try {
         ];
     }
 
+    $baseWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> ''";
+    $todayStmt = $db->prepare("
+        SELECT COUNT(*) FROM visitor_page_views pv
+        INNER JOIN visitors v ON v.id = pv.visitor_id
+        WHERE {$baseWhere} AND pv.visited_at >= UTC_DATE() {$searchSql}
+    ");
+    $todayStmt->execute(array_merge($brandParams, $searchParams));
+    $todayClicks = (int) $todayStmt->fetchColumn();
+
+    $bucketSql = $range === 'today'
+        ? 'HOUR(pv.visited_at)'
+        : 'DATE(pv.visited_at)';
+    $seriesStmt = $db->prepare("
+        SELECT {$bucketSql} AS bucket, COUNT(*) AS clicks
+        FROM visitor_page_views pv
+        INNER JOIN visitors v ON v.id = pv.visitor_id
+        WHERE {$scopedWhere}
+        GROUP BY {$bucketSql}
+        ORDER BY bucket ASC
+    ");
+    $seriesStmt->execute(array_merge($brandParams, $searchParams));
+    $bucketMap = [];
+    foreach ($seriesStmt->fetchAll() as $bucketRow) {
+        $bucketMap[(string) $bucketRow['bucket']] = (int) $bucketRow['clicks'];
+    }
+
+    $series = [];
+    if ($range === 'today') {
+        $hourNow = (int) gmdate('G');
+        for ($hour = 0; $hour <= $hourNow; $hour++) {
+            $series[] = [
+                'label' => $hour . ':00 UTC',
+                'tick' => (string) $hour,
+                'clicks' => $bucketMap[(string) $hour] ?? 0,
+            ];
+        }
+    } else {
+        $days = $range === '30d' ? 30 : ($range === 'all' ? 14 : 7);
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $day = gmdate('Y-m-d', time() - ($i * 86400));
+            $series[] = [
+                'label' => gmdate('D j M', time() - ($i * 86400)),
+                'tick' => gmdate('j', time() - ($i * 86400)),
+                'clicks' => $bucketMap[$day] ?? 0,
+            ];
+        }
+    }
+
+    $pageStmt = $db->prepare("
+        SELECT pv.page_url, MAX(pv.page_title) AS page_title, COUNT(*) AS clicks
+        FROM visitor_page_views pv
+        INNER JOIN visitors v ON v.id = pv.visitor_id
+        WHERE {$scopedWhere}
+        GROUP BY pv.page_url
+        ORDER BY clicks DESC
+        LIMIT 6
+    ");
+    $pageStmt->execute(array_merge($brandParams, $searchParams));
+    $pages = [];
+    foreach ($pageStmt->fetchAll() as $pageRow) {
+        $url = (string) ($pageRow['page_url'] ?? '');
+        $pages[] = [
+            'label' => trim((string) ($pageRow['page_title'] ?? '')) !== '' ? (string) $pageRow['page_title'] : $pagePath($url),
+            'path' => $pagePath($url),
+            'clicks' => (int) $pageRow['clicks'],
+        ];
+    }
+
+    $countryStmt = $db->prepare("
+        SELECT COALESCE(NULLIF(TRIM(v.country), ''), 'Unknown') AS country, COUNT(*) AS clicks
+        FROM visitor_page_views pv
+        INNER JOIN visitors v ON v.id = pv.visitor_id
+        WHERE {$scopedWhere}
+        GROUP BY COALESCE(NULLIF(TRIM(v.country), ''), 'Unknown')
+        ORDER BY clicks DESC
+        LIMIT 5
+    ");
+    $countryStmt->execute(array_merge($brandParams, $searchParams));
+    $countries = [];
+    foreach ($countryStmt->fetchAll() as $countryRow) {
+        $countries[] = [
+            'label' => (string) $countryRow['country'],
+            'clicks' => (int) $countryRow['clicks'],
+        ];
+    }
+
+    $ips = (int) ($statsRow['ips'] ?? 0);
+    $clicks = (int) ($statsRow['clicks'] ?? 0);
     lc_json([
         'success' => true,
         'stats' => [
-            'ips' => (int) ($statsRow['ips'] ?? 0),
-            'clicks' => (int) ($statsRow['clicks'] ?? 0),
+            'ips' => $ips,
+            'clicks' => $clicks,
+            'today' => $todayClicks,
+            'avg' => $ips > 0 ? round($clicks / $ips, 1) : 0,
+        ],
+        'report' => [
+            'range' => $range,
+            'series' => $series,
+            'pages' => $pages,
+            'countries' => $countries,
         ],
         'visitors' => $visitors,
     ]);

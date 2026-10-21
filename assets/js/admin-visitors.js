@@ -10,6 +10,13 @@
     var refreshBtn = document.getElementById('lc-visitors-refresh');
     var statIps = document.getElementById('lc-visitors-stat-ips');
     var statClicks = document.getElementById('lc-visitors-stat-clicks');
+    var statToday = document.getElementById('lc-visitors-stat-today');
+    var statAvg = document.getElementById('lc-visitors-stat-avg');
+    var chartEl = document.getElementById('lc-vis-chart');
+    var chartNote = document.getElementById('lc-vis-chart-note');
+    var pagesEl = document.getElementById('lc-vis-pages');
+    var countriesEl = document.getElementById('lc-vis-countries');
+    var range = '7d';
     var searchQ = '';
     var searchTimer = null;
     var seenIds = {};
@@ -42,11 +49,59 @@
         var url = base + '/api/agent-visitors.php';
         var parts = [];
         if (ip) parts.push('ip=' + encodeURIComponent(ip));
+        parts.push('range=' + encodeURIComponent(range));
         if (searchQ) parts.push('q=' + encodeURIComponent(searchQ));
         if (brandSelect && brandSelect.value && brandSelect.value !== '0') {
             parts.push('brand=' + encodeURIComponent(brandSelect.value));
         }
         return parts.length ? url + '?' + parts.join('&') : url;
+    }
+
+    function rangeNote() {
+        if (range === 'today') return 'Today, by hour';
+        if (range === '30d') return 'Last 30 days';
+        if (range === 'all') return 'Last 14 days';
+        return 'Last 7 days';
+    }
+
+    function paintRanks(el, items, emptyText) {
+        if (!el) return;
+        if (!items.length) {
+            el.innerHTML = '<p class="lc-vis-empty">' + esc(emptyText) + '</p>';
+            return;
+        }
+        var max = 1;
+        items.forEach(function (item) { if (item.clicks > max) max = item.clicks; });
+        el.innerHTML = items.map(function (item) {
+            var width = Math.max(6, Math.round((item.clicks / max) * 100));
+            return '<div class="lc-vis-rank">' +
+                '<div class="lc-vis-rank-copy"><strong>' + esc(item.label || '—') + '</strong>' +
+                (item.path ? '<span>' + esc(item.path) + '</span>' : '') +
+                '</div>' +
+                '<span class="lc-vis-rank-track"><i style="width:' + width + '%"></i></span>' +
+                '<b>' + esc(item.clicks) + '</b></div>';
+        }).join('');
+    }
+
+    function paintReport(report) {
+        report = report || {};
+        if (chartNote) chartNote.textContent = rangeNote();
+        var series = report.series || [];
+        if (!chartEl) return;
+        if (!series.length) {
+            chartEl.innerHTML = '<p class="lc-vis-empty">No clicks in this range.</p>';
+        } else {
+            var max = 1;
+            series.forEach(function (point) { if (point.clicks > max) max = point.clicks; });
+            chartEl.innerHTML = series.map(function (point) {
+                var height = point.clicks > 0 ? Math.max(8, Math.round((point.clicks / max) * 100)) : 3;
+                return '<div class="lc-vis-bar" title="' + esc(point.label) + ': ' + esc(point.clicks) + '">' +
+                    '<span style="height:' + height + '%"></span>' +
+                    '<small>' + esc(point.tick || '') + '</small></div>';
+            }).join('');
+        }
+        paintRanks(pagesEl, report.pages || [], 'No pages yet.');
+        paintRanks(countriesEl, report.countries || [], 'No countries yet.');
     }
 
     function render(rows) {
@@ -94,6 +149,9 @@
                 var stats = data.stats || {};
                 if (statIps) statIps.textContent = String(stats.ips || 0);
                 if (statClicks) statClicks.textContent = String(stats.clicks || 0);
+                if (statToday) statToday.textContent = String(stats.today || 0);
+                if (statAvg) statAvg.textContent = String(stats.avg || 0);
+                paintReport(data.report || {});
                 render(data.visitors || []);
             })
             .catch(function () {
@@ -103,6 +161,18 @@
                 if (refreshBtn && !quiet) refreshBtn.classList.remove('is-spinning');
             });
     }
+
+    root.querySelectorAll('[data-range]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            range = btn.getAttribute('data-range') || '7d';
+            root.querySelectorAll('[data-range]').forEach(function (other) {
+                other.classList.toggle('is-on', other === btn);
+            });
+            seenIds = {};
+            lastSig = '';
+            load();
+        });
+    });
 
     if (searchInput) {
         searchInput.addEventListener('input', function () {
