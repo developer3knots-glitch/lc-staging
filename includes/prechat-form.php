@@ -149,14 +149,23 @@ function lc_prechat_builder_markup(array $config, bool $enabled): string
         . '<label>Button <input type="text" class="lc-prechat-button" maxlength="40" autocomplete="off"></label>'
         . '</div></section>'
         . '<section class="lc-prechat-card">'
-        . '<header class="lc-prechat-card-head"><h4>Fields</h4><p>Turn a field off to hide it. Use the arrows to change the order.</p></header>'
+        . '<header class="lc-prechat-card-head"><div><h4>Fields</h4><p>Add what visitors should fill in. Remove anything you do not want.</p></div><span class="lc-prechat-field-count"></span></header>'
         . '<div class="lc-prechat-field-list"></div>'
-        . '<div class="lc-prechat-add"><span>Add a question</span>'
-        . '<button type="button" data-add-field="text"><i class="ti ti-forms"></i> Short text</button>'
-        . '<button type="button" data-add-field="textarea"><i class="ti ti-align-left"></i> Long text</button>'
-        . '<button type="button" data-add-field="select"><i class="ti ti-selector"></i> Dropdown</button>'
-        . '<button type="button" data-add-field="checkbox"><i class="ti ti-square-check"></i> Checkbox</button>'
-        . '</div></section></div>'
+        . '<div class="lc-prechat-add"><span>Add a field</span>'
+        . '<p class="lc-prechat-add-label">Standard</p>'
+        . '<div class="lc-prechat-add-grid">'
+        . '<button type="button" data-add-field="name" data-add-hint="Visitor name"><i class="ti ti-user"></i><strong>Name</strong><small>Visitor name</small></button>'
+        . '<button type="button" data-add-field="email" data-add-hint="Visitor email"><i class="ti ti-mail"></i><strong>Email</strong><small>Visitor email</small></button>'
+        . '<button type="button" data-add-field="phone" data-add-hint="Phone number"><i class="ti ti-phone"></i><strong>Phone</strong><small>Phone number</small></button>'
+        . '<button type="button" data-add-field="message" data-add-hint="First message"><i class="ti ti-message"></i><strong>Message</strong><small>First message</small></button>'
+        . '</div>'
+        . '<p class="lc-prechat-add-label">Your own question</p>'
+        . '<div class="lc-prechat-add-grid">'
+        . '<button type="button" data-add-field="text" data-add-hint="One line"><i class="ti ti-forms"></i><strong>Short text</strong><small>One line</small></button>'
+        . '<button type="button" data-add-field="textarea" data-add-hint="A longer answer"><i class="ti ti-align-left"></i><strong>Long text</strong><small>A longer answer</small></button>'
+        . '<button type="button" data-add-field="select" data-add-hint="Pick one option"><i class="ti ti-selector"></i><strong>Dropdown</strong><small>Pick one option</small></button>'
+        . '<button type="button" data-add-field="checkbox" data-add-hint="Yes or no"><i class="ti ti-square-check"></i><strong>Checkbox</strong><small>Yes or no</small></button>'
+        . '</div></div></section></div>'
         . '<aside class="lc-prechat-preview" aria-hidden="true"></aside>'
         . '</div>'
         . '<input type="hidden" name="prechat_form_config" class="lc-prechat-config-input" value="">'
@@ -280,12 +289,7 @@ function lc_normalize_prechat_form_config($raw): array
         ];
     }
 
-    foreach ($builtins as $id => $def) {
-        if (!isset($seen[$id]) && count($fields) < 12) {
-            $fields[] = $def;
-        }
-    }
-    if ($fields === []) {
+    if ($fields === [] && $fieldsIn !== []) {
         return $defaults;
     }
 

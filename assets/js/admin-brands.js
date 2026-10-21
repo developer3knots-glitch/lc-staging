@@ -259,6 +259,64 @@
                 sync();
             });
         }
+        var openFieldId = null;
+        var presets = {
+            name: { id: 'name', type: 'name', enabled: true, required: true, label: 'Full name', placeholder: 'John Smith', options: [] },
+            email: { id: 'email', type: 'email', enabled: true, required: true, label: 'Work email', placeholder: 'you@company.com', options: [] },
+            phone: { id: 'phone', type: 'phone', enabled: true, required: false, label: 'Phone', placeholder: '+1 555 0100', options: [] },
+            message: { id: 'message', type: 'message', enabled: true, required: true, label: 'How can we help?', placeholder: 'Describe your question or request...', options: [] }
+        };
+        cfg.fields = (cfg.fields || []).filter(function (field) { return field && field.enabled; });
+        function customCount() {
+            return (cfg.fields || []).filter(function (field) { return !builtinIds[field.id]; }).length;
+        }
+        function updateAddButtons() {
+            var count = root.querySelector('.lc-prechat-field-count');
+            if (count) count.textContent = (cfg.fields || []).length + ' on this form';
+            root.querySelectorAll('[data-add-field]').forEach(function (btn) {
+                var kind = btn.getAttribute('data-add-field') || '';
+                var used = !!builtinIds[kind] && (cfg.fields || []).some(function (field) { return field.id === kind; });
+                var full = !used && (customCount() >= 8 || (cfg.fields || []).length >= 12);
+                if (builtinIds[kind]) full = used || (cfg.fields || []).length >= 12;
+                btn.disabled = !!(used || full);
+                btn.classList.toggle('is-used', used);
+                var hint = btn.querySelector('small');
+                if (hint) hint.textContent = used ? 'Already added' : (full ? 'Limit reached' : (btn.getAttribute('data-add-hint') || ''));
+            });
+        }
+        function addField(kind) {
+            if ((cfg.fields || []).length >= 12) {
+                window.alert('This form can have up to 12 fields.');
+                return;
+            }
+            if (builtinIds[kind]) {
+                if ((cfg.fields || []).some(function (field) { return field.id === kind; })) return;
+                if (!presets[kind]) return;
+                cfg.fields.push(JSON.parse(JSON.stringify(presets[kind])));
+                openFieldId = kind;
+            } else {
+                if (customCount() >= 8) {
+                    window.alert('You can add up to 8 custom fields.');
+                    return;
+                }
+                var id = 'c' + Math.random().toString(36).slice(2, 10);
+                cfg.fields.push({
+                    id: id,
+                    type: kind,
+                    enabled: true,
+                    required: false,
+                    label: kind === 'checkbox' ? 'I agree' : 'Question',
+                    placeholder: kind === 'select' ? 'Select' : '',
+                    options: kind === 'select' ? ['Option 1', 'Option 2'] : []
+                });
+                openFieldId = id;
+            }
+            renderFields();
+            paintPreview();
+            sync();
+            var fresh = fieldList.querySelector('.lc-prechat-field.is-open');
+            if (fresh && fresh.scrollIntoView) fresh.scrollIntoView({ block: 'nearest' });
+        }
         function moveField(index, dir) {
             var next = index + dir;
             if (next < 0 || next >= cfg.fields.length) return;
@@ -270,21 +328,48 @@
         }
         function renderFields() {
             fieldList.textContent = '';
+            if (!cfg.fields.length) {
+                var empty = document.createElement('div');
+                empty.className = 'lc-prechat-field-empty';
+                empty.textContent = 'No fields yet. Use Add a field below.';
+                fieldList.appendChild(empty);
+            }
             cfg.fields.forEach(function (field, index) {
+                var open = openFieldId === field.id;
                 var row = document.createElement('div');
-                row.className = 'lc-prechat-field' + (field.enabled ? '' : ' is-off');
+                row.className = 'lc-prechat-field' + (open ? ' is-open' : '');
                 var top = document.createElement('div');
                 top.className = 'lc-prechat-field-top';
+                var summary = document.createElement('button');
+                summary.type = 'button';
+                summary.className = 'lc-prechat-field-summary';
+                var name = document.createElement('strong');
+                name.textContent = field.label || typeNames[field.type] || 'Field';
                 var badge = document.createElement('span');
                 badge.className = 'lc-prechat-type';
                 badge.textContent = typeNames[field.type] || 'Field';
-                top.appendChild(badge);
+                summary.appendChild(name);
+                summary.appendChild(badge);
+                if (field.required) {
+                    var req = document.createElement('span');
+                    req.className = 'lc-prechat-req';
+                    req.textContent = 'Required';
+                    summary.appendChild(req);
+                }
+                var chevron = document.createElement('i');
+                chevron.className = 'ti ' + (open ? 'ti-chevron-up' : 'ti-chevron-down');
+                summary.appendChild(chevron);
+                summary.addEventListener('click', function () {
+                    openFieldId = open ? null : field.id;
+                    renderFields();
+                });
+                top.appendChild(summary);
                 var moves = document.createElement('div');
                 moves.className = 'lc-prechat-field-moves';
-                function iconBtn(icon, label, fn, disabled, danger) {
+                function iconBtn(icon, label, fn, disabled) {
                     var b = document.createElement('button');
                     b.type = 'button';
-                    b.className = 'lc-prechat-icon' + (danger ? ' is-danger' : '');
+                    b.className = 'lc-prechat-icon';
                     b.title = label;
                     b.setAttribute('aria-label', label);
                     b.disabled = !!disabled;
@@ -292,18 +377,26 @@
                     b.addEventListener('click', fn);
                     return b;
                 }
-                moves.appendChild(iconBtn('ti-arrow-up', 'Move up', function () { moveField(index, -1); }, index === 0, false));
-                moves.appendChild(iconBtn('ti-arrow-down', 'Move down', function () { moveField(index, 1); }, index === cfg.fields.length - 1, false));
-                if (!builtinIds[field.id]) {
-                    moves.appendChild(iconBtn('ti-trash', 'Remove field', function () {
-                        cfg.fields.splice(index, 1);
-                        renderFields();
-                        paintPreview();
-                        sync();
-                    }, false, true));
-                }
+                moves.appendChild(iconBtn('ti-arrow-up', 'Move up', function () { moveField(index, -1); }, index === 0));
+                moves.appendChild(iconBtn('ti-arrow-down', 'Move down', function () { moveField(index, 1); }, index === cfg.fields.length - 1));
+                var remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'lc-prechat-remove';
+                remove.innerHTML = '<i class="ti ti-trash"></i> Remove';
+                remove.addEventListener('click', function () {
+                    if (openFieldId === field.id) openFieldId = null;
+                    cfg.fields.splice(index, 1);
+                    renderFields();
+                    paintPreview();
+                    sync();
+                });
+                moves.appendChild(remove);
                 top.appendChild(moves);
                 row.appendChild(top);
+                if (!open) {
+                    fieldList.appendChild(row);
+                    return;
+                }
                 function textField(caption, value, max, onInput) {
                     var lab = document.createElement('label');
                     lab.appendChild(document.createTextNode(caption));
@@ -318,6 +411,7 @@
                 }
                 row.appendChild(textField('Label', field.label, 80, function (value) {
                     field.label = value;
+                    name.textContent = value.trim() || typeNames[field.type] || 'Field';
                     paintPreview();
                     sync();
                 }));
@@ -365,16 +459,9 @@
                     lab.appendChild(sw);
                     return lab;
                 }
-                toggles.appendChild(toggle('Show on form', field.enabled, function (on) {
-                    field.enabled = on;
-                    if (!on) field.required = false;
-                    renderFields();
-                    paintPreview();
-                    sync();
-                }));
                 toggles.appendChild(toggle('Required', field.required, function (on) {
                     field.required = on;
-                    if (on) field.enabled = true;
+                    field.enabled = true;
                     renderFields();
                     paintPreview();
                     sync();
@@ -382,6 +469,7 @@
                 row.appendChild(toggles);
                 fieldList.appendChild(row);
             });
+            updateAddButtons();
         }
 
         bindText(titleInput, 'title');
@@ -393,24 +481,8 @@
 
         root.querySelectorAll('[data-add-field]').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var custom = (cfg.fields || []).filter(function (field) { return !builtinIds[field.id]; }).length;
-                if (custom >= 8) {
-                    window.alert('You can add up to 8 custom fields.');
-                    return;
-                }
-                var type = btn.getAttribute('data-add-field') || 'text';
-                cfg.fields.push({
-                    id: 'c' + Math.random().toString(36).slice(2, 10),
-                    type: type,
-                    enabled: true,
-                    required: false,
-                    label: type === 'checkbox' ? 'I agree' : 'Question',
-                    placeholder: type === 'select' ? 'Select' : '',
-                    options: type === 'select' ? ['Option 1', 'Option 2'] : []
-                });
-                renderFields();
-                paintPreview();
-                sync();
+                if (btn.disabled) return;
+                addField(btn.getAttribute('data-add-field') || 'text');
             });
         });
 

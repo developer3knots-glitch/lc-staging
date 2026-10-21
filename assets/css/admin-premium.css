@@ -16204,8 +16204,24 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     background: #fff;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
+.lc-prechat-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
 .lc-prechat-card-head h4 { margin: 0; font-size: 0.95rem; }
 .lc-prechat-card-head p { margin: 0.2rem 0 0.8rem; color: #64748b; font-size: 0.8rem; }
+.lc-prechat-field-count {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
 .lc-prechat-copy,
 .lc-prechat-field { display: grid; gap: 0.7rem; }
 .lc-prechat-copy { grid-template-columns: 1fr 1fr; }
@@ -16246,23 +16262,82 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
 }
 .lc-prechat-field {
-    padding: 0.85rem;
-    margin-bottom: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.5rem;
     border: 1px solid #e8edf3;
     border-radius: 14px;
+    background: #fff;
+}
+.lc-prechat-field.is-open {
+    padding: 0.7rem 0.75rem 0.85rem;
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+.lc-prechat-field-empty {
+    margin-bottom: 0.75rem;
+    padding: 0.9rem 0.85rem;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    color: #64748b;
+    font-size: 0.84rem;
     background: #f8fafc;
 }
-.lc-prechat-field.is-off { opacity: 0.55; }
 .lc-prechat-field-top,
 .lc-prechat-field-moves,
-.lc-prechat-toggles,
-.lc-prechat-add {
+.lc-prechat-toggles {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
 }
-.lc-prechat-field-top { justify-content: space-between; }
+.lc-prechat-field-top { justify-content: space-between; gap: 0.6rem; }
+.lc-prechat-field-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.2rem;
+    border: 0;
+    background: transparent;
+    color: #0f172a;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.lc-prechat-field-summary strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+.lc-prechat-field-summary .ti { margin-left: auto; color: #94a3b8; }
+.lc-prechat-req {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #166534;
+    background: #dcfce7;
+    border-radius: 999px;
+    padding: 0.12rem 0.45rem;
+}
+.lc-prechat-remove {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    height: 32px;
+    padding: 0 0.65rem;
+    border: 1px solid #fecaca;
+    border-radius: 9px;
+    background: #fff;
+    color: #b91c1c;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.lc-prechat-remove:hover { background: #fef2f2; }
 .lc-prechat-type {
     font-size: 0.68rem;
     font-weight: 700;
@@ -16318,32 +16393,67 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
     color: #334155;
 }
 .lc-prechat-add {
-    margin-top: 0.35rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed #e2e8f0;
+    display: block;
+    margin-top: 0.85rem;
+    padding: 0.85rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
 }
-.lc-prechat-add span {
-    width: 100%;
-    font-size: 0.72rem;
+.lc-prechat-add > span {
+    display: block;
+    margin-bottom: 0.65rem;
+    font-size: 0.84rem;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #0f172a;
+}
+.lc-prechat-add-label {
+    margin: 0.65rem 0 0.4rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     color: #94a3b8;
 }
+.lc-prechat-add-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+}
 .lc-prechat-add button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    width: 100%;
+    min-height: 74px;
     border: 1px solid #e2e8f0;
-    background: #fff;
+    background: #f8fafc;
     color: #0f172a;
-    border-radius: 999px;
-    padding: 0.4rem 0.7rem;
+    border-radius: 12px;
+    padding: 0.6rem 0.65rem;
     font-size: 0.78rem;
     font-weight: 700;
+    text-align: left;
     cursor: pointer;
 }
-.lc-prechat-add button:hover { border-color: #0f172a; }
+.lc-prechat-add button i { font-size: 1.05rem; color: #0f172a; }
+.lc-prechat-add button small {
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #64748b;
+}
+.lc-prechat-add button:hover { border-color: #0f172a; background: #fff; }
+.lc-prechat-add button:disabled,
+.lc-prechat-add button.is-used {
+    opacity: 0.55;
+    cursor: default;
+    background: #f1f5f9;
+}
 .lc-pc-stage {
     position: sticky;
     top: 1rem;
@@ -16424,6 +16534,7 @@ body.lc-traffic-meta-open .lc-traffic-meta-backdrop {
 @media (max-width: 980px) {
     .lc-prechat-builder-grid,
     .lc-prechat-copy { grid-template-columns: 1fr; }
+    .lc-prechat-add-grid { grid-template-columns: 1fr 1fr; }
     .lc-pc-stage { position: static; }
 }
 
