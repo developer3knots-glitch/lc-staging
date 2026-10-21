@@ -46,6 +46,22 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('window_focused', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN window_focused TINYINT(1) NOT NULL DEFAULT 1 AFTER presence_ts');
         }
+        if (!in_array('visit_started_at', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN visit_started_at DATETIME NULL DEFAULT NULL AFTER created_at');
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function lc_mark_visitor_visit_started(int $visitorId): void
+{
+    if ($visitorId < 1) {
+        return;
+    }
+    lc_ensure_visitor_presence_schema();
+    try {
+        lc_db()->prepare('UPDATE visitors SET visit_started_at = UTC_TIMESTAMP() WHERE id = ?')
+            ->execute([$visitorId]);
     } catch (Throwable $e) {
     }
 }

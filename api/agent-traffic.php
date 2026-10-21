@@ -161,7 +161,7 @@ try {
         )
         {$searchSql}
         ORDER BY
-            COALESCE(c.last_message_at, v.last_seen, v.created_at) DESC,
+            COALESCE(v.visit_started_at, v.created_at) DESC,
             v.id DESC
         LIMIT 200
     ";

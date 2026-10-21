@@ -55,6 +55,7 @@ try {
         $ins->execute([$visitorUid, $ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]);
         $visitorId = (int) $db->lastInsertId();
         $isNewVisitor = true;
+        lc_mark_visitor_visit_started($visitorId);
         if (function_exists('lc_record_visitor_ip') && $ip !== '') {
             lc_record_visitor_ip($visitorId, $ip);
         }
@@ -178,6 +179,9 @@ try {
         if ($prevTs !== false && (time() - $prevTs) < 90 && !$wasLeft) {
             $wasAway = false;
         }
+    }
+    if ($wasLeft || $wasAway) {
+        lc_mark_visitor_visit_started($visitorId);
     }
     // Notify on first land / return / IP rotate — never on quiet SPA hops or heartbeats.
     // Important: new visitors must notify. Insert sets last_seen=NOW which used to

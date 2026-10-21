@@ -127,6 +127,9 @@ try {
             $country,
         ]);
         $visitorId = (int) $db->lastInsertId();
+        if (function_exists('lc_mark_visitor_visit_started')) {
+            lc_mark_visitor_visit_started($visitorId);
+        }
         $visitorName = $name;
         $visitorEmail = $email;
         if (function_exists('lc_record_visitor_ip') && $ip !== '') {

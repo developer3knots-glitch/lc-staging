@@ -446,6 +446,7 @@
         allSessionRows.forEach(function (row) {
             var key = visitorKey(row);
             if (!key || !seenOnSite[key]) return;
+            if (row.status === 'left' && freshMap[key]) return;
             used[key] = true;
             if (freshMap[key]) {
                 out.push(freshMap[key]);
