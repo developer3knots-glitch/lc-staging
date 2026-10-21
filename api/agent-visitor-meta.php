@@ -2,6 +2,9 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/pageviews.php';
 require_once __DIR__ . '/../includes/ip-resume.php';
+if (is_file(__DIR__ . '/../includes/attachments.php')) {
+    require_once __DIR__ . '/../includes/attachments.php';
+}
 
 $agent = lc_auth_agent();
 if (!$agent) {
@@ -197,27 +200,44 @@ try {
         || ($createdTs !== false && (time() - $createdTs) > 180);
 
     $messages = [];
+    $notes = [];
     if ($conv) {
+        if (function_exists('lc_ensure_attachments_schema')) {
+            lc_ensure_attachments_schema();
+        }
+        $selectSql = function_exists('lc_attachment_message_select_sql')
+            ? lc_attachment_message_select_sql()
+            : 'm.id, m.sender_type, m.sender_id, m.message, m.created_at, m.is_read';
         $msgStmt = $db->prepare("
-            SELECT id, sender_type, message, created_at
-            FROM messages
-            WHERE conversation_id = ? AND sender_type IN ('visitor', 'agent')
-            ORDER BY id DESC
-            LIMIT 40
+            SELECT {$selectSql},
+                   CASE WHEN m.sender_type = 'agent' THEN a.name ELSE NULL END AS agent_name
+            FROM messages m
+            LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type = 'agent'
+            WHERE m.conversation_id = ?
+            ORDER BY m.id DESC
+            LIMIT 300
         ");
         $msgStmt->execute([(int) $conv['id']]);
         $msgRows = array_reverse($msgStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
         foreach ($msgRows as $msg) {
-            $text = trim(strip_tags((string) ($msg['message'] ?? '')));
-            if ($text === '') {
+            if (function_exists('lc_format_message_row')) {
+                $formatted = lc_format_message_row($msg);
+                if (!empty($formatted['created_at']) && function_exists('lc_to_iso8601')) {
+                    $formatted['created_at'] = lc_to_iso8601($formatted['created_at']);
+                }
+                $messages[] = $formatted;
                 continue;
             }
             $messages[] = [
-                'id' => (int) $msg['id'],
-                'sender' => (string) ($msg['sender_type'] ?? ''),
-                'text' => function_exists('mb_substr') ? mb_substr($text, 0, 500) : substr($text, 0, 500),
+                'id' => (int) ($msg['id'] ?? 0),
+                'sender_type' => (string) ($msg['sender_type'] ?? 'system'),
+                'message' => (string) ($msg['message'] ?? ''),
+                'agent_name' => (string) ($msg['agent_name'] ?? ''),
                 'created_at' => !empty($msg['created_at']) && function_exists('lc_to_iso8601') ? lc_to_iso8601($msg['created_at']) : null,
             ];
+        }
+        if (function_exists('lc_get_conversation_notes')) {
+            $notes = lc_get_conversation_notes((int) $conv['id']);
         }
     }
 
@@ -251,12 +271,16 @@ try {
             'ticket' => $ticket,
             'conversation_id' => $conv ? (int) $conv['id'] : null,
             'conversation_status' => $conv ? (string) ($conv['status'] ?? '') : '',
+            'started_at' => $conv && !empty($conv['started_at']) && function_exists('lc_to_iso8601') ? lc_to_iso8601($conv['started_at']) : null,
+            'chat_count' => (int) ($stats['chat_count'] ?? 0),
+            'page_count' => (int) ($stats['page_count'] ?? count($pages)),
             'chat_url' => $conv ? lc_admin_url('chats', ['id' => (int) $conv['id']]) : '',
             'device' => $deviceLabel,
             'clicks' => count($pages),
             'geo' => $geo,
             'pages' => $pages,
             'messages' => $messages,
+            'notes' => $notes,
         ],
     ]);
 } catch (Throwable $e) {

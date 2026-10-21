@@ -15,7 +15,7 @@ if ($agentBrandId === null && $accountId > 0) {
 
 $pageTitle = 'Visitors';
 $activeNav = 'visitors';
-$extraScripts = ['admin-visitors.js'];
+$extraScripts = ['lc-chat-attachments.js', 'admin-visitors.js'];
 require __DIR__ . '/includes/header.php';
 ?>
 
@@ -115,68 +115,65 @@ require __DIR__ . '/includes/header.php';
     </section>
 </div>
 
-<aside class="lc-traffic-meta lc-details-rail" id="lc-vis-meta" aria-hidden="true" aria-label="Visitor details">
-    <div class="lc-details-rail-top">
-        <div class="lc-details-rail-tabs">
-            <button type="button" class="lc-details-rail-tab is-active" aria-label="Visitor profile"><i class="ti ti-user"></i></button>
-        </div>
-        <button type="button" class="lc-details-drawer-close" id="lc-vis-meta-close" title="Close" aria-label="Close">
-            <i class="ti ti-x"></i>
-        </button>
-    </div>
-    <div class="lc-chat-details-body lc-details-rail-body" id="lc-vis-meta-body">
-        <div class="lc-details-acc is-open">
-            <div class="lc-details-acc-head" aria-hidden="true"><span>Visited pages</span></div>
-            <div class="lc-details-acc-body">
-                <ul class="lc-details-pages-list" id="lc-vis-meta-pages"></ul>
-                <p class="lc-details-pages-empty" id="lc-vis-meta-pages-empty">No pages recorded yet</p>
+<div class="lc-hx-archive" id="lc-vis-archive" hidden>
+    <div class="lc-hx-archive-backdrop" id="lc-vis-archive-backdrop" tabindex="-1"></div>
+    <div class="lc-hx-archive-panel" role="dialog" aria-modal="true" aria-labelledby="lc-vis-archive-title">
+        <header class="lc-hx-archive-head">
+            <button type="button" class="lc-hx-archive-back" id="lc-vis-archive-close" aria-label="Back to visitors">
+                <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                <span>Back to visitors</span>
+            </button>
+            <div class="lc-hx-archive-head-main">
+                <h2 class="lc-hx-archive-title" id="lc-vis-archive-title">Visitor</h2>
+                <p class="lc-hx-archive-sub" id="lc-vis-archive-sub"></p>
             </div>
-        </div>
-        <div class="lc-details-hero">
-            <div class="lc-details-hero-av" id="lc-vis-meta-av">V</div>
-            <h3 class="lc-details-hero-name" id="lc-vis-meta-name">Visitor</h3>
-            <p class="lc-details-hero-location"><span id="lc-vis-meta-location">—</span></p>
-            <p class="lc-details-hero-sub"><span id="lc-vis-meta-ip">—</span></p>
-        </div>
-        <div class="lc-details-contact">
-            <h4 class="lc-details-contact-title">Contact</h4>
-            <div class="lc-details-kv-list">
-                <div class="lc-details-kv"><dt>Name</dt><dd id="lc-vis-meta-contact-name">—</dd></div>
-                <div class="lc-details-kv"><dt>Email</dt><dd id="lc-vis-meta-email">—</dd></div>
-                <div class="lc-details-kv"><dt>Phone</dt><dd id="lc-vis-meta-phone">—</dd></div>
-            </div>
-        </div>
-        <div class="lc-details-map-wrap" id="lc-vis-meta-map-wrap" hidden>
-            <iframe id="lc-vis-meta-map" title="Visitor location" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
-        </div>
-        <div class="lc-details-acc is-open">
-            <div class="lc-details-acc-head" aria-hidden="true"><span>Details</span></div>
-            <div class="lc-details-acc-body">
-                <dl class="lc-details-kv-list">
-                    <div class="lc-details-kv"><dt>Clicks</dt><dd id="lc-vis-meta-clicks">—</dd></div>
-                    <div class="lc-details-kv"><dt>Last seen</dt><dd id="lc-vis-meta-seen">—</dd></div>
-                    <div class="lc-details-kv"><dt>Came from</dt><dd id="lc-vis-meta-from">—</dd></div>
-                    <div class="lc-details-kv"><dt>Current page</dt><dd id="lc-vis-meta-page">—</dd></div>
-                    <div class="lc-details-kv"><dt>Brand</dt><dd id="lc-vis-meta-brand">—</dd></div>
-                    <div class="lc-details-kv"><dt>Device</dt><dd id="lc-vis-meta-device">—</dd></div>
-                </dl>
-            </div>
-        </div>
-        <div class="lc-details-acc is-open" id="lc-vis-meta-chat">
-            <div class="lc-details-acc-head" aria-hidden="true"><span>Chat</span></div>
-            <div class="lc-details-acc-body">
-                <p class="lc-vis-chat-empty" id="lc-vis-meta-chat-empty">No chat for this visitor.</p>
-                <div id="lc-vis-meta-chat-box" hidden>
-                    <div class="lc-vis-chat-bar">
-                        <span id="lc-vis-meta-chat-status">—</span>
-                        <a id="lc-vis-meta-chat-link" href="#">Open chat</a>
-                    </div>
-                    <div class="lc-vis-chat-log" id="lc-vis-meta-chat-log"></div>
+            <span class="lc-hx-archive-badge" id="lc-vis-archive-ticket"></span>
+        </header>
+        <div class="lc-hx-archive-body">
+            <div class="lc-hx-archive-feed" id="lc-vis-archive-feed" aria-live="polite">
+                <div class="lc-hx-archive-loading" id="lc-vis-archive-loading">
+                    <i class="ti ti-loader-2" aria-hidden="true"></i> Loading transcript…
                 </div>
+                <div class="lc-hx-archive-messages lc-messages" id="lc-vis-archive-messages" hidden></div>
+                <div class="lc-hx-archive-empty" id="lc-vis-archive-empty" hidden>No chat for this visitor.</div>
+                <div class="lc-hx-archive-error" id="lc-vis-archive-error" hidden>Could not load this visitor.</div>
             </div>
+            <aside class="lc-hx-archive-details" aria-label="Visitor details">
+                <h3 class="lc-hx-archive-details-title">Details</h3>
+                <p class="lc-hx-archive-location" id="lc-vis-d-location">—</p>
+                <div class="lc-hx-archive-map" id="lc-vis-map-wrap" hidden>
+                    <iframe id="lc-vis-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                </div>
+                <dl class="lc-hx-archive-dl">
+                    <div><dt>Name</dt><dd id="lc-vis-d-name">—</dd></div>
+                    <div><dt>Email</dt><dd id="lc-vis-d-email">—</dd></div>
+                    <div><dt>Phone</dt><dd id="lc-vis-d-phone">—</dd></div>
+                    <div><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
+                    <div><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
+                    <div><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
+                    <div><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
+                    <div><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>
+                    <div><dt>Device</dt><dd id="lc-vis-d-device">—</dd></div>
+                    <div><dt>Groups</dt><dd id="lc-vis-d-group">—</dd></div>
+                    <div><dt>Ticket</dt><dd id="lc-vis-d-ticket">—</dd></div>
+                    <div><dt>Agent</dt><dd id="lc-vis-d-agent">—</dd></div>
+                    <div><dt>IP address</dt><dd id="lc-vis-d-ip">—</dd></div>
+                    <div><dt>Date</dt><dd id="lc-vis-d-date">—</dd></div>
+                    <div><dt>Status</dt><dd id="lc-vis-d-status">—</dd></div>
+                </dl>
+                <section class="lc-hx-archive-block">
+                    <h4>Visited pages</h4>
+                    <ul class="lc-details-pages-list" id="lc-vis-pages"></ul>
+                    <p class="lc-hx-archive-empty-line" id="lc-vis-pages-empty">No pages recorded yet</p>
+                </section>
+                <section class="lc-hx-archive-block">
+                    <h4>Internal notes <span class="lc-hx-notes-count" id="lc-vis-notes-count">0</span></h4>
+                    <div id="lc-vis-notes"></div>
+                </section>
+                <p class="lc-hx-archive-note">Read-only. Open the chat from Live Inbox if it is still open.</p>
+            </aside>
         </div>
     </div>
-</aside>
-<div class="lc-traffic-meta-backdrop" id="lc-vis-meta-backdrop" aria-hidden="true"></div>
+</div>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

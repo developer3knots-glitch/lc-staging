@@ -249,41 +249,76 @@
         });
     }
 
-    var metaPanel = document.getElementById('lc-vis-meta');
-    var metaBackdrop = document.getElementById('lc-vis-meta-backdrop');
-    var metaClose = document.getElementById('lc-vis-meta-close');
-    if (metaBackdrop && metaBackdrop.parentNode !== document.body) document.body.appendChild(metaBackdrop);
-    if (metaPanel && metaPanel.parentNode !== document.body) document.body.appendChild(metaPanel);
+    var archiveEl = document.getElementById('lc-vis-archive');
+    var archiveBackdrop = document.getElementById('lc-vis-archive-backdrop');
+    var archiveClose = document.getElementById('lc-vis-archive-close');
+    var archiveTitle = document.getElementById('lc-vis-archive-title');
+    var archiveSub = document.getElementById('lc-vis-archive-sub');
+    var archiveTicket = document.getElementById('lc-vis-archive-ticket');
+    var archiveLoading = document.getElementById('lc-vis-archive-loading');
+    var archiveMessages = document.getElementById('lc-vis-archive-messages');
+    var archiveEmpty = document.getElementById('lc-vis-archive-empty');
+    var archiveError = document.getElementById('lc-vis-archive-error');
+    var archiveFeed = document.getElementById('lc-vis-archive-feed');
 
-    function setMeta(id, value) {
+    function setDetail(id, value) {
         var el = document.getElementById(id);
         if (!el) return;
         var text = String(value || '').trim();
         el.textContent = text || '—';
     }
-    function seenLabel(iso) {
-        if (!iso) return '';
-        if (window.LCTime && window.LCTime.formatRelative) return window.LCTime.formatRelative(iso);
-        return iso;
+    function timeLabel(ts) {
+        if (!ts) return '';
+        try {
+            if (window.LCTime && window.LCTime.formatAbsolute) {
+                var d = window.LCTime.parseTimestamp ? window.LCTime.parseTimestamp(ts) : null;
+                if (d) return window.LCTime.formatAbsolute(d);
+            }
+            if (window.LCTime && window.LCTime.formatRelative) return window.LCTime.formatRelative(ts);
+        } catch (e) {}
+        return String(ts);
+    }
+    function hostFromUrl(url) {
+        try {
+            var host = new URL(url).hostname;
+            return host ? host.replace(/^www\./, '') : '';
+        } catch (e) {
+            return '';
+        }
+    }
+    function showArchiveState(state) {
+        if (archiveLoading) archiveLoading.hidden = state !== 'loading';
+        if (archiveMessages) archiveMessages.hidden = state !== 'ready';
+        if (archiveEmpty) archiveEmpty.hidden = state !== 'empty';
+        if (archiveError) archiveError.hidden = state !== 'error';
     }
     function paintMap(geo) {
-        var wrap = document.getElementById('lc-vis-meta-map-wrap');
-        var iframe = document.getElementById('lc-vis-meta-map');
+        var wrap = document.getElementById('lc-vis-map-wrap');
+        var iframe = document.getElementById('lc-vis-map');
         if (!wrap || !iframe) return;
         geo = geo || {};
+        var lat = geo.lat;
+        var lon = geo.lon;
         var label = String(geo.label || geo.country || '').trim();
-        if (!label || label === 'Unknown') {
-            iframe.removeAttribute('src');
+        var src = '';
+        if (String(geo.source || '').toLowerCase() === 'browser' && lat && lon) {
+            src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+        } else if (label && label !== 'Unknown') {
+            src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+        } else if (lat && lon) {
+            src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
+        }
+        if (!src) {
             wrap.hidden = true;
+            iframe.removeAttribute('src');
             return;
         }
         wrap.hidden = false;
-        var src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
         if (iframe.getAttribute('src') !== src) iframe.src = src;
     }
     function paintPages(pages) {
-        var list = document.getElementById('lc-vis-meta-pages');
-        var empty = document.getElementById('lc-vis-meta-pages-empty');
+        var list = document.getElementById('lc-vis-pages');
+        var empty = document.getElementById('lc-vis-pages-empty');
         if (!list) return;
         pages = pages || [];
         if (!pages.length) {
@@ -292,122 +327,183 @@
             return;
         }
         if (empty) empty.hidden = true;
-        list.innerHTML = pages.map(function (page, index) {
-            var url = page.page_url || page.page_path || '';
-            var title = page.page_title || page.page_path || url || 'Page';
-            var current = index === pages.length - 1;
-            return '<li class="lc-details-page-item' + (current ? ' is-current' : '') + '">' +
-                '<span class="lc-details-page-dot" aria-hidden="true"></span>' +
-                '<div class="lc-details-page-body"><span class="lc-details-page-title">' + esc(title) + '</span>' +
-                (url ? '<a class="lc-details-page-link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(page.page_path || url) + '</a>' : '') +
-                '</div></li>';
-        }).join('');
-    }
-    function paintChat(visitor) {
-        var empty = document.getElementById('lc-vis-meta-chat-empty');
-        var box = document.getElementById('lc-vis-meta-chat-box');
-        var log = document.getElementById('lc-vis-meta-chat-log');
-        var link = document.getElementById('lc-vis-meta-chat-link');
-        var status = document.getElementById('lc-vis-meta-chat-status');
-        var hasChat = !!(visitor && visitor.conversation_id);
-        if (empty) empty.hidden = hasChat;
-        if (box) box.hidden = !hasChat;
-        if (!hasChat || !log) return;
-        var label = visitor.conversation_status || 'Chat';
-        if (visitor.agent_name) label += ' · ' + visitor.agent_name;
-        if (status) status.textContent = label;
-        if (link) {
-            link.href = visitor.chat_url || '#';
-            link.hidden = !visitor.chat_url;
+        var html = '';
+        for (var i = 0; i < pages.length; i++) {
+            var page = pages[i] || {};
+            var href = page.page_url || '';
+            var title = page.page_title || page.page_path || href || 'Page';
+            var when = timeLabel(page.visited_at);
+            html += '<li class="lc-details-page-item' + (i === pages.length - 1 ? ' is-current' : '') + '">';
+            html += '<span class="lc-details-page-dot" aria-hidden="true"></span>';
+            html += '<div class="lc-details-page-body">';
+            html += '<span class="lc-details-page-title">' + esc(title) + '</span>';
+            if (href) {
+                html += '<a class="lc-details-page-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(page.page_path || href) + '</a>';
+            }
+            if (when) html += '<span class="lc-details-page-time">' + esc(when) + '</span>';
+            html += '</div></li>';
         }
-        var messages = visitor.messages || [];
-        if (!messages.length) {
-            log.innerHTML = '<p class="lc-vis-chat-empty">Chat exists, but there are no messages yet.</p>';
+        list.innerHTML = html;
+    }
+    function paintNotes(notes) {
+        var box = document.getElementById('lc-vis-notes');
+        var countEl = document.getElementById('lc-vis-notes-count');
+        notes = notes || [];
+        if (countEl) countEl.textContent = String(notes.length);
+        if (!box) return;
+        if (!notes.length) {
+            box.innerHTML = '<p class="lc-hx-archive-empty-line">No internal notes yet</p>';
             return;
         }
-        log.innerHTML = messages.map(function (msg) {
-            var who = msg.sender === 'agent' ? 'Agent' : 'Visitor';
-            return '<div class="lc-vis-chat-msg is-' + esc(msg.sender || 'visitor') + '">' +
-                '<strong>' + esc(who) + '</strong>' +
-                '<p>' + esc(msg.text || '') + '</p>' +
-                '<small>' + esc(seenLabel(msg.created_at)) + '</small></div>';
+        box.innerHTML = notes.map(function (n) {
+            return '<article class="lc-hx-note">' +
+                '<strong>' + esc(n.agent_name || 'Agent') + '</strong>' +
+                '<time>' + esc(timeLabel(n.created_at) || n.time_label || '') + '</time>' +
+                '<p>' + esc(n.note || '') + '</p></article>';
         }).join('');
-        log.scrollTop = log.scrollHeight;
     }
-    function paintMeta(row, extra) {
-        extra = extra || {};
-        var name = extra.name || (row && row.name) || 'Visitor';
-        var ip = extra.ip || (row && row.ip) || '';
-        var av = document.getElementById('lc-vis-meta-av');
-        if (av) {
-            av.textContent = extra.initials || (row && row.initials) || 'V';
-            av.style.background = colorFor(name);
+    function renderArchiveMessage(m) {
+        var sender = m.sender_type || 'system';
+        var cls = 'lc-msg ' + sender;
+        var text = m.message || '';
+        if (sender === 'system' && text.indexOf('support ticket reference') !== -1) cls += ' is-ticket-ref';
+        if (sender === 'system' && text.indexOf('transferred this chat') !== -1) cls += ' is-transfer';
+        if (sender === 'system' && text.indexOf('Visitor closed the live chat') !== -1) cls += ' is-visitor-close';
+        var label = sender === 'agent' ? (m.agent_name || 'Agent') : (sender === 'visitor' ? 'Visitor' : '');
+        var bodyHtml = (window.LCChatFiles && m.attachment)
+            ? window.LCChatFiles.renderAttachmentHtml(m.attachment, text)
+            : esc(text);
+        var html = '<div class="' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + esc(String(m.id || '')) + '">';
+        html += '<div class="lc-msg-body">' + bodyHtml + '</div>';
+        html += '<div class="lc-msg-foot"><span class="lc-msg-time">';
+        html += esc(timeLabel(m.created_at));
+        if (label && sender !== 'system') {
+            html += '<span class="lc-meta-sep" aria-hidden="true"></span>' + esc(label);
         }
-        setMeta('lc-vis-meta-name', name);
-        setMeta('lc-vis-meta-location', (extra.geo && extra.geo.label) || extra.country || (row && row.country) || '');
-        setMeta('lc-vis-meta-ip', ip ? ('IP ' + ip) : '');
-        setMeta('lc-vis-meta-contact-name', name === 'Visitor' ? '' : name);
-        setMeta('lc-vis-meta-email', extra.email || '');
-        setMeta('lc-vis-meta-phone', extra.phone || '');
-        setMeta('lc-vis-meta-clicks', (row && row.clicks) || extra.clicks || '');
-        setMeta('lc-vis-meta-seen', seenLabel(extra.last_seen || ''));
-        setMeta('lc-vis-meta-from', extra.referrer || '');
-        setMeta('lc-vis-meta-page', extra.page_url || (row && row.page_url) || '');
-        setMeta('lc-vis-meta-brand', extra.brand_name || '');
-        setMeta('lc-vis-meta-device', extra.device || '');
-        paintPages(extra.pages || []);
-        paintMap(extra.geo || null);
-        paintChat(extra);
+        html += '</span></div></div>';
+        return html;
     }
-    function closeMeta() {
+    function paintArchive(row, visitor) {
+        visitor = visitor || {};
+        var name = (visitor.name || (row && row.name) || 'Visitor').trim() || 'Visitor';
+        var ip = (visitor.ip || (row && row.ip) || '').trim();
+        var statusRaw = (visitor.conversation_status || '').trim();
+        var status = statusRaw ? statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1) : (visitor.conversation_id ? 'Chat' : 'No chat');
+        var geo = visitor.geo || {};
+        var location = (geo.label || visitor.country || (row && row.country) || '').trim();
+        if (location && location !== 'Unknown') {
+            location += String(geo.source || 'ip').toLowerCase() === 'browser' ? ' (device GPS)' : ' (approx. from IP)';
+        }
+        var chats = parseInt(visitor.chat_count, 10) || 0;
+        var pages = parseInt(visitor.page_count, 10) || ((visitor.pages || []).length);
+        var returningLine = visitor.conversation_id || visitor.returning
+            ? ((visitor.returning ? 'Returning' : 'New visitor') + (chats ? ', ' + chats + ' chat' + (chats === 1 ? '' : 's') : ''))
+            : '';
+        if (pages > 0 && returningLine) returningLine += ', ' + pages + ' page' + (pages === 1 ? '' : 's');
+        var date = timeLabel(visitor.started_at);
+        var agent = visitor.agent_name || '';
+        if (archiveTitle) archiveTitle.textContent = name;
+        if (archiveSub) {
+            var bits = [];
+            if (date) bits.push(date);
+            if (agent) bits.push('Agent: ' + agent);
+            if (!visitor.conversation_id) bits.push('No chat yet');
+            archiveSub.textContent = bits.join(' · ');
+        }
+        if (archiveTicket) archiveTicket.textContent = visitor.ticket || '';
+        setDetail('lc-vis-d-name', name === 'Visitor' ? '' : name);
+        setDetail('lc-vis-d-email', visitor.email || '');
+        setDetail('lc-vis-d-phone', visitor.phone || '');
+        setDetail('lc-vis-d-clicks', (row && row.clicks) || visitor.clicks || '');
+        setDetail('lc-vis-d-location', location);
+        setDetail('lc-vis-d-returning', returningLine);
+        setDetail('lc-vis-d-seen', timeLabel(visitor.last_seen));
+        setDetail('lc-vis-d-from', hostFromUrl(visitor.referrer || '') || visitor.referrer || '');
+        setDetail('lc-vis-d-page', visitor.page_url || (row && row.page_url) || '');
+        setDetail('lc-vis-d-device', visitor.device || '');
+        setDetail('lc-vis-d-group', visitor.brand_name || '');
+        setDetail('lc-vis-d-ticket', visitor.ticket || '');
+        setDetail('lc-vis-d-agent', agent);
+        setDetail('lc-vis-d-ip', ip);
+        setDetail('lc-vis-d-date', date);
+        setDetail('lc-vis-d-status', status);
+        paintMap(geo);
+        paintPages(visitor.pages || []);
+        paintNotes(visitor.notes || []);
+        var messages = visitor.messages || [];
+        if (!visitor.conversation_id) {
+            if (archiveMessages) archiveMessages.innerHTML = '';
+            if (archiveEmpty) archiveEmpty.textContent = 'No chat for this visitor.';
+            showArchiveState('empty');
+            return;
+        }
+        if (!messages.length) {
+            if (archiveMessages) archiveMessages.innerHTML = '';
+            if (archiveEmpty) archiveEmpty.textContent = 'No messages in this chat.';
+            showArchiveState('empty');
+            return;
+        }
+        if (archiveMessages) archiveMessages.innerHTML = messages.map(renderArchiveMessage).join('');
+        showArchiveState('ready');
+        if (archiveFeed) archiveFeed.scrollTop = archiveFeed.scrollHeight;
+    }
+    function closeArchive() {
         openVisitorId = 0;
         openMetaToken++;
-        document.body.classList.remove('lc-traffic-meta-open');
-        if (metaPanel) metaPanel.setAttribute('aria-hidden', 'true');
-        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'true');
+        if (archiveEl) archiveEl.hidden = true;
+        document.body.classList.remove('lc-hx-archive-open');
         if (bodyEl) {
             bodyEl.querySelectorAll('.lc-visitors-row').forEach(function (tr) {
                 tr.classList.remove('is-meta-open');
             });
         }
     }
-    function openMeta(visitorId, ip) {
+    function openArchive(visitorId, ip) {
         visitorId = parseInt(visitorId, 10) || 0;
-        if ((!visitorId && !ip) || !metaPanel) return;
+        if ((!visitorId && !ip) || !archiveEl) return;
         var row = rowByVisitor[visitorId] || null;
         openVisitorId = visitorId;
-        document.body.classList.add('lc-traffic-meta-open');
-        metaPanel.setAttribute('aria-hidden', 'false');
-        if (metaBackdrop) metaBackdrop.setAttribute('aria-hidden', 'false');
+        archiveEl.hidden = false;
+        document.body.classList.add('lc-hx-archive-open');
         if (bodyEl) {
             bodyEl.querySelectorAll('.lc-visitors-row').forEach(function (tr) {
                 tr.classList.toggle('is-meta-open', (parseInt(tr.getAttribute('data-visitor-id'), 10) || 0) === visitorId);
             });
         }
-        paintMeta(row, { ip: ip || (row && row.ip) || '' });
+        if (archiveTitle) archiveTitle.textContent = (row && row.name) || 'Visitor';
+        if (archiveSub) archiveSub.textContent = ip || (row && row.ip) || '';
+        if (archiveTicket) archiveTicket.textContent = '';
+        if (archiveMessages) archiveMessages.innerHTML = '';
+        showArchiveState('loading');
         var token = ++openMetaToken;
         var url = base + '/api/agent-visitor-meta.php?' + (visitorId ? ('visitor_id=' + encodeURIComponent(visitorId)) : ('ip=' + encodeURIComponent(ip || '')));
         fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (token !== openMetaToken) return;
-                if (!data || !data.success || !data.visitor) return;
-                paintMeta(row, data.visitor);
+                if (!data || !data.success || !data.visitor) {
+                    showArchiveState('error');
+                    return;
+                }
+                paintArchive(row, data.visitor);
             })
-            .catch(function () {});
+            .catch(function () {
+                if (token !== openMetaToken) return;
+                showArchiveState('error');
+            });
     }
     if (bodyEl) {
         bodyEl.addEventListener('click', function (e) {
             if (e.target.closest('a, button')) return;
             var row = e.target.closest('.lc-visitors-row');
             if (!row) return;
-            openMeta(row.getAttribute('data-visitor-id'), row.getAttribute('data-ip'));
+            openArchive(row.getAttribute('data-visitor-id'), row.getAttribute('data-ip'));
         });
     }
-    if (metaClose) metaClose.addEventListener('click', closeMeta);
-    if (metaBackdrop) metaBackdrop.addEventListener('click', closeMeta);
+    if (archiveClose) archiveClose.addEventListener('click', closeArchive);
+    if (archiveBackdrop) archiveBackdrop.addEventListener('click', closeArchive);
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && openVisitorId) closeMeta();
+        if (e.key === 'Escape' && archiveEl && !archiveEl.hidden) closeArchive();
     });
 
     setDates(shiftDays(-6), shiftDays(0));
