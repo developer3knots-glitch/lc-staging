@@ -635,6 +635,19 @@
         var el = listEl ? listEl.querySelector('.lc-chat-item[data-id="' + conversationId + '"]') : null;
         if (el) {
             var foot = el.querySelector('.lc-chat-item-foot');
+            if (foot && el.dataset.status === 'waiting') {
+                var waitingChip = foot.querySelector('.lc-badge-waiting');
+                if (!waitingChip) {
+                    var replaced = foot.querySelector('.lc-badge-presence, .lc-badge-active');
+                    if (replaced) {
+                        replaced.className = 'lc-badge lc-badge-waiting';
+                        replaced.textContent = 'Incoming';
+                    } else {
+                        foot.insertAdjacentHTML('beforeend', '<span class="lc-badge lc-badge-waiting">Incoming</span>');
+                    }
+                }
+                return;
+            }
             if (foot) {
                 var old = foot.querySelector('.lc-badge-presence, .lc-badge-active, .lc-badge-waiting, .lc-badge-closed');
                 var badgeCls = 'lc-badge lc-badge-presence is-' + presence.status;
@@ -1335,11 +1348,14 @@
         var unreadCount = parseInt(c.unread, 10) || 0;
         if (c.ip_blocked) {
             // Blocked replaces the normal active/waiting status chip
-        } else if (!isViewing && unreadCount > 0) {
-            html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
         } else {
+            if (!isViewing && unreadCount > 0) {
+                html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
+            }
             var isOtherAgentActive = status === 'active' && parseInt(c.agent_id || 0, 10) > 0 && parseInt(c.agent_id || 0, 10) !== myAgentId;
-            if (isOtherAgentActive && c.is_supervising) {
+            if (status === 'waiting') {
+                html += '<span class="lc-badge lc-badge-waiting">Incoming</span>';
+            } else if (isOtherAgentActive && c.is_supervising) {
                 html += '<span class="lc-badge lc-badge-supervising"><i class="ti ti-shield-check"></i> Supervising</span>';
             } else {
                 // Prefer live visitor engagement over conversation "active" (was misleading)
