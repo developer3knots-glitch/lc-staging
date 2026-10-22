@@ -118,6 +118,71 @@
             link.classList.toggle('is-active', link.getAttribute('href') === '#' + id);
         });
     }
+    var railSort = document.getElementById('lc-rail-sort');
+    var railPreview = document.getElementById('lc-rail-preview');
+    if (railSort && railPreview) {
+        function paintRailPreview() {
+            railPreview.innerHTML = '';
+            railSort.querySelectorAll('.lc-rail-sort-item').forEach(function (item) {
+                var label = item.querySelector('.lc-rail-sort-copy strong');
+                var block = document.createElement('div');
+                block.className = 'lc-rail-preview-block';
+                block.textContent = label ? label.textContent : '';
+                railPreview.appendChild(block);
+            });
+        }
+        function moveRailItem(item, direction) {
+            if (!item) return;
+            var sibling = direction < 0 ? item.previousElementSibling : item.nextElementSibling;
+            if (!sibling) return;
+            if (direction < 0) {
+                railSort.insertBefore(item, sibling);
+            } else {
+                railSort.insertBefore(sibling, item);
+            }
+            paintRailPreview();
+        }
+        railSort.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-rail-move]');
+            if (!btn) return;
+            moveRailItem(btn.closest('.lc-rail-sort-item'), btn.getAttribute('data-rail-move') === 'up' ? -1 : 1);
+        });
+        var dragItem = null;
+        railSort.addEventListener('pointerdown', function (e) {
+            var handle = e.target.closest('.lc-rail-drag');
+            if (!handle) return;
+            dragItem = handle.closest('.lc-rail-sort-item');
+            if (!dragItem) return;
+            dragItem.classList.add('is-dragging');
+            try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        railSort.addEventListener('pointermove', function (e) {
+            if (!dragItem) return;
+            var rows = railSort.children;
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                if (row === dragItem) continue;
+                var box = row.getBoundingClientRect();
+                if (e.clientY < box.top || e.clientY > box.bottom) continue;
+                if (e.clientY < box.top + box.height / 2) {
+                    railSort.insertBefore(dragItem, row);
+                } else if (row.nextElementSibling !== dragItem) {
+                    railSort.insertBefore(dragItem, row.nextElementSibling);
+                }
+                break;
+            }
+        });
+        function endRailDrag() {
+            if (!dragItem) return;
+            dragItem.classList.remove('is-dragging');
+            dragItem = null;
+            paintRailPreview();
+        }
+        railSort.addEventListener('pointerup', endRailDrag);
+        railSort.addEventListener('pointercancel', endRailDrag);
+        paintRailPreview();
+    }
+
     if (navLinks.length && sections.length) {
         var start = (window.location.hash || '').replace('#', '');
         showSettingsSection(start || 'lc-settings-system');

@@ -432,36 +432,44 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-hx-archive-empty" id="lc-hx-archive-empty" hidden>No messages in this chat.</div>
                 <div class="lc-hx-archive-error" id="lc-hx-archive-error" hidden>Could not load this chat.</div>
             </div>
-            <aside class="lc-hx-archive-details" aria-label="Visitor details">
+            <aside class="lc-hx-archive-details lc-rail-order" aria-label="Visitor details">
                 <h3 class="lc-hx-archive-details-title">Details</h3>
-                <p class="lc-hx-archive-location" id="lc-hx-d-location">—</p>
-                <div class="lc-hx-archive-map" id="lc-hx-map-wrap" hidden>
+                <div data-rail-section="profile">
+                    <p class="lc-hx-archive-location" id="lc-hx-d-location">—</p>
+                </div>
+                <div class="lc-hx-archive-map" id="lc-hx-map-wrap" data-rail-section="map" hidden>
                     <iframe id="lc-hx-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
-                <dl class="lc-hx-archive-dl">
-                    <div><dt>Name</dt><dd id="lc-hx-d-name">—</dd></div>
-                    <div><dt>Email</dt><dd id="lc-hx-d-email">—</dd></div>
-                    <div><dt>Phone</dt><dd id="lc-hx-d-phone">—</dd></div>
-                    <div><dt>Returning visitor</dt><dd id="lc-hx-d-returning">—</dd></div>
-                    <div><dt>Last seen</dt><dd id="lc-hx-d-seen">—</dd></div>
-                    <div><dt>Came from</dt><dd id="lc-hx-d-from">—</dd></div>
-                    <div><dt>Chat page</dt><dd id="lc-hx-d-page">—</dd></div>
-                    <div id="lc-hx-gclid-row" hidden><dt>GCLID</dt><dd class="lc-details-copyline"><span id="lc-hx-d-gclid">—</span><button type="button" class="lc-meta-copy" data-copy-target="lc-hx-d-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd></div>
-                    <div><dt>Device</dt><dd id="lc-hx-d-device">—</dd></div>
-                    <div><dt>Groups</dt><dd id="lc-hx-d-group">—</dd></div>
-                    <div><dt>Ticket</dt><dd id="lc-hx-d-ticket">—</dd></div>
-                    <div><dt>Agent</dt><dd id="lc-hx-d-agent">—</dd></div>
-                    <div><dt>IP address</dt><dd id="lc-hx-d-ip">—</dd></div>
-                    <div><dt>Date</dt><dd id="lc-hx-d-date">—</dd></div>
-                    <div><dt>Chat duration</dt><dd id="lc-hx-d-duration">—</dd></div>
-                    <div><dt>Status</dt><dd id="lc-hx-d-status">Closed</dd></div>
-                </dl>
-                <section class="lc-hx-archive-block">
+                <div data-rail-section="contact">
+                    <dl class="lc-hx-archive-dl">
+                        <div><dt>Name</dt><dd id="lc-hx-d-name">—</dd></div>
+                        <div><dt>Email</dt><dd id="lc-hx-d-email">—</dd></div>
+                        <div><dt>Phone</dt><dd id="lc-hx-d-phone">—</dd></div>
+                    </dl>
+                </div>
+                <div data-rail-section="info">
+                    <dl class="lc-hx-archive-dl">
+                        <div><dt>Returning visitor</dt><dd id="lc-hx-d-returning">—</dd></div>
+                        <div><dt>Last seen</dt><dd id="lc-hx-d-seen">—</dd></div>
+                        <div><dt>Came from</dt><dd id="lc-hx-d-from">—</dd></div>
+                        <div><dt>Chat page</dt><dd id="lc-hx-d-page">—</dd></div>
+                        <div id="lc-hx-gclid-row" hidden><dt>GCLID</dt><dd class="lc-details-copyline"><span id="lc-hx-d-gclid">—</span><button type="button" class="lc-meta-copy" data-copy-target="lc-hx-d-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div><dt>Device</dt><dd id="lc-hx-d-device">—</dd></div>
+                        <div><dt>Groups</dt><dd id="lc-hx-d-group">—</dd></div>
+                        <div><dt>Ticket</dt><dd id="lc-hx-d-ticket">—</dd></div>
+                        <div><dt>Agent</dt><dd id="lc-hx-d-agent">—</dd></div>
+                        <div><dt>IP address</dt><dd id="lc-hx-d-ip">—</dd></div>
+                        <div><dt>Date</dt><dd id="lc-hx-d-date">—</dd></div>
+                        <div><dt>Chat duration</dt><dd id="lc-hx-d-duration">—</dd></div>
+                        <div><dt>Status</dt><dd id="lc-hx-d-status">Closed</dd></div>
+                    </dl>
+                </div>
+                <section class="lc-hx-archive-block" data-rail-section="pages">
                     <h4>Visited pages</h4>
                     <ul class="lc-details-pages-list" id="lc-hx-pages"></ul>
                     <p class="lc-hx-archive-empty-line" id="lc-hx-pages-empty">No pages recorded yet</p>
                 </section>
-                <section class="lc-hx-archive-block">
+                <section class="lc-hx-archive-block" data-rail-section="notes">
                     <h4>Internal notes <span class="lc-hx-notes-count" id="lc-hx-notes-count">0</span></h4>
                     <div id="lc-hx-notes"></div>
                 </section>

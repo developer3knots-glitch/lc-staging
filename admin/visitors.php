@@ -138,35 +138,43 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-hx-archive-empty" id="lc-vis-archive-empty" hidden>No chat for this visitor.</div>
                 <div class="lc-hx-archive-error" id="lc-vis-archive-error" hidden>Could not load this visitor.</div>
             </div>
-            <aside class="lc-hx-archive-details" aria-label="Visitor details">
+            <aside class="lc-hx-archive-details lc-rail-order" aria-label="Visitor details">
                 <h3 class="lc-hx-archive-details-title">Details</h3>
-                <p class="lc-hx-archive-location" id="lc-vis-d-location">—</p>
-                <div class="lc-hx-archive-map" id="lc-vis-map-wrap" hidden>
+                <div data-rail-section="profile">
+                    <p class="lc-hx-archive-location" id="lc-vis-d-location">—</p>
+                </div>
+                <div class="lc-hx-archive-map" id="lc-vis-map-wrap" data-rail-section="map" hidden>
                     <iframe id="lc-vis-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
-                <dl class="lc-hx-archive-dl">
-                    <div><dt>Name</dt><dd id="lc-vis-d-name">—</dd></div>
-                    <div><dt>Email</dt><dd id="lc-vis-d-email">—</dd></div>
-                    <div><dt>Phone</dt><dd id="lc-vis-d-phone">—</dd></div>
-                    <div><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
-                    <div><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
-                    <div><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
-                    <div><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
-                    <div><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>
-                    <div><dt>Device</dt><dd id="lc-vis-d-device">—</dd></div>
-                    <div><dt>Groups</dt><dd id="lc-vis-d-group">—</dd></div>
-                    <div><dt>Ticket</dt><dd id="lc-vis-d-ticket">—</dd></div>
-                    <div><dt>Agent</dt><dd id="lc-vis-d-agent">—</dd></div>
-                    <div><dt>IP address</dt><dd id="lc-vis-d-ip">—</dd></div>
-                    <div><dt>Date</dt><dd id="lc-vis-d-date">—</dd></div>
-                    <div><dt>Status</dt><dd id="lc-vis-d-status">—</dd></div>
-                </dl>
-                <section class="lc-hx-archive-block">
+                <div data-rail-section="contact">
+                    <dl class="lc-hx-archive-dl">
+                        <div><dt>Name</dt><dd id="lc-vis-d-name">—</dd></div>
+                        <div><dt>Email</dt><dd id="lc-vis-d-email">—</dd></div>
+                        <div><dt>Phone</dt><dd id="lc-vis-d-phone">—</dd></div>
+                    </dl>
+                </div>
+                <div data-rail-section="info">
+                    <dl class="lc-hx-archive-dl">
+                        <div><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
+                        <div><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
+                        <div><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
+                        <div><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
+                        <div><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>
+                        <div><dt>Device</dt><dd id="lc-vis-d-device">—</dd></div>
+                        <div><dt>Groups</dt><dd id="lc-vis-d-group">—</dd></div>
+                        <div><dt>Ticket</dt><dd id="lc-vis-d-ticket">—</dd></div>
+                        <div><dt>Agent</dt><dd id="lc-vis-d-agent">—</dd></div>
+                        <div><dt>IP address</dt><dd id="lc-vis-d-ip">—</dd></div>
+                        <div><dt>Date</dt><dd id="lc-vis-d-date">—</dd></div>
+                        <div><dt>Status</dt><dd id="lc-vis-d-status">—</dd></div>
+                    </dl>
+                </div>
+                <section class="lc-hx-archive-block" data-rail-section="pages">
                     <h4>Visited pages</h4>
                     <ul class="lc-details-pages-list" id="lc-vis-pages"></ul>
                     <p class="lc-hx-archive-empty-line" id="lc-vis-pages-empty">No pages recorded yet</p>
                 </section>
-                <section class="lc-hx-archive-block">
+                <section class="lc-hx-archive-block" data-rail-section="notes">
                     <h4>Internal notes <span class="lc-hx-notes-count" id="lc-vis-notes-count">0</span></h4>
                     <div id="lc-vis-notes"></div>
                 </section>

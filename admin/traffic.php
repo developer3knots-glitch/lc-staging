@@ -139,15 +139,15 @@ require __DIR__ . '/includes/header.php';
                 <i class="ti ti-x"></i>
             </button>
         </div>
-        <div class="lc-chat-details-body lc-details-rail-body" id="lc-traffic-meta-body">
-            <div class="lc-details-acc is-open">
+        <div class="lc-chat-details-body lc-details-rail-body lc-rail-order" id="lc-traffic-meta-body">
+            <div class="lc-details-acc is-open" data-rail-section="pages">
                 <div class="lc-details-acc-head" aria-hidden="true"><span>Visited pages</span></div>
                 <div class="lc-details-acc-body">
                     <ul class="lc-details-pages-list" id="lc-traffic-pages"></ul>
                     <p class="lc-details-pages-empty" id="lc-traffic-pages-empty">No pages recorded yet</p>
                 </div>
             </div>
-            <div class="lc-details-hero">
+            <div class="lc-details-hero" data-rail-section="profile">
                 <div class="lc-details-hero-av" id="lc-traffic-meta-av">V</div>
                 <h3 class="lc-details-hero-name" id="lc-traffic-meta-name">Visitor</h3>
                 <p class="lc-details-hero-location lc-details-copyline">
@@ -159,7 +159,7 @@ require __DIR__ . '/includes/header.php';
                     <button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-ip" aria-label="Copy IP" hidden><i class="ti ti-copy"></i></button>
                 </p>
             </div>
-            <div class="lc-details-contact">
+            <div class="lc-details-contact" data-rail-section="contact">
                 <h4 class="lc-details-contact-title">Contact</h4>
                 <div class="lc-details-kv-list">
                     <div class="lc-details-kv">
@@ -176,10 +176,10 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
             </div>
-            <div class="lc-details-map-wrap" id="lc-traffic-meta-map-wrap" hidden>
+            <div class="lc-details-map-wrap" id="lc-traffic-meta-map-wrap" data-rail-section="map" hidden>
                 <iframe id="lc-traffic-meta-map" title="Visitor location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
             </div>
-            <div class="lc-details-acc is-open">
+            <div class="lc-details-acc is-open" data-rail-section="info">
                 <div class="lc-details-acc-head" aria-hidden="true"><span>Additional info</span></div>
                 <div class="lc-details-acc-body">
                     <dl class="lc-details-kv-list">

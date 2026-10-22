@@ -301,7 +301,7 @@ require __DIR__ . '/includes/header.php';
                 <i class="ti ti-user-circle"></i>
                 <p>Customer details appear when you open a chat.</p>
             </div>
-            <div class="lc-chat-details-body lc-details-rail-body" id="lc-chat-details-body" hidden>
+            <div class="lc-chat-details-body lc-details-rail-body lc-rail-order" id="lc-chat-details-body" hidden>
                 <div class="lc-details-rail-top">
                     <div class="lc-details-rail-tabs">
                         <button type="button" class="lc-details-rail-tab is-active" aria-label="Customer profile"><i class="ti ti-user"></i></button>
@@ -312,7 +312,7 @@ require __DIR__ . '/includes/header.php';
                     </button>
                 </div>
 
-                <div class="lc-details-acc is-open" id="lc-details-pages-acc">
+                <div class="lc-details-acc is-open" id="lc-details-pages-acc" data-rail-section="pages">
                     <button type="button" class="lc-details-acc-head" id="lc-details-pages-toggle" aria-expanded="true" aria-controls="lc-details-pages-body">
                         <span>Visited pages</span>
                         <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
@@ -323,7 +323,7 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="lc-details-hero">
+                <div class="lc-details-hero" data-rail-section="profile">
                     <div class="lc-details-hero-av" id="lc-details-av">V</div>
                     <h3 class="lc-details-hero-name" id="lc-details-name">Visitor</h3>
                     <p class="lc-details-hero-location lc-details-copyline">
@@ -339,7 +339,7 @@ require __DIR__ . '/includes/header.php';
                     </button>
                 </div>
 
-                <div class="lc-details-contact" id="lc-details-contact">
+                <div class="lc-details-contact" id="lc-details-contact" data-rail-section="contact">
                     <h4 class="lc-details-contact-title">Contact</h4>
                     <label class="lc-details-contact-label" for="lc-details-name-input">Name</label>
                     <div class="lc-details-contact-copy">
@@ -363,11 +363,11 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="lc-details-map-wrap" id="lc-details-map-wrap" hidden>
+                <div class="lc-details-map-wrap" id="lc-details-map-wrap" data-rail-section="map" hidden>
                     <iframe id="lc-details-map" title="Customer location map" loading="eager" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
 
-                <div class="lc-details-acc is-open" id="lc-details-additional-acc">
+                <div class="lc-details-acc is-open" id="lc-details-additional-acc" data-rail-section="info">
                     <button type="button" class="lc-details-acc-head" id="lc-details-additional-toggle" aria-expanded="true" aria-controls="lc-details-additional-body">
                         <span>Additional info</span>
                         <i class="ti ti-chevron-up lc-details-acc-chevron" aria-hidden="true"></i>
@@ -414,7 +414,7 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="lc-details-acc is-open" id="lc-details-notes-acc">
+                <div class="lc-details-acc is-open" id="lc-details-notes-acc" data-rail-section="notes">
                     <button type="button" class="lc-details-acc-head" id="lc-details-notes-toggle" aria-expanded="true" aria-controls="lc-details-notes-body">
                         <span class="lc-details-notes-title-wrap">
                             <i class="ti ti-notes" aria-hidden="true"></i> Internal Notes

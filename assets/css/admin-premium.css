@@ -16980,3 +16980,106 @@ button.lc-hero-chip {
     .lc-vis-card-chart { grid-row: auto; }
     .lc-vis-hero-metrics { width: 100%; }
 }
+
+.lc-hx-archive-details > [data-rail-section] {
+    margin-bottom: 0.9rem;
+}
+.lc-hx-archive-details > [data-rail-section="map"] {
+    margin-bottom: 0.9rem;
+}
+
+.lc-rail-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 1.25rem;
+    align-items: start;
+}
+.lc-rail-sort {
+    list-style: none;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.lc-rail-sort-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.7rem 0.75rem;
+    background: #fff;
+    border: 1px solid #e6edf5;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.lc-rail-sort-item.is-dragging {
+    opacity: 0.55;
+}
+.lc-rail-drag,
+.lc-rail-move {
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.lc-rail-drag { cursor: grab; }
+.lc-rail-drag:active { cursor: grabbing; }
+.lc-rail-move:hover,
+.lc-rail-drag:hover { background: #f1f5f9; color: #0f172a; }
+.lc-rail-sort-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #0f172a;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+.lc-rail-sort-copy { flex: 1; min-width: 0; }
+.lc-rail-sort-copy strong { display: block; font-size: 0.92rem; }
+.lc-rail-sort-copy span { display: block; color: #64748b; font-size: 0.78rem; }
+.lc-rail-sort-move { display: flex; flex-direction: column; }
+.lc-rail-preview-label {
+    display: block;
+    margin-bottom: 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+.lc-rail-preview-card {
+    background: #fff;
+    border: 1px solid #e6edf5;
+    border-radius: 16px;
+    padding: 0.7rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.lc-rail-preview-block {
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.55rem 0.65rem;
+}
+.lc-rail-preview-block:first-child { background: #0f172a; color: #fff; }
+.lc-rail-editor-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 1rem;
+}
+@media (max-width: 860px) {
+    .lc-rail-editor { grid-template-columns: 1fr; }
+}

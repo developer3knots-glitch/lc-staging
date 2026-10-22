@@ -162,6 +162,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             lc_set_account_setting($accountId, 'notify_sounds', json_encode($map));
             $flashMessage = 'Notification sounds saved.';
             $redirectHash = '#lc-settings-notify';
+        } elseif ($action === 'save_rail_order') {
+            $posted = $_POST['rail_order'] ?? [];
+            if (!is_array($posted) || !empty($_POST['rail_reset'])) {
+                $posted = [];
+            }
+            $order = function_exists('lc_details_rail_normalize')
+                ? lc_details_rail_normalize($posted)
+                : [];
+            lc_set_account_setting($accountId, 'details_rail_order', json_encode($order));
+            $flashMessage = !empty($_POST['rail_reset'])
+                ? 'Customer sidebar reset to the default order.'
+                : 'Customer sidebar order saved.';
+            $redirectHash = '#lc-settings-sidebar';
         } elseif ($action === 'unblock_ip') {
             $ip = trim((string) ($_POST['ip_address'] ?? ''));
             if ($ip !== '' && lc_unblock_ip($ip, $accountId)) {
@@ -258,6 +271,7 @@ require __DIR__ . '/includes/header.php';
     <nav class="lc-settings-nav" aria-label="Settings sections">
         <a href="#lc-settings-system" class="lc-settings-nav-link is-active"><i class="ti ti-settings"></i> System</a>
         <a href="#lc-settings-notify" class="lc-settings-nav-link"><i class="ti ti-bell"></i> Notifications</a>
+        <a href="#lc-settings-sidebar" class="lc-settings-nav-link"><i class="ti ti-layout-sidebar-right"></i> Sidebar</a>
         <a href="#lc-settings-email" class="lc-settings-nav-link"><i class="ti ti-mail"></i> Email</a>
         <a href="#lc-settings-tickets" class="lc-settings-nav-link"><i class="ti ti-ticket"></i> Tickets</a>
         <a href="#lc-settings-geo" class="lc-settings-nav-link"><i class="ti ti-world-off"></i> Countries</a>
@@ -403,6 +417,56 @@ require __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </div>
                         <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save notification sounds</button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-sidebar">
+                <div class="lc-card-head">
+                    <h3><i class="ti ti-layout-sidebar-right"></i> Customer sidebar</h3>
+                    <span class="lc-card-sub">This order is used on Chats, Traffic, Visitors, and History</span>
+                </div>
+                <div class="lc-card-body">
+                    <form method="post" class="lc-form" id="lc-rail-order-form">
+                        <input type="hidden" name="action" value="save_rail_order">
+                        <div class="lc-rail-editor">
+                            <div>
+                                <p class="lc-settings-desc">Drag a block, or use the arrows. Save once and every details sidebar follows this order.</p>
+                                <ol class="lc-rail-sort" id="lc-rail-sort">
+                                    <?php
+                                    $railMeta = function_exists('lc_details_rail_sections') ? lc_details_rail_sections() : [];
+                                    $railOrder = function_exists('lc_details_rail_order') ? lc_details_rail_order($accountId) : array_keys($railMeta);
+                                    foreach ($railOrder as $railKey):
+                                        $railRow = $railMeta[$railKey] ?? null;
+                                        if (!$railRow) {
+                                            continue;
+                                        }
+                                    ?>
+                                    <li class="lc-rail-sort-item" data-rail-key="<?= lc_sanitize($railKey) ?>">
+                                        <button type="button" class="lc-rail-drag" aria-label="Drag <?= lc_sanitize($railRow[0]) ?>"><i class="ti ti-grip-vertical"></i></button>
+                                        <span class="lc-rail-sort-icon"><i class="ti <?= lc_sanitize($railRow[1]) ?>"></i></span>
+                                        <span class="lc-rail-sort-copy">
+                                            <strong><?= lc_sanitize($railRow[0]) ?></strong>
+                                            <span><?= lc_sanitize($railRow[2]) ?></span>
+                                        </span>
+                                        <span class="lc-rail-sort-move">
+                                            <button type="button" class="lc-rail-move" data-rail-move="up" aria-label="Move <?= lc_sanitize($railRow[0]) ?> up"><i class="ti ti-chevron-up"></i></button>
+                                            <button type="button" class="lc-rail-move" data-rail-move="down" aria-label="Move <?= lc_sanitize($railRow[0]) ?> down"><i class="ti ti-chevron-down"></i></button>
+                                        </span>
+                                        <input type="hidden" name="rail_order[]" value="<?= lc_sanitize($railKey) ?>">
+                                    </li>
+                                    <?php endforeach; ?>
+                                </ol>
+                            </div>
+                            <aside class="lc-rail-preview" aria-hidden="true">
+                                <span class="lc-rail-preview-label">Preview</span>
+                                <div class="lc-rail-preview-card" id="lc-rail-preview"></div>
+                            </aside>
+                        </div>
+                        <div class="lc-rail-editor-actions">
+                            <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save sidebar order</button>
+                            <button type="submit" class="lc-btn lc-btn-secondary" name="rail_reset" value="1">Reset</button>
+                        </div>
                     </form>
                 </div>
             </section>
