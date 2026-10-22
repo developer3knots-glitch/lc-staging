@@ -131,6 +131,39 @@
         paintRanks(countriesEl, report.countries || [], 'No countries yet.');
     }
 
+    function formatDur(sec) {
+        sec = Math.max(0, parseInt(sec, 10) || 0);
+        if (sec < 60) return sec + 's';
+        if (sec < 3600) return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+        return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
+    }
+
+    function syncDurations(rows) {
+        if (!bodyEl) return;
+        var now = Date.now();
+        rows.forEach(function (row) {
+            var cell = bodyEl.querySelector('tr[data-id="' + String(row.id).replace(/"/g, '') + '"] .lc-vis-dur');
+            if (!cell) return;
+            var live = !!row.duration_live;
+            cell.setAttribute('data-sec', row.duration_seconds == null ? '' : String(row.duration_seconds));
+            cell.setAttribute('data-live', live ? '1' : '0');
+            cell.setAttribute('data-at', String(now));
+            cell.classList.toggle('is-live', live);
+            cell.textContent = row.duration_label || '—';
+        });
+    }
+
+    function tickDurations() {
+        if (!bodyEl) return;
+        var now = Date.now();
+        bodyEl.querySelectorAll('.lc-vis-dur[data-live="1"]').forEach(function (cell) {
+            var base = parseInt(cell.getAttribute('data-sec'), 10);
+            if (isNaN(base)) return;
+            var at = parseInt(cell.getAttribute('data-at'), 10) || now;
+            cell.textContent = formatDur(base + Math.max(0, Math.round((now - at) / 1000)));
+        });
+    }
+
     function render(rows) {
         if (!bodyEl) return;
         var sig = rows.map(function (row) { return String(row.id) + ':' + String(row.clicks); }).join('|');
@@ -161,6 +194,7 @@
                     '</div></div></td>' +
                 '<td><strong class="lc-visitors-clicks-num">' + esc(row.clicks || 0) + '</strong></td>' +
                 '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
+                '<td class="lc-vis-dur' + (row.duration_live ? ' is-live' : '') + '" data-sec="' + esc(row.duration_seconds == null ? '' : row.duration_seconds) + '" data-live="' + (row.duration_live ? '1' : '0') + '" data-at="' + Date.now() + '">' + esc(row.duration_label || '—') + '</td>' +
                 '<td>' + timeHtml(row.visited_at) + '</td>' +
                 '</tr>';
         }).join('');
@@ -184,9 +218,10 @@
                 if (statAvg) statAvg.textContent = String(stats.avg || 0);
                 paintReport(data.report || {});
                 render(data.visitors || []);
+                syncDurations(data.visitors || []);
             })
             .catch(function () {
-                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="5">Could not load visitors.</td></tr>';
+                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="6">Could not load visitors.</td></tr>';
             })
             .finally(function () {
                 if (refreshBtn && !quiet) refreshBtn.classList.remove('is-spinning');
@@ -512,4 +547,5 @@
         if (document.hidden) return;
         load(true);
     }, 3000);
+    setInterval(tickDurations, 1000);
 })();

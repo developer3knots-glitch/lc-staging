@@ -164,6 +164,10 @@ try {
             pv.page_url,
             pv.page_title,
             pv.visited_at,
+            pv.duration_seconds,
+            v.visit_started_at,
+            v.left_site_at,
+            v.last_seen,
             (
                 SELECT COUNT(*)
                 FROM visitor_page_views c
@@ -187,6 +191,7 @@ try {
         if ($name === '') {
             $name = 'Visitor';
         }
+        $duration = lc_visitors_row_duration($row);
         $visitors[] = [
             'id' => (int) $row['id'],
             'visitor_id' => (int) ($row['visitor_id'] ?? 0),
@@ -199,6 +204,9 @@ try {
             'page_path' => $pagePath($url),
             'page_title' => (string) ($row['page_title'] ?? ''),
             'visited_at' => !empty($row['visited_at']) ? lc_to_iso8601($row['visited_at']) : null,
+            'duration_seconds' => $duration['seconds'],
+            'duration_label' => $duration['label'],
+            'duration_live' => $duration['live'],
         ];
     }
 

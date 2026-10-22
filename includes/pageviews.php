@@ -687,6 +687,60 @@ function lc_get_visitor_page_journey(int $visitorId, int $brandId, int $limit = 
     return $out;
 }
 
+/**
+ * How long this page view's visit stayed on the site.
+ * Pages inside the current visit share that visit's clock.
+ * Older pages fall back to the time recorded on that page.
+ *
+ * @param array<string, mixed> $row
+ * @return array{seconds: ?int, label: string, live: bool}
+ */
+function lc_visitors_row_duration(array $row): array
+{
+    $none = ['seconds' => null, 'label' => '', 'live' => false];
+    $visitedRaw = trim((string) ($row['visited_at'] ?? ''));
+    $visitedTs = $visitedRaw !== '' ? strtotime($visitedRaw . ' UTC') : false;
+    $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
+    $startedTs = $startedRaw !== '' ? strtotime($startedRaw . ' UTC') : false;
+    $leftRaw = trim((string) ($row['left_site_at'] ?? ''));
+    $leftTs = $leftRaw !== '' ? strtotime($leftRaw . ' UTC') : false;
+    $seenRaw = trim((string) ($row['last_seen'] ?? ''));
+    $seenTs = $seenRaw !== '' ? strtotime($seenRaw . ' UTC') : false;
+    $pageDur = (isset($row['duration_seconds']) && $row['duration_seconds'] !== null && $row['duration_seconds'] !== '')
+        ? (int) $row['duration_seconds']
+        : null;
+
+    $now = time();
+    $inCurrent = $startedTs !== false && $visitedTs !== false && $visitedTs >= ($startedTs - 5);
+    if ($inCurrent) {
+        $leftAfterStart = $leftTs !== false && $leftTs >= $startedTs;
+        $live = false;
+        if ($leftAfterStart) {
+            $endTs = $leftTs;
+        } else {
+            $stale = $seenTs !== false && ($now - $seenTs) >= 20;
+            $endTs = $stale ? $seenTs : $now;
+            $live = !$stale;
+        }
+        $seconds = max(0, $endTs - $startedTs);
+        return [
+            'seconds' => $seconds,
+            'label' => lc_format_duration_label($seconds) ?: '0s',
+            'live' => $live,
+        ];
+    }
+
+    if ($pageDur === null) {
+        return $none;
+    }
+    $pageDur = max(0, $pageDur);
+    return [
+        'seconds' => $pageDur,
+        'label' => lc_format_duration_label($pageDur) ?: '0s',
+        'live' => false,
+    ];
+}
+
 function lc_format_duration_label($seconds): string
 {
     if ($seconds === null || $seconds === '') {

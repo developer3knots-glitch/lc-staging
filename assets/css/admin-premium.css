@@ -16814,6 +16814,13 @@ button.lc-hero-chip {
     text-transform: uppercase;
 }
 .lc-visitors-row.is-new { background: #f0fdf4; }
+.lc-vis-dur {
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    color: #334155;
+    white-space: nowrap;
+}
+.lc-vis-dur.is-live { color: #166534; }
 .lc-visitors-clicks-num {
     display: inline-flex;
     min-width: 1.6rem;

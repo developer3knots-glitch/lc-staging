@@ -84,7 +84,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-vis-feed-head">
             <div>
                 <h4>Latest visits</h4>
-                <p>Newest visit first. Clicks is that IP’s running total.</p>
+                <p>Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.</p>
             </div>
             <div class="lc-traffic-search-wrap">
                 <i class="ti ti-search" aria-hidden="true"></i>
@@ -99,11 +99,12 @@ require __DIR__ . '/includes/header.php';
                         <th>Visitor</th>
                         <th>Clicks</th>
                         <th>Page</th>
+                        <th>Duration</th>
                         <th>When</th>
                     </tr>
                 </thead>
                 <tbody id="lc-visitors-body">
-                    <tr><td colspan="5">Loading visitors…</td></tr>
+                    <tr><td colspan="6">Loading visitors…</td></tr>
                 </tbody>
             </table>
         </div>
