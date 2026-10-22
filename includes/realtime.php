@@ -593,7 +593,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     }
 }
 
-function lc_realtime_publish_message(int $conversationId, int $messageId): void
+function lc_realtime_publish_message(int $conversationId, int $messageId, array $opts = []): void
 {
     if ($conversationId < 1 || $messageId < 1) {
         return;
@@ -643,13 +643,38 @@ function lc_realtime_publish_message(int $conversationId, int $messageId): void
         lc_realtime_publish_staff_event($conversationId, 'staff.message', $msgPayload, 300);
     }
 
-    // Inbox list / badges a tick later (no duplicate peer events)
+    // Inbox list / badges a tick later (no duplicate peer events).
+    // alert=message is only for a follow-up in a chat that is already active.
+    $alertMessage = (($opts['alert'] ?? '') === 'message' && (string) ($row['sender_type'] ?? '') === 'visitor');
+    $inboxPayload = $msgPayload;
+    if ($alertMessage) {
+        $inboxPayload['alert'] = 'message';
+    }
+    $pushFollowUp = static function () use ($conversationId, $messageId, $alertMessage): void {
+        if (!$alertMessage) {
+            return;
+        }
+        try {
+            if (!function_exists('lc_web_push_on_visitor_message')) {
+                $file = __DIR__ . '/web-push.php';
+                if (is_file($file)) {
+                    require_once $file;
+                }
+            }
+            if (function_exists('lc_web_push_on_visitor_message')) {
+                lc_web_push_on_visitor_message($conversationId, $messageId);
+            }
+        } catch (Throwable $e) {
+        }
+    };
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $msgPayload): void {
-            lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['inbox_only' => true]);
+        lc_realtime_defer(static function () use ($conversationId, $inboxPayload, $pushFollowUp): void {
+            lc_realtime_publish_conversation_event($conversationId, 'message.new', $inboxPayload, ['inbox_only' => true]);
+            $pushFollowUp();
         });
     } else {
-        lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['inbox_only' => true]);
+        lc_realtime_publish_conversation_event($conversationId, 'message.new', $inboxPayload, ['inbox_only' => true]);
+        $pushFollowUp();
     }
 }
 
@@ -740,7 +765,9 @@ function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = [
         return;
     }
     $conv = lc_get_conversation($conversationId);
-    if (!$conv || (string) ($conv['status'] ?? '') !== 'waiting') {
+    $status = is_array($conv) ? (string) ($conv['status'] ?? '') : '';
+    $allowActive = !empty($extra['allow_active']);
+    if (!$conv || ($status !== 'waiting' && !($allowActive && $status === 'active'))) {
         return;
     }
     $brandId = (int) ($conv['brand_id'] ?? 0);
@@ -776,13 +803,13 @@ function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = [
         } catch (Throwable $e) {
         }
     }
-    lc_realtime_publish_traffic($brandId, 'queued', array_merge([
+    lc_realtime_publish_traffic($brandId, $status === 'active' ? 'chatting' : 'queued', array_merge([
         'visitor_id' => $visitorId,
         'visitor_uid' => $visitorUid,
         'conversation_id' => $conversationId,
         'name' => $visitorName,
         'page_path' => $pagePath,
-        'status' => 'waiting',
+        'status' => $status === 'active' ? 'active' : 'waiting',
         'notify' => true,
         'is_incoming' => true,
         'returning' => !empty($conv['is_returning']),

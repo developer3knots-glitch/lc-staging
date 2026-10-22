@@ -367,7 +367,7 @@ require __DIR__ . '/includes/header.php';
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-notify">
                 <div class="lc-card-head">
                     <h3><i class="ti ti-bell"></i> Notification sounds</h3>
-                    <span class="lc-card-sub">Each alert can use its own chime or AI voice</span>
+                    <span class="lc-card-sub">Pick the sound for each alert. Silent keeps the popup with no chime, including when every admin tab is closed.</span>
                 </div>
                 <div class="lc-card-body">
                     <form method="post" class="lc-form" id="lc-notify-sounds-form">
@@ -388,7 +388,7 @@ require __DIR__ . '/includes/header.php';
                                     <strong><?= lc_sanitize($eventMeta[0]) ?></strong>
                                     <span><?= lc_sanitize($eventMeta[1]) ?></span>
                                 </div>
-                                <select name="sound_<?= lc_sanitize($eventKey) ?>" id="<?= lc_sanitize($selectId) ?>">
+                                <select name="sound_<?= lc_sanitize($eventKey) ?>" id="<?= lc_sanitize($selectId) ?>" aria-label="Sound for <?= lc_sanitize($eventMeta[0]) ?>">
                                     <?php foreach (lc_notify_sound_groups() as $groupLabel => $groupSounds): ?>
                                     <optgroup label="<?= lc_sanitize($groupLabel) ?>">
                                         <?php foreach ($groupSounds as $soundKey => $soundLabel): ?>

@@ -2796,34 +2796,36 @@
                             continuedJustNow = true;
                         }
                     });
-                    if (!continuedJustNow && returningWaiting > lastReturningWaiting) {
-                        playIncomingSound('chat_return', 'queue-return');
-                        showReturningVisitorToast(returningName);
-                    } else if (!continuedJustNow && waiting > lastInboxWaiting) {
-                        var queuedUnknown = true;
+                    if (!continuedJustNow && (returningWaiting > lastReturningWaiting || waiting > lastInboxWaiting)) {
+                        var incomingRow = null;
                         (data.conversations || []).forEach(function (c) {
-                            if (c.status !== 'waiting' || isReturningVisitor(c)) return;
-                            if (c.is_returning !== undefined || c.visitor_kind) queuedUnknown = false;
+                            if (!c || c.status !== 'waiting') return;
+                            var rowId = parseInt(c.id, 10) || 0;
+                            if (!incomingRow || rowId > (parseInt(incomingRow.id, 10) || 0)) {
+                                incomingRow = c;
+                            }
                         });
-                        playIncomingSound(queuedUnknown ? 'queue_waiting' : 'chat_new', 'queue-new');
-                        if (window.Notification && Notification.permission === 'granted') {
-                            try {
-                                var n = new Notification('Incoming chat', {
-                                    body: (returningName || 'A visitor') + ' is waiting in the queue',
-                                    tag: 'lc-inbox-waiting',
-                                    renotify: true,
-                                    requireInteraction: false
-                                });
-                                n.onclick = function () {
-                                    try { window.focus(); } catch (eF) {}
-                                    try { n.close(); } catch (eC) {}
-                                };
-                                setTimeout(function () {
-                                    try { n.close(); } catch (eAuto) {}
-                                }, 10000);
-                            } catch (eN) { /* ignore */ }
+                        if (window.LCNotifyIncoming) {
+                            var incomingNote = {
+                                notify: true,
+                                is_incoming: true,
+                                conversation_id: incomingRow ? incomingRow.id : 0,
+                                name: (incomingRow && incomingRow.visitor_name) || returningName || 'Visitor',
+                                continued: false
+                            };
+                            if (incomingRow && (incomingRow.is_returning !== undefined || incomingRow.visitor_kind)) {
+                                incomingNote.returning = isReturningVisitor(incomingRow);
+                            } else if (!incomingRow && returningWaiting > lastReturningWaiting) {
+                                incomingNote.returning = true;
+                            }
+                            window.LCNotifyIncoming(incomingNote);
+                        } else if (returningWaiting > lastReturningWaiting) {
+                            playIncomingSound('chat_return', 'queue-return');
+                            showReturningVisitorToast(returningName);
+                        } else {
+                            playIncomingSound('chat_new', 'queue-new');
                         }
-                    } else if (unreadTotal > lastInboxUnread) {
+                    } else if (unreadTotal > lastInboxUnread && !(window.LC_INCOMING_AT && (Date.now() - window.LC_INCOMING_AT) < 4000)) {
                         playIncomingSound('message_other', 'inbox-unread');
                     }
                 } else {
@@ -6374,6 +6376,22 @@
                                 : 'Chat closed - visitor ended this conversation';
                         }
                     }
+                }
+            });
+            realtimeClient.on('traffic.changed', function (payload) {
+                payload = payload || {};
+                var presence = String(payload.presence || '').toLowerCase();
+                if (presence === 'queued' || payload.is_incoming || payload.status === 'waiting') {
+                    if (window.LCNotifyIncoming) {
+                        window.LCNotifyIncoming(payload);
+                    }
+                    return;
+                }
+                if (presence === 'left' || presence === 'chatting') {
+                    return;
+                }
+                if (window.LCNotifyLand) {
+                    window.LCNotifyLand(payload, 'ws');
                 }
             });
             realtimeClient.on('chat.transferred', function (payload) {

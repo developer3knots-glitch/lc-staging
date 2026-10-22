@@ -117,17 +117,20 @@ try {
 
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
+    $publishIncoming = ($publishStatus === 'waiting');
 
     // Assign / inbox AFTER the bubble (and after reopen event already sent)
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened, $msgPayload): void {
+        lc_realtime_defer(static function () use ($conversationId, $publishStatus, $publishReopened, $publishIncoming, $msgPayload, $messageId): void {
             try {
                 $db = lc_db();
+                $alertIncoming = $publishIncoming;
                 $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $publishStatus);
                 if ($status === 'closed') {
                     $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
                         ->execute([$conversationId]);
                     $status = 'waiting';
+                    $alertIncoming = true;
                     if (function_exists('lc_realtime_publish_conversation_event')) {
                         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                             'status' => 'waiting',
@@ -148,12 +151,29 @@ try {
                             'reopened_by' => $publishReopened ? 'visitor' : null,
                         ]);
                     }
-                    lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
+                    $inboxPayload = $msgPayload;
+                    if (!$alertIncoming && $status === 'active') {
+                        $inboxPayload['alert'] = 'message';
+                    }
+                    lc_realtime_publish_conversation_event($conversationId, 'message.new', $inboxPayload, [
                         'inbox_only' => true,
                     ]);
                 }
-                if ($status === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-                    lc_realtime_publish_incoming_chat($conversationId, $publishReopened ? ['continued' => true] : []);
+                if ($alertIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+                    lc_realtime_publish_incoming_chat($conversationId, [
+                        'continued' => $publishReopened,
+                        'allow_active' => true,
+                    ]);
+                } elseif (!$alertIncoming && $status === 'active') {
+                    if (!function_exists('lc_web_push_on_visitor_message')) {
+                        $pushFile = __DIR__ . '/../includes/web-push.php';
+                        if (is_file($pushFile)) {
+                            require_once $pushFile;
+                        }
+                    }
+                    if (function_exists('lc_web_push_on_visitor_message')) {
+                        lc_web_push_on_visitor_message($conversationId, $messageId);
+                    }
                 }
             } catch (Throwable $e) {
             }
@@ -162,21 +182,37 @@ try {
         if ($status === 'waiting' && function_exists('lc_assign_agent')) {
             lc_assign_agent($conversationId);
             $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $status);
-            $publishStatus = $status;
         }
         if (function_exists('lc_realtime_publish_conversation_event')) {
-            if (!$reopened || $publishStatus !== 'waiting') {
+            if (!$reopened || $status !== 'waiting') {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                    'status' => $publishStatus,
+                    'status' => $status,
                     'reopened_by' => $reopened ? 'visitor' : null,
                 ]);
             }
-            lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
+            $inboxPayload = $msgPayload;
+            if (!$publishIncoming && $status === 'active') {
+                $inboxPayload['alert'] = 'message';
+            }
+            lc_realtime_publish_conversation_event($conversationId, 'message.new', $inboxPayload, [
                 'inbox_only' => true,
             ]);
         }
-        if ($publishStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-            lc_realtime_publish_incoming_chat($conversationId);
+        if ($publishIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+            lc_realtime_publish_incoming_chat($conversationId, [
+                'continued' => $reopened,
+                'allow_active' => true,
+            ]);
+        } elseif (!$publishIncoming && $status === 'active') {
+            if (!function_exists('lc_web_push_on_visitor_message')) {
+                $pushFile = __DIR__ . '/../includes/web-push.php';
+                if (is_file($pushFile)) {
+                    require_once $pushFile;
+                }
+            }
+            if (function_exists('lc_web_push_on_visitor_message')) {
+                lc_web_push_on_visitor_message($conversationId, $messageId);
+            }
         }
     }
 

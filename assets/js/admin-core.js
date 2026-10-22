@@ -372,7 +372,7 @@
             };
         }
 
-        function showIncomingToast(name, detail, chatUrl) {
+        function showIncomingToast(name, detail, chatUrl, title) {
             var el = document.getElementById('lc-incoming-toast');
             if (!el) {
                 el = document.createElement('div');
@@ -383,7 +383,7 @@
             }
             el.innerHTML =
                 '<i class="ti ti-message-circle" aria-hidden="true"></i>' +
-                '<div><strong>Incoming chat</strong><span>' +
+                '<div><strong>' + esc(title || 'Incoming chat') + '</strong><span>' +
                 esc(name || 'Visitor') + (detail ? ' · ' + esc(detail) : '') +
                 '</span></div>';
             el.classList.add('is-visible');
@@ -545,21 +545,26 @@
 
             var name = payload.name || 'Visitor';
             var detail = payload.page_path || payload.ip || '';
+            var incomingReturning = payload.returning === true || payload.returning === 1 || payload.returning === '1'
+                || payload.is_returning === true || payload.is_returning === 1 || payload.is_returning === '1';
+            var incomingContinued = payload.continued === true || payload.continued === 1 || payload.continued === '1';
+            var incomingKnown = payload.returning !== undefined || payload.is_returning !== undefined || incomingContinued;
+            var incomingTitle = (incomingReturning || incomingContinued) ? 'Returning visitor' : 'Incoming chat';
+            var incomingBody = (incomingReturning || incomingContinued)
+                ? ((name || 'Visitor') + ' started a chat again')
+                : ((name || 'Visitor') + ' is waiting' + (detail ? ' — ' + detail : ''));
             var chatUrl = cid
                 ? (base + '/admin/chats.php?id=' + cid)
                 : (base + '/admin/chats.php');
-            showIncomingToast(name, detail, chatUrl);
+            showIncomingToast(name, detail, chatUrl, incomingTitle);
             fireBrowserPush(name, detail, dedupeKey, {
-                title: 'Incoming chat',
-                body: (name || 'Visitor') + ' is waiting' + (detail ? ' — ' + detail : ''),
+                title: incomingTitle,
+                body: incomingBody,
                 tag: 'lc-incoming-' + String(cid || dedupeKey),
                 url: chatUrl
             });
+            window.LC_INCOMING_AT = Date.now();
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                var incomingReturning = payload.returning === true || payload.returning === 1 || payload.returning === '1'
-                    || payload.is_returning === true || payload.is_returning === 1 || payload.is_returning === '1';
-                var incomingContinued = payload.continued === true || payload.continued === 1 || payload.continued === '1';
-                var incomingKnown = payload.returning !== undefined || payload.is_returning !== undefined || incomingContinued;
                 var incomingEvent = incomingContinued
                     ? 'chat_continued'
                     : (incomingReturning ? 'chat_return' : (incomingKnown ? 'chat_new' : 'queue_waiting'));
@@ -610,6 +615,51 @@
         }
 
         window.LCTransferNotify = notifyChatTransfer;
+        window.LCNotifyLand = notifyLand;
+        window.LCNotifyIncoming = notifyIncomingChat;
+
+        function notifyVisitorMessage(payload) {
+            payload = payload || {};
+            if (payload.alert !== 'message') return false;
+            var msg = payload.message || {};
+            if (msg.sender_type && msg.sender_type !== 'visitor') return false;
+            var cid = parseInt(payload.conversation_id, 10) || 0;
+            var mid = parseInt(msg.id || payload.message_id, 10) || 0;
+            if (!canNotifyVisitor('msg:' + (mid || cid || ''))) return false;
+            var text = String(msg.message || '').replace(/\s+/g, ' ').trim();
+            if (text.length > 140) text = text.slice(0, 137) + '...';
+            var name = payload.name || 'Visitor';
+            var chatUrl = cid ? (base + '/admin/chats.php?id=' + cid) : (base + '/admin/chats.php');
+            fireBrowserPush(name, text, 'msg:' + (mid || cid), {
+                title: 'New message',
+                body: name + (text ? ' — ' + text : ' sent a message'),
+                tag: 'lc-msg-' + String(mid || cid),
+                url: chatUrl
+            });
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true, event: 'message_other' });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+            return true;
+        }
+
+        function notifyConversationUpdate(payload) {
+            payload = payload || {};
+            var cid = parseInt(payload.conversation_id, 10) || 0;
+            if (!cid || String(payload.status || '') !== 'closed') return;
+            var by = String(payload.closed_by || '');
+            var eventName = by === 'visitor' ? 'chat_closed' : (by === 'leave' ? 'visitor_left' : '');
+            if (!eventName) return;
+            if (!canNotifyVisitor((by === 'visitor' ? 'close:' : 'left:conv:') + cid)) return;
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true, event: eventName });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+        }
 
         function handleTrafficEvent(payload) {
             payload = payload || {};
@@ -617,6 +667,14 @@
             var vid = payload.visitor_id || payload.visitor_uid || '';
             if (presence === 'left') {
                 unmarkKnown(vid);
+                if (canNotifyVisitor('left:' + (vid || payload.visitor_uid || ''))) {
+                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                        window.LCNotifySound.play({ force: true, event: 'visitor_left' });
+                    }
+                    if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                        window.LCTabNotify.pulse(1);
+                    }
+                }
                 return;
             }
             if (presence === 'queued' || payload.is_incoming || payload.status === 'waiting') {
@@ -664,6 +722,12 @@
                     });
                     landRt.on('chat.transferred', function (payload) {
                         notifyChatTransfer(payload || {});
+                    });
+                    landRt.on('message.new', function (payload) {
+                        notifyVisitorMessage(payload || {});
+                    });
+                    landRt.on('conversation.updated', function (payload) {
+                        notifyConversationUpdate(payload || {});
                     });
                     landRt.on('disconnected', function () {
                         startPollFallback(POLL_MS);

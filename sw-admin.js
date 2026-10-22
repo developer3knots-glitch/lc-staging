@@ -30,6 +30,7 @@ self.addEventListener('push', function (event) {
                 body: data.body || '',
                 tag: data.tag || 'lc-push',
                 renotify: false,
+                silent: data.silent === true,
                 data: { url: target }
             });
         })

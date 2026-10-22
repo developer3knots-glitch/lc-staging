@@ -386,6 +386,11 @@ try {
         ")->execute([$visitorId, $brandId, $keepId]);
     }
 
+    $alertIncoming = false;
+    $alertContinued = false;
+    $alertMessageId = 0;
+    $visitorMsgId = 0;
+
     if (!$conv) {
         // Ensure name/email from same-IP profile when form was skipped
         if ($name === '' && $visitorName !== '') {
@@ -422,10 +427,12 @@ try {
         if ($initialMessage !== '') {
             $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
+            $visitorMsgId = (int) $db->lastInsertId();
         }
         lc_touch_conversation($convId);
         $assignedId = lc_assign_agent($convId);
         $status = $assignedId ? 'active' : 'waiting';
+        $alertIncoming = true;
 
         if (function_exists('lc_detect_returning_visitor') && function_exists('lc_mark_conversation_returning')) {
             $det = lc_detect_returning_visitor($ip, $email !== '' ? $email : $visitorEmail, $brandId, $convId);
@@ -448,11 +455,13 @@ try {
                     ->execute([$convId]);
             }
             $status = 'waiting';
+            $alertContinued = true;
         }
 
         if ($initialMessage !== '') {
             $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
+            $visitorMsgId = (int) $db->lastInsertId();
             lc_touch_conversation($convId);
 
             // Never leave a visitor message stuck on a closed row (race / missed reopen).
@@ -465,7 +474,13 @@ try {
                 $status = $curStatus;
             }
         }
-        // Claimed / continued thread still waiting → try auto-assign now
+        // Claimed / continued thread still waiting → try auto-assign now.
+        // Remember the alert first: assign can flip waiting → active before agents are told.
+        if ($status === 'waiting' || $alertContinued) {
+            $alertIncoming = true;
+        } elseif ($initialMessage !== '' && $status === 'active' && $visitorMsgId > 0) {
+            $alertMessageId = $visitorMsgId;
+        }
         if ($status === 'waiting') {
             $assignedId = lc_assign_agent($convId);
             if ($assignedId) {
@@ -520,13 +535,18 @@ try {
     $initAgentInfo = $agentInfo;
     if ($status !== 'closed') {
         if (function_exists('lc_realtime_defer')) {
-            lc_realtime_defer(static function () use ($convId, $initStatus, $initAgentInfo): void {
+            lc_realtime_defer(static function () use ($convId, $initStatus, $initAgentInfo, $alertIncoming, $alertContinued, $alertMessageId): void {
                 lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
                     'status' => $initStatus,
                     'agent' => $initAgentInfo,
                 ]);
-                if ($initStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-                    lc_realtime_publish_incoming_chat($convId);
+                if ($alertIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+                    lc_realtime_publish_incoming_chat($convId, [
+                        'continued' => $alertContinued,
+                        'allow_active' => true,
+                    ]);
+                } elseif ($alertMessageId > 0 && function_exists('lc_realtime_publish_message')) {
+                    lc_realtime_publish_message($convId, $alertMessageId, ['alert' => 'message']);
                 }
             });
         } else {
@@ -534,8 +554,13 @@ try {
                 'status' => $status,
                 'agent' => $agentInfo,
             ]);
-            if ($status === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-                lc_realtime_publish_incoming_chat($convId);
+            if ($alertIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+                lc_realtime_publish_incoming_chat($convId, [
+                    'continued' => $alertContinued,
+                    'allow_active' => true,
+                ]);
+            } elseif ($alertMessageId > 0 && function_exists('lc_realtime_publish_message')) {
+                lc_realtime_publish_message($convId, $alertMessageId, ['alert' => 'message']);
             }
         }
     }

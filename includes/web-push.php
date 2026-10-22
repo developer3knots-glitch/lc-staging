@@ -374,11 +374,13 @@ function lc_web_push_to_agents(array $agentIds, array $message): void
         return;
     }
     lc_web_push_ensure_schema();
+    $event = (string) ($message['event'] ?? '');
     $payload = json_encode([
         'title' => mb_substr((string) ($message['title'] ?? 'Live chat'), 0, 80),
         'body' => mb_substr((string) ($message['body'] ?? ''), 0, 180),
         'tag' => mb_substr((string) ($message['tag'] ?? 'lc-push'), 0, 80),
         'url' => (string) ($message['url'] ?? ''),
+        'silent' => $event !== '' && lc_web_push_event_is_silent($agentIds, $event),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (!is_string($payload) || $payload === '') {
         return;
@@ -400,10 +402,76 @@ function lc_web_push_admin_url(string $path): string
     return $base . $path;
 }
 
+function lc_web_push_event_is_silent(array $agentIds, string $event): bool
+{
+    if ($event === '' || !function_exists('lc_notify_sound_map') || !function_exists('lc_db')) {
+        return false;
+    }
+    $agentIds = array_values(array_filter(array_map('intval', $agentIds)));
+    if (!$agentIds) {
+        return false;
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT account_id FROM agents WHERE id = ? LIMIT 1');
+        $stmt->execute([$agentIds[0]]);
+        $accountId = (int) ($stmt->fetchColumn() ?: 0);
+        if ($accountId < 1) {
+            return false;
+        }
+        $map = lc_notify_sound_map($accountId);
+        $sound = (string) ($map[$event] ?? 'default');
+        return $sound === 'none' || $sound === 'off' || $sound === 'silent';
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function lc_web_push_on_visitor_message(int $conversationId, int $messageId): void
+{
+    if ($conversationId < 1 || $messageId < 1 || !function_exists('lc_db')) {
+        return;
+    }
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT c.brand_id, m.message, m.sender_type, v.name
+            FROM messages m
+            JOIN conversations c ON c.id = m.conversation_id
+            LEFT JOIN visitors v ON v.id = c.visitor_id
+            WHERE m.id = ? AND m.conversation_id = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$messageId, $conversationId]);
+        $row = $stmt->fetch();
+        if (!$row || (string) ($row['sender_type'] ?? '') !== 'visitor') {
+            return;
+        }
+        $brandId = (int) ($row['brand_id'] ?? 0);
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '') {
+            $name = 'Visitor';
+        }
+        $text = trim(preg_replace('/\s+/', ' ', (string) ($row['message'] ?? '')));
+        if (function_exists('lc_plain_text')) {
+            $text = trim(preg_replace('/\s+/', ' ', lc_plain_text($text)));
+        }
+        lc_web_push_to_agents(lc_web_push_agent_ids_for_brand($brandId), [
+            'title' => 'New message',
+            'body' => $name . ($text !== '' ? ' — ' . $text : ' sent a message'),
+            'tag' => 'lc-msg-' . $messageId,
+            'url' => lc_web_push_admin_url('/admin/chats.php?id=' . $conversationId),
+            'event' => 'message_other',
+        ]);
+    } catch (Throwable $e) {
+    }
+}
+
 function lc_web_push_on_traffic(int $brandId, string $presence, array $extra): void
 {
     $notify = !empty($extra['notify']) || !empty($extra['is_incoming']);
-    if (!$notify || $presence === 'left' || $presence === 'chatting') {
+    if (!$notify || $presence === 'left') {
+        return;
+    }
+    if ($presence === 'chatting' && empty($extra['is_incoming'])) {
         return;
     }
     $name = trim((string) ($extra['name'] ?? ''));
@@ -415,6 +483,9 @@ function lc_web_push_on_traffic(int $brandId, string $presence, array $extra): v
     $conversationId = (int) ($extra['conversation_id'] ?? 0);
     if ($presence === 'queued' || !empty($extra['is_incoming'])) {
         $returning = !empty($extra['returning']) || !empty($extra['continued']);
+        $event = !empty($extra['continued'])
+            ? 'chat_continued'
+            : ($returning ? 'chat_return' : 'chat_new');
         lc_web_push_to_agents(lc_web_push_agent_ids_for_brand($brandId), [
             'title' => $returning ? 'Returning visitor' : 'Incoming chat',
             'body' => $returning
@@ -422,17 +493,20 @@ function lc_web_push_on_traffic(int $brandId, string $presence, array $extra): v
                 : ($name . ' is waiting' . ($detail !== '' ? ' — ' . $detail : '')),
             'tag' => 'lc-incoming-' . ($conversationId > 0 ? $conversationId : $visitorId),
             'url' => lc_web_push_admin_url($conversationId > 0 ? '/admin/chats.php?id=' . $conversationId : '/admin/chats.php'),
+            'event' => $event,
         ]);
         return;
     }
     if ($presence !== 'browsing') {
         return;
     }
+    $landEvent = !empty($extra['is_new']) ? 'visitor_new' : 'visitor_return';
     lc_web_push_to_agents(lc_web_push_agent_ids_for_brand($brandId), [
         'title' => 'Visitor on site',
         'body' => $name . ($detail !== '' ? ' — ' . $detail : ' is browsing your website'),
         'tag' => 'lc-visitor-land-' . ($visitorId > 0 ? $visitorId : md5($name)),
         'url' => lc_web_push_admin_url('/admin/traffic.php'),
+        'event' => $landEvent,
     ]);
 }
 
@@ -459,5 +533,6 @@ function lc_web_push_on_transfer(int $conversationId, int $targetAgentId, array 
         'body' => $line . ($note !== '' ? ' — ' . $note : ''),
         'tag' => 'lc-transfer-' . $conversationId,
         'url' => lc_web_push_admin_url('/admin/chats.php?id=' . $conversationId),
+        'event' => 'chat_transfer',
     ]);
 }

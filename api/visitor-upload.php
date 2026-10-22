@@ -75,25 +75,33 @@ try {
         $status = 'waiting';
         $reopened = true;
     }
+    $uploadIncoming = ($status === 'waiting');
     if ($status === 'waiting') {
         lc_assign_agent($conversationId);
         $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: $status);
     }
     if (function_exists('lc_realtime_publish_message')) {
-        lc_realtime_publish_message($conversationId, (int) $saved['message_id']);
+        lc_realtime_publish_message(
+            $conversationId,
+            (int) $saved['message_id'],
+            (!$uploadIncoming && $status === 'active') ? ['alert' => 'message'] : []
+        );
     }
     $uploadStatus = $status !== '' ? $status : 'waiting';
     $uploadReopened = $reopened;
     if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId, $uploadStatus, $uploadReopened): void {
+        lc_realtime_defer(static function () use ($conversationId, $uploadStatus, $uploadReopened, $uploadIncoming): void {
             if (function_exists('lc_realtime_publish_conversation_event')) {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => $uploadStatus,
                     'reopened_by' => $uploadReopened ? 'visitor' : null,
                 ]);
             }
-            if ($uploadStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-                lc_realtime_publish_incoming_chat($conversationId);
+            if ($uploadIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+                lc_realtime_publish_incoming_chat($conversationId, [
+                    'continued' => $uploadReopened,
+                    'allow_active' => true,
+                ]);
             }
         });
     } else {
@@ -103,8 +111,11 @@ try {
                 'reopened_by' => $uploadReopened ? 'visitor' : null,
             ]);
         }
-        if ($uploadStatus === 'waiting' && function_exists('lc_realtime_publish_incoming_chat')) {
-            lc_realtime_publish_incoming_chat($conversationId);
+        if ($uploadIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
+            lc_realtime_publish_incoming_chat($conversationId, [
+                'continued' => $uploadReopened,
+                'allow_active' => true,
+            ]);
         }
     }
 
