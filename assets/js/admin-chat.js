@@ -5733,6 +5733,74 @@
         chatRefCopyBtn.addEventListener('click', copyChatReference);
     }
 
+    var emojiBtn = document.getElementById('lc-compose-emoji');
+    var emojiPicker = document.getElementById('lc-compose-emoji-picker');
+    function closeComposeEmoji() {
+        if (!emojiPicker || !emojiBtn) return;
+        emojiPicker.hidden = true;
+        emojiBtn.setAttribute('aria-expanded', 'false');
+    }
+    function placeComposeEmoji() {
+        if (!emojiPicker || !emojiBtn) return;
+        var rect = emojiBtn.getBoundingClientRect();
+        var width = 320;
+        var height = 300;
+        var left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+        var top = rect.top - height - 8;
+        if (top < 8) top = Math.min(rect.bottom + 8, window.innerHeight - height - 8);
+        emojiPicker.style.left = left + 'px';
+        emojiPicker.style.top = top + 'px';
+    }
+    function openComposeEmoji() {
+        if (!emojiPicker || !emojiBtn || !window.LCEmoji) return;
+        if (!emojiPicker.innerHTML) {
+            emojiPicker.innerHTML = window.LCEmoji.shell('lc-emoji-item');
+            window.LCEmoji.bind(emojiPicker, 'lc-emoji-item');
+        }
+        emojiPicker.hidden = false;
+        emojiBtn.setAttribute('aria-expanded', 'true');
+        placeComposeEmoji();
+    }
+    if (emojiBtn && emojiPicker && replyInput) {
+        emojiBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (emojiPicker.hidden) openComposeEmoji();
+            else closeComposeEmoji();
+        });
+        emojiPicker.addEventListener('click', function (e) {
+            var item = e.target.closest('[data-emoji]');
+            if (!item || replyInput.disabled) return;
+            e.preventDefault();
+            var emoji = item.getAttribute('data-emoji') || '';
+            if (!emoji) return;
+            var start = replyInput.selectionStart || 0;
+            var end = replyInput.selectionEnd || 0;
+            var value = replyInput.value || '';
+            replyInput.value = value.slice(0, start) + emoji + value.slice(end);
+            var pos = start + emoji.length;
+            replyInput.focus();
+            try { replyInput.setSelectionRange(pos, pos); } catch (err) {}
+        });
+        emojiPicker.addEventListener('wheel', function (e) {
+            var grid = emojiPicker.querySelector('.lc-emoji-grid');
+            if (!grid) return;
+            grid.scrollTop += e.deltaY;
+            e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('click', function (e) {
+            if (emojiPicker.hidden) return;
+            if (e.target.closest('#lc-compose-emoji-picker') || e.target.closest('#lc-compose-emoji')) return;
+            closeComposeEmoji();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeComposeEmoji();
+        });
+        window.addEventListener('resize', function () {
+            if (!emojiPicker.hidden) placeComposeEmoji();
+        });
+    }
+
     var attachBtn = document.getElementById('lc-attach-file');
     var fileInput = document.getElementById('lc-file-input');
     var attachPreviewEl = document.getElementById('lc-attach-preview');

@@ -282,6 +282,8 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <div id="lc-attach-preview" class="lc-attach-preview" hidden></div>
                         <div class="lc-chat-compose-inner">
+                            <button type="button" class="lc-chat-attach-btn" id="lc-compose-emoji" title="Emoji" aria-label="Insert emoji" aria-expanded="false" aria-controls="lc-compose-emoji-picker"><i class="ti ti-mood-smile"></i></button>
+                            <div class="lc-react-picker is-emoji-panel" id="lc-compose-emoji-picker" hidden></div>
                             <button type="button" class="lc-chat-attach-btn" id="lc-attach-file" title="Attach files (images, PDF, Word, Excel…)" aria-label="Attach file"><i class="ti ti-paperclip"></i></button>
                             <textarea id="lc-reply-input" rows="4" placeholder="Type a message…"></textarea>
                             <button type="button" class="lc-chat-send-btn" id="lc-send-reply" title="Send message"><i class="ti ti-send"></i></button>
