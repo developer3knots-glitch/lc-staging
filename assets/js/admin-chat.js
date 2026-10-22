@@ -3072,7 +3072,7 @@
                     '<strong class="lc-rail-note-agent">' + esc(agentName) + '</strong>' +
                     '<span class="lc-rail-note-time">' + time + '</span>' +
                 '</div>' +
-                '<div class="lc-rail-note-body">' + esc(n.note || '').replace(/\n/g, '<br>') + '</div>' +
+                '<div class="lc-rail-note-body">' + formatNoteHtml(n.note || '') + '</div>' +
             '</div>'
         );
     }
@@ -3097,6 +3097,14 @@
         notesListEl.scrollTop = notesListEl.scrollHeight;
     }
 
+    function formatNoteHtml(text) {
+        var safe = esc(String(text || '').replace(/\r\n/g, '\n'));
+        safe = safe.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        safe = safe.replace(/(^|[\s>])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        safe = safe.replace(/^(\s*)[-•]\s+/gm, '$1• ');
+        return safe.replace(/\n/g, '<br>');
+    }
+
     function renderInlineNote(n) {
         if (!n) return '';
         var agentName = n.agent_name || 'Agent';
@@ -3107,7 +3115,7 @@
         html += '<span class="lc-meta-sep"></span>';
         html += '<span class="lc-msg-note-author">' + esc(agentName) + '</span>';
         html += '</div>';
-        html += '<div class="lc-msg-body">' + esc(n.note || '').replace(/\n/g, '<br>') + '</div>';
+        html += '<div class="lc-msg-body">' + formatNoteHtml(n.note || '') + '</div>';
         html += '<div class="lc-msg-foot"><span class="lc-msg-time">' + timeStr + '</span></div>';
         html += '</div>';
         return html;

@@ -19,10 +19,12 @@ $__lcBase = htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8');
 .lc-chats-pro .lc-msg.is-note,
 body.lc-page-chats .lc-chats-pro .lc-msg.is-note {
   align-self: flex-end !important;
-  max-width: min(78%, 480px) !important;
-  min-width: 250px !important;
-  min-height: 90px !important;
-  width: fit-content !important;
+  flex: 0 0 auto !important;
+  max-width: min(92%, 640px) !important;
+  min-width: 220px !important;
+  width: auto !important;
+  height: auto !important;
+  max-height: none !important;
   margin: 0.45rem 0 !important;
   background: #fffbeb !important;
   border: 1.5px solid #fde68a !important;
@@ -30,7 +32,7 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note {
   border-radius: 14px 14px 4px 14px !important;
   padding: 0 !important;
   box-shadow: 0 2px 10px rgba(245, 158, 11, 0.12) !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   display: flex !important;
   flex-direction: column !important;
   box-sizing: border-box !important;
@@ -61,12 +63,23 @@ body.lc-page-chats .lc-chats-pro .lc-msg.is-note {
   font-weight: 700 !important;
 }
 .lc-msg.is-note .lc-msg-body {
-  padding: 0.55rem 0.85rem 0.4rem !important;
+  padding: 0.65rem 0.9rem 0.45rem !important;
   color: #78350f !important;
-  font-size: 0.875rem !important;
-  line-height: 1.45 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.55 !important;
   word-break: break-word !important;
-  flex: 1 1 auto !important;
+  overflow-wrap: anywhere !important;
+  white-space: pre-wrap !important;
+  overflow: visible !important;
+  max-height: none !important;
+  flex: 0 0 auto !important;
+}
+.lc-msg.is-note .lc-msg-body strong {
+  font-weight: 750 !important;
+  color: #451a03 !important;
+}
+.lc-msg.is-note .lc-msg-body em {
+  font-style: italic !important;
 }
 .lc-msg.is-note .lc-msg-foot {
   display: flex !important;
