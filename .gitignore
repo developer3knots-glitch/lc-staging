@@ -4,6 +4,7 @@
 # Local / secrets (not app source)
 .env
 realtime/server/.env
+includes/vapid-keys.local.php
 .git-real/
 .git-broken-lock/
 

@@ -287,13 +287,53 @@
                 return Promise.resolve('default');
             }
             return Notification.requestPermission().then(function (p) {
-                if (p === 'granted') hidePermissionBanner();
-                else showPermissionBanner();
+                if (p === 'granted') {
+                    hidePermissionBanner();
+                    subscribeWebPush();
+                } else showPermissionBanner();
                 return p;
             }).catch(function () {
                 showPermissionBanner();
                 return 'default';
             });
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            var padding = '='.repeat((4 - base64String.length % 4) % 4);
+            var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            var raw = atob(base64);
+            var out = new Uint8Array(raw.length);
+            for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+            return out;
+        }
+
+        function subscribeWebPush() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+            if (permissionState() !== 'granted') return;
+            navigator.serviceWorker.ready.then(function (reg) {
+                swReg = reg;
+                return fetch(base + '/api/agent-push-subscribe.php', { credentials: 'same-origin' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (cfg) {
+                        if (!cfg || !cfg.success || !cfg.publicKey) return null;
+                        return reg.pushManager.getSubscription().then(function (existing) {
+                            if (existing) return existing;
+                            return reg.pushManager.subscribe({
+                                userVisibleOnly: true,
+                                applicationServerKey: urlBase64ToUint8Array(cfg.publicKey)
+                            });
+                        });
+                    })
+                    .then(function (sub) {
+                        if (!sub || !sub.toJSON) return;
+                        return fetch(base + '/api/agent-push-subscribe.php', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(sub.toJSON())
+                        });
+                    });
+            }).catch(function () {});
         }
 
         function registerNotifySW() {
@@ -714,6 +754,7 @@
 
         loadSeenMap();
         registerNotifySW();
+        subscribeWebPush();
         try {
             if (!sessionStorage.getItem('lc_notify_banner_dismiss') && permissionState() !== 'granted') {
                 showPermissionBanner();

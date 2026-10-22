@@ -10,6 +10,32 @@ self.addEventListener('activate', function (event) {
     event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener('push', function (event) {
+    var data = {};
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (e) {
+        data = {};
+    }
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+            for (var i = 0; i < clientList.length; i++) {
+                var url = clientList[i] && clientList[i].url ? clientList[i].url : '';
+                if (url.indexOf('/admin/') !== -1 || url.indexOf('/admin?') !== -1) {
+                    return;
+                }
+            }
+            var target = data.url || '/admin/chats.php';
+            return self.registration.showNotification(data.title || 'Live chat', {
+                body: data.body || '',
+                tag: data.tag || 'lc-push',
+                renotify: false,
+                data: { url: target }
+            });
+        })
+    );
+});
+
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();
     var data = event.notification.data || {};

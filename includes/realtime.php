@@ -709,6 +709,26 @@ function lc_realtime_publish_traffic(int $brandId, string $presence, array $extr
         'brand_id' => $brandId,
         'presence' => $presence,
     ], $extra));
+    if (empty($extra['notify']) && empty($extra['is_incoming'])) {
+        return;
+    }
+    if (!function_exists('lc_realtime_defer')) {
+        return;
+    }
+    lc_realtime_defer(static function () use ($brandId, $presence, $extra): void {
+        try {
+            if (!function_exists('lc_web_push_on_traffic')) {
+                $file = __DIR__ . '/web-push.php';
+                if (is_file($file)) {
+                    require_once $file;
+                }
+            }
+            if (function_exists('lc_web_push_on_traffic')) {
+                lc_web_push_on_traffic($brandId, $presence, $extra);
+            }
+        } catch (Throwable $e) {
+        }
+    });
 }
 
 /**
@@ -794,4 +814,21 @@ function lc_realtime_publish_chat_transfer(int $conversationId, int $targetAgent
         'name' => $name,
         'notify' => true,
     ], $extra), 250);
+    if (!function_exists('lc_realtime_defer')) {
+        return;
+    }
+    lc_realtime_defer(static function () use ($conversationId, $targetAgentId, $name, $extra): void {
+        try {
+            if (!function_exists('lc_web_push_on_transfer')) {
+                $file = __DIR__ . '/web-push.php';
+                if (is_file($file)) {
+                    require_once $file;
+                }
+            }
+            if (function_exists('lc_web_push_on_transfer')) {
+                lc_web_push_on_transfer($conversationId, $targetAgentId, array_merge(['name' => $name], $extra));
+            }
+        } catch (Throwable $e) {
+        }
+    });
 }
