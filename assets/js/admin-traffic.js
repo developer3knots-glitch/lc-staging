@@ -873,6 +873,10 @@
             if (clean) {
                 linkHtml = '<a class="lc-details-page-link" href="' + esc(clean) + '" target="_blank" rel="noopener noreferrer" title="' + esc(clean) + '">' + esc(clean) + '</a>';
             }
+            var when = page.visited_at || '';
+            var timeHtml = when
+                ? '<span class="lc-details-page-time" data-timestamp="' + esc(when) + '"></span>'
+                : '';
             return (
                 '<li class="lc-details-page-item' + (current ? ' is-current' : '') + '">' +
                     '<span class="lc-details-page-dot" aria-hidden="true"></span>' +
@@ -882,10 +886,12 @@
                             (clean ? '<button type="button" class="lc-meta-copy" data-copy="' + esc(clean) + '" aria-label="Copy page link"><i class="ti ti-copy"></i></button>' : '') +
                         '</div>' +
                         linkHtml +
+                        timeHtml +
                     '</div>' +
                 '</li>'
             );
         }).join('');
+        if (window.LCTime) window.LCTime.scan(list);
     }
 
     function formatSeen(iso) {

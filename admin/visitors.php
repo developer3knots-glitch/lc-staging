@@ -141,32 +141,32 @@ require __DIR__ . '/includes/header.php';
             <aside class="lc-hx-archive-details lc-rail-order" aria-label="Visitor details">
                 <h3 class="lc-hx-archive-details-title">Details</h3>
                 <div data-rail-section="profile">
-                    <p class="lc-hx-archive-location" id="lc-vis-d-location">—</p>
+                    <p class="lc-hx-archive-location" id="lc-vis-d-location" data-rail-field="location">—</p>
                 </div>
                 <div class="lc-hx-archive-map" id="lc-vis-map-wrap" data-rail-section="map" hidden>
                     <iframe id="lc-vis-map" title="Customer location map" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
                 <div data-rail-section="contact">
                     <dl class="lc-hx-archive-dl">
-                        <div><dt>Name</dt><dd id="lc-vis-d-name">—</dd></div>
-                        <div><dt>Email</dt><dd id="lc-vis-d-email">—</dd></div>
-                        <div><dt>Phone</dt><dd id="lc-vis-d-phone">—</dd></div>
+                        <div data-rail-field="name"><dt>Name</dt><dd id="lc-vis-d-name">—</dd></div>
+                        <div data-rail-field="email"><dt>Email</dt><dd id="lc-vis-d-email">—</dd></div>
+                        <div data-rail-field="phone"><dt>Phone</dt><dd id="lc-vis-d-phone">—</dd></div>
                     </dl>
                 </div>
                 <div data-rail-section="info">
                     <dl class="lc-hx-archive-dl">
-                        <div><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
-                        <div><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
-                        <div><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
-                        <div><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
-                        <div><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>
-                        <div><dt>Device</dt><dd id="lc-vis-d-device">—</dd></div>
-                        <div><dt>Groups</dt><dd id="lc-vis-d-group">—</dd></div>
-                        <div><dt>Ticket</dt><dd id="lc-vis-d-ticket">—</dd></div>
-                        <div><dt>Agent</dt><dd id="lc-vis-d-agent">—</dd></div>
-                        <div><dt>IP address</dt><dd id="lc-vis-d-ip">—</dd></div>
-                        <div><dt>Date</dt><dd id="lc-vis-d-date">—</dd></div>
-                        <div><dt>Status</dt><dd id="lc-vis-d-status">—</dd></div>
+                        <div data-rail-field="clicks"><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
+                        <div data-rail-field="returning"><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
+                        <div data-rail-field="last_seen"><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
+                        <div data-rail-field="came_from"><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
+                        <div data-rail-field="chat_page"><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>
+                        <div data-rail-field="device"><dt>Device</dt><dd id="lc-vis-d-device">—</dd></div>
+                        <div data-rail-field="groups"><dt>Groups</dt><dd id="lc-vis-d-group">—</dd></div>
+                        <div data-rail-field="ticket"><dt>Ticket</dt><dd id="lc-vis-d-ticket">—</dd></div>
+                        <div data-rail-field="agent"><dt>Agent</dt><dd id="lc-vis-d-agent">—</dd></div>
+                        <div data-rail-field="ip"><dt>IP address</dt><dd id="lc-vis-d-ip">—</dd></div>
+                        <div data-rail-field="date"><dt>Date</dt><dd id="lc-vis-d-date">—</dd></div>
+                        <div data-rail-field="status"><dt>Status</dt><dd id="lc-vis-d-status">—</dd></div>
                     </dl>
                 </div>
                 <section class="lc-hx-archive-block" data-rail-section="pages">

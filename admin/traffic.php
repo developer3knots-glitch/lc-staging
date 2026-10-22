@@ -150,11 +150,11 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-details-hero" data-rail-section="profile">
                 <div class="lc-details-hero-av" id="lc-traffic-meta-av">V</div>
                 <h3 class="lc-details-hero-name" id="lc-traffic-meta-name">Visitor</h3>
-                <p class="lc-details-hero-location lc-details-copyline">
+                <p class="lc-details-hero-location lc-details-copyline" data-rail-field="location">
                     <span id="lc-traffic-meta-location">-</span>
                     <button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-location" aria-label="Copy location" hidden><i class="ti ti-copy"></i></button>
                 </p>
-                <p class="lc-details-hero-sub lc-details-copyline">
+                <p class="lc-details-hero-sub lc-details-copyline" data-rail-field="local_time">
                     <span id="lc-traffic-meta-ip">-</span>
                     <button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-ip" aria-label="Copy IP" hidden><i class="ti ti-copy"></i></button>
                 </p>
@@ -162,15 +162,15 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-details-contact" data-rail-section="contact">
                 <h4 class="lc-details-contact-title">Contact</h4>
                 <div class="lc-details-kv-list">
-                    <div class="lc-details-kv">
+                    <div class="lc-details-kv" data-rail-field="name">
                         <dt>Name</dt>
                         <dd class="lc-details-copyline"><span id="lc-traffic-meta-contact-name">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-contact-name" aria-label="Copy name" hidden><i class="ti ti-copy"></i></button></dd>
                     </div>
-                    <div class="lc-details-kv">
+                    <div class="lc-details-kv" data-rail-field="email">
                         <dt>Email</dt>
                         <dd class="lc-details-copyline"><span id="lc-traffic-meta-email">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-email" aria-label="Copy email" hidden><i class="ti ti-copy"></i></button></dd>
                     </div>
-                    <div class="lc-details-kv">
+                    <div class="lc-details-kv" data-rail-field="phone">
                         <dt>Phone</dt>
                         <dd class="lc-details-copyline"><span id="lc-traffic-meta-phone">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-phone" aria-label="Copy phone" hidden><i class="ti ti-copy"></i></button></dd>
                     </div>
@@ -183,17 +183,17 @@ require __DIR__ . '/includes/header.php';
                 <div class="lc-details-acc-head" aria-hidden="true"><span>Additional info</span></div>
                 <div class="lc-details-acc-body">
                     <dl class="lc-details-kv-list">
-                        <div class="lc-details-kv"><dt>Status</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-status">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-status" aria-label="Copy status" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Returning visitor</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-returning">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-returning" aria-label="Copy returning visitor" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Last seen</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-seen">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-seen" aria-label="Copy last seen" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Came from</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-from">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-from" aria-label="Copy came from" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv" id="lc-traffic-meta-gclid-row" hidden><dt>GCLID</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-gclid">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Time on site</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-time">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-time" aria-label="Copy time on site" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Current page</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-page">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-page" aria-label="Copy current page" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Group</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-group">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-group" aria-label="Copy group" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Ticket</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-ticket">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-ticket" aria-label="Copy ticket" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Agent</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-agent">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-agent" aria-label="Copy agent" hidden><i class="ti ti-copy"></i></button></dd></div>
-                        <div class="lc-details-kv"><dt>Device</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-device">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-device" aria-label="Copy device" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="status"><dt>Status</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-status">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-status" aria-label="Copy status" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="returning"><dt>Returning visitor</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-returning">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-returning" aria-label="Copy returning visitor" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="last_seen"><dt>Last seen</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-seen">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-seen" aria-label="Copy last seen" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="came_from"><dt>Came from</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-from">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-from" aria-label="Copy came from" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" id="lc-traffic-meta-gclid-row" data-rail-field="gclid" hidden><dt>GCLID</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-gclid">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-gclid" aria-label="Copy GCLID" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="time_on_site"><dt>Time on site</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-time">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-time" aria-label="Copy time on site" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="current_page"><dt>Current page</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-page">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-page" aria-label="Copy current page" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="groups"><dt>Group</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-group">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-group" aria-label="Copy group" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="ticket"><dt>Ticket</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-ticket">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-ticket" aria-label="Copy ticket" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="agent"><dt>Agent</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-agent">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-agent" aria-label="Copy agent" hidden><i class="ti ti-copy"></i></button></dd></div>
+                        <div class="lc-details-kv" data-rail-field="device"><dt>Device</dt><dd class="lc-details-copyline"><span id="lc-traffic-meta-device">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-traffic-meta-device" aria-label="Copy device" hidden><i class="ti ti-copy"></i></button></dd></div>
                     </dl>
                 </div>
             </div>

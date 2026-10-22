@@ -170,10 +170,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $order = function_exists('lc_details_rail_normalize')
                 ? lc_details_rail_normalize($posted)
                 : [];
+            $fieldPost = $_POST['rail_field'] ?? [];
+            if (!is_array($fieldPost)) {
+                $fieldPost = [];
+            }
+            $fields = function_exists('lc_details_rail_visibility_from_post')
+                ? lc_details_rail_visibility_from_post($fieldPost, !empty($_POST['rail_reset']))
+                : [];
             lc_set_account_setting($accountId, 'details_rail_order', json_encode($order));
+            lc_set_account_setting($accountId, 'details_rail_fields', json_encode($fields));
             $flashMessage = !empty($_POST['rail_reset'])
                 ? 'Customer sidebar reset to the default order.'
-                : 'Customer sidebar order saved.';
+                : 'Customer sidebar saved.';
             $redirectHash = '#lc-settings-sidebar';
         } elseif ($action === 'unblock_ip') {
             $ip = trim((string) ($_POST['ip_address'] ?? ''));
@@ -431,16 +439,19 @@ require __DIR__ . '/includes/header.php';
                         <input type="hidden" name="action" value="save_rail_order">
                         <div class="lc-rail-editor">
                             <div>
-                                <p class="lc-settings-desc">Drag a block, or use the arrows. Save once and every details sidebar follows this order.</p>
+                                <p class="lc-settings-desc">Drag a block, or use the arrows. Under each block, turn off anything that should stay hidden. The same choices apply on Chats, Traffic, Visitors, and History.</p>
                                 <ol class="lc-rail-sort" id="lc-rail-sort">
                                     <?php
                                     $railMeta = function_exists('lc_details_rail_sections') ? lc_details_rail_sections() : [];
                                     $railOrder = function_exists('lc_details_rail_order') ? lc_details_rail_order($accountId) : array_keys($railMeta);
+                                    $railFields = function_exists('lc_details_rail_field_groups') ? lc_details_rail_field_groups() : [];
+                                    $railVis = function_exists('lc_details_rail_visibility') ? lc_details_rail_visibility($accountId) : [];
                                     foreach ($railOrder as $railKey):
                                         $railRow = $railMeta[$railKey] ?? null;
                                         if (!$railRow) {
                                             continue;
                                         }
+                                        $railSectionFields = $railFields[$railKey] ?? [];
                                     ?>
                                     <li class="lc-rail-sort-item" data-rail-key="<?= lc_sanitize($railKey) ?>">
                                         <button type="button" class="lc-rail-drag" aria-label="Drag <?= lc_sanitize($railRow[0]) ?>"><i class="ti ti-grip-vertical"></i></button>
@@ -454,6 +465,18 @@ require __DIR__ . '/includes/header.php';
                                             <button type="button" class="lc-rail-move" data-rail-move="down" aria-label="Move <?= lc_sanitize($railRow[0]) ?> down"><i class="ti ti-chevron-down"></i></button>
                                         </span>
                                         <input type="hidden" name="rail_order[]" value="<?= lc_sanitize($railKey) ?>">
+                                        <?php if ($railSectionFields): ?>
+                                        <div class="lc-rail-fields">
+                                            <?php foreach ($railSectionFields as $fieldKey => $fieldLabel):
+                                                $fieldOn = !isset($railVis[$railKey][$fieldKey]) || !empty($railVis[$railKey][$fieldKey]);
+                                            ?>
+                                            <label class="lc-rail-switch">
+                                                <input type="checkbox" name="rail_field[<?= lc_sanitize($railKey) ?>][<?= lc_sanitize($fieldKey) ?>]" value="1"<?= $fieldOn ? ' checked' : '' ?>>
+                                                <span><?= lc_sanitize($fieldLabel) ?></span>
+                                            </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <?php endif; ?>
                                     </li>
                                     <?php endforeach; ?>
                                 </ol>
@@ -464,7 +487,7 @@ require __DIR__ . '/includes/header.php';
                             </aside>
                         </div>
                         <div class="lc-rail-editor-actions">
-                            <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save sidebar order</button>
+                            <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save sidebar</button>
                             <button type="submit" class="lc-btn lc-btn-secondary" name="rail_reset" value="1">Reset</button>
                         </div>
                     </form>
