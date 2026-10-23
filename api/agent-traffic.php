@@ -259,7 +259,13 @@ try {
         $scanRank = $scanStatus === 'active' ? 2 : 1;
         $known = $openByIp[$scanIp] ?? null;
         if ($known === null || $scanRank > $known['rank'] || ($scanRank === $known['rank'] && $scanConvId > $known['id'])) {
-            $openByIp[$scanIp] = ['id' => $scanConvId, 'rank' => $scanRank];
+            $openByIp[$scanIp] = [
+                'id' => $scanConvId,
+                'rank' => $scanRank,
+                'conv_status' => $scanStatus,
+                'agent_id' => (int) ($scan['agent_id'] ?? 0),
+                'agent_name' => (string) ($scan['agent_name'] ?? ''),
+            ];
         }
     }
 
@@ -294,6 +300,14 @@ try {
             $status = 'browsing';
         } else {
             $status = 'left';
+        }
+
+        $rowIp = trim((string) ($row['visitor_ip'] ?? ''));
+        $ownConvId = (int) ($row['conversation_id'] ?? 0);
+        $sharedChat = ($rowIp !== '' && isset($openByIp[$rowIp])) ? $openByIp[$rowIp] : null;
+        $mirrorChat = $sharedChat && $ownConvId !== (int) $sharedChat['id'] && $status === 'browsing';
+        if ($mirrorChat) {
+            $status = $sharedChat['conv_status'] === 'waiting' ? 'queued' : 'chatting';
         }
 
         $onSite = $status !== 'left';
@@ -392,6 +406,17 @@ try {
             $ipBlocked = !empty($blockedIpCache[$ip]);
         }
 
+        $conversationId = $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null;
+        $agentId = $row['agent_id'] !== null ? (int) $row['agent_id'] : 0;
+        $agentName = (string) ($row['agent_name'] ?? '');
+        $conversationStatusOut = $row['conversation_status'] ?? null;
+        if ($mirrorChat && $sharedChat) {
+            $conversationId = (int) $sharedChat['id'];
+            $agentId = (int) $sharedChat['agent_id'];
+            $agentName = (string) $sharedChat['agent_name'];
+            $conversationStatusOut = (string) $sharedChat['conv_status'];
+        }
+
         $visitors[] = [
             'visitor_id' => (int) $row['visitor_id'],
             'visitor_uid' => (string) ($row['visitor_uid'] ?? ''),
@@ -412,18 +437,18 @@ try {
             'activity_label' => $activity,
             'brand_id' => $resolvedBrandId,
             'brand_key' => $resolvedBrandKey,
-            'conversation_id' => $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null,
-            'conversation_status' => $row['conversation_status'] ?? null,
-            'agent_id' => $row['agent_id'] !== null ? (int) $row['agent_id'] : 0,
-            'agent_name' => (string) ($row['agent_name'] ?? ''),
-            'is_supervising' => $row['conversation_id'] !== null && isset($supervisedIds[(int) $row['conversation_id']]),
+            'conversation_id' => $conversationId,
+            'conversation_status' => $conversationStatusOut,
+            'agent_id' => $agentId,
+            'agent_name' => $agentName,
+            'is_supervising' => $conversationId !== null && isset($supervisedIds[(int) $conversationId]),
             'brand_name' => (string) ($row['brand_name'] ?? ''),
             'time_on_pages_seconds' => $timeSec,
             'time_on_pages_label' => lc_format_duration_label($timeSec) ?: '0s',
             'last_seen' => !empty($row['last_seen']) ? lc_to_iso8601($row['last_seen']) : null,
             'returning' => !empty($row['visitor_created_at']) && strtotime((string) $row['visitor_created_at'] . ' UTC') !== false && (time() - strtotime((string) $row['visitor_created_at'] . ' UTC')) > 180,
-            'chat_url' => $row['conversation_id']
-                ? lc_admin_url('chats', ['id' => (int) $row['conversation_id']])
+            'chat_url' => $conversationId
+                ? lc_admin_url('chats', ['id' => (int) $conversationId])
                 : null,
             'same_ip_chat_url' => ($ip !== '' && isset($openByIp[$ip]) && (int) ($row['conversation_id'] ?? 0) !== $openByIp[$ip]['id'])
                 ? lc_admin_url('chats', ['id' => $openByIp[$ip]['id']])
