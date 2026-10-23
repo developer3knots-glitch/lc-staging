@@ -174,7 +174,8 @@
 
     function render(rows) {
         if (!bodyEl) return;
-        var sig = rows.map(function (row) { return String(row.id) + ':' + String(row.clicks); }).join('|');
+        var sig = view + '|' + (fromInput ? fromInput.value : '') + '|' + (toInput ? toInput.value : '') + '|' +
+            rows.map(function (row) { return String(row.id) + ':' + String(row.clicks); }).join('|');
         if (sig === lastSig) return;
         lastSig = sig;
         if (!rows.length) {

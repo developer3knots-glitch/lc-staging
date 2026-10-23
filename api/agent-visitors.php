@@ -148,25 +148,22 @@ try {
     }
     $scopedWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> '' {$dateSql} {$searchSql}";
     $scopeParams = array_merge($brandParams, $dateParams, $searchParams);
-    $gclidHitSql = "(pv.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(pv.referrer, '') REGEXP '(^|[?&#])gclid=')";
-    $gpDateSql = $fromDay !== null ? ' AND gp.visited_at >= ? AND gp.visited_at < ?' : '';
     $gclidVisitorSql = "EXISTS (
         SELECT 1 FROM visitor_page_views gp
         INNER JOIN visitors gv ON gv.id = gp.visitor_id
         WHERE gv.ip_address = v.ip_address
           AND gp.{$brandSql}
-          {$gpDateSql}
           AND (gp.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(gp.referrer, '') REGEXP '(^|[?&#])gclid=')
     )";
-    $gclidVisitorParams = array_merge($brandParams, $fromDay !== null ? $dateParams : []);
+    $gclidVisitorParams = $brandParams;
 
     $gclidStmt = $db->prepare("
         SELECT COUNT(DISTINCT v.ip_address)
         FROM visitor_page_views pv
         INNER JOIN visitors v ON v.id = pv.visitor_id
-        WHERE {$scopedWhere} AND {$gclidHitSql}
+        WHERE {$scopedWhere} AND {$gclidVisitorSql}
     ");
-    $gclidStmt->execute($scopeParams);
+    $gclidStmt->execute(array_merge($scopeParams, $gclidVisitorParams));
     $gclidVisitors = (int) $gclidStmt->fetchColumn();
 
     if ($view === 'gclid') {
@@ -256,18 +253,16 @@ try {
         if ($needIps) {
             $ipList = array_keys($needIps);
             $marks = implode(',', array_fill(0, count($ipList), '?'));
-            $pvDateSql = $fromDay !== null ? ' AND pv.visited_at >= ? AND pv.visited_at < ?' : '';
             $fill = $db->prepare("
                 SELECT v.ip_address AS ip, pv.page_url, pv.referrer
                 FROM visitor_page_views pv
                 INNER JOIN visitors v ON v.id = pv.visitor_id
                 WHERE v.ip_address IN ({$marks})
                   AND pv.{$brandSql}
-                  {$pvDateSql}
                   AND (pv.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(pv.referrer, '') REGEXP '(^|[?&#])gclid=')
                 ORDER BY pv.id DESC
             ");
-            $fill->execute(array_merge($ipList, $brandParams, $fromDay !== null ? $dateParams : []));
+            $fill->execute(array_merge($ipList, $brandParams));
             $gclidByIp = [];
             foreach ($fill->fetchAll() as $hit) {
                 $hitIp = (string) $hit['ip'];
@@ -291,8 +286,13 @@ try {
     }
 
     $baseWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> ''";
-    $todayWhere = "{$baseWhere} AND pv.visited_at >= UTC_DATE() {$searchSql}";
-    $todayParams = array_merge($brandParams, $searchParams);
+    $accountTodayStart = $todayLocal->setTime(0, 0, 0);
+    $accountTodayEnd = $accountTodayStart->modify('+1 day');
+    $todayWhere = "{$baseWhere} AND pv.visited_at >= ? AND pv.visited_at < ? {$searchSql}";
+    $todayParams = array_merge($brandParams, [
+        $accountTodayStart->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+        $accountTodayEnd->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+    ], $searchParams);
     if ($view === 'gclid') {
         $todayWhere .= ' AND ' . $gclidVisitorSql;
         $todayParams = array_merge($todayParams, $gclidVisitorParams);
