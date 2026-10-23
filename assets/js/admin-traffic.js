@@ -163,6 +163,13 @@
                 '</a>'
             );
         }
+        if (row.status === 'browsing' && row.same_ip_chat_url) {
+            return (
+                '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(row.same_ip_chat_url) + '">' +
+                    '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
+                '</a>'
+            );
+        }
         if (row.status === 'browsing') {
             return (
                 '<span class="lc-traffic-start">' +

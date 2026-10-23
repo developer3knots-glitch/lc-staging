@@ -248,6 +248,21 @@ try {
         'left' => 0,
     ];
 
+    $openByIp = [];
+    foreach ($rows as $scan) {
+        $scanIp = trim((string) ($scan['visitor_ip'] ?? ''));
+        $scanStatus = (string) ($scan['conversation_status'] ?? '');
+        $scanConvId = (int) ($scan['conversation_id'] ?? 0);
+        if ($scanIp === '' || $scanConvId < 1 || !in_array($scanStatus, ['waiting', 'active'], true)) {
+            continue;
+        }
+        $scanRank = $scanStatus === 'active' ? 2 : 1;
+        $known = $openByIp[$scanIp] ?? null;
+        if ($known === null || $scanRank > $known['rank'] || ($scanRank === $known['rank'] && $scanConvId > $known['id'])) {
+            $openByIp[$scanIp] = ['id' => $scanConvId, 'rank' => $scanRank];
+        }
+    }
+
     $visitors = [];
     $blockedIpCache = [];
     $supervisedIds = [];
@@ -409,6 +424,9 @@ try {
             'returning' => !empty($row['visitor_created_at']) && strtotime((string) $row['visitor_created_at'] . ' UTC') !== false && (time() - strtotime((string) $row['visitor_created_at'] . ' UTC')) > 180,
             'chat_url' => $row['conversation_id']
                 ? lc_admin_url('chats', ['id' => (int) $row['conversation_id']])
+                : null,
+            'same_ip_chat_url' => ($ip !== '' && isset($openByIp[$ip]) && (int) ($row['conversation_id'] ?? 0) !== $openByIp[$ip]['id'])
+                ? lc_admin_url('chats', ['id' => $openByIp[$ip]['id']])
                 : null,
         ];
     }
