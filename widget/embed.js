@@ -1928,7 +1928,11 @@
         }
         // Lock entry routing — late settings_only must not yank back to Let's chat
         entryRouted = true;
-        var liveId = forceNewChat ? 0 : (serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0);
+        var liveStatusNow = String(serverLiveConversationStatus || '').toLowerCase();
+        var liveAlreadyOpen = liveStatusNow === 'active' || liveStatusNow === 'waiting';
+        var liveId = (!forceNewChat || liveAlreadyOpen)
+            ? (serverLiveConversationId || pendingResumeConvId || getStoredConversationId() || 0)
+            : 0;
         liveId = parseInt(liveId, 10) || 0;
         if (liveId > 0) {
             hideIdleIntro();
@@ -3139,11 +3143,13 @@
             // Backup if WS invite was missed / settings slow: resume live waiting|active thread
             var liveId = (data && data.has_active_chat) ? (parseInt(data.conversation_id, 10) || 0) : 0;
             var status = String((data && data.conversation_status) || '').toLowerCase();
+            var currentId = parseInt(conversationId, 10) || 0;
             if (liveId > 0 && (status === 'active' || status === 'waiting')
-                && !(parseInt(conversationId, 10) || 0)
+                && currentId !== liveId
                 && !chatInitInFlight && !proactiveInviteInFlight
-                && (isIdleLandingVisible() || !entryRouted)) {
+                && (isOpen || isIdleLandingVisible() || !entryRouted)) {
                 entryRouted = true;
+                forceNewChat = false;
                 acceptProactiveInvite({ conversation_id: liveId });
             }
         });

@@ -235,7 +235,14 @@ try {
         } catch (Throwable $e) {
             $liveConv = null;
         }
-        // Same visitor's soft-closed ticket today (not another IP-share person's closed chat)
+        if (!$liveConv && function_exists('lc_find_conversation_by_ip')) {
+            $byIp = lc_find_conversation_by_ip($ip, $brandId);
+            // Same IP, chat already open: every widget joins that one thread.
+            if ($byIp && in_array($byIp['status'] ?? '', ['waiting', 'active'], true)) {
+                $liveConv = $byIp;
+            }
+        }
+        // Same visitor's soft-closed ticket today — only when this IP has no live chat.
         if (!$liveConv) {
             try {
                 $closedStmt = $db->prepare("
@@ -249,13 +256,6 @@ try {
                 $liveConv = $closedStmt->fetch() ?: null;
             } catch (Throwable $e) {
                 $liveConv = null;
-            }
-        }
-        if (!$liveConv && function_exists('lc_find_conversation_by_ip')) {
-            $byIp = lc_find_conversation_by_ip($ip, $brandId);
-            // IP share: only claim LIVE threads — never auto-open someone else's closed "Thanks" screen
-            if ($byIp && in_array($byIp['status'] ?? '', ['waiting', 'active'], true)) {
-                $liveConv = $byIp;
             }
         }
         $hasLive = $liveConv && in_array($liveConv['status'] ?? '', ['waiting', 'active', 'closed'], true);
@@ -354,6 +354,16 @@ try {
         $conv = $stmt->fetch() ?: null;
     }
 
+    // Same IP already chatting: join that thread before this visitor's closed ticket.
+    if (!$conv && function_exists('lc_claim_ip_conversation')) {
+        $claimed = lc_claim_ip_conversation($ip, $brandId, $visitorId, $visitorUid);
+        if ($claimed && in_array($claimed['status'] ?? '', ['waiting', 'active'], true)) {
+            $conv = $claimed;
+        } elseif ($claimed && ($claimed['status'] ?? '') === 'closed') {
+            $conv = $claimed;
+        }
+    }
+
     // Soft-closed same-day ticket (agent/inactivity) — keep thread for transcript + continue
     if (!$conv) {
         $stmt = $db->prepare("
@@ -366,14 +376,18 @@ try {
         $stmt->execute([$visitorId, $brandId]);
         $conv = $stmt->fetch() ?: null;
     }
-
-    // Rule 2: same IP + same date → one chat (never across different IPs)
-    if (!$conv && function_exists('lc_claim_ip_conversation')) {
-        $claimed = lc_claim_ip_conversation($ip, $brandId, $visitorId, $visitorUid);
-        if ($claimed) {
-            $conv = $claimed;
-        }
     }
+
+    // "Start a new chat" must not reopen a closed ticket, but an already-open
+    // chat on this IP is the only chat — every widget joins it.
+    if (!$conv && function_exists('lc_find_conversation_by_ip') && function_exists('lc_claim_ip_conversation')) {
+        $liveByIp = lc_find_conversation_by_ip($ip, $brandId);
+        if ($liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true)) {
+            $claimedLive = lc_claim_ip_conversation($ip, $brandId, $visitorId, $visitorUid);
+            if ($claimedLive && in_array($claimedLive['status'] ?? '', ['waiting', 'active'], true)) {
+                $conv = $claimedLive;
+            }
+        }
     }
 
     if ($conv) {
