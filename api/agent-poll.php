@@ -165,7 +165,7 @@ try {
             $conversationId,
             $agent,
             (int) ($conv['visitor_id'] ?? 0),
-            4
+            12
         );
     }
 

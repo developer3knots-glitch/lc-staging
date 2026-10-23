@@ -51,6 +51,20 @@
         }
     }
 
+    function newestOpenChatId(threads, conversation) {
+        var best = 0;
+        function consider(row) {
+            if (!row) return;
+            var id = parseInt(row.id, 10) || 0;
+            var status = String(row.status || '').toLowerCase();
+            if (id < 1 || (status !== 'active' && status !== 'waiting')) return;
+            if (id > best) best = id;
+        }
+        (threads || []).forEach(consider);
+        consider(conversation);
+        return best;
+    }
+
     function loadPriorThreads(conversationId) {
         if (!conversationId) return;
         priorHistoryLoadingId = conversationId;
@@ -59,7 +73,13 @@
             .then(function (data) {
                 if (selectedId !== conversationId || priorHistoryLoadingId !== conversationId) return;
                 if (!data || !data.success) return;
-                prependPriorThreads(data.prior_threads || [], data.conversation || null);
+                var threads = data.prior_threads || [];
+                var newest = newestOpenChatId(threads, data.conversation || null);
+                if (newest && newest !== conversationId && typeof openConversation === 'function') {
+                    openConversation(newest);
+                    return;
+                }
+                prependPriorThreads(threads, data.conversation || null);
             })
             .catch(function () {});
     }
@@ -2582,7 +2602,7 @@
             if (when) parts.push(sessionPart(esc(when)));
         } else if (kind === 'ended') {
             extraClass = 'is-ended';
-            var endLabel = status === 'closed' ? 'Chat ended' : (status === 'waiting' ? 'Disconnected' : 'Session ended');
+            var endLabel = status === 'closed' ? 'Chat ended' : (status === 'waiting' ? 'Waiting chat' : 'Open chat');
             parts.push(sessionPart(esc(endLabel)));
             if (status) parts.push(sessionPart('<span class="lc-session-divider-status">' + esc(status.toUpperCase()) + '</span>'));
             if (ref) parts.push(sessionPart('<span class="lc-session-divider-ref">' + esc(ref) + '</span>'));
