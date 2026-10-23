@@ -12,6 +12,12 @@
     var statClicks = document.getElementById('lc-visitors-stat-clicks');
     var statToday = document.getElementById('lc-visitors-stat-today');
     var statAvg = document.getElementById('lc-visitors-stat-avg');
+    var statGclid = document.getElementById('lc-visitors-stat-gclid');
+    var feedTitle = document.getElementById('lc-vis-feed-title');
+    var feedSub = document.getElementById('lc-vis-feed-sub');
+    var emptyTitle = document.getElementById('lc-visitors-empty-title');
+    var emptySub = document.getElementById('lc-visitors-empty-sub');
+    var tableEl = root.querySelector('.lc-visitors-table');
     var chartEl = document.getElementById('lc-vis-chart');
     var chartNote = document.getElementById('lc-vis-chart-note');
     var pagesEl = document.getElementById('lc-vis-pages');
@@ -19,6 +25,7 @@
     var fromInput = document.getElementById('lc-visitors-from');
     var toInput = document.getElementById('lc-visitors-to');
     var range = '7d';
+    var view = 'all';
     var searchQ = '';
     var searchTimer = null;
     var seenIds = {};
@@ -64,6 +71,7 @@
         if (brandSelect && brandSelect.value && brandSelect.value !== '0') {
             parts.push('brand=' + encodeURIComponent(brandSelect.value));
         }
+        if (view === 'gclid') parts.push('view=gclid');
         return parts.length ? url + '?' + parts.join('&') : url;
     }
 
@@ -192,6 +200,7 @@
                     '<div class="lc-traffic-person-text"><strong>' + esc(name) + '</strong>' +
                     (row.country ? '<span>' + esc(row.country) + '</span>' : '') +
                     '</div></div></td>' +
+                '<td class="lc-vis-gclid-col">' + (row.gclid ? '<code class="lc-vis-gclid-code" title="' + esc(row.gclid) + '">' + esc(row.gclid) + '</code>' : '—') + '</td>' +
                 '<td><strong class="lc-visitors-clicks-num">' + esc(row.clicks || 0) + '</strong></td>' +
                 '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
                 '<td class="lc-vis-dur' + (row.duration_live ? ' is-live' : '') + '" data-sec="' + esc(row.duration_seconds == null ? '' : row.duration_seconds) + '" data-live="' + (row.duration_live ? '1' : '0') + '" data-at="' + Date.now() + '">' + esc(row.duration_label || '—') + '</td>' +
@@ -216,17 +225,45 @@
                 if (statClicks) statClicks.textContent = String(stats.clicks || 0);
                 if (statToday) statToday.textContent = String(stats.today || 0);
                 if (statAvg) statAvg.textContent = String(stats.avg || 0);
+                if (statGclid) statGclid.textContent = String(stats.gclid || 0);
+                if (tableEl) tableEl.classList.toggle('is-gclid', view === 'gclid');
+                if (feedTitle) feedTitle.textContent = view === 'gclid' ? 'GCLID visits' : 'Latest visits';
+                if (feedSub) {
+                    feedSub.textContent = view === 'gclid'
+                        ? 'Visitors who arrived with a Google click ID. Duration is that visit on the site.'
+                        : 'Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.';
+                }
+                if (emptyTitle) emptyTitle.textContent = view === 'gclid' ? 'No GCLID visitors in this range' : 'No clicks in this range';
+                if (emptySub) {
+                    emptySub.textContent = view === 'gclid'
+                        ? 'A visitor shows up here when their page URL includes a gclid.'
+                        : 'When someone opens a page with your widget, the visit shows up here.';
+                }
                 paintReport(data.report || {});
                 render(data.visitors || []);
                 syncDurations(data.visitors || []);
             })
             .catch(function () {
-                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="6">Could not load visitors.</td></tr>';
+                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="7">Could not load visitors.</td></tr>';
             })
             .finally(function () {
                 if (refreshBtn && !quiet) refreshBtn.classList.remove('is-spinning');
             });
     }
+
+    root.querySelectorAll('[data-view]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            view = btn.getAttribute('data-view') === 'gclid' ? 'gclid' : 'all';
+            root.querySelectorAll('[data-view]').forEach(function (other) {
+                var on = other === btn;
+                other.classList.toggle('is-on', on);
+                other.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            seenIds = {};
+            lastSig = '';
+            load();
+        });
+    });
 
     root.querySelectorAll('[data-range]').forEach(function (btn) {
         btn.addEventListener('click', function () {

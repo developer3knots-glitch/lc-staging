@@ -31,10 +31,15 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-clicks">0</span><small>Clicks</small></div>
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-today">0</span><small>Today</small></div>
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-avg">0</span><small>Avg / IP</small></div>
+            <div class="lc-hero-stat lc-vis-gclid-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-gclid">0</span><small>GCLID visitors</small></div>
         </div>
     </section>
 
     <div class="lc-vis-toolbar">
+        <div class="lc-vis-view" role="tablist" aria-label="Visitor view">
+            <button type="button" data-view="all" class="is-on" role="tab" aria-selected="true">All</button>
+            <button type="button" data-view="gclid" role="tab" aria-selected="false">GCLID</button>
+        </div>
         <div class="lc-vis-range" role="tablist" aria-label="Report range">
             <button type="button" data-range="today">Today</button>
             <button type="button" data-range="7d" class="is-on">7 days</button>
@@ -83,8 +88,8 @@ require __DIR__ . '/includes/header.php';
     <section class="lc-card lc-card-pro lc-vis-feed">
         <div class="lc-vis-feed-head">
             <div>
-                <h4>Latest visits</h4>
-                <p>Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.</p>
+                <h4 id="lc-vis-feed-title">Latest visits</h4>
+                <p id="lc-vis-feed-sub">Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.</p>
             </div>
             <div class="lc-traffic-search-wrap">
                 <i class="ti ti-search" aria-hidden="true"></i>
@@ -97,6 +102,7 @@ require __DIR__ . '/includes/header.php';
                     <tr>
                         <th>IP</th>
                         <th>Visitor</th>
+                        <th class="lc-vis-gclid-col">GCLID</th>
                         <th>Clicks</th>
                         <th>Page</th>
                         <th>Duration</th>
@@ -104,14 +110,14 @@ require __DIR__ . '/includes/header.php';
                     </tr>
                 </thead>
                 <tbody id="lc-visitors-body">
-                    <tr><td colspan="6">Loading visitors…</td></tr>
+                    <tr><td colspan="7">Loading visitors…</td></tr>
                 </tbody>
             </table>
         </div>
         <div class="lc-traffic-empty" id="lc-visitors-empty" hidden>
             <div class="lc-traffic-empty-icon" aria-hidden="true"><i class="ti ti-click"></i></div>
-            <p>No clicks in this range</p>
-            <span>When someone opens a page with your widget, the visit shows up here.</span>
+            <p id="lc-visitors-empty-title">No clicks in this range</p>
+            <span id="lc-visitors-empty-sub">When someone opens a page with your widget, the visit shows up here.</span>
         </div>
     </section>
 </div>

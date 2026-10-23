@@ -741,6 +741,27 @@ function lc_visitors_row_duration(array $row): array
     ];
 }
 
+function lc_extract_gclid(string $url): string
+{
+    if ($url === '') {
+        return '';
+    }
+    $query = parse_url($url, PHP_URL_QUERY);
+    if (!is_string($query) || $query === '') {
+        return '';
+    }
+    parse_str($query, $params);
+    $value = $params['gclid'] ?? '';
+    if (!is_string($value)) {
+        return '';
+    }
+    $value = trim($value);
+    if ($value === '' || strlen($value) > 200) {
+        return '';
+    }
+    return $value;
+}
+
 function lc_format_duration_label($seconds): string
 {
     if ($seconds === null || $seconds === '') {
