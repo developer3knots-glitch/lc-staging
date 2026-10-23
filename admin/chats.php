@@ -376,6 +376,10 @@ require __DIR__ . '/includes/header.php';
                     </button>
                     <div class="lc-details-acc-body" id="lc-details-additional-body">
                         <dl class="lc-details-kv-list">
+                            <div class="lc-details-kv" data-rail-field="status">
+                                <dt>Status</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-status">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-status" aria-label="Copy status" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
                             <div class="lc-details-kv" data-rail-field="returning">
                                 <dt>Returning visitor</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-returning">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-returning" aria-label="Copy returning visitor" hidden><i class="ti ti-copy"></i></button></dd>
@@ -396,6 +400,22 @@ require __DIR__ . '/includes/header.php';
                                 <dt>Chat duration</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-chat-duration">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-chat-duration" aria-label="Copy chat duration" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
+                            <div class="lc-details-kv" data-rail-field="time_on_site">
+                                <dt>Time on site</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-time-on-site">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-time-on-site" aria-label="Copy time on site" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
+                            <div class="lc-details-kv" data-rail-field="current_page">
+                                <dt>Current page</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-current-page">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-current-page" aria-label="Copy current page" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
+                            <div class="lc-details-kv" data-rail-field="chat_page">
+                                <dt>Chat page</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-chat-page">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-chat-page" aria-label="Copy chat page" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
+                            <div class="lc-details-kv" data-rail-field="clicks">
+                                <dt>Clicks</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-clicks">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-clicks" aria-label="Copy clicks" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
                             <div class="lc-details-kv" data-rail-field="groups">
                                 <dt>Groups</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-groups">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-groups" aria-label="Copy group" hidden><i class="ti ti-copy"></i></button></dd>
@@ -407,6 +427,14 @@ require __DIR__ . '/includes/header.php';
                             <div class="lc-details-kv" data-rail-field="agent">
                                 <dt>Agent</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-agent">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-agent" aria-label="Copy agent" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
+                            <div class="lc-details-kv" data-rail-field="device">
+                                <dt>Device</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-device">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-device" aria-label="Copy device" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
+                            <div class="lc-details-kv" data-rail-field="date">
+                                <dt>Date</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-date">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-date" aria-label="Copy date" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
                             <div class="lc-details-kv" data-rail-field="ip">
                                 <dt>IP address</dt>

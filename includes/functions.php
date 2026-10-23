@@ -1813,6 +1813,7 @@ function lc_get_conversation(int $id): ?array
         SELECT c.*, v.name AS visitor_name, v.email AS visitor_email, v.visitor_uid,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.ipv4_address AS visitor_ipv4, v.country AS visitor_country, v.page_url AS visitor_page,
                v.user_agent AS visitor_user_agent, v.last_seen AS visitor_last_seen,
+               v.visit_started_at AS visitor_visit_started_at,
                v.left_site_at AS visitor_left_site_at,
                v.widget_open AS visitor_widget_open,
                v.page_visible AS visitor_page_visible,

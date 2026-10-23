@@ -790,6 +790,44 @@
         return Math.floor(total / 3600) + 'h ' + Math.floor((total % 3600) / 60) + 'm';
     }
 
+    function formatDetailStatus(status) {
+        var text = String(status || '').replace(/_/g, ' ').trim();
+        if (!text) return '-';
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function pageDetailLabel(url) {
+        var raw = String(url || '').trim();
+        if (!raw) return '-';
+        raw = raw.replace(/([?&#])gclid=[^&#]*/ig, '$1').replace(/[?&#]$/, '').replace(/\?&/, '?');
+        return raw.length > 90 ? raw.slice(0, 87) + '...' : raw;
+    }
+
+    function deviceDetailLabel(device) {
+        device = device || {};
+        var parts = [device.device, device.browser, device.os].filter(function (part) {
+            part = String(part || '').trim();
+            return part && part.toLowerCase() !== 'unknown';
+        });
+        return parts.length ? parts.join(' · ') : '-';
+    }
+
+    function formatTimeOnSite(c) {
+        if (!c || !c.visitor_visit_started_at) return '-';
+        var start = window.LCTime && window.LCTime.parseTimestamp
+            ? window.LCTime.parseTimestamp(c.visitor_visit_started_at)
+            : new Date(c.visitor_visit_started_at);
+        if (!start || isNaN(start.getTime())) return '-';
+        var end = new Date();
+        if (c.visitor_left_site_at) {
+            var left = window.LCTime && window.LCTime.parseTimestamp
+                ? window.LCTime.parseTimestamp(c.visitor_left_site_at)
+                : new Date(c.visitor_left_site_at);
+            if (left && !isNaN(left.getTime()) && left.getTime() >= start.getTime()) end = left;
+        }
+        return formatDurationSeconds(Math.floor((end.getTime() - start.getTime()) / 1000));
+    }
+
     function formatChatDuration(c) {
         if (!c || !c.started_at) return '-';
         var start = window.LCTime && window.LCTime.parseTimestamp
@@ -1128,6 +1166,14 @@
         if (gclidRow) gclidRow.hidden = !gclid;
 
         setText('lc-details-chat-duration', formatChatDuration(c));
+        setText('lc-details-status', formatDetailStatus(c.status));
+        setText('lc-details-time-on-site', formatTimeOnSite(c));
+        setText('lc-details-current-page', pageDetailLabel(c.visitor_page || ''));
+        setText('lc-details-chat-page', pageDetailLabel(c.page_url || c.visitor_page || ''));
+        var pageCount = parseInt(stats.page_count, 10) || journeyViewsRaw.length || 0;
+        setText('lc-details-clicks', pageCount > 0 ? String(pageCount) : '-');
+        setText('lc-details-device', deviceDetailLabel(c.visitor_device));
+        setHtmlTime('lc-details-date', c.started_at || c.created_at || '');
 
         var groupsEl = document.getElementById('lc-details-groups');
         if (groupsEl) {
