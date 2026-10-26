@@ -4019,6 +4019,22 @@
         autoResizeReplyInput();
     }
 
+    function focusReplyField() {
+        if (!replyInput || replyInput.disabled) return;
+        var active = document.activeElement;
+        if (active && active !== replyInput && active !== document.body && active !== document.documentElement) {
+            var tag = (active.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || active.isContentEditable) return;
+        }
+        try {
+            replyInput.focus({ preventScroll: true });
+        } catch (e) {
+            try { replyInput.focus(); } catch (e2) {}
+        }
+        var len = String(replyInput.value || '').length;
+        try { replyInput.setSelectionRange(len, len); } catch (e3) {}
+    }
+
     function openConversation(id) {
         id = parseInt(id, 10) || 0;
         if (!id) return;
@@ -4162,6 +4178,10 @@
         if (previousId && previousId !== id && previousBlocked) {
             archiveBlockedConversation(previousId);
         }
+        setTimeout(function () {
+            if ((parseInt(selectedId, 10) || 0) !== id) return;
+            focusReplyField();
+        }, 0);
     }
 
     function updateBlockIpMenu() {
@@ -6740,7 +6760,10 @@
     var inboxReturnBtn = document.getElementById('lc-inbox-return');
     if (inboxReturnBtn) {
         inboxReturnBtn.addEventListener('click', function () {
-            if (selectedId > 0) setChatThreadOpen(true);
+            if (selectedId > 0) {
+                setChatThreadOpen(true);
+                focusReplyField();
+            }
         });
     }
 
