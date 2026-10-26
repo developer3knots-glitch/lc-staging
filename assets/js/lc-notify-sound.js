@@ -8,6 +8,8 @@
     var ctx = null;
     var lastPlayAt = 0;
     var minGapMs = 700;
+    var htmlAudio = null;
+    var wavCache = {};
 
     function getCtx() {
         var AC = global.AudioContext || global.webkitAudioContext;
@@ -213,6 +215,93 @@
         return chosen;
     }
 
+    function prefersHtmlAudio() {
+        var ua = navigator.userAgent || '';
+        if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+        return (navigator.maxTouchPoints || 0) > 1 && /Mac/.test(navigator.platform || '');
+    }
+
+    function renderWavUrl(soundId) {
+        if (wavCache[soundId]) return wavCache[soundId];
+        var notes = PRESETS[soundId] || PRESETS.default;
+        var sr = 22050;
+        var end = 0.2;
+        notes.forEach(function (note) {
+            end = Math.max(end, (note.delay || 0) + Math.max(0.04, note.dur || 0.2) + 0.03);
+        });
+        var length = Math.ceil(sr * end);
+        var pcm = new Float32Array(length);
+        notes.forEach(function (note) {
+            var start = Math.floor(sr * (note.delay || 0));
+            var count = Math.floor(sr * Math.max(0.04, note.dur || 0.2));
+            var freq = Math.max(40, note.freq || 440);
+            var freqEnd = Math.max(40, note.freqEnd || freq * 0.97);
+            var peak = Math.min(0.92, (note.peak || 0.16) * 3.6);
+            var type = note.type || 'sine';
+            var phase = 0;
+            for (var i = 0; i < count; i++) {
+                var idx = start + i;
+                if (idx >= length) break;
+                var progress = count > 1 ? i / (count - 1) : 0;
+                var hz = freq + (freqEnd - freq) * progress;
+                phase += (2 * Math.PI * hz) / sr;
+                var sample = Math.sin(phase);
+                if (type === 'square') sample = sample >= 0 ? 1 : -1;
+                else if (type === 'triangle') sample = (2 / Math.PI) * Math.asin(Math.max(-1, Math.min(1, sample)));
+                if (note.harm && note.harm > 1) {
+                    sample = sample * 0.78 + Math.sin(phase * note.harm) * 0.22;
+                }
+                var env = progress < 0.06 ? (progress / 0.06) : Math.pow(1 - ((progress - 0.06) / 0.94), 1.35);
+                pcm[idx] += sample * peak * env;
+            }
+        });
+        var buffer = new ArrayBuffer(44 + length * 2);
+        var view = new DataView(buffer);
+        function writeStr(offset, text) {
+            for (var c = 0; c < text.length; c++) view.setUint8(offset + c, text.charCodeAt(c));
+        }
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + length * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sr, true);
+        view.setUint32(28, sr * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        view.setUint32(40, length * 2, true);
+        for (var s = 0; s < length; s++) {
+            var clipped = Math.max(-1, Math.min(1, pcm[s]));
+            view.setInt16(44 + s * 2, clipped < 0 ? clipped * 0x8000 : clipped * 0x7FFF, true);
+        }
+        var blob = new Blob([buffer], { type: 'audio/wav' });
+        wavCache[soundId] = URL.createObjectURL(blob);
+        return wavCache[soundId];
+    }
+
+    function htmlAudioEl() {
+        if (!htmlAudio) {
+            htmlAudio = new Audio();
+            htmlAudio.setAttribute('playsinline', 'true');
+            htmlAudio.preload = 'auto';
+        }
+        return htmlAudio;
+    }
+
+    function playHtmlAudio(soundId) {
+        try {
+            var el = htmlAudioEl();
+            el.pause();
+            el.src = renderWavUrl(soundId);
+            el.currentTime = 0;
+            var pending = el.play();
+            if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+        } catch (e) { /* autoplay */ }
+    }
+
     function speak(soundId, eventName) {
         if (!global.speechSynthesis || typeof global.SpeechSynthesisUtterance !== 'function') {
             return false;
@@ -220,12 +309,10 @@
         var preset = VOICE_PRESETS[soundId];
         if (!preset) return false;
         var line = VOICE_LINES[eventName] || 'Notification';
+        var mobile = prefersHtmlAudio();
 
         function say() {
             var voice = pickSpokenVoice(soundId, preset);
-            if (!voice) {
-                return false;
-            }
             try {
                 var utterance = new global.SpeechSynthesisUtterance(line);
                 utterance.pitch = preset.pitch;
@@ -240,6 +327,10 @@
                 if (global.speechSynthesis.speaking || global.speechSynthesis.pending) {
                     global.speechSynthesis.cancel();
                 }
+                if (mobile) {
+                    global.speechSynthesis.speak(utterance);
+                    return true;
+                }
                 global.setTimeout(function () {
                     try { global.speechSynthesis.speak(utterance); } catch (e) {}
                 }, 60);
@@ -249,7 +340,7 @@
             }
         }
 
-        if (!(global.speechSynthesis.getVoices() || []).length) {
+        if (!mobile && !(global.speechSynthesis.getVoices() || []).length) {
             var onVoices = function () {
                 global.speechSynthesis.removeEventListener('voiceschanged', onVoices);
                 say();
@@ -333,6 +424,11 @@
             return;
         }
 
+        if (prefersHtmlAudio()) {
+            playHtmlAudio(soundId);
+            return;
+        }
+
         try {
             var c = getCtx();
             if (!c) {
@@ -354,6 +450,12 @@
     }
 
     function bindUnlock() {
+        if (prefersHtmlAudio()) {
+            var prime = function () { unlock(); };
+            document.addEventListener('pointerdown', prime, true);
+            document.addEventListener('touchstart', prime, true);
+            return;
+        }
         var once = function () {
             unlock();
             document.removeEventListener('pointerdown', once, true);
