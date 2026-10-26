@@ -276,6 +276,8 @@ function lc_web_push_save_subscription(int $agentId, string $endpoint, string $p
             ON DUPLICATE KEY UPDATE endpoint = VALUES(endpoint), p256dh = VALUES(p256dh), auth = VALUES(auth), updated_at = VALUES(updated_at)
         ');
         $stmt->execute([$agentId, $hash, $endpoint, $p256dh, $auth, $now, $now]);
+        lc_db()->prepare('DELETE FROM agent_push_subscriptions WHERE endpoint_hash = ? AND agent_id <> ?')
+            ->execute([$hash, $agentId]);
         return true;
     } catch (Throwable $e) {
         return false;
@@ -346,14 +348,12 @@ function lc_web_push_agent_ids_for_brand(int $brandId): array
         $brand = lc_db()->prepare('SELECT account_id FROM brands WHERE id = ? LIMIT 1');
         $brand->execute([$brandId]);
         $accountId = (int) ($brand->fetchColumn() ?: 0);
-        $sql = 'SELECT id FROM agents WHERE is_active = 1 AND (brand_id IS NULL OR brand_id = ?)';
-        $params = [$brandId];
-        if ($accountId > 0) {
-            $sql .= ' AND account_id = ?';
-            $params[] = $accountId;
+        if ($accountId < 1) {
+            return [];
         }
+        $sql = "SELECT id FROM agents WHERE is_active = 1 AND account_id = ? AND (brand_id IS NULL OR brand_id = ?)";
         $stmt = lc_db()->prepare($sql);
-        $stmt->execute($params);
+        $stmt->execute([$accountId, $brandId]);
         $ids = [];
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
             $id = (int) $id;

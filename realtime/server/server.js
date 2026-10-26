@@ -239,11 +239,16 @@ function wireWebSocket(server) {
       // Dynamic channel join (open chat → conv:ID / staff:conv:ID)
       if (msg.type === 'subscribe') {
         const ch = String(msg.channel || '');
-        if (/^(conv|agent|brand|visitor|staff):/.test(ch)) {
-          subscribe(ws, ch);
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
-          }
+        if (!/^(conv|agent|brand|visitor|staff):/.test(ch)) return;
+        const claims = ws._lcClaims || {};
+        const allowed = Array.isArray(claims.channels)
+          ? claims.channels.map(function (c) { return String(c); })
+          : [];
+        // conv/staff are joined when a chat is opened. Brand and agent rooms stay inside the login token.
+        if (!/^(conv|staff):/.test(ch) && allowed.indexOf(ch) === -1) return;
+        subscribe(ws, ch);
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
         }
         return;
       }
