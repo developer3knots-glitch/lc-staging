@@ -433,12 +433,20 @@ function lc_is_ip_blocked(string $ip, ?int $accountId = null): bool
     if (function_exists('lc_ensure_accounts_schema')) {
         lc_ensure_accounts_schema();
     }
+    $candidates = [$ip];
+    if (function_exists('lc_ipv4_from_any')) {
+        $v4 = lc_ipv4_from_any($ip);
+        if (is_string($v4) && $v4 !== '' && $v4 !== $ip) {
+            $candidates[] = $v4;
+        }
+    }
+    $marks = implode(',', array_fill(0, count($candidates), '?'));
     if ($accountId !== null && $accountId > 0) {
-        $stmt = lc_db()->prepare('SELECT id FROM blocked_ips WHERE ip_address = ? AND account_id = ? LIMIT 1');
-        $stmt->execute([$ip, $accountId]);
+        $stmt = lc_db()->prepare("SELECT id FROM blocked_ips WHERE ip_address IN ($marks) AND (account_id = ? OR account_id IS NULL) LIMIT 1");
+        $stmt->execute(array_merge($candidates, [$accountId]));
     } else {
-        $stmt = lc_db()->prepare('SELECT id FROM blocked_ips WHERE ip_address = ? LIMIT 1');
-        $stmt->execute([$ip]);
+        $stmt = lc_db()->prepare("SELECT id FROM blocked_ips WHERE ip_address IN ($marks) LIMIT 1");
+        $stmt->execute($candidates);
     }
 
     return (bool) $stmt->fetch();
@@ -490,7 +498,11 @@ function lc_block_ip(string $ip, ?int $agentId = null, string $reason = '', ?int
     $stmt = lc_db()->prepare('
         INSERT INTO blocked_ips (account_id, ip_address, reason, blocked_by, created_at)
         VALUES (?, ?, ?, ?, UTC_TIMESTAMP())
-        ON DUPLICATE KEY UPDATE reason = VALUES(reason), blocked_by = VALUES(blocked_by), created_at = UTC_TIMESTAMP()
+        ON DUPLICATE KEY UPDATE
+            reason = VALUES(reason),
+            blocked_by = VALUES(blocked_by),
+            account_id = COALESCE(account_id, VALUES(account_id)),
+            created_at = UTC_TIMESTAMP()
     ');
     $stmt->execute([$accountId > 0 ? $accountId : null, $ip, $reason !== '' ? $reason : null, $agentId]);
 

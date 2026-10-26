@@ -25,6 +25,12 @@ $leftSec = 86400;
 
 try {
     $db = lc_db();
+    if (function_exists('lc_ensure_conversation_client_ip_schema')) {
+        lc_ensure_conversation_client_ip_schema();
+    }
+    if (function_exists('lc_ensure_visitor_ipv4_schema')) {
+        lc_ensure_visitor_ipv4_schema();
+    }
     $agentBrandId = lc_agent_brand_id($agent);
     $accountId = lc_agent_account_id($agent);
 
@@ -69,6 +75,7 @@ try {
             v.name AS visitor_name,
             v.email AS visitor_email,
             v.ip_address AS visitor_ip,
+            v.ipv4_address AS visitor_ipv4,
             v.country AS visitor_country,
             v.user_agent AS visitor_user_agent,
             v.page_url,
@@ -82,6 +89,7 @@ try {
             c.agent_id,
             c.started_at AS chat_started_at,
             c.page_url AS chat_page_url,
+            c.client_ip AS conversation_client_ip,
             a.name AS agent_name,
             b.name AS brand_name,
             b.brand_key,
@@ -290,15 +298,28 @@ try {
     }
     foreach ($rows as $row) {
         $rowIp = trim((string) ($row['visitor_ip'] ?? ''));
-        if ($rowIp !== '') {
-            if (!array_key_exists($rowIp, $blockedIpCache)) {
-                $blockedIpCache[$rowIp] = function_exists('lc_is_ip_blocked')
-                    ? lc_is_ip_blocked($rowIp, $accountId > 0 ? $accountId : null)
-                    : false;
-            }
-            if (!empty($blockedIpCache[$rowIp])) {
+        $rowBlocked = false;
+        foreach ([
+            $row['visitor_ip'] ?? '',
+            $row['visitor_ipv4'] ?? '',
+            $row['conversation_client_ip'] ?? '',
+        ] as $candidateIp) {
+            $candidateIp = trim((string) $candidateIp);
+            if ($candidateIp === '') {
                 continue;
             }
+            if (!array_key_exists($candidateIp, $blockedIpCache)) {
+                $blockedIpCache[$candidateIp] = function_exists('lc_is_ip_blocked')
+                    ? lc_is_ip_blocked($candidateIp, $accountId > 0 ? $accountId : null)
+                    : false;
+            }
+            if (!empty($blockedIpCache[$candidateIp])) {
+                $rowBlocked = true;
+                break;
+            }
+        }
+        if ($rowBlocked) {
+            continue;
         }
 
         $convStatus = (string) ($row['conversation_status'] ?? '');
