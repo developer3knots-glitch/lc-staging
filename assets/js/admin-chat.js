@@ -2714,13 +2714,16 @@
         var view = step.last_view;
         var path = (view.page_path || '').trim() || '/';
         var title = (view.page_title || '').trim();
-        if (title && title.toLowerCase() !== path.toLowerCase() && title.length < 42) {
+        if (title && title !== '/' && title.toLowerCase() !== path.toLowerCase() && title.length < 42) {
             return title;
+        }
+        if (!path || path === '/') {
+            return 'Home';
         }
         if (path.length > 32) {
             return path.slice(0, 30) + '...';
         }
-        return path || '/';
+        return path;
     }
 
     function renderJourneyStep(step, isCurrent) {
