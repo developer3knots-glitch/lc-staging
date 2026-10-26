@@ -12466,6 +12466,16 @@ body.lc-page-chats .lc-chat-empty-state p {
     word-break: break-word;
 }
 
+a.lc-details-page-title {
+    text-decoration: none;
+    color: #111827;
+}
+
+a.lc-details-page-title:hover {
+    color: #2563eb;
+    text-decoration: underline;
+}
+
 .lc-details-page-link {
     display: block;
     margin-top: 0.14rem;

@@ -1028,7 +1028,11 @@
             html += '<div class="lc-details-page-body">';
             var copyUrl = pageHref || pageLink;
             html += '<div class="lc-details-page-title-row">';
-            html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
+            if (pageHref) {
+                html += '<a class="lc-details-page-title" href="' + esc(pageHref) + '" target="_blank" rel="noopener noreferrer" title="' + esc(pageLink || label) + '">' + esc(label) + '</a>';
+            } else {
+                html += '<span class="lc-details-page-title">' + esc(label) + '</span>';
+            }
             if (copyUrl) {
                 html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(copyUrl) + '" aria-label="Copy page link"><i class="ti ti-copy"></i></button>';
             }
