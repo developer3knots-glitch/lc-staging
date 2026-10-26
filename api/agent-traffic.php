@@ -289,6 +289,18 @@ try {
         }
     }
     foreach ($rows as $row) {
+        $rowIp = trim((string) ($row['visitor_ip'] ?? ''));
+        if ($rowIp !== '') {
+            if (!array_key_exists($rowIp, $blockedIpCache)) {
+                $blockedIpCache[$rowIp] = function_exists('lc_is_ip_blocked')
+                    ? lc_is_ip_blocked($rowIp, $accountId > 0 ? $accountId : null)
+                    : false;
+            }
+            if (!empty($blockedIpCache[$rowIp])) {
+                continue;
+            }
+        }
+
         $convStatus = (string) ($row['conversation_status'] ?? '');
         $since = (int) ($row['seconds_since_seen'] ?? 999999);
         $leftSite = !empty($row['left_site_at']);
@@ -302,7 +314,6 @@ try {
             $status = 'left';
         }
 
-        $rowIp = trim((string) ($row['visitor_ip'] ?? ''));
         $ownConvId = (int) ($row['conversation_id'] ?? 0);
         $sharedChat = ($rowIp !== '' && isset($openByIp[$rowIp])) ? $openByIp[$rowIp] : null;
         $mirrorChat = $sharedChat && $ownConvId !== (int) $sharedChat['id'] && $status === 'browsing';
