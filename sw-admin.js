@@ -1,6 +1,7 @@
 /**
- * Admin desktop notifications (visitor land / chat alerts).
- * Works while any admin tab is open — agent Online status is NOT required.
+ * Admin browser notifications (visitor land / chat alerts).
+ * A visible admin tab handles its own toast. A minimized or background
+ * tab still gets the phone/browser notification.
  */
 self.addEventListener('install', function (event) {
     self.skipWaiting();
@@ -20,8 +21,11 @@ self.addEventListener('push', function (event) {
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
             for (var i = 0; i < clientList.length; i++) {
-                var url = clientList[i] && clientList[i].url ? clientList[i].url : '';
-                if (url.indexOf('/admin/') !== -1 || url.indexOf('/admin?') !== -1) {
+                var client = clientList[i];
+                var url = client && client.url ? client.url : '';
+                var onAdmin = url.indexOf('/admin/') !== -1 || url.indexOf('/admin?') !== -1;
+                if (!onAdmin) continue;
+                if (client.visibilityState === 'visible' || client.focused) {
                     return;
                 }
             }

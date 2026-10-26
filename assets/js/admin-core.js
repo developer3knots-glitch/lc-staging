@@ -338,7 +338,7 @@
 
         function registerNotifySW() {
             if (!('serviceWorker' in navigator)) return Promise.resolve(null);
-            return navigator.serviceWorker.register(base + '/sw-admin.js', { scope: base + '/admin/' })
+            return navigator.serviceWorker.register(base + '/sw-admin.js?v=2', { scope: base + '/admin/' })
                 .then(function (reg) {
                     swReg = reg;
                     return reg;
