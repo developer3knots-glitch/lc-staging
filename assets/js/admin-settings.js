@@ -90,6 +90,16 @@
         syncPollControls();
     }
 
+    document.querySelectorAll('.lc-notify-sound-row').forEach(function (row) {
+        var toggle = row.querySelector('.lc-notify-switch input');
+        if (!toggle) return;
+        var sync = function () {
+            row.classList.toggle('is-off', !toggle.checked);
+        };
+        toggle.addEventListener('change', sync);
+        sync();
+    });
+
     document.querySelectorAll('.lc-notify-sound-preview').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var select = document.getElementById(btn.getAttribute('data-sound-for') || '');

@@ -379,6 +379,12 @@ function lc_web_push_to_agents(array $agentIds, array $message): void
     if (!$events && $event !== '') {
         $events = [$event];
     }
+    if ($events) {
+        $events = lc_web_push_enabled_events($agentIds, $events);
+        if (!$events) {
+            return;
+        }
+    }
     $payload = json_encode([
         'title' => mb_substr((string) ($message['title'] ?? 'Live chat'), 0, 80),
         'body' => mb_substr((string) ($message['body'] ?? ''), 0, 180),
@@ -428,6 +434,40 @@ function lc_web_push_event_is_silent(array $agentIds, string $event): bool
     } catch (Throwable $e) {
         return false;
     }
+}
+
+function lc_web_push_account_id(array $agentIds): int
+{
+    $agentIds = array_values(array_filter(array_map('intval', $agentIds)));
+    if (!$agentIds || !function_exists('lc_db')) {
+        return 0;
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT account_id FROM agents WHERE id = ? LIMIT 1');
+        $stmt->execute([$agentIds[0]]);
+        return (int) ($stmt->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+function lc_web_push_enabled_events(array $agentIds, array $events): array
+{
+    $events = array_values(array_filter(array_map('strval', $events)));
+    if (!$events || !function_exists('lc_notify_event_enabled')) {
+        return $events;
+    }
+    $accountId = lc_web_push_account_id($agentIds);
+    if ($accountId < 1) {
+        return $events;
+    }
+    $kept = [];
+    foreach ($events as $event) {
+        if (lc_notify_event_enabled($accountId, $event)) {
+            $kept[] = $event;
+        }
+    }
+    return $kept;
 }
 
 function lc_web_push_events_all_silent(array $agentIds, array $events): bool

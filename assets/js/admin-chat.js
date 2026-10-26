@@ -254,6 +254,10 @@
     var recentNotifyAt = {};
 
     function playNotifyEvent(eventName, dedupeKey) {
+        var event = eventName || 'message_here';
+        if (window.LCNotifyEnabled && !window.LCNotifyEnabled(event)) {
+            return false;
+        }
         var key = String(dedupeKey || eventName || '');
         var now = Date.now();
         if (key && recentNotifyAt[key] && (now - recentNotifyAt[key]) < 2500) {
@@ -2910,9 +2914,11 @@
                             }
                             window.LCNotifyIncoming(incomingNote);
                         } else if (returningWaiting > lastReturningWaiting) {
-                            playIncomingSound('chat_return', 'queue-return');
-                            showReturningVisitorToast(returningName);
-                        } else {
+                            if (!window.LCNotifyEnabled || window.LCNotifyEnabled('chat_return')) {
+                                playIncomingSound('chat_return', 'queue-return');
+                                showReturningVisitorToast(returningName);
+                            }
+                        } else if (!window.LCNotifyEnabled || window.LCNotifyEnabled('chat_new')) {
                             playIncomingSound('chat_new', 'queue-new');
                         }
                     } else if (unreadTotal > lastInboxUnread && !(window.LC_INCOMING_AT && (Date.now() - window.LC_INCOMING_AT) < 4000)) {

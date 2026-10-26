@@ -501,6 +501,10 @@
             var presence = String(payload.presence || 'browsing').toLowerCase();
             if (presence === 'left') {
                 var leftId = payload.visitor_id || payload.visitor_uid || '';
+                unmarkKnown(leftId);
+                if (window.LCNotifyEnabled && !window.LCNotifyEnabled('visitor_left')) {
+                    return false;
+                }
                 if (canNotifyVisitor('left:' + leftId)) {
                     if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
                         window.LCNotifySound.play({ force: true, event: 'visitor_left' });
@@ -509,11 +513,15 @@
                         window.LCTabNotify.pulse(1);
                     }
                 }
-                unmarkKnown(leftId);
                 return false;
             }
 
             var vid = payload.visitor_id || payload.visitor_uid || '';
+            var landReturningEarly = payload.returning === true || payload.returning === 1 || payload.returning === '1'
+                || payload.is_new === false || payload.is_new === 0 || payload.is_new === '0';
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled(landReturningEarly ? 'visitor_return' : 'visitor_new')) {
+                return false;
+            }
             if (!canNotifyVisitor(vid)) return false;
 
             markKnown(vid, payload);
@@ -540,14 +548,19 @@
             }
             var cid = parseInt(payload.conversation_id, 10) || 0;
             var dedupeKey = 'incoming:' + (cid || payload.visitor_id || payload.visitor_uid || '');
-            if (!canNotifyVisitor(dedupeKey)) return false;
-
             var name = payload.name || 'Visitor';
             var detail = payload.page_path || payload.ip || '';
             var incomingReturning = payload.returning === true || payload.returning === 1 || payload.returning === '1'
                 || payload.is_returning === true || payload.is_returning === 1 || payload.is_returning === '1';
             var incomingContinued = payload.continued === true || payload.continued === 1 || payload.continued === '1';
             var incomingKnown = payload.returning !== undefined || payload.is_returning !== undefined || incomingContinued;
+            var incomingEvent = incomingContinued
+                ? 'chat_continued'
+                : (incomingReturning ? 'chat_return' : (incomingKnown ? 'chat_new' : 'queue_waiting'));
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled(incomingEvent)) {
+                return false;
+            }
+            if (!canNotifyVisitor(dedupeKey)) return false;
             var incomingTitle = (incomingReturning || incomingContinued) ? 'Returning visitor' : 'Incoming chat';
             var incomingBody = (incomingReturning || incomingContinued)
                 ? ((name || 'Visitor') + ' started a chat again')
@@ -564,9 +577,6 @@
             });
             window.LC_INCOMING_AT = Date.now();
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                var incomingEvent = incomingContinued
-                    ? 'chat_continued'
-                    : (incomingReturning ? 'chat_return' : (incomingKnown ? 'chat_new' : 'queue_waiting'));
                 window.LCNotifySound.play({ force: true, event: incomingEvent });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
@@ -583,6 +593,7 @@
             var myId = parseInt(window.LC_AGENT_ID, 10) || 0;
             var targetId = parseInt(payload.target_agent_id, 10) || 0;
             if (myId > 0 && targetId > 0 && targetId !== myId) return false;
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled('chat_transfer')) return false;
 
             var cid = parseInt(payload.conversation_id, 10) || 0;
             var fromId = parseInt(payload.from_agent_id, 10) || 0;
@@ -620,6 +631,7 @@
         function notifyVisitorMessage(payload) {
             payload = payload || {};
             if (payload.alert !== 'message') return false;
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled('message_other')) return false;
             var msg = payload.message || {};
             if (msg.sender_type && msg.sender_type !== 'visitor') return false;
             var cid = parseInt(payload.conversation_id, 10) || 0;
@@ -651,6 +663,7 @@
             var by = String(payload.closed_by || '');
             var eventName = by === 'visitor' ? 'chat_closed' : (by === 'leave' ? 'visitor_left' : '');
             if (!eventName) return;
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled(eventName)) return;
             if (!canNotifyVisitor((by === 'visitor' ? 'close:' : 'left:conv:') + cid)) return;
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
                 window.LCNotifySound.play({ force: true, event: eventName });

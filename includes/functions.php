@@ -426,6 +426,40 @@ function lc_notify_sound_map(int $accountId): array
 }
 
 /**
+ * Per-account on/off for each notification. A missing key stays on.
+ *
+ * @return array<string, bool>
+ */
+function lc_notify_enabled_map(int $accountId): array
+{
+    $raw = function_exists('lc_account_setting')
+        ? lc_account_setting($accountId, 'notify_enabled', '')
+        : lc_setting('notify_enabled', '');
+    $saved = json_decode($raw, true);
+    if (!is_array($saved)) {
+        $saved = [];
+    }
+    $out = [];
+    foreach (array_keys(lc_notify_sound_events()) as $key) {
+        if (!array_key_exists($key, $saved)) {
+            $out[$key] = true;
+            continue;
+        }
+        $out[$key] = $saved[$key] === true || $saved[$key] === 1 || $saved[$key] === '1';
+    }
+    return $out;
+}
+
+function lc_notify_event_enabled(int $accountId, string $event): bool
+{
+    if ($event === '') {
+        return true;
+    }
+    $map = lc_notify_enabled_map($accountId);
+    return !array_key_exists($event, $map) || $map[$event] === true;
+}
+
+/**
  * Logged-in agents ping last_seen about every 45s.
  * No ping for 2 minutes means logout was missed: browser closed or session expired.
  * Manual Away stays while the session is still alive.

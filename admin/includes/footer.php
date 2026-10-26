@@ -10,6 +10,13 @@ window.LC_ATTACHMENT_LIMITS = <?= json_encode(lc_attachment_public_config()) ?>;
 window.LC_REALTIME = <?= json_encode(function_exists('lc_realtime_client_config') ? lc_realtime_client_config() : ['mode' => 'poll', 'wsUrl' => '', 'backupPollMs' => 15000]) ?>;
 window.LC_ADMIN_TIMEZONE = <?= json_encode(function_exists('lc_account_timezone') ? lc_account_timezone(lc_current_account_id()) : 'UTC') ?>;
 window.LC_NOTIFY_SOUNDS = <?= json_encode(function_exists('lc_notify_sound_map') ? lc_notify_sound_map(lc_current_account_id()) : new stdClass(), JSON_UNESCAPED_SLASHES) ?>;
+window.LC_NOTIFY_ENABLED = <?= json_encode(function_exists('lc_notify_enabled_map') ? lc_notify_enabled_map(lc_current_account_id()) : new stdClass(), JSON_UNESCAPED_SLASHES) ?>;
+window.LCNotifyEnabled = function (eventName) {
+    var map = window.LC_NOTIFY_ENABLED || {};
+    var key = String(eventName || '');
+    if (!key || !Object.prototype.hasOwnProperty.call(map, key)) return true;
+    return map[key] !== false && map[key] !== 0 && map[key] !== '0';
+};
 window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): array {
     return [
         'id' => $item['id'],
@@ -24,7 +31,7 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=45"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-tab-notify.js?v=41"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-realtime.js?v=13"></script>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=56"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=57"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-cmdk.js?v=40"></script>
 <?php
 $footerScripts = $extraScripts ?? [];
@@ -33,7 +40,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=208"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=209"></script>
 <?php endforeach; ?>
 </body>
 </html>

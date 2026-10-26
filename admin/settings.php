@@ -160,7 +160,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $map[$eventKey] = in_array($val, $allowed, true) ? $val : 'default';
             }
             lc_set_account_setting($accountId, 'notify_sounds', json_encode($map));
-            $flashMessage = 'Notification sounds saved.';
+            $enabled = [];
+            foreach (array_keys(lc_notify_sound_events()) as $eventKey) {
+                $enabled[$eventKey] = !empty($_POST['notify_on_' . $eventKey]);
+            }
+            lc_set_account_setting($accountId, 'notify_enabled', json_encode($enabled));
+            $flashMessage = 'Notification settings saved.';
             $redirectHash = '#lc-settings-notify';
         } elseif ($action === 'save_rail_order') {
             $posted = $_POST['rail_order'] ?? [];
@@ -388,8 +393,8 @@ require __DIR__ . '/includes/header.php';
 
             <section class="lc-card lc-card-pro lc-settings-section" id="lc-settings-notify">
                 <div class="lc-card-head">
-                    <h3><i class="ti ti-bell"></i> Notification sounds</h3>
-                    <span class="lc-card-sub">Pick the sound for each alert. Silent keeps the popup with no chime, including when every admin tab is closed.</span>
+                    <h3><i class="ti ti-bell"></i> Notifications</h3>
+                    <span class="lc-card-sub">Turn each alert on or off for this account, and pick its sound. Off stops the popup, the chime, and the phone notification. Silent keeps the popup with no chime.</span>
                 </div>
                 <div class="lc-card-body">
                     <form method="post" class="lc-form" id="lc-notify-sounds-form">
@@ -397,6 +402,7 @@ require __DIR__ . '/includes/header.php';
                         <div class="lc-notify-sound-list">
                             <?php
                             $notifySounds = lc_notify_sound_map($accountId);
+                            $notifyEnabled = function_exists('lc_notify_enabled_map') ? lc_notify_enabled_map($accountId) : [];
                             foreach (lc_notify_sound_event_groups() as $eventGroupLabel => $eventGroup):
                             ?>
                             <h4 class="lc-notify-sound-group"><?= lc_sanitize($eventGroupLabel) ?></h4>
@@ -404,8 +410,14 @@ require __DIR__ . '/includes/header.php';
                                 foreach ($eventGroup as $eventKey => $eventMeta):
                                 $selectedSound = $notifySounds[$eventKey] ?? 'default';
                                 $selectId = 'lc-sound-' . $eventKey;
+                                $eventOn = !array_key_exists($eventKey, $notifyEnabled) || !empty($notifyEnabled[$eventKey]);
                             ?>
-                            <div class="lc-notify-sound-row">
+                            <div class="lc-notify-sound-row<?= $eventOn ? '' : ' is-off' ?>">
+                                <label class="lc-notify-switch">
+                                    <input type="checkbox" name="notify_on_<?= lc_sanitize($eventKey) ?>" value="1"<?= $eventOn ? ' checked' : '' ?> aria-label="<?= lc_sanitize($eventMeta[0]) ?> on or off">
+                                    <span class="lc-notify-switch-ui" aria-hidden="true"></span>
+                                    <span class="lc-notify-switch-label">On</span>
+                                </label>
                                 <div class="lc-notify-sound-copy">
                                     <strong><?= lc_sanitize($eventMeta[0]) ?></strong>
                                     <span><?= lc_sanitize($eventMeta[1]) ?></span>
@@ -424,7 +436,7 @@ require __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                             <?php endforeach; ?>
                         </div>
-                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save notification sounds</button>
+                        <button type="submit" class="lc-btn lc-btn-primary"><i class="ti ti-device-floppy"></i> Save notifications</button>
                     </form>
                 </div>
             </section>
