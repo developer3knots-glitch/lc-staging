@@ -338,7 +338,7 @@
 
         function registerNotifySW() {
             if (!('serviceWorker' in navigator)) return Promise.resolve(null);
-            return navigator.serviceWorker.register(base + '/sw-admin.js?v=3', { scope: base + '/admin/' })
+            return navigator.serviceWorker.register(base + '/sw-admin.js?v=4', { scope: base + '/admin/' })
                 .then(function (reg) {
                     swReg = reg;
                     return reg;
@@ -435,8 +435,6 @@
                 tag: tag,
                 renotify: true,
                 requireInteraction: false,
-                silent: false,
-                vibrate: [180, 80, 180],
                 data: { url: targetUrl }
             };
 

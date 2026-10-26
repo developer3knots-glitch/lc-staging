@@ -30,21 +30,22 @@ self.addEventListener('push', function (event) {
                 if (client.focused === true) {
                     return;
                 }
-                if (client.focused !== false && client.visibilityState === 'visible') {
-                    return;
-                }
             }
             var target = data.url || '/admin/chats.php';
             var quiet = data.silent === true;
-            return self.registration.showNotification(data.title || 'Live chat', {
+            var options = {
                 body: data.body || '',
-                tag: data.tag || ('lc-push-' + Date.now()),
-                renotify: !quiet,
-                silent: quiet,
-                vibrate: quiet ? undefined : [180, 80, 180],
+                tag: (data.tag || 'lc-push') + '-' + Date.now(),
                 timestamp: Date.now(),
+                renotify: true,
                 data: { url: target }
-            });
+            };
+            if (quiet) {
+                options.silent = true;
+                options.renotify = false;
+                options.tag = data.tag || ('lc-push-' + Date.now());
+            }
+            return self.registration.showNotification(data.title || 'Live chat', options);
         })
     );
 });
