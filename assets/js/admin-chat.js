@@ -1953,6 +1953,7 @@
         if (replyInput) {
             replyInput.disabled = true;
             replyInput.value = '';
+            clearReplyDraft(cid);
             replyInput.placeholder = closedBy === 'inactivity'
                 ? 'Chat closed due to inactivity'
                 : (closedBy === 'agent'
@@ -3987,6 +3988,37 @@
         });
     }
 
+    function replyDraftKey(convId) {
+        return 'lcAgentDraft:' + String(myAgentId || 0) + ':' + String(parseInt(convId, 10) || 0);
+    }
+
+    function saveReplyDraft(convId) {
+        convId = parseInt(convId, 10) || 0;
+        if (!convId || !replyInput) return;
+        try {
+            var text = String(replyInput.value || '');
+            if (!text) sessionStorage.removeItem(replyDraftKey(convId));
+            else sessionStorage.setItem(replyDraftKey(convId), text);
+        } catch (e) {}
+    }
+
+    function clearReplyDraft(convId) {
+        convId = parseInt(convId, 10) || 0;
+        if (!convId) return;
+        try { sessionStorage.removeItem(replyDraftKey(convId)); } catch (e) {}
+    }
+
+    function restoreReplyDraft(convId) {
+        if (!replyInput) return;
+        convId = parseInt(convId, 10) || 0;
+        var text = '';
+        if (convId) {
+            try { text = String(sessionStorage.getItem(replyDraftKey(convId)) || ''); } catch (e) {}
+        }
+        replyInput.value = text;
+        autoResizeReplyInput();
+    }
+
     function openConversation(id) {
         id = parseInt(id, 10) || 0;
         if (!id) return;
@@ -4042,10 +4074,13 @@
         closeTransferPanel();
         closeMoreMenu();
         transferAgentsLoaded = false;
+        if (previousId && previousId !== id) {
+            saveReplyDraft(previousId);
+        }
         if (replyInput) {
-            replyInput.value = '';
             replyInput.placeholder = 'Type a message...';
             replyInput.disabled = false;
+            restoreReplyDraft(id);
         }
         setComposeMode('reply');
         currentReference = '';
@@ -4509,6 +4544,7 @@
                     replyInput.disabled = true;
                     document.getElementById('lc-send-reply').disabled = true;
                     replyInput.value = '';
+                    clearReplyDraft(conversationId);
                     replyInput.placeholder = visitorIsBrowsing(c)
                         ? 'Visitor is browsing — open this chat'
                         : 'Chat closed - visitor ended this conversation';
@@ -4589,6 +4625,7 @@
         if (!msg || !selectedId) return;
 
         if (composeMode === 'note') {
+            clearReplyDraft(selectedId);
             replyInput.value = '';
             autoResizeReplyInput();
             var noteConvId = selectedId;
@@ -4622,15 +4659,26 @@
                     var railOrphan = notesListEl ? notesListEl.querySelector('.lc-rail-note[data-id="' + tempNoteId + '"]') : null;
                     if (railOrphan) railOrphan.remove();
                 } else {
+                    try { sessionStorage.setItem(replyDraftKey(noteConvId), msg); } catch (e) {}
+                    if (replyInput && selectedId === noteConvId && !String(replyInput.value || '').length) {
+                        replyInput.value = msg;
+                        autoResizeReplyInput();
+                    }
                     alert((data && data.error) || 'Unable to save note');
                 }
             }).catch(function () {
+                try { sessionStorage.setItem(replyDraftKey(noteConvId), msg); } catch (e) {}
+                if (replyInput && selectedId === noteConvId && !String(replyInput.value || '').length) {
+                    replyInput.value = msg;
+                    autoResizeReplyInput();
+                }
                 alert('Unable to save note. Please check your connection.');
             });
             return;
         }
 
         stopOwnTyping();
+        clearReplyDraft(selectedId);
         replyInput.value = '';
         autoResizeReplyInput();
 
@@ -4660,8 +4708,18 @@
             credentials: 'same-origin',
             body: JSON.stringify({ conversation_id: sendConvId, message: msg })
         }).then(function (r) { return r.json(); }).then(function (data) {
-            if (selectedId !== sendConvId) return;
             var tempEl = messagesEl ? messagesEl.querySelector('[data-id="' + tempId + '"]') : null;
+            if (!data || !data.success) {
+                if (tempEl) tempEl.remove();
+                try { sessionStorage.setItem(replyDraftKey(sendConvId), msg); } catch (e) {}
+                if (replyInput && selectedId === sendConvId && !String(replyInput.value || '').length) {
+                    replyInput.value = msg;
+                    autoResizeReplyInput();
+                }
+                if (selectedId === sendConvId) alert((data && data.error) || 'Unable to send message');
+                return;
+            }
+            if (selectedId !== sendConvId) return;
             if (data.success) {
                 var mid = parseInt(data.message_id, 10) || 0;
                 if (mid > 0 && messagesEl) {
@@ -4688,12 +4746,15 @@
                 scheduleInboxRefresh();
                 return;
             }
-            if (tempEl) tempEl.remove();
-            alert(data.error || 'Unable to send message');
         }).catch(function () {
             var tempEl = messagesEl ? messagesEl.querySelector('[data-id="' + tempId + '"]') : null;
             if (tempEl) tempEl.remove();
-            alert('Unable to send message');
+            try { sessionStorage.setItem(replyDraftKey(sendConvId), msg); } catch (e) {}
+            if (replyInput && selectedId === sendConvId && !String(replyInput.value || '').length) {
+                replyInput.value = msg;
+                autoResizeReplyInput();
+            }
+            if (selectedId === sendConvId) alert('Unable to send message');
         }).finally(function () {
             agentSendInFlight = Math.max(0, agentSendInFlight - 1);
             if (sendBtn && selectedId === sendConvId) {
@@ -4720,6 +4781,9 @@
 
     window.addEventListener('resize', function () {
         autoResizeReplyInput();
+    });
+    window.addEventListener('beforeunload', function () {
+        if (selectedId) saveReplyDraft(selectedId);
     });
 
     document.querySelectorAll('.lc-chat-tab').forEach(function (tab) {
@@ -4816,6 +4880,7 @@
         openCannedFromHashShortcut();
     });
     replyInput.addEventListener('input', function () {
+        saveReplyDraft(selectedId);
         onAgentComposeActivity();
         maybeOpenCannedFromHashInput();
     });
@@ -5844,6 +5909,8 @@
             var end = replyInput.selectionEnd || 0;
             var value = replyInput.value || '';
             replyInput.value = value.slice(0, start) + emoji + value.slice(end);
+            saveReplyDraft(selectedId);
+            autoResizeReplyInput();
             var pos = start + emoji.length;
             replyInput.focus();
             try { replyInput.setSelectionRange(pos, pos); } catch (err) {}
