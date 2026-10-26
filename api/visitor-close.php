@@ -63,6 +63,23 @@ try {
         ]);
     }
 
+    if (!$autoClose && function_exists('lc_realtime_defer')) {
+        lc_realtime_defer(static function () use ($conversationId): void {
+            try {
+                if (!function_exists('lc_web_push_on_chat_closed')) {
+                    $file = __DIR__ . '/../includes/web-push.php';
+                    if (is_file($file)) {
+                        require_once $file;
+                    }
+                }
+                if (function_exists('lc_web_push_on_chat_closed')) {
+                    lc_web_push_on_chat_closed($conversationId);
+                }
+            } catch (Throwable $e) {
+            }
+        });
+    }
+
     if (function_exists('lc_send_pending_transcript')) {
         try {
             lc_send_pending_transcript($conversationId, true);

@@ -156,6 +156,8 @@ try {
             lc_realtime_publish_traffic($brandId, 'left', [
                 'visitor_id' => $visitorId,
                 'visitor_uid' => $visitorUid,
+                'notify' => true,
+                'name' => 'Visitor',
             ]);
         }
         lc_json([

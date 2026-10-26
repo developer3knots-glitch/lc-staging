@@ -25,16 +25,24 @@ self.addEventListener('push', function (event) {
                 var url = client && client.url ? client.url : '';
                 var onAdmin = url.indexOf('/admin/') !== -1 || url.indexOf('/admin?') !== -1;
                 if (!onAdmin) continue;
-                if (client.visibilityState === 'visible' || client.focused) {
+                // Minimized mobile Chrome can still report the tab as visible.
+                // Only skip the banner when this admin window is actually focused.
+                if (client.focused === true) {
+                    return;
+                }
+                if (client.focused !== false && client.visibilityState === 'visible') {
                     return;
                 }
             }
             var target = data.url || '/admin/chats.php';
+            var quiet = data.silent === true;
             return self.registration.showNotification(data.title || 'Live chat', {
                 body: data.body || '',
-                tag: data.tag || 'lc-push',
-                renotify: false,
-                silent: data.silent === true,
+                tag: data.tag || ('lc-push-' + Date.now()),
+                renotify: !quiet,
+                silent: quiet,
+                vibrate: quiet ? undefined : [180, 80, 180],
+                timestamp: Date.now(),
                 data: { url: target }
             });
         })
