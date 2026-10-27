@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 176;
+    var LC_WIDGET_BUILD = 177;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -631,7 +631,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=76';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=77';
         document.head.appendChild(link);
     }
 
@@ -650,7 +650,7 @@
             return;
         }
         var script = document.createElement('script');
-        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=6';
+        script.src = siteUrl + '/assets/js/lc-chat-attachments.js?v=7';
         script.onload = callback;
         script.onerror = callback;
         document.head.appendChild(script);
@@ -943,6 +943,11 @@
         var msgScrollBox = document.getElementById('lc-panel-messages');
         if (msgScrollBox) {
             msgScrollBox.addEventListener('scroll', onMessagesScroll, { passive: true });
+            msgScrollBox.addEventListener('click', function (e) {
+                var link = e.target && e.target.closest ? e.target.closest('a.lc-msg-link') : null;
+                if (!link) return;
+                e.stopPropagation();
+            });
         }
         root.addEventListener('wheel', function (e) {
             if (!isOpen) return;
@@ -5144,6 +5149,52 @@
         return d.innerHTML;
     }
 
+    function trimLinkTail(url) {
+        var trail = '';
+        while (url.length) {
+            var ch = url.charAt(url.length - 1);
+            if (ch === ')') {
+                var open = (url.match(/\(/g) || []).length;
+                var close = (url.match(/\)/g) || []).length;
+                if (close <= open) break;
+            } else if ('.,!?;:'.indexOf(ch) === -1) {
+                break;
+            }
+            trail = ch + trail;
+            url = url.slice(0, -1);
+        }
+        return { url: url, trail: trail };
+    }
+
+    function linkHref(url) {
+        var href = /^https?:\/\//i.test(url) ? url : ('https://' + url);
+        if (!/^https?:\/\//i.test(href)) return '';
+        if (/^https?:\/\/(?:www\.)?$/i.test(href)) return '';
+        return href;
+    }
+
+    function linkifyMessage(text) {
+        var raw = String(text || '');
+        if (!raw) return '';
+        var re = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+        var html = '';
+        var last = 0;
+        var match;
+        while ((match = re.exec(raw)) !== null) {
+            html += esc(raw.slice(last, match.index));
+            var trimmed = trimLinkTail(match[0]);
+            var href = linkHref(trimmed.url);
+            if (!href) {
+                html += esc(match[0]);
+            } else {
+                html += '<a class="lc-msg-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(trimmed.url) + '</a>' + esc(trimmed.trail);
+            }
+            last = match.index + match[0].length;
+        }
+        html += esc(raw.slice(last));
+        return html;
+    }
+
     function autoResizeTextarea(el) {
         if (!el) return;
         el.style.height = '34px';
@@ -6213,7 +6264,7 @@
             if (isTicketReferenceMessage(m)) {
                 sys.setAttribute('data-ticket-ref-msg', '1');
             }
-            sys.innerHTML = esc(m.message);
+            sys.innerHTML = linkifyMessage(m.message);
             placeInTranscript(box, sys, m.id);
         }
         // Only pin to bottom when visitor is already near bottom (or forced — own send)
@@ -6620,14 +6671,14 @@
             }
             var name = esc(att.name || (att.kind === 'image' ? 'Image' : 'File'));
             var url = esc(att.url || '');
-            var cap = m.message ? '<div class="lcw-chat-text">' + esc(m.message) + '</div>' : '';
+            var cap = m.message ? '<div class="lcw-chat-text">' + linkifyMessage(m.message) + '</div>' : '';
             if (att.kind === 'image' && att.url) {
                 return cap + '<a class="lcw-attach-link" href="' + url + '" target="_blank" rel="noopener noreferrer">'
                     + '<img class="lcw-attach-img" src="' + url + '" alt="' + name + '"></a>';
             }
             return cap + '<a class="lcw-attach-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + name + '</a>';
         }
-        return esc(m && m.message ? m.message : '');
+        return linkifyMessage(m && m.message ? m.message : '');
     }
 
     function hydrateMessageAttachment(m) {

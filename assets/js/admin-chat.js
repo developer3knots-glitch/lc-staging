@@ -2541,7 +2541,9 @@
         if (!rawText && !m.attachment) return '';
         var bodyHtml = (window.LCChatFiles && m.attachment)
             ? window.LCChatFiles.renderAttachmentHtml(m.attachment, m.message)
-            : esc(m.message);
+            : (window.LCChatFiles && window.LCChatFiles.linkifyText
+                ? window.LCChatFiles.linkifyText(m.message)
+                : esc(m.message));
         var html = '<div class="lc-msg ' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + m.id + '"' +
             (opts.history ? ' data-history="1"' : '') + '>';
         html += '<div class="lc-msg-body">' + bodyHtml + '</div>';

@@ -445,7 +445,9 @@
         var label = sender === 'agent' ? (m.agent_name || 'Agent') : (sender === 'visitor' ? 'Visitor' : '');
         var bodyHtml = (window.LCChatFiles && m.attachment)
             ? window.LCChatFiles.renderAttachmentHtml(m.attachment, text)
-            : esc(text);
+            : (window.LCChatFiles && window.LCChatFiles.linkifyText
+                ? window.LCChatFiles.linkifyText(text)
+                : esc(text));
         var html = '<div class="' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + esc(String(m.id || '')) + '">';
         html += '<div class="lc-msg-body">' + bodyHtml + '</div>';
         html += '<div class="lc-msg-foot"><span class="lc-msg-time">';

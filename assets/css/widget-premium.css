@@ -1095,6 +1095,17 @@
     word-break: break-word;
 }
 .lcw-msg-body { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.lcw-msg a.lc-msg-link,
+.lcw-chat-text a.lc-msg-link {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+.lcw-msg a.lc-msg-link:hover,
+.lcw-chat-text a.lc-msg-link:hover { opacity: 0.82; }
 .lcw-msg-foot {
     display: flex;
     align-items: center;

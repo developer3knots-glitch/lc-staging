@@ -44,6 +44,52 @@
         input.setAttribute('multiple', 'multiple');
     }
 
+    function trimLinkTail(url) {
+        var trail = '';
+        while (url.length) {
+            var ch = url.charAt(url.length - 1);
+            if (ch === ')') {
+                var open = (url.match(/\(/g) || []).length;
+                var close = (url.match(/\)/g) || []).length;
+                if (close <= open) break;
+            } else if ('.,!?;:'.indexOf(ch) === -1) {
+                break;
+            }
+            trail = ch + trail;
+            url = url.slice(0, -1);
+        }
+        return { url: url, trail: trail };
+    }
+
+    function linkHref(url) {
+        var href = /^https?:\/\//i.test(url) ? url : ('https://' + url);
+        if (!/^https?:\/\//i.test(href)) return '';
+        if (/^https?:\/\/(?:www\.)?$/i.test(href)) return '';
+        return href;
+    }
+
+    function linkifyText(text) {
+        var raw = String(text || '');
+        if (!raw) return '';
+        var re = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+        var html = '';
+        var last = 0;
+        var match;
+        while ((match = re.exec(raw)) !== null) {
+            html += esc(raw.slice(last, match.index));
+            var trimmed = trimLinkTail(match[0]);
+            var href = linkHref(trimmed.url);
+            if (!href) {
+                html += esc(match[0]);
+            } else {
+                html += '<a class="lc-msg-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(trimmed.url) + '</a>' + esc(trimmed.trail);
+            }
+            last = match.index + match[0].length;
+        }
+        html += esc(raw.slice(last));
+        return html;
+    }
+
     function esc(text) {
         var d = document.createElement('div');
         d.textContent = text || '';
@@ -205,11 +251,11 @@
 
     function renderAttachmentHtml(attachment, messageText) {
         if (!attachment || !attachment.url) {
-            return esc(messageText || '');
+            return linkifyText(messageText || '');
         }
         var html = '';
         if (messageText && !isDuplicateAttachCaption(messageText, attachment)) {
-            html += '<div class="lc-chat-text">' + esc(messageText) + '</div>';
+            html += '<div class="lc-chat-text">' + linkifyText(messageText) + '</div>';
         }
         if (attachment.kind === 'image') {
             html += '<a class="lc-chat-attach-image" href="' + esc(attachment.url) + '" target="_blank" rel="noopener">';
@@ -223,11 +269,11 @@
 
     function renderWidgetAttachmentHtml(attachment, messageText) {
         if (!attachment || !attachment.url) {
-            return esc(messageText || '');
+            return linkifyText(messageText || '');
         }
         var html = '';
         if (messageText && !isDuplicateAttachCaption(messageText, attachment)) {
-            html += '<div class="lcw-chat-text">' + esc(messageText) + '</div>';
+            html += '<div class="lcw-chat-text">' + linkifyText(messageText) + '</div>';
         }
         var name = attachment.name || (attachment.kind === 'image' ? 'Image' : 'File');
         var label = attachmentDocLabel(attachment);
@@ -297,6 +343,7 @@
         formatSize: formatSize,
         getFileLabel: getFileLabel,
         getMaxFilesPerBatch: getMaxFilesPerBatch,
+        linkifyText: linkifyText,
         renderAttachmentHtml: renderAttachmentHtml,
         renderWidgetAttachmentHtml: renderWidgetAttachmentHtml,
         upload: upload

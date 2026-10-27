@@ -1678,6 +1678,26 @@ body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
     word-break: break-word;
 }
 
+.lc-msg-body a.lc-msg-link,
+.lc-chat-text a.lc-msg-link {
+    color: #1d4ed8;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.lc-msg.agent a.lc-msg-link,
+.lc-msg.agent .lc-chat-text a.lc-msg-link {
+    color: #fff;
+}
+
+.lc-msg-body a.lc-msg-link:hover,
+.lc-chat-text a.lc-msg-link:hover {
+    opacity: 0.82;
+}
+
 .lc-msg-foot {
     display: flex;
     align-items: center;
