@@ -1095,17 +1095,28 @@
     word-break: break-word;
 }
 .lcw-msg-body { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-.lcw-msg a.lc-msg-link,
-.lcw-chat-text a.lc-msg-link {
-    color: inherit;
+#lc-widget-root a.lc-msg-link {
+    color: #1d4ed8 !important;
     font-weight: 600;
-    text-decoration: underline;
+    text-decoration: underline !important;
     text-underline-offset: 2px;
-    cursor: pointer;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 2;
     overflow-wrap: anywhere;
 }
-.lcw-msg a.lc-msg-link:hover,
-.lcw-chat-text a.lc-msg-link:hover { opacity: 0.82; }
+#lc-widget-root .lcw-visitor a.lc-msg-link,
+#lc-widget-root .lcw-msg.lcw-visitor a.lc-msg-link {
+    color: #fff !important;
+}
+#lc-widget-root #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-visitor a.lc-msg-link {
+    color: #1d4ed8 !important;
+}
+#lc-widget-root #lc-panel.lcw-theme-dark.lcw-chat-active .lcw-agent a.lc-msg-link {
+    color: #93c5fd !important;
+}
+#lc-widget-root a.lc-msg-link:hover { opacity: 0.82; }
 .lcw-msg-foot {
     display: flex;
     align-items: center;

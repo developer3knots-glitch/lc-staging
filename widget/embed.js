@@ -6,7 +6,39 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 177;
+    var LC_WIDGET_BUILD = 178;
+
+    // Host themes (Elementor and similar) capture <a> clicks and cancel them.
+    // Open chat links ourselves before that handler runs.
+    var widgetLinkOpenedAt = 0;
+    function widgetMessageLinkFromEvent(e) {
+        var node = e && e.target;
+        if (!node || !node.closest) return null;
+        var link = node.closest('a.lc-msg-link');
+        if (!link || !link.closest('#lc-widget-root')) return null;
+        var href = link.getAttribute('data-lc-url') || link.getAttribute('href') || '';
+        if (!/^https?:\/\//i.test(href)) return null;
+        return href;
+    }
+    function openWidgetMessageLink(e) {
+        if (!e) return;
+        if (e.type === 'auxclick') {
+            if (e.button !== 1) return;
+        } else if (e.button) {
+            return;
+        }
+        var href = widgetMessageLinkFromEvent(e);
+        if (!href) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        if (Date.now() - widgetLinkOpenedAt < 500) return;
+        widgetLinkOpenedAt = Date.now();
+        window.open(href, '_blank', 'noopener,noreferrer');
+    }
+    window.addEventListener('pointerup', openWidgetMessageLink, true);
+    window.addEventListener('click', openWidgetMessageLink, true);
+    window.addEventListener('auxclick', openWidgetMessageLink, true);
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -631,7 +663,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=77';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=78';
         document.head.appendChild(link);
     }
 
@@ -5187,7 +5219,7 @@
             if (!href) {
                 html += esc(match[0]);
             } else {
-                html += '<a class="lc-msg-link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(trimmed.url) + '</a>' + esc(trimmed.trail);
+                html += '<a class="lc-msg-link" href="' + esc(href) + '" data-lc-url="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(trimmed.url) + '</a>' + esc(trimmed.trail);
             }
             last = match.index + match[0].length;
         }
