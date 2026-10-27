@@ -5,6 +5,8 @@
 .env
 realtime/server/.env
 includes/vapid-keys.local.php
+includes/config.php
+includes/config.realtime.local.php
 .git-real/
 .git-broken-lock/
 
