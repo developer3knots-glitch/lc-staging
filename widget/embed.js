@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 175;
+    var LC_WIDGET_BUILD = 176;
 
     var script = document.currentScript;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
@@ -3387,22 +3387,53 @@
         });
     }
 
+    /** Same punctuation fold as PHP lc_plain_text, so the optimistic bubble matches the server copy. */
+    function normalizeBubbleText(text) {
+        return String(text || '')
+            .replace(/\u2014/g, '-')
+            .replace(/\u2013/g, '-')
+            .replace(/\u2012/g, '-')
+            .replace(/\u2026/g, '...')
+            .replace(/\u00A0/g, ' ')
+            .replace(/\u2018|\u2019/g, "'")
+            .replace(/\u201C|\u201D/g, '"')
+            .replace(/\u00B7/g, '|')
+            .replace(/\u2192/g, '->')
+            .replace(/\uFFFD/g, '')
+            .trim();
+    }
+
+    function dropExtraMessageNodes(msgId) {
+        var id = String(msgId || '');
+        if (!id || id.indexOf('"') !== -1) return;
+        var nodes = document.querySelectorAll('#lc-panel-messages [data-msg-id="' + id + '"]');
+        for (var i = 1; i < nodes.length; i++) {
+            if (nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+        }
+    }
+
     /** Turn optimistic temp_* visitor bubble into the real server id (avoids hi/hi duplicate). */
     function adoptTempVisitorBubble(m) {
         var mid = parseInt(m && m.id, 10) || 0;
         if (mid < 1 || (m.sender_type || '') !== 'visitor') return false;
-        var text = String(m.message || '').trim();
+        var text = normalizeBubbleText(m.message);
         if (!text) return false;
+        var already = document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
         var temps = document.querySelectorAll('#lc-panel-messages [data-msg-id^="temp_"]');
         for (var i = 0; i < temps.length; i++) {
             var el = temps[i];
             var body = el.querySelector('.lcw-msg-body');
-            if (!body || body.textContent.trim() !== text) continue;
+            if (!body || normalizeBubbleText(body.textContent) !== text) continue;
+            if (already && already !== el) {
+                el.remove();
+                return true;
+            }
             el.setAttribute('data-msg-id', String(mid));
             el.classList.remove('lcw-msg-pending');
             try {
                 updateVisitorTicks(String(mid), m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             } catch (eTicks) {}
+            dropExtraMessageNodes(mid);
             return true;
         }
         return false;
@@ -3564,7 +3595,7 @@
             chatInitInFlight = false;
             if (!data.success) {
                 if (tempId) {
-                    var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+                    var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
                     if (pending) pending.remove();
                 }
                 if (data.error === 'Pre-chat form required') {
@@ -3589,7 +3620,7 @@
         .catch(function () {
             chatInitInFlight = false;
             if (tempId) {
-                var pendingFail = document.querySelector('[data-msg-id="' + tempId + '"]');
+                var pendingFail = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
                 if (pendingFail) pendingFail.remove();
             }
             handleInitFailure('Connection error. Please try again.');
@@ -6052,6 +6083,11 @@
                     currentAvatar.outerHTML = nextAvatar;
                 }
             }
+            dropExtraMessageNodes(msgKey);
+            return;
+        }
+        // Receipt ticks must not invent a second empty bubble when the row is not painted yet.
+        if (options.updateRead && !String(m.message || '').trim()) {
             return;
         }
         // Real server rows replace idle preview + optimistic temps (prevents welcome/hi twice)
@@ -6181,6 +6217,7 @@
             placeInTranscript(box, sys, m.id);
         }
         // Only pin to bottom when visitor is already near bottom (or forced — own send)
+        dropExtraMessageNodes(msgKey);
         scrollMessagesToBottom(!!options.forceScroll);
         if (window.LCTime) window.LCTime.scan(box);
     }
@@ -6888,7 +6925,7 @@
                 return data;
             }
             // Empty/HTML body but optimistic bubble still there — recover quietly
-            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+            var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
             if (!data && pending) {
                 pending.classList.remove('lcw-msg-pending');
                 if (sendBtn) sendBtn.classList.remove('is-sending');
@@ -6900,7 +6937,7 @@
         })
         .catch(function () {
             if (sendBtn) sendBtn.classList.remove('is-sending');
-            var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+            var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
             if (pending) {
                 // Keep bubble — message often already saved; confirm via poll
                 pending.classList.remove('lcw-msg-pending');
@@ -6914,7 +6951,7 @@
 
     function finishVisitorSend(data, tempId, wasClosed, sendBtn) {
         sendBtn.classList.remove('is-sending');
-        var pending = document.querySelector('[data-msg-id="' + tempId + '"]');
+        var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
         if (data && data.success) {
             if (wasClosed || data.reopened) {
                 markChatContinuedFromClosed(data);
@@ -6925,9 +6962,18 @@
                 var inputFix = document.getElementById('lc-input');
                 if (inputFix) inputFix.placeholder = 'Write a message...';
             }
+            var ownIdEarly = parseInt(data.message_id, 10) || 0;
+            var alreadyPainted = ownIdEarly > 0
+                ? document.querySelector('#lc-panel-messages [data-msg-id="' + ownIdEarly + '"]')
+                : null;
+            if (pending && alreadyPainted && alreadyPainted !== pending) {
+                pending.remove();
+                pending = null;
+            }
             if (pending && data.message_id) {
                 pending.setAttribute('data-msg-id', String(data.message_id));
                 pending.classList.remove('lcw-msg-pending');
+                dropExtraMessageNodes(data.message_id);
                 updateVisitorTicks(String(data.message_id), 'sent');
                 // Do not blindly advance over holes — gap-fill pulls missed agent msgs
                 var ownId = parseInt(data.message_id, 10) || 0;
