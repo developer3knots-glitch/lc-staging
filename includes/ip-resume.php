@@ -160,8 +160,16 @@ function lc_set_conversation_client_ip(int $conversationId, string $ip): void
     }
     try {
         lc_ensure_conversation_client_ip_schema();
-        lc_db()->prepare("UPDATE conversations SET client_ip = COALESCE(NULLIF(TRIM(client_ip), ''), ?) WHERE id = ?")
-            ->execute([$ip, $conversationId]);
+        lc_db()->prepare("
+            UPDATE conversations
+            SET client_ip = ?
+            WHERE id = ?
+              AND (
+                  client_ip IS NULL
+                  OR TRIM(client_ip) = ''
+                  OR client_ip IN ('127.0.0.1', '::1', '0.0.0.0')
+              )
+        ")->execute([$ip, $conversationId]);
     } catch (Throwable $e) {
     }
 }

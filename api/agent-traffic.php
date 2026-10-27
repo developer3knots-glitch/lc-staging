@@ -172,6 +172,9 @@ try {
     $stmt = $db->prepare($sql);
     $stmt->execute($execParams);
     $rows = $stmt->fetchAll();
+    if (function_exists('lc_heal_visitor_loopback_ips')) {
+        lc_heal_visitor_loopback_ips($rows);
+    }
 
     $countryKnown = static function (string $country): bool {
         $name = trim((string) (preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', trim($country)) ?: ''));

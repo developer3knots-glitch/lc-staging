@@ -553,6 +553,117 @@ function lc_record_visitor_ip(int $visitorId, string $ip): void
     }
 }
 
+function lc_best_public_ip(string ...$ips): string
+{
+    foreach ($ips as $ip) {
+        $ip = trim($ip);
+        if ($ip === '') {
+            continue;
+        }
+        $v4 = lc_valid_public_ipv4($ip);
+        if ($v4 !== null) {
+            return $v4;
+        }
+        if (function_exists('lc_ipv4_from_any')) {
+            $mapped = lc_ipv4_from_any($ip);
+            if ($mapped !== null) {
+                return $mapped;
+            }
+        }
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return $ip;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Traffic and chats were showing a frozen 127.0.0.1 even after Cloudflare
+ * had already supplied a public address. Prefer that public address.
+ *
+ * @param array<int,array<string,mixed>> $rows
+ */
+function lc_heal_visitor_loopback_ips(array &$rows): void
+{
+    if (!$rows) {
+        return;
+    }
+    lc_ensure_visitor_ip_history_schema();
+    $need = [];
+    foreach ($rows as $row) {
+        $best = lc_best_public_ip(
+            (string) ($row['visitor_ipv4'] ?? ''),
+            (string) ($row['visitor_ip'] ?? ''),
+            (string) ($row['conversation_client_ip'] ?? '')
+        );
+        if ($best === '') {
+            $id = (int) ($row['visitor_id'] ?? 0);
+            if ($id > 0) {
+                $need[$id] = true;
+            }
+        }
+    }
+    $fromHistory = [];
+    if ($need) {
+        $ids = array_keys($need);
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        try {
+            $stmt = lc_db()->prepare("
+                SELECT visitor_id, ip_address
+                FROM visitor_ip_history
+                WHERE visitor_id IN ({$marks})
+                ORDER BY last_seen DESC
+            ");
+            $stmt->execute($ids);
+            foreach ($stmt->fetchAll() as $hit) {
+                $id = (int) ($hit['visitor_id'] ?? 0);
+                if ($id < 1 || isset($fromHistory[$id])) {
+                    continue;
+                }
+                $public = lc_best_public_ip((string) ($hit['ip_address'] ?? ''));
+                if ($public !== '') {
+                    $fromHistory[$id] = $public;
+                }
+            }
+        } catch (Throwable $e) {
+            $fromHistory = [];
+        }
+    }
+
+    $db = lc_db();
+    foreach ($rows as $index => $row) {
+        $visitorId = (int) ($row['visitor_id'] ?? 0);
+        $stored = trim((string) ($row['visitor_ip'] ?? ''));
+        $best = lc_best_public_ip(
+            (string) ($row['visitor_ipv4'] ?? ''),
+            $stored,
+            (string) ($row['conversation_client_ip'] ?? '')
+        );
+        if ($best === '' && isset($fromHistory[$visitorId])) {
+            $best = $fromHistory[$visitorId];
+        }
+        $storedIsLocal = $stored === '' || lc_is_local_ip($stored) || lc_best_public_ip($stored) === '';
+        if ($best !== '' && $storedIsLocal && $visitorId > 0) {
+            try {
+                $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ? WHERE id = ?')
+                    ->execute([$best, lc_valid_public_ipv4($best) ?: $best, $visitorId]);
+                $convId = (int) ($row['conversation_id'] ?? 0);
+                if ($convId > 0) {
+                    $db->prepare("
+                        UPDATE conversations
+                        SET client_ip = ?
+                        WHERE id = ?
+                          AND (client_ip IS NULL OR TRIM(client_ip) = '' OR client_ip IN ('127.0.0.1', '::1', '0.0.0.0'))
+                    ")->execute([$best, $convId]);
+                }
+            } catch (Throwable $e) {
+            }
+        }
+        $rows[$index]['visitor_ip'] = $best;
+    }
+}
+
 function lc_visitor_stored_ipv4(int $visitorId): ?string
 {
     lc_ensure_visitor_ipv4_schema();

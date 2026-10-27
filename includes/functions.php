@@ -1867,9 +1867,22 @@ function lc_get_conversation(int $id): ?array
     $row = $stmt->fetch();
     if ($row) {
         $frozen = trim((string) ($row['client_ip'] ?? ''));
-        if ($frozen !== '' && filter_var($frozen, FILTER_VALIDATE_IP)) {
-            $row['visitor_ip'] = $frozen;
-            $row['visitor_ipv4'] = $frozen;
+        $frozenPublic = function_exists('lc_best_public_ip') ? lc_best_public_ip($frozen) : '';
+        if ($frozenPublic !== '') {
+            $row['visitor_ip'] = $frozenPublic;
+            $row['visitor_ipv4'] = $frozenPublic;
+        } elseif (function_exists('lc_best_public_ip')) {
+            $livePublic = lc_best_public_ip(
+                (string) ($row['visitor_ipv4'] ?? ''),
+                (string) ($row['visitor_ip'] ?? '')
+            );
+            if ($livePublic !== '') {
+                $row['visitor_ip'] = $livePublic;
+                $row['visitor_ipv4'] = $livePublic;
+            } elseif (function_exists('lc_is_local_ip') && lc_is_local_ip((string) ($row['visitor_ip'] ?? ''))) {
+                $row['visitor_ip'] = '';
+                $row['visitor_ipv4'] = '';
+            }
         }
         if (function_exists('lc_visitor_engagement_status')) {
             $row['visitor_presence'] = lc_visitor_engagement_status($row);
