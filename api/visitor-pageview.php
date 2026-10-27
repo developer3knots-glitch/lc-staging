@@ -50,9 +50,10 @@ try {
     $isNewVisitor = false;
 
     if (!$visitor) {
-        $country = lc_resolve_country($ip);
+        $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
+        $country = $storedIp ? lc_resolve_country($storedIp) : '';
         $ins = $db->prepare('INSERT INTO visitors (visitor_uid, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())');
-        $ins->execute([$visitorUid, $ip, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]);
+        $ins->execute([$visitorUid, $storedIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]);
         $visitorId = (int) $db->lastInsertId();
         $isNewVisitor = true;
         lc_mark_visitor_visit_started($visitorId);

@@ -53,7 +53,7 @@ function lc_ipv4_from_any(string $ip): ?string
 function lc_client_ip(): string
 {
     $candidates = [];
-    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
+    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_TRUE_CLIENT_IP', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
         if (empty($_SERVER[$h])) {
             continue;
         }
@@ -65,6 +65,8 @@ function lc_client_ip(): string
         }
     }
 
+    // Cloudflare often sends the visitor as IPv6 in CF-Connecting-IP while Nginx
+    // also adds 127.0.0.1. A public address must win over that loopback hop.
     foreach ($candidates as $ip) {
         $v4 = lc_ipv4_from_any($ip);
         if ($v4 !== null) {
@@ -72,17 +74,17 @@ function lc_client_ip(): string
         }
     }
     foreach ($candidates as $ip) {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
             return $ip;
         }
     }
     foreach ($candidates as $ip) {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && $ip !== '::1') {
+        if (function_exists('lc_ip_usable_for_identity') && lc_ip_usable_for_identity($ip) && !lc_is_local_ip($ip)) {
             return $ip;
         }
     }
 
-    return $candidates[0] ?? '0.0.0.0';
+    return '0.0.0.0';
 }
 
 function lc_resolve_visitor_ip(array $input = []): string
@@ -522,9 +524,12 @@ function lc_record_visitor_ip(int $visitorId, string $ip): void
             $primary = trim((string) ($row['ip_address'] ?? ''));
         }
 
-        if ($primary === '' || !filter_var($primary, FILTER_VALIDATE_IP)) {
-            // First IP only — set primary once
-            $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ? WHERE id = ?')
+        $primaryIsLoopback = $primary === ''
+            || filter_var($primary, FILTER_VALIDATE_IP) === false
+            || (function_exists('lc_ip_usable_for_identity') && !lc_ip_usable_for_identity($primary))
+            || (function_exists('lc_is_local_ip') && lc_is_local_ip($primary));
+        if ($primaryIsLoopback) {
+            $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ?, country = CASE WHEN country IN (\'Local\', \'Local network\') THEN \'\' ELSE country END WHERE id = ?')
                 ->execute([$ip, $v4 ?: $ip, $visitorId]);
             $primary = $ip;
         }

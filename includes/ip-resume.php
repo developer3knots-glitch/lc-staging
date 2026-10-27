@@ -11,6 +11,23 @@ function lc_ip_usable_for_identity(string $ip): bool
     return filter_var($ip, FILTER_VALIDATE_IP) !== false;
 }
 
+/** IP saved on the visitor row. Loopback from a proxy hop is never stored. */
+function lc_visitor_ip_for_storage(string $ip): ?string
+{
+    $ip = trim($ip);
+    if ($ip === '' || !lc_ip_usable_for_identity($ip) || (function_exists('lc_is_local_ip') && lc_is_local_ip($ip))) {
+        return null;
+    }
+    if (function_exists('lc_valid_public_ipv4')) {
+        $public = lc_valid_public_ipv4($ip);
+        if ($public !== null) {
+            return $public;
+        }
+    }
+
+    return $ip;
+}
+
 /**
  * Normalize to a comparable public IPv4 when possible (for "new IP = new visitor").
  */

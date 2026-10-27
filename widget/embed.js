@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 178;
+    var LC_WIDGET_BUILD = 179;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5685,7 +5685,21 @@
     }
 
     function isPublicIpv4(ip) {
-        return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(String(ip || '').trim());
+        ip = String(ip || '').trim();
+        if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
+            return false;
+        }
+        var parts = ip.split('.');
+        var nums = [];
+        for (var i = 0; i < parts.length; i++) {
+            var n = parseInt(parts[i], 10);
+            if (isNaN(n) || n > 255) return false;
+            nums.push(n);
+        }
+        if (nums[0] === 0 || nums[0] === 10 || nums[0] === 127) return false;
+        if (nums[0] === 192 && nums[1] === 168) return false;
+        if (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) return false;
+        return true;
     }
 
     function reportPublicIpv4(ip) {

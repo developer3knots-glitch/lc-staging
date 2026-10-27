@@ -44,9 +44,10 @@ try {
     $visitor = $stmt->fetch();
 
     if (!$visitor) {
-        $country = lc_resolve_country($ip);
+        $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
+        $country = $storedIp ? lc_resolve_country($storedIp) : '';
         $ins = $db->prepare('INSERT INTO visitors (visitor_uid, name, email, ip_address, user_agent, page_url, country, last_seen) VALUES (?, NULL, ?, ?, ?, ?, ?, NOW())');
-        $ins->execute([$visitorUid, $email, $ip, $userAgent ?: null, $pageUrl ?: null, $country]);
+        $ins->execute([$visitorUid, $email, $storedIp, $userAgent ?: null, $pageUrl ?: null, $country]);
         $visitorId = (int) $db->lastInsertId();
     } else {
         $visitorId = (int) $visitor['id'];
