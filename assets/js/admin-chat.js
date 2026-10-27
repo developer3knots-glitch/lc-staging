@@ -1383,13 +1383,72 @@
         });
     }
 
+    var visitorTypingMap = {};
+    var visitorTypingTimers = {};
+
+    function visitorIsTypingInList(conversationId) {
+        return !!visitorTypingMap[parseInt(conversationId, 10) || 0];
+    }
+
+    function itemPreviewHtml(c) {
+        c = c || {};
+        var html = '';
+        if (c.brand_name) {
+            html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
+        }
+        if (visitorIsTypingInList(c.id)) {
+            html += '<span class="lc-chat-item-typing">typing...</span>';
+        } else {
+            html += esc(c.last_message || ' - ');
+        }
+        return html;
+    }
+
+    function refreshSidebarTyping(conversationId) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (!listEl || id < 1) return;
+        var el = listEl.querySelector('.lc-chat-item[data-id="' + id + '"]');
+        if (!el) return;
+        var row = null;
+        (lastConversations || []).forEach(function (c) {
+            if ((parseInt(c.id, 10) || 0) === id) row = c;
+        });
+        var preview = el.querySelector('.lc-chat-item-preview');
+        if (preview) {
+            preview.innerHTML = itemPreviewHtml(row || { id: id });
+        }
+        el.classList.toggle('is-typing', visitorIsTypingInList(id));
+    }
+
+    function setVisitorSidebarTyping(conversationId, isTyping) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (id < 1) return;
+        if (visitorTypingTimers[id]) {
+            clearTimeout(visitorTypingTimers[id]);
+            visitorTypingTimers[id] = null;
+        }
+        if (isTyping) {
+            visitorTypingMap[id] = true;
+            visitorTypingTimers[id] = setTimeout(function () {
+                visitorTypingMap[id] = false;
+                visitorTypingTimers[id] = null;
+                refreshSidebarTyping(id);
+                if (selectedId === id) setPeerTypingVisible(false);
+            }, 5500);
+        } else {
+            visitorTypingMap[id] = false;
+        }
+        refreshSidebarTyping(id);
+    }
+
     function renderConversationItem(c) {
         var active = c.id == selectedId ? ' active' : '';
         var name = c.visitor_name || 'Visitor';
         var status = c.status;
         var waitingCls = status === 'waiting' ? ' is-waiting' : '';
         var sig = conversationItemSignature(c);
-        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + '" data-id="' + c.id + '" data-status="' + status + '" data-sig="' + esc(sig) + '">';
+        var typingCls = visitorIsTypingInList(c.id) ? ' is-typing' : '';
+        var html = '<div class="lc-chat-item lc-chat-item-pro' + active + waitingCls + typingCls + '" data-id="' + c.id + '" data-status="' + status + '" data-sig="' + esc(sig) + '">';
         html += '<div class="lc-chat-item-av" style="background:' + avatarColor(name) + '">' + esc(visitorInitials(name)) + '</div>';
         html += '<div class="lc-chat-item-body">';
         html += '<div class="lc-chat-item-top">';
@@ -1399,12 +1458,7 @@
             html += '<span class="lc-chat-item-time">' + esc(rel) + '</span>';
         }
         html += '</div>';
-        html += '<div class="lc-chat-item-preview">';
-        if (c.brand_name) {
-            html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
-        }
-        html += esc(c.last_message || ' - ');
-        html += '</div>';
+        html += '<div class="lc-chat-item-preview">' + itemPreviewHtml(c) + '</div>';
         html += '<div class="lc-chat-item-foot">';
         if (isTransferredToMe(c)) {
             html += '<span class="lc-badge lc-badge-transferred" title="This chat is active. It was transferred to you.">Active · Transferred to you</span>';
@@ -1889,8 +1943,9 @@
 
         var preview = el.querySelector('.lc-chat-item-preview');
         if (preview) {
-            preview.textContent = c.last_message || ' - ';
+            preview.innerHTML = itemPreviewHtml(c);
         }
+        el.classList.toggle('is-typing', visitorIsTypingInList(c.id));
 
         // Keep status badge in sync (ACTIVE → closed on auto-close)
         var chip = null;
@@ -6506,6 +6561,9 @@
             realtimeClient.on('message.new', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 var msg = payload && payload.message;
+                if (cid && msg && msg.sender_type === 'visitor') {
+                    setVisitorSidebarTyping(cid, false);
+                }
                 if (handleStaffMessagePayload(payload)) {
                     if (msg && msg.sender_type === 'visitor') {
                         if (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed') {
@@ -6585,8 +6643,9 @@
             });
             realtimeClient.on('typing', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
-                if (!selectedId || cid !== selectedId) return;
-                if ((payload.role || '') === 'visitor') {
+                if (!cid || (payload.role || '') !== 'visitor') return;
+                setVisitorSidebarTyping(cid, !!payload.typing);
+                if (selectedId && cid === selectedId) {
                     setPeerTypingVisible(!!payload.typing, payload.name || 'Visitor', payload.preview || '');
                 }
             });

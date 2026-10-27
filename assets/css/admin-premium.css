@@ -1337,6 +1337,12 @@ body.lc-page-chats .lc-topbar.lc-topbar-desk .lc-top-search {
     text-overflow: ellipsis;
 }
 
+.lc-chat-item-typing {
+    color: #059669;
+    font-weight: 600;
+    font-style: italic;
+}
+
 .lc-chat-item-agent {
     color: #64748b;
     font-weight: 600;
