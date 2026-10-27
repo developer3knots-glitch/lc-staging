@@ -679,6 +679,9 @@
             var vid = payload.visitor_id || payload.visitor_uid || '';
             if (presence === 'left') {
                 unmarkKnown(vid);
+                if (window.LCNotifyEnabled && !window.LCNotifyEnabled('visitor_left')) {
+                    return;
+                }
                 if (canNotifyVisitor('left:' + (vid || payload.visitor_uid || ''))) {
                     if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
                         window.LCNotifySound.play({ force: true, event: 'visitor_left' });
