@@ -1,6 +1,22 @@
 (function () {
     'use strict';
 
+    if (navigator.serviceWorker) {
+        navigator.serviceWorker.addEventListener('message', function (event) {
+            var data = event.data || {};
+            if (!data || data.type !== 'lc-open-url' || !data.url) return;
+            var next;
+            try {
+                next = new URL(String(data.url), window.location.origin);
+            } catch (eUrl) {
+                return;
+            }
+            if (next.origin !== window.location.origin) return;
+            if (next.pathname.indexOf('/admin/') !== 0 && next.pathname !== '/admin') return;
+            window.location.href = next.href;
+        });
+    }
+
     var statusSelect = document.getElementById('lc-agent-status');
     var statusDot = document.getElementById('lc-status-dot');
     var statusTrigger = document.getElementById('lc-status-trigger');
@@ -338,7 +354,7 @@
 
         function registerNotifySW() {
             if (!('serviceWorker' in navigator)) return Promise.resolve(null);
-            return navigator.serviceWorker.register(base + '/sw-admin.js?v=4', { scope: base + '/admin/' })
+            return navigator.serviceWorker.register(base + '/sw-admin.js?v=5', { scope: base + '/admin/' })
                 .then(function (reg) {
                     swReg = reg;
                     return reg;

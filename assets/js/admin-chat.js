@@ -770,6 +770,11 @@
                     tag: 'lc-return-visitor',
                     requireInteraction: false
                 });
+                retN.onclick = function () {
+                    try { window.focus(); } catch (eF) {}
+                    window.location.href = base + '/admin/chats.php';
+                    try { retN.close(); } catch (eC) {}
+                };
                 setTimeout(function () {
                     try { retN.close(); } catch (eAuto) {}
                 }, 10000);

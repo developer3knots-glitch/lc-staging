@@ -53,22 +53,45 @@ self.addEventListener('push', function (event) {
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();
     var data = event.notification.data || {};
-    var url = data.url || '/';
+    var raw = data.url || '/admin/chats.php';
+    var target;
+    try {
+        target = new URL(raw, self.location.origin).href;
+    } catch (eUrl) {
+        target = self.location.origin + '/admin/chats.php';
+    }
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
-            for (var i = 0; i < clientList.length; i++) {
+            var admin = [];
+            var i;
+            for (i = 0; i < clientList.length; i++) {
                 var client = clientList[i];
-                if (client.url && 'focus' in client) {
-                    try {
-                        if (data.url && client.navigate) {
-                            client.navigate(data.url);
-                        }
-                    } catch (eNav) { /* ignore */ }
-                    return client.focus();
+                var url = client && client.url ? client.url : '';
+                if (url.indexOf('/admin/') !== -1 || url.indexOf('/admin?') !== -1) {
+                    admin.push(client);
                 }
             }
+            var chosen = null;
+            for (i = 0; i < admin.length; i++) {
+                if (admin[i].focused === true) {
+                    chosen = admin[i];
+                    break;
+                }
+            }
+            if (!chosen && admin.length) {
+                chosen = admin[0];
+            }
+            if (chosen && 'focus' in chosen) {
+                return chosen.focus().then(function (focused) {
+                    var page = focused || chosen;
+                    if (page && typeof page.postMessage === 'function') {
+                        page.postMessage({ type: 'lc-open-url', url: target });
+                    }
+                    return page;
+                });
+            }
             if (self.clients.openWindow) {
-                return self.clients.openWindow(url);
+                return self.clients.openWindow(target);
             }
         })
     );

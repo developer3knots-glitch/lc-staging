@@ -31,7 +31,7 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=45"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-tab-notify.js?v=41"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-realtime.js?v=13"></script>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=58"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=59"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-cmdk.js?v=40"></script>
 <?php
 $footerScripts = $extraScripts ?? [];
@@ -40,7 +40,7 @@ if (!empty($extraScript)) {
 }
 foreach ($footerScripts as $scriptFile):
 ?>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=219"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/<?= lc_sanitize($scriptFile) ?>?v=220"></script>
 <?php endforeach; ?>
 </body>
 </html>
