@@ -68,6 +68,25 @@ try {
         $searchParams = [$like, $like, $like, $like, $like];
     }
 
+    if ($tab === 'left') {
+        $presenceSql = "(
+            c.id IS NULL
+            AND (
+                v.left_site_at IS NOT NULL
+                OR v.last_seen < DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$onlineSec} SECOND)
+            )
+            AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$leftSec} SECOND)
+        )";
+    } else {
+        $presenceSql = "(
+            c.id IS NOT NULL
+            OR (
+                v.left_site_at IS NULL
+                AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$onlineSec} SECOND)
+            )
+        )";
+    }
+
     $sql = "
         SELECT
             v.id AS visitor_id,
@@ -93,38 +112,10 @@ try {
             a.name AS agent_name,
             b.name AS brand_name,
             b.brand_key,
-            (
-                SELECT pv.brand_id
-                FROM visitor_page_views pv
-                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
-                ORDER BY pv.id DESC
-                LIMIT 1
-            ) AS page_brand_id,
-            (
-                SELECT b2.brand_key
-                FROM visitor_page_views pv
-                INNER JOIN brands b2 ON b2.id = pv.brand_id
-                WHERE pv.visitor_id = v.id AND pv.{$brandSql}
-                ORDER BY pv.id DESC
-                LIMIT 1
-            ) AS page_brand_key,
-            (
-                SELECT TIMESTAMPDIFF(
-                    SECOND,
-                    pv.visited_at,
-                    LEAST(COALESCE(v.last_seen, UTC_TIMESTAMP()), UTC_TIMESTAMP())
-                )
-                FROM visitor_page_views pv
-                WHERE pv.visitor_id = v.id
-                  AND pv.{$brandSql}
-                  AND pv.duration_seconds IS NULL
-                ORDER BY pv.id DESC
-                LIMIT 1
-            ) AS open_page_seconds,
             TIMESTAMPDIFF(SECOND, v.last_seen, UTC_TIMESTAMP()) AS seconds_since_seen
         FROM visitors v
         LEFT JOIN (
-            SELECT c1.*
+            SELECT c1.id, c1.visitor_id, c1.status, c1.brand_id, c1.agent_id, c1.started_at, c1.page_url, c1.client_ip
             FROM conversations c1
             INNER JOIN (
                 SELECT visitor_id, MAX(id) AS max_id
@@ -146,10 +137,7 @@ try {
                 WHERE cx.visitor_id = v.id AND cx.{$brandSql}
             )
         )
-        AND (
-            v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {$leftSec} SECOND)
-            OR c.id IS NOT NULL
-        )
+        AND {$presenceSql}
         {$searchSql}
         ORDER BY
             COALESCE(v.visit_started_at, v.created_at) DESC,
@@ -157,12 +145,8 @@ try {
         LIMIT 200
     ";
 
-    // Placeholder order: page_brand_id, page_brand_key, open page,
-    // open-chat filter, EXISTS pv, EXISTS cx, search
+    // Placeholder order: open-chat filter, EXISTS pv, EXISTS cx, search
     $execParams = array_merge(
-        $brandParams,
-        $brandParams,
-        $brandParams,
         $brandParams,
         $brandParams,
         $brandParams,
@@ -176,78 +160,75 @@ try {
         lc_heal_visitor_loopback_ips($rows);
     }
 
-    $countryKnown = static function (string $country): bool {
-        $name = trim((string) (preg_replace('/\s*\([A-Z]{2}\)\s*$/', '', trim($country)) ?: ''));
-        return $name !== '' && strcasecmp($name, 'Unknown') !== 0 && strcasecmp($name, 'Local') !== 0;
-    };
-    $countryByIp = [];
+    $pageBrandByVisitor = [];
+    $needBrand = [];
     foreach ($rows as $row) {
-        $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $country = trim((string) ($row['visitor_country'] ?? ''));
-        if ($ip !== '' && $countryKnown($country) && empty($countryByIp[$ip])) {
-            $countryByIp[$ip] = $country;
+        if ((int) ($row['conversation_brand_id'] ?? 0) > 0) {
+            continue;
+        }
+        $vid = (int) ($row['visitor_id'] ?? 0);
+        if ($vid > 0) {
+            $needBrand[$vid] = true;
         }
     }
-    $missingIps = [];
-    foreach ($rows as $row) {
-        $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $country = trim((string) ($row['visitor_country'] ?? ''));
-        if ($ip !== '' && !$countryKnown($country) && empty($countryByIp[$ip])) {
-            $missingIps[$ip] = true;
-        }
-    }
-    if ($missingIps) {
+    if ($needBrand) {
         try {
-            $ips = array_keys($missingIps);
-            $placeholders = implode(',', array_fill(0, count($ips), '?'));
-            $sib = $db->prepare("
-                SELECT ip_address, country
-                FROM visitors
-                WHERE ip_address IN ({$placeholders})
-                  AND country IS NOT NULL AND TRIM(country) <> '' AND country <> 'Unknown'
+            $ids = array_keys($needBrand);
+            $marks = implode(',', array_fill(0, count($ids), '?'));
+            $brandLookup = $db->prepare("
+                SELECT pv.visitor_id, pv.brand_id, b2.brand_key
+                FROM visitor_page_views pv
+                INNER JOIN (
+                    SELECT visitor_id, MAX(id) AS max_id
+                    FROM visitor_page_views
+                    WHERE visitor_id IN ({$marks}) AND {$brandSql}
+                    GROUP BY visitor_id
+                ) latest ON latest.max_id = pv.id
+                INNER JOIN brands b2 ON b2.id = pv.brand_id
             ");
-            $sib->execute($ips);
-            while ($hit = $sib->fetch(PDO::FETCH_ASSOC)) {
-                $ip = trim((string) ($hit['ip_address'] ?? ''));
-                $country = trim((string) ($hit['country'] ?? ''));
-                if ($ip !== '' && $countryKnown($country) && empty($countryByIp[$ip])) {
-                    $countryByIp[$ip] = $country;
-                }
+            $brandLookup->execute(array_merge($ids, $brandParams));
+            foreach ($brandLookup->fetchAll(PDO::FETCH_ASSOC) as $hit) {
+                $pageBrandByVisitor[(int) $hit['visitor_id']] = [
+                    'id' => (int) ($hit['brand_id'] ?? 0),
+                    'key' => (string) ($hit['brand_key'] ?? ''),
+                ];
             }
         } catch (Throwable $e) {
+            $pageBrandByVisitor = [];
         }
-        $lookups = 0;
-        foreach (array_keys($missingIps) as $ip) {
-            if (!empty($countryByIp[$ip]) || $lookups >= 2 || !function_exists('lc_resolve_geo')) {
-                continue;
-            }
-            $lookups++;
-            $geo = lc_resolve_geo($ip);
-            $resolved = trim((string) ($geo['country'] ?? ''));
-            if ($countryKnown($resolved)) {
-                $countryByIp[$ip] = $resolved;
+    }
+
+    $blockedSet = [];
+    $blockIps = [];
+    foreach ($rows as $row) {
+        foreach ([
+            $row['visitor_ip'] ?? '',
+            $row['visitor_ipv4'] ?? '',
+            $row['conversation_client_ip'] ?? '',
+        ] as $candidateIp) {
+            $candidateIp = trim((string) $candidateIp);
+            if ($candidateIp !== '' && filter_var($candidateIp, FILTER_VALIDATE_IP)) {
+                $blockIps[$candidateIp] = true;
             }
         }
     }
-    if ($countryByIp) {
+    if ($blockIps && function_exists('lc_ensure_blocking_schema')) {
+        lc_ensure_blocking_schema();
         try {
-            $fix = $db->prepare("
-                UPDATE visitors
-                SET country = ?
-                WHERE id = ?
-                  AND (country IS NULL OR TRIM(country) = '' OR country = 'Unknown')
-            ");
-            foreach ($rows as &$row) {
-                $ip = trim((string) ($row['visitor_ip'] ?? ''));
-                $country = trim((string) ($row['visitor_country'] ?? ''));
-                if ($ip === '' || $countryKnown($country) || empty($countryByIp[$ip])) {
-                    continue;
-                }
-                $row['visitor_country'] = $countryByIp[$ip];
-                $fix->execute([$countryByIp[$ip], (int) ($row['visitor_id'] ?? 0)]);
+            $ips = array_keys($blockIps);
+            $marks = implode(',', array_fill(0, count($ips), '?'));
+            if ($accountId > 0) {
+                $blockStmt = $db->prepare("SELECT ip_address FROM blocked_ips WHERE ip_address IN ({$marks}) AND (account_id = ? OR account_id IS NULL)");
+                $blockStmt->execute(array_merge($ips, [$accountId]));
+            } else {
+                $blockStmt = $db->prepare("SELECT ip_address FROM blocked_ips WHERE ip_address IN ({$marks})");
+                $blockStmt->execute($ips);
             }
-            unset($row);
+            foreach ($blockStmt->fetchAll(PDO::FETCH_COLUMN) as $blockedIp) {
+                $blockedSet[trim((string) $blockedIp)] = true;
+            }
         } catch (Throwable $e) {
+            $blockedSet = [];
         }
     }
 
@@ -281,7 +262,6 @@ try {
     }
 
     $visitors = [];
-    $blockedIpCache = [];
     $supervisedIds = [];
     if (function_exists('lc_ensure_supervisors_schema')) {
         lc_ensure_supervisors_schema();
@@ -308,15 +288,7 @@ try {
             $row['conversation_client_ip'] ?? '',
         ] as $candidateIp) {
             $candidateIp = trim((string) $candidateIp);
-            if ($candidateIp === '') {
-                continue;
-            }
-            if (!array_key_exists($candidateIp, $blockedIpCache)) {
-                $blockedIpCache[$candidateIp] = function_exists('lc_is_ip_blocked')
-                    ? lc_is_ip_blocked($candidateIp, $accountId > 0 ? $accountId : null)
-                    : false;
-            }
-            if (!empty($blockedIpCache[$candidateIp])) {
+            if ($candidateIp !== '' && !empty($blockedSet[$candidateIp])) {
                 $rowBlocked = true;
                 break;
             }
@@ -365,7 +337,7 @@ try {
             $name = 'Visitor';
         }
 
-        $openPage = max(0, (int) ($row['open_page_seconds'] ?? 0));
+        $openPage = 0;
         $onSite = $status !== 'left';
         // This visit only. A return (new visit_started_at) starts the clock again.
         $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
@@ -422,24 +394,19 @@ try {
             ];
 
         $resolvedBrandId = (int) ($row['conversation_brand_id'] ?? 0);
-        if ($resolvedBrandId < 1) {
-            $resolvedBrandId = (int) ($row['page_brand_id'] ?? 0);
-        }
         $resolvedBrandKey = (string) ($row['brand_key'] ?? '');
-        if ($resolvedBrandKey === '') {
-            $resolvedBrandKey = (string) ($row['page_brand_key'] ?? '');
+        if ($resolvedBrandId < 1) {
+            $pageBrand = $pageBrandByVisitor[(int) ($row['visitor_id'] ?? 0)] ?? null;
+            if ($pageBrand) {
+                $resolvedBrandId = (int) $pageBrand['id'];
+                if ($resolvedBrandKey === '') {
+                    $resolvedBrandKey = (string) $pageBrand['key'];
+                }
+            }
         }
 
         $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $ipBlocked = false;
-        if ($ip !== '') {
-            if (!array_key_exists($ip, $blockedIpCache)) {
-                $blockedIpCache[$ip] = function_exists('lc_is_ip_blocked')
-                    ? lc_is_ip_blocked($ip, $accountId > 0 ? $accountId : null)
-                    : false;
-            }
-            $ipBlocked = !empty($blockedIpCache[$ip]);
-        }
+        $ipBlocked = $ip !== '' && !empty($blockedSet[$ip]);
 
         $conversationId = $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null;
         $agentId = $row['agent_id'] !== null ? (int) $row['agent_id'] : 0;

@@ -49,6 +49,10 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('visit_started_at', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN visit_started_at DATETIME NULL DEFAULT NULL AFTER created_at');
         }
+        $seenIdx = lc_db()->query("SHOW INDEX FROM visitors WHERE Key_name = 'idx_visitors_last_seen'")->fetch();
+        if (!$seenIdx) {
+            lc_db()->exec('ALTER TABLE visitors ADD INDEX idx_visitors_last_seen (last_seen)');
+        }
     } catch (Throwable $e) {
     }
 }

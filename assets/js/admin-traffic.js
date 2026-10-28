@@ -672,9 +672,7 @@
                     fallbackPoll: function () { load(); }
                 });
                 realtimeClient.on('connected', function () {
-                    // Instant updates stay on the socket. A slow refresh still corrects a missed Left.
                     schedule(8000);
-                    load();
                 });
                 realtimeClient.on('disconnected', function () {
                     schedule(pollMs);
@@ -682,11 +680,7 @@
                 realtimeClient.on('traffic.changed', function () {
                     loadSoon();
                 });
-                // Waiting chat / inbox updates also refresh Traffic (Incoming tab)
                 realtimeClient.on('inbox.changed', function () {
-                    loadSoon();
-                });
-                realtimeClient.on('message.new', function () {
                     loadSoon();
                 });
                 realtimeClient.on('conversation.updated', function () {
