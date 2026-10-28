@@ -185,9 +185,19 @@ try {
         $visitorEmail = trim((string) ($leftRow['email'] ?? ''));
     } catch (Throwable $e) {
     }
-    if ($event !== 'ping') {
+    $needPageView = $event !== 'ping' || $isNewVisitor || !empty($visitorUidRotated) || $wasLeft;
+    if (!$needPageView && $event === 'ping') {
+        try {
+            $hasPage = $db->prepare('SELECT id FROM visitor_page_views WHERE visitor_id = ? AND brand_id = ? LIMIT 1');
+            $hasPage->execute([$visitorId, $brandId]);
+            $needPageView = !$hasPage->fetch();
+        } catch (Throwable $e) {
+            $needPageView = true;
+        }
+    }
+    if ($needPageView) {
         lc_record_visitor_page_view($visitorId, $brandId, $pageUrl, $pageTitle, $referrer);
-    } elseif ($durationSeconds > 0 && $pageUrl !== '') {
+    } elseif ($event === 'ping' && $durationSeconds > 0 && $pageUrl !== '') {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
@@ -216,7 +226,7 @@ try {
         $shouldNotify = $isNewVisitor || $wasLeft || $wasAway || !empty($visitorUidRotated);
     }
 
-    if (function_exists('lc_realtime_publish_traffic') && ($event !== 'ping' || $shouldNotify)) {
+    if (function_exists('lc_realtime_publish_traffic') && ($event !== 'ping' || $shouldNotify || $needPageView)) {
         $pagePath = $pageUrl;
         $parsed = $pageUrl !== '' ? parse_url($pageUrl) : false;
         if (is_array($parsed) && !empty($parsed['path'])) {

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 181;
+    var LC_WIDGET_BUILD = 182;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -588,7 +588,6 @@
         hookHistory();
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
-            if (document.visibilityState !== 'visible') return;
             sendStay(false);
         }, 15000);
 

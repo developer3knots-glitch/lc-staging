@@ -484,7 +484,7 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
  * Visitors currently browsing the site (Traffic "Browsing" tab).
  * On-site recently, not left, and not in an open chat (waiting/active).
  */
-function lc_browsing_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 20): int
+function lc_browsing_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 120): int
 {
     return lc_on_site_visitors_count($brandId, $accountId, $onlineSec, false);
 }
@@ -493,7 +493,7 @@ function lc_browsing_visitors_count(?int $brandId = null, ?int $accountId = null
  * Customers online = anyone currently on the site (browsing, waiting, or chatting).
  * Waiting / active chats count as online — they are still on your website.
  */
-function lc_customers_online_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 90): int
+function lc_customers_online_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 120): int
 {
     return lc_on_site_visitors_count($brandId, $accountId, $onlineSec, true);
 }
@@ -501,7 +501,7 @@ function lc_customers_online_count(?int $brandId = null, ?int $accountId = null,
 /**
  * @param bool $includeOpenChats true = browsing + waiting + chatting; false = browsing only
  */
-function lc_on_site_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 20, bool $includeOpenChats = true): int
+function lc_on_site_visitors_count(?int $brandId = null, ?int $accountId = null, int $onlineSec = 120, bool $includeOpenChats = true): int
 {
     lc_ensure_brands_schema();
     lc_ensure_page_views_schema();

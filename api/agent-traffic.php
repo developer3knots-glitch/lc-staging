@@ -20,7 +20,7 @@ if (!in_array($tab, $allowedTabs, true)) {
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $brandFilter = (int) ($_GET['brand'] ?? 0);
-$onlineSec = 20; // fallback if unload beacon never arrives
+$onlineSec = 120; // background tabs throttle the 15s ping to about a minute
 $leftSec = 86400;
 
 try {
