@@ -77,6 +77,15 @@ try {
             $presencePrevSeen = $presenceRow['last_seen'] ?? null;
         } catch (Throwable $e) {
         }
+        if (function_exists('lc_visitor_pulse_is_stale_after_leave')
+            && lc_visitor_pulse_is_stale_after_leave($visitorId, function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0)) {
+            lc_json([
+                'success' => true,
+                'event' => 'presence',
+                'visitor_uid' => $visitorUid,
+                'ignored_stale' => true,
+            ]);
+        }
         lc_mark_visitor_on_site($visitorId);
         $presenceAway = true;
         if (!$isNewVisitor && $presencePrevSeen) {
@@ -139,6 +148,21 @@ try {
             ')->execute([$storeIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         }
         lc_mark_visitor_left_site($visitorId);
+        $clientTs = function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0;
+        if (function_exists('lc_note_visitor_presence_ts')) {
+            lc_note_visitor_presence_ts($visitorId, $clientTs);
+        }
+        $leftName = 'Visitor';
+        try {
+            $nameStmt = $db->prepare('SELECT name FROM visitors WHERE id = ? LIMIT 1');
+            $nameStmt->execute([$visitorId]);
+            $leftName = trim((string) ($nameStmt->fetchColumn() ?: ''));
+            if ($leftName === '') {
+                $leftName = 'Visitor';
+            }
+        } catch (Throwable $e) {
+            $leftName = 'Visitor';
+        }
         $presence = null;
         if (function_exists('lc_apply_visitor_presence_input')) {
             $presence = lc_apply_visitor_presence_input($visitorId, [
@@ -159,7 +183,7 @@ try {
                 'visitor_id' => $visitorId,
                 'visitor_uid' => $visitorUid,
                 'notify' => true,
-                'name' => 'Visitor',
+                'name' => $leftName,
             ]);
         }
         lc_json([
@@ -186,6 +210,17 @@ try {
         $visitorEmail = trim((string) ($leftRow['email'] ?? ''));
     } catch (Throwable $e) {
     }
+    $clientTs = function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0;
+    if (function_exists('lc_visitor_pulse_is_stale_after_leave')
+        && lc_visitor_pulse_is_stale_after_leave($visitorId, $clientTs)) {
+        lc_json([
+            'success' => true,
+            'event' => $event === 'ping' ? 'ping' : 'view',
+            'visitor_uid' => $visitorUid,
+            'visitor_uid_rotated' => $visitorUidRotated,
+            'ignored_stale' => true,
+        ]);
+    }
     $needPageView = $event !== 'ping' || $isNewVisitor || !empty($visitorUidRotated) || $wasLeft;
     if (!$needPageView && $event === 'ping') {
         try {
@@ -203,6 +238,9 @@ try {
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
     lc_mark_visitor_on_site($visitorId);
+    if ($clientTs > 0 && function_exists('lc_note_visitor_presence_ts')) {
+        lc_note_visitor_presence_ts($visitorId, $clientTs);
+    }
     $presence = null;
     if (function_exists('lc_apply_visitor_presence_input')) {
         // Force publish when returning from Left so agents see Active/Minimized again.

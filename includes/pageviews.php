@@ -97,6 +97,58 @@ function lc_mark_visitor_left_site(int $visitorId): void
     }
 }
 
+function lc_client_presence_ms(array $input): int
+{
+    $ts = (int) ($input['client_ts'] ?? $input['presence_ts'] ?? $input['ts'] ?? 0);
+    if ($ts > 1000000000 && $ts < 20000000000) {
+        $ts *= 1000;
+    }
+    return max(0, $ts);
+}
+
+function lc_note_visitor_presence_ts(int $visitorId, int $clientTs): void
+{
+    if ($visitorId < 1 || $clientTs < 1) {
+        return;
+    }
+    try {
+        lc_db()->prepare('UPDATE visitors SET presence_ts = IF(COALESCE(presence_ts, 0) < ?, ?, presence_ts) WHERE id = ?')
+            ->execute([$clientTs, $clientTs, $visitorId]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * A heartbeat that left the browser before the tab closed must not flip Left back to Browsing.
+ */
+function lc_visitor_pulse_is_stale_after_leave(int $visitorId, int $clientTs): bool
+{
+    if ($visitorId < 1) {
+        return false;
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT left_site_at, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        return false;
+    }
+    if (empty($row['left_site_at'])) {
+        return false;
+    }
+    $stored = (int) ($row['presence_ts'] ?? 0);
+    if ($clientTs > 0 && $stored > 0 && $clientTs <= $stored) {
+        return true;
+    }
+    if ($clientTs < 1) {
+        $leftTs = strtotime((string) $row['left_site_at'] . ' UTC');
+        if ($leftTs !== false && (time() - $leftTs) >= 0 && (time() - $leftTs) < 12) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Persist widget open / tab visibility for agent presence UI.
  * Optional $presenceTs (ms) rejects stale out-of-order HTTP (minimize after open).

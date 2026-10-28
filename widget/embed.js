@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 183;
+    var LC_WIDGET_BUILD = 184;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -306,6 +306,7 @@
                 referrer: document.referrer || '',
                 website_url: '',
                 public_ipv4: publicIpv4,
+                client_ts: Date.now(),
                 chat_open: engagement.chat_open,
                 page_visible: engagement.page_visible
             };
@@ -370,6 +371,7 @@
         }
 
         function sendStay(useBeacon) {
+            if (siteLeaveSent) return;
             var url = lastSentUrl || window.location.href;
             if (!url) return;
             postPageEvent({
@@ -588,6 +590,7 @@
         hookHistory();
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
+            if (siteLeaveSent) return;
             sendStay(false);
         }, 15000);
 

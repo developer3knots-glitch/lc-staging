@@ -672,8 +672,8 @@
                     fallbackPoll: function () { load(); }
                 });
                 realtimeClient.on('connected', function () {
-                    // WebSocket live → no interval poll. Status updates via traffic.changed only.
-                    stopSchedule();
+                    // Instant updates stay on the socket. A slow refresh still corrects a missed Left.
+                    schedule(8000);
                     load();
                 });
                 realtimeClient.on('disconnected', function () {

@@ -8,8 +8,10 @@
     var ctx = null;
     var lastPlayAt = 0;
     var minGapMs = 700;
-    var htmlAudio = null;
+    var htmlPool = [];
+    var htmlPoolAt = 0;
     var wavCache = {};
+    var pendingSound = '';
 
     function getCtx() {
         var AC = global.AudioContext || global.webkitAudioContext;
@@ -26,9 +28,23 @@
         try {
             var c = getCtx();
             if (c && c.state === 'suspended') {
-                c.resume();
+                var resumed = c.resume();
+                if (resumed && typeof resumed.then === 'function') {
+                    resumed.then(flushPending).catch(function () {});
+                }
+            }
+            if (global.speechSynthesis && typeof global.speechSynthesis.resume === 'function') {
+                global.speechSynthesis.resume();
             }
         } catch (e) { /* ignore */ }
+        flushPending();
+    }
+
+    function flushPending() {
+        if (!pendingSound) return;
+        var soundId = pendingSound;
+        pendingSound = '';
+        startChime(soundId);
     }
 
     var PRESETS = {
@@ -282,24 +298,72 @@
         return wavCache[soundId];
     }
 
-    function htmlAudioEl() {
-        if (!htmlAudio) {
-            htmlAudio = new Audio();
-            htmlAudio.setAttribute('playsinline', 'true');
-            htmlAudio.preload = 'auto';
-        }
-        return htmlAudio;
-    }
-
     function playHtmlAudio(soundId) {
         try {
-            var el = htmlAudioEl();
+            if (!htmlPool.length) {
+                var first = new Audio();
+                var second = new Audio();
+                first.setAttribute('playsinline', 'true');
+                second.setAttribute('playsinline', 'true');
+                first.preload = 'auto';
+                second.preload = 'auto';
+                htmlPool = [first, second];
+            }
+            var el = htmlPool[htmlPoolAt % htmlPool.length];
+            htmlPoolAt += 1;
             el.pause();
             el.src = renderWavUrl(soundId);
             el.currentTime = 0;
             var pending = el.play();
             if (pending && typeof pending.catch === 'function') pending.catch(function () {});
         } catch (e) { /* autoplay */ }
+    }
+
+    function startChime(soundId) {
+        soundId = PRESETS[soundId] ? soundId : 'default';
+        var c = null;
+        try {
+            c = getCtx();
+        } catch (eCtx) {
+            c = null;
+        }
+        if (!c || prefersHtmlAudio()) {
+            playHtmlAudio(soundId);
+            return;
+        }
+        var run = function () {
+            if (!c || c.state !== 'running') {
+                playHtmlAudio(soundId);
+                return;
+            }
+            try {
+                var master = c.createGain();
+                master.gain.value = 0.55;
+                master.connect(c.destination);
+                (PRESETS[soundId] || PRESETS.default).forEach(function (note) {
+                    playNote(c, master, note);
+                });
+            } catch (ePlay) {
+                playHtmlAudio(soundId);
+            }
+        };
+        if (c.state === 'suspended') {
+            pendingSound = soundId;
+            var resumed = null;
+            try { resumed = c.resume(); } catch (eResume) { resumed = null; }
+            if (resumed && typeof resumed.then === 'function') {
+                resumed.then(function () {
+                    if (pendingSound === soundId) pendingSound = '';
+                    run();
+                }).catch(function () {
+                    pendingSound = '';
+                    playHtmlAudio(soundId);
+                });
+                return;
+            }
+        }
+        pendingSound = '';
+        run();
     }
 
     function speak(soundId, eventName) {
@@ -309,7 +373,6 @@
         var preset = VOICE_PRESETS[soundId];
         if (!preset) return false;
         var line = VOICE_LINES[eventName] || 'Notification';
-        var mobile = prefersHtmlAudio();
 
         function say() {
             var voice = pickSpokenVoice(soundId, preset);
@@ -327,20 +390,20 @@
                 if (global.speechSynthesis.speaking || global.speechSynthesis.pending) {
                     global.speechSynthesis.cancel();
                 }
-                if (mobile) {
-                    global.speechSynthesis.speak(utterance);
-                    return true;
-                }
+                try { global.speechSynthesis.resume(); } catch (eResume) {}
                 global.setTimeout(function () {
-                    try { global.speechSynthesis.speak(utterance); } catch (e) {}
-                }, 60);
+                    try {
+                        global.speechSynthesis.resume();
+                        global.speechSynthesis.speak(utterance);
+                    } catch (eSpeak) {}
+                }, 80);
                 return true;
             } catch (e) {
                 return false;
             }
         }
 
-        if (!mobile && !(global.speechSynthesis.getVoices() || []).length) {
+        if (!(global.speechSynthesis.getVoices() || []).length) {
             var onVoices = function () {
                 global.speechSynthesis.removeEventListener('voiceschanged', onVoices);
                 say();
@@ -420,33 +483,12 @@
         lastPlayAt = now;
 
         if (VOICE_PRESETS[soundId]) {
-            speak(soundId, opts.event ? String(opts.event) : '');
+            var spoken = !document.hidden && speak(soundId, opts.event ? String(opts.event) : '');
+            if (!spoken) startChime('default');
             return;
         }
 
-        if (prefersHtmlAudio()) {
-            playHtmlAudio(soundId);
-            return;
-        }
-
-        try {
-            var c = getCtx();
-            if (!c) {
-                return;
-            }
-            if (c.state === 'suspended') {
-                c.resume();
-            }
-
-            var master = c.createGain();
-            master.gain.value = 0.55;
-            master.connect(c.destination);
-
-            var notes = PRESETS[soundId] || PRESETS.default;
-            notes.forEach(function (note) {
-                playNote(c, master, note);
-            });
-        } catch (e) { /* autoplay / unsupported */ }
+        startChime(soundId);
     }
 
     function bindUnlock() {

@@ -249,6 +249,25 @@
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             window.LCNotifySound.play({ force: true, event: eventName || 'message_here' });
         }
+        if (window.LCNotifyBrowser) {
+            var browserTitles = {
+                visitor_left: 'Visitor left',
+                chat_closed: 'Chat closed',
+                chat_continued: 'Visitor continued the chat',
+                message_here: 'New message',
+                message_other: 'New message',
+                chat_new: 'Incoming chat',
+                chat_return: 'Returning visitor',
+                queue_waiting: 'Chat waiting'
+            };
+            window.LCNotifyBrowser({
+                event: event,
+                dedupe: 'browser:' + (key || event),
+                title: browserTitles[event] || 'Live chat',
+                body: browserTitles[event] || 'New live chat activity',
+                tag: 'lc-browser-' + (key || event)
+            });
+        }
         if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
             window.LCTabNotify.pulse();
         }
@@ -6696,7 +6715,16 @@
                 if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
                 if (presence && String(presence.status || '').toLowerCase() === 'left') {
-                    playNotifyEvent('visitor_left', 'left:' + cid);
+                    if (window.LCNotifyLeft) {
+                        window.LCNotifyLeft({
+                            visitor_id: payload.visitor_id || presence.visitor_id || '',
+                            conversation_id: cid,
+                            name: payload.name || presence.name || '',
+                            presence: 'left'
+                        });
+                    } else {
+                        playNotifyEvent('visitor_left', 'left:' + cid);
+                    }
                 }
                 applyVisitorPresenceToInbox(cid, presence);
                 if (selectedId && cid === selectedId) {
@@ -6720,7 +6748,15 @@
                     }
                     return;
                 }
-                if (presence === 'left' || presence === 'chatting') {
+                if (presence === 'left') {
+                    if (window.LCNotifyLeft) {
+                        window.LCNotifyLeft(payload);
+                    } else if (window.LCNotifyLand) {
+                        window.LCNotifyLand(Object.assign({}, payload, { notify: true, presence: 'left' }), 'ws');
+                    }
+                    return;
+                }
+                if (presence === 'chatting') {
                     return;
                 }
                 if (window.LCNotifyLand) {
@@ -6751,7 +6787,16 @@
                     if (closedBy === 'visitor') {
                         playNotifyEvent('chat_closed', 'close:' + cid);
                     } else if (closedBy === 'leave') {
-                        playNotifyEvent('visitor_left', 'left:' + cid);
+                        if (window.LCNotifyLeft) {
+                            window.LCNotifyLeft({
+                                visitor_id: payload.visitor_id || '',
+                                conversation_id: cid,
+                                name: payload.name || '',
+                                presence: 'left'
+                            });
+                        } else {
+                            playNotifyEvent('visitor_left', 'left:' + cid);
+                        }
                     }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
                     if (selectedId && cid === selectedId) {

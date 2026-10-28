@@ -383,7 +383,7 @@
                 });
         }
 
-        function showLandToast(name, detail) {
+        function showLandToast(name, detail, titleText) {
             var el = document.getElementById('lc-land-toast');
             if (!el) {
                 el = document.createElement('div');
@@ -394,7 +394,7 @@
             }
             el.innerHTML =
                 '<i class="ti ti-world" aria-hidden="true"></i>' +
-                '<div><strong>Visitor on site</strong><span>' +
+                '<div><strong>' + esc(titleText || 'Visitor on site') + '</strong><span>' +
                 esc(name || 'Visitor') + (detail ? ' · ' + esc(detail) : '') +
                 '</span></div>';
             el.classList.add('is-visible');
@@ -464,7 +464,7 @@
             }
             var title = options.title || 'Visitor on site';
             var body = options.body || ((name || 'Visitor') + (detail ? ' — ' + detail : ' is browsing your website'));
-            var tag = options.tag || ('lc-visitor-land-' + String(visitorKey || name || Date.now()));
+            var tag = (options.tag || ('lc-visitor-land-' + String(visitorKey || name || 'alert'))) + '-' + Date.now();
             var targetUrl = options.url || trafficUrl;
             var opts = {
                 body: body,
@@ -492,7 +492,9 @@
                 try {
                     var shown = reg.showNotification(title, opts);
                     if (shown && typeof shown.then === 'function') {
-                        shown.then(function () { autoCloseSwNotification(reg, tag); }).catch(function () {});
+                        shown.then(function () { autoCloseSwNotification(reg, tag); }).catch(function () {
+                            fallbackNotification(title, opts, targetUrl);
+                        });
                     } else {
                         autoCloseSwNotification(reg, tag);
                     }
@@ -529,6 +531,36 @@
             } catch (eN) { /* ignore */ }
         }
 
+        function notifyLeft(payload) {
+            payload = payload || {};
+            if (window.LCNotifyEnabled && !window.LCNotifyEnabled('visitor_left')) {
+                return false;
+            }
+            var leftId = String(payload.visitor_id || payload.visitor_uid || payload.conversation_id || '');
+            if (!leftId) {
+                leftId = String(payload.name || 'visitor') + '|' + String(payload.page_path || payload.ip || '');
+            }
+            if (!canNotifyVisitor('left:' + leftId)) return false;
+            if (payload.visitor_id) unmarkKnown(payload.visitor_id);
+            if (payload.visitor_uid) unmarkKnown(payload.visitor_uid);
+            var name = payload.name || 'Visitor';
+            var detail = payload.page_path || payload.ip || '';
+            showLandToast(name, detail, 'Visitor left');
+            fireBrowserPush(name, detail, 'left:' + leftId, {
+                title: 'Visitor left',
+                body: (name || 'Visitor') + ' left the website' + (detail ? ' — ' + detail : ''),
+                tag: 'lc-visitor-left-' + leftId,
+                url: trafficUrl
+            });
+            if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
+                window.LCNotifySound.play({ force: true, event: 'visitor_left' });
+            }
+            if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
+                window.LCTabNotify.pulse(1);
+            }
+            return true;
+        }
+
         function notifyLand(payload, source) {
             payload = payload || {};
             if (payload.notify === false || payload.notify === 0 || payload.notify === '0') {
@@ -536,20 +568,7 @@
             }
             var presence = String(payload.presence || 'browsing').toLowerCase();
             if (presence === 'left') {
-                var leftId = payload.visitor_id || payload.visitor_uid || '';
-                unmarkKnown(leftId);
-                if (window.LCNotifyEnabled && !window.LCNotifyEnabled('visitor_left')) {
-                    return false;
-                }
-                if (canNotifyVisitor('left:' + leftId)) {
-                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                        window.LCNotifySound.play({ force: true, event: 'visitor_left' });
-                    }
-                    if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
-                        window.LCTabNotify.pulse(1);
-                    }
-                }
-                return false;
+                return notifyLeft(payload);
             }
 
             var vid = payload.visitor_id || payload.visitor_uid || '';
@@ -663,6 +682,23 @@
         window.LCTransferNotify = notifyChatTransfer;
         window.LCNotifyLand = notifyLand;
         window.LCNotifyIncoming = notifyIncomingChat;
+        window.LCNotifyLeft = notifyLeft;
+        window.LCNotifyBrowser = function (opts) {
+            opts = opts || {};
+            var eventName = String(opts.event || '');
+            if (eventName && window.LCNotifyEnabled && !window.LCNotifyEnabled(eventName)) return false;
+            var key = String(opts.dedupe || opts.tag || '');
+            if (key && !canNotifyVisitor(key)) return false;
+            var cid = parseInt(opts.conversation_id, 10) || 0;
+            var url = opts.url || (cid ? (notifyBase + '/admin/chats.php?id=' + cid) : (notifyBase + '/admin/chats.php'));
+            fireBrowserPush(opts.name || 'Visitor', opts.detail || '', key || Date.now(), {
+                title: opts.title || 'Live chat',
+                body: opts.body || ((opts.name || 'Visitor') + (opts.detail ? ' — ' + opts.detail : '')),
+                tag: String(opts.tag || key || 'lc-alert'),
+                url: url
+            });
+            return true;
+        };
 
         function notifyVisitorMessage(payload) {
             payload = payload || {};
@@ -700,9 +736,28 @@
             var eventName = by === 'visitor' ? 'chat_closed' : (by === 'leave' ? 'visitor_left' : '');
             if (!eventName) return;
             if (window.LCNotifyEnabled && !window.LCNotifyEnabled(eventName)) return;
-            if (!canNotifyVisitor((by === 'visitor' ? 'close:' : 'left:conv:') + cid)) return;
+            if (by === 'leave') {
+                notifyLeft({
+                    visitor_id: payload.visitor_id || '',
+                    visitor_uid: payload.visitor_uid || '',
+                    conversation_id: cid,
+                    name: payload.name || 'Visitor',
+                    page_path: payload.page_path || '',
+                    presence: 'left'
+                });
+                return;
+            }
+            if (!canNotifyVisitor('close:' + cid)) return;
+            var closedName = payload.name || 'Visitor';
+            var closedUrl = notifyBase + '/admin/chats.php?id=' + cid;
+            fireBrowserPush(closedName, '', 'close:' + cid, {
+                title: 'Chat closed',
+                body: closedName + ' closed the chat',
+                tag: 'lc-closed-' + cid,
+                url: closedUrl
+            });
             if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                window.LCNotifySound.play({ force: true, event: eventName });
+                window.LCNotifySound.play({ force: true, event: 'chat_closed' });
             }
             if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
                 window.LCTabNotify.pulse(1);
@@ -712,20 +767,8 @@
         function handleTrafficEvent(payload) {
             payload = payload || {};
             var presence = String(payload.presence || 'browsing').toLowerCase();
-            var vid = payload.visitor_id || payload.visitor_uid || '';
             if (presence === 'left') {
-                unmarkKnown(vid);
-                if (window.LCNotifyEnabled && !window.LCNotifyEnabled('visitor_left')) {
-                    return;
-                }
-                if (canNotifyVisitor('left:' + (vid || payload.visitor_uid || ''))) {
-                    if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
-                        window.LCNotifySound.play({ force: true, event: 'visitor_left' });
-                    }
-                    if (window.LCTabNotify && typeof window.LCTabNotify.pulse === 'function') {
-                        window.LCTabNotify.pulse(1);
-                    }
-                }
+                notifyLeft(payload);
                 return;
             }
             if (presence === 'queued' || payload.is_incoming || payload.status === 'waiting') {
@@ -742,8 +785,9 @@
 
         function initRealtime() {
             var cfg = window.LC_REALTIME || {};
-            // Chats page owns its own WS via admin-chat.js — avoid a second socket
+            // Chats page owns the live socket. This poll still catches a missed land or leave.
             if (window.LC_CHAT_PAGE) {
+                startPollFallback(POLL_MS);
                 return;
             }
             if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) {
@@ -781,10 +825,12 @@
                         notifyConversationUpdate(payload || {});
                     });
                     landRt.on('disconnected', function () {
+                        stopPollFallback();
                         startPollFallback(POLL_MS);
                     });
                     landRt.on('connected', function () {
                         stopPollFallback();
+                        startPollFallback(12000);
                         // Seed known set once so a later disconnect→poll doesn't spam everyone already on site
                         if (knownOnSite === null) {
                             seedKnownOnSite();
@@ -847,6 +893,18 @@
                         knownOnSite = onSite;
                         return;
                     }
+                    Object.keys(knownOnSite).forEach(function (id) {
+                        if (!onSite[id]) {
+                            var prev = knownOnSite[id] || {};
+                            notifyLeft({
+                                visitor_id: prev.visitor_id || id,
+                                visitor_uid: prev.visitor_uid || '',
+                                name: prev.name,
+                                ip: prev.ip,
+                                page_path: prev.page_path || prev.page_url || ''
+                            });
+                        }
+                    });
                     Object.keys(onSite).forEach(function (id) {
                         if (!knownOnSite[id]) {
                             var v = onSite[id];

@@ -153,7 +153,7 @@ try {
         $pageVis = false;
         lc_mark_visitor_left_site($visitorId);
         $leftAt = gmdate('Y-m-d H:i:s');
-    } elseif ($leftAt) {
+    } elseif ($leftAt && $presenceTs > $prevTs) {
         $db->prepare('UPDATE visitors SET left_site_at = NULL WHERE id = ?')->execute([$visitorId]);
         $leftAt = null;
     }
@@ -221,6 +221,7 @@ try {
             }
             lc_realtime_publish_channels($channels, 'visitor.presence', [
                 'conversation_id' => $conversationId,
+                'visitor_id' => $visitorId,
                 'visitor_presence' => $presence,
             ], 180);
         }
