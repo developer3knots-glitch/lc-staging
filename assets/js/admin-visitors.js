@@ -13,6 +13,7 @@
     var statToday = document.getElementById('lc-visitors-stat-today');
     var statAvg = document.getElementById('lc-visitors-stat-avg');
     var statGclid = document.getElementById('lc-visitors-stat-gclid');
+    var statGclidChat = document.getElementById('lc-visitors-stat-gclid-chat');
     var feedTitle = document.getElementById('lc-vis-feed-title');
     var feedSub = document.getElementById('lc-vis-feed-sub');
     var emptyTitle = document.getElementById('lc-visitors-empty-title');
@@ -71,7 +72,7 @@
         if (brandSelect && brandSelect.value && brandSelect.value !== '0') {
             parts.push('brand=' + encodeURIComponent(brandSelect.value));
         }
-        if (view === 'gclid') parts.push('view=gclid');
+        if (view === 'gclid' || view === 'gclid_chat') parts.push('view=' + encodeURIComponent(view));
         return parts.length ? url + '?' + parts.join('&') : url;
     }
 
@@ -227,18 +228,32 @@
                 if (statToday) statToday.textContent = String(stats.today || 0);
                 if (statAvg) statAvg.textContent = String(stats.avg || 0);
                 if (statGclid) statGclid.textContent = String(stats.gclid || 0);
-                if (tableEl) tableEl.classList.toggle('is-gclid', view === 'gclid');
-                if (feedTitle) feedTitle.textContent = view === 'gclid' ? 'GCLID visits, no chat' : 'Latest visits';
+                if (statGclidChat) statGclidChat.textContent = String(stats.gclid_chat || 0);
+                var gclidList = view === 'gclid' || view === 'gclid_chat';
+                if (tableEl) tableEl.classList.toggle('is-gclid', gclidList);
+                if (feedTitle) {
+                    feedTitle.textContent = view === 'gclid'
+                        ? 'GCLID visits, no chat'
+                        : (view === 'gclid_chat' ? 'GCLID visits, chatted' : 'Latest visits');
+                }
                 if (feedSub) {
                     feedSub.textContent = view === 'gclid'
                         ? 'One row per visit. They arrived with a Google click ID and left without a chat. Clicks is the pages in that visit. The counter matches this list.'
-                        : 'Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.';
+                        : (view === 'gclid_chat'
+                            ? 'One row per visit where you or the visitor started a chat. The GCLID, chatted number matches this list.'
+                            : 'Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.');
                 }
-                if (emptyTitle) emptyTitle.textContent = view === 'gclid' ? 'No GCLID visits without a chat' : 'No clicks in this range';
+                if (emptyTitle) {
+                    emptyTitle.textContent = view === 'gclid'
+                        ? 'No GCLID visits without a chat'
+                        : (view === 'gclid_chat' ? 'No GCLID visits with a chat' : 'No clicks in this range');
+                }
                 if (emptySub) {
                     emptySub.textContent = view === 'gclid'
                         ? 'A row appears when someone lands with a gclid, browses, and leaves. If you or they start a chat, that visit stays off this list.'
-                        : 'When someone opens a page with your widget, the visit shows up here.';
+                        : (view === 'gclid_chat'
+                            ? 'A row appears when a GCLID visit turns into a chat, started by you or by the visitor.'
+                            : 'When someone opens a page with your widget, the visit shows up here.');
                 }
                 paintReport(data.report || {});
                 render(data.visitors || []);
@@ -254,7 +269,8 @@
 
     root.querySelectorAll('[data-view]').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            view = btn.getAttribute('data-view') === 'gclid' ? 'gclid' : 'all';
+            var nextView = btn.getAttribute('data-view') || 'all';
+            view = (nextView === 'gclid' || nextView === 'gclid_chat') ? nextView : 'all';
             root.querySelectorAll('[data-view]').forEach(function (other) {
                 var on = other === btn;
                 other.classList.toggle('is-on', on);

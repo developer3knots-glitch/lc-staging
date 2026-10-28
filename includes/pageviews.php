@@ -838,7 +838,8 @@ function lc_gclid_visits_without_chat(
     }
 
     $gapSeconds = 1800;
-    $visits = [];
+    $noChat = [];
+    $chatted = [];
     foreach ($byVisitor as $visitorId => $rows) {
         $latestTs = 0;
         foreach ($rows as $row) {
@@ -901,9 +902,6 @@ function lc_gclid_visits_without_chat(
         foreach ($closed as $visit) {
             $lastPageTs = (int) $visit['last_ts'];
             $isOpenVisit = $stillHere && $latestTs > 0 && $lastPageTs === $latestTs;
-            if ($isOpenVisit) {
-                continue;
-            }
             $firstTs = (int) $visit['first_ts'];
             $stay = 0;
             $lastPage = $visit['pages'][count($visit['pages']) - 1];
@@ -918,39 +916,43 @@ function lc_gclid_visits_without_chat(
                 }
             }
             if ($hadChat) {
-                continue;
+                $chatted[] = $visit;
+            } elseif (!$isOpenVisit) {
+                $noChat[] = $visit;
             }
-            $visits[] = $visit;
         }
     }
 
-    $search = trim($search);
-    if ($search !== '') {
-        $needle = function_exists('mb_strtolower') ? mb_strtolower($search) : strtolower($search);
-        $visits = array_values(array_filter($visits, static function (array $visit) use ($needle): bool {
-            $parts = [
-                (string) ($visit['visitor']['ip'] ?? ''),
-                (string) ($visit['visitor']['visitor_name'] ?? ''),
-                (string) ($visit['visitor']['visitor_email'] ?? ''),
-                (string) ($visit['gclid'] ?? ''),
-            ];
-            foreach ($visit['pages'] as $page) {
-                $parts[] = (string) ($page['page_url'] ?? '');
-                $parts[] = (string) ($page['page_title'] ?? '');
-            }
-            $hay = function_exists('mb_strtolower') ? mb_strtolower(implode(' ', $parts)) : strtolower(implode(' ', $parts));
-            return $needle !== '' && strpos($hay, $needle) !== false;
-        }));
-    }
-
-    usort($visits, static function (array $a, array $b): int {
-        return ((int) $b['first_ts']) <=> ((int) $a['first_ts']);
-    });
-
-    if (count($visits) > $limit) {
-        $visits = array_slice($visits, 0, $limit);
-    }
-    $count = count($visits);
+    $packVisits = static function (array $visits) use ($search, $limit): array {
+        $search = trim($search);
+        if ($search !== '') {
+            $needle = function_exists('mb_strtolower') ? mb_strtolower($search) : strtolower($search);
+            $visits = array_values(array_filter($visits, static function (array $visit) use ($needle): bool {
+                $parts = [
+                    (string) ($visit['visitor']['ip'] ?? ''),
+                    (string) ($visit['visitor']['visitor_name'] ?? ''),
+                    (string) ($visit['visitor']['visitor_email'] ?? ''),
+                    (string) ($visit['gclid'] ?? ''),
+                ];
+                foreach ($visit['pages'] as $page) {
+                    $parts[] = (string) ($page['page_url'] ?? '');
+                    $parts[] = (string) ($page['page_title'] ?? '');
+                }
+                $hay = function_exists('mb_strtolower') ? mb_strtolower(implode(' ', $parts)) : strtolower(implode(' ', $parts));
+                return $needle !== '' && strpos($hay, $needle) !== false;
+            }));
+        }
+        usort($visits, static function (array $a, array $b): int {
+            return ((int) $b['first_ts']) <=> ((int) $a['first_ts']);
+        });
+        if (count($visits) > $limit) {
+            $visits = array_slice($visits, 0, $limit);
+        }
+        return $visits;
+    };
+    $noChat = $packVisits($noChat);
+    $chatted = $packVisits($chatted);
+    $count = count($noChat);
     $pagePath = static function (string $pageUrl): string {
         if ($pageUrl === '') {
             return '';
@@ -966,8 +968,9 @@ function lc_gclid_visits_without_chat(
         return $path;
     };
 
-    $out = [];
-    foreach ($visits as $visit) {
+    $toRows = static function (array $visits) use ($pagePath): array {
+        $out = [];
+        foreach ($visits as $visit) {
         $first = $visit['pages'][0];
         $last = $visit['pages'][count($visit['pages']) - 1];
         $visitor = $visit['visitor'];
@@ -1008,10 +1011,17 @@ function lc_gclid_visits_without_chat(
             'duration_seconds' => $seconds,
             'duration_label' => lc_format_duration_label($seconds) ?: '0s',
             'duration_live' => false,
-        ];
-    }
+            ];
+        }
+        return $out;
+    };
 
-    return ['count' => $count, 'rows' => $out];
+    return [
+        'count' => $count,
+        'rows' => $toRows($noChat),
+        'chatted_count' => count($chatted),
+        'chatted_rows' => $toRows($chatted),
+    ];
 }
 
 function lc_extract_gclid(string $url): string

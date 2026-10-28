@@ -20,7 +20,7 @@ if (!in_array($range, ['today', '7d', '30d', 'all'], true)) {
     $range = '7d';
 }
 $view = strtolower(trim((string) ($_GET['view'] ?? 'all')));
-if ($view !== 'gclid') {
+if (!in_array($view, ['gclid', 'gclid_chat'], true)) {
     $view = 'all';
 }
 
@@ -152,6 +152,7 @@ try {
         ? lc_gclid_visits_without_chat($brandSql, $brandParams, $dateSql, $dateParams, $q, 500)
         : ['count' => 0, 'rows' => []];
     $gclidVisitors = (int) ($gclidPack['count'] ?? 0);
+    $gclidChatted = (int) ($gclidPack['chatted_count'] ?? 0);
 
     $statsStmt = $db->prepare("
         SELECT COUNT(DISTINCT v.ip_address) AS ips, COUNT(pv.id) AS clicks
@@ -194,10 +195,13 @@ try {
     $listStmt->execute(array_merge($brandParams, $scopeParams));
 
     $visitors = [];
+    $gclidView = $view === 'gclid' || $view === 'gclid_chat';
     if ($view === 'gclid') {
         $visitors = $gclidPack['rows'] ?? [];
+    } elseif ($view === 'gclid_chat') {
+        $visitors = $gclidPack['chatted_rows'] ?? [];
     }
-    foreach ($view === 'gclid' ? [] : $listStmt->fetchAll() as $row) {
+    foreach ($gclidView ? [] : $listStmt->fetchAll() as $row) {
         $url = (string) ($row['page_url'] ?? '');
         $referrer = (string) ($row['referrer'] ?? '');
         $gclid = function_exists('lc_extract_gclid') ? lc_extract_gclid($url) : '';
@@ -349,6 +353,7 @@ try {
             'today' => $todayClicks,
             'avg' => $ips > 0 ? round($clicks / $ips, 1) : 0,
             'gclid' => $gclidVisitors,
+            'gclid_chat' => $gclidChatted,
         ],
         'report' => [
             'range' => $range,

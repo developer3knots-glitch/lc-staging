@@ -32,6 +32,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-today">0</span><small>Today</small></div>
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-avg">0</span><small>Avg / IP</small></div>
             <div class="lc-hero-stat lc-vis-gclid-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-gclid">0</span><small>GCLID, no chat</small></div>
+            <div class="lc-hero-stat lc-vis-gclid-stat is-chat"><span class="lc-hero-stat-val" id="lc-visitors-stat-gclid-chat">0</span><small>GCLID, chatted</small></div>
         </div>
     </section>
 
@@ -39,6 +40,7 @@ require __DIR__ . '/includes/header.php';
         <div class="lc-vis-view" role="tablist" aria-label="Visitor view">
             <button type="button" data-view="all" class="is-on" role="tab" aria-selected="true">All</button>
             <button type="button" data-view="gclid" role="tab" aria-selected="false">GCLID</button>
+            <button type="button" data-view="gclid_chat" role="tab" aria-selected="false">GCLID chat</button>
         </div>
         <div class="lc-vis-range" role="tablist" aria-label="Report range">
             <button type="button" data-range="today">Today</button>

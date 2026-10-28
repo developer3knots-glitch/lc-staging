@@ -16960,6 +16960,10 @@ button.lc-hero-chip {
     background: rgba(250, 204, 21, 0.16);
     border-color: rgba(250, 204, 21, 0.5);
 }
+.lc-vis-gclid-stat.is-chat {
+    background: rgba(16, 185, 129, 0.16);
+    border-color: rgba(16, 185, 129, 0.45);
+}
 .lc-vis-view { display: flex; gap: 0.35rem; }
 .lc-vis-view button {
     border: 1px solid rgba(15, 23, 42, 0.08);
