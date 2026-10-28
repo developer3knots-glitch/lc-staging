@@ -257,13 +257,25 @@ function lc_web_push_ensure_schema(): void
                 KEY idx_agent_push_agent (agent_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ');
+        $cols = lc_db()->query('SHOW COLUMNS FROM agent_push_subscriptions')->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('origin', $cols, true)) {
+            lc_db()->exec('ALTER TABLE agent_push_subscriptions ADD COLUMN origin VARCHAR(255) NULL DEFAULT NULL AFTER auth');
+        }
+        // Old rows were saved from livechat.3knotsdigital.com. Chrome labels the
+        // banner with that site. Drop them so only 360cloud can notify.
+        lc_db()->exec("DELETE FROM agent_push_subscriptions WHERE origin IS NULL OR origin <> 'https://livechat.360cloud.site'");
     } catch (Throwable $e) {
     }
 }
 
-function lc_web_push_save_subscription(int $agentId, string $endpoint, string $p256dh, string $auth): bool
+function lc_web_push_save_subscription(int $agentId, string $endpoint, string $p256dh, string $auth, string $origin = ''): bool
 {
     if ($agentId < 1 || $endpoint === '' || $p256dh === '' || $auth === '') {
+        return false;
+    }
+    $origin = rtrim(trim($origin), '/');
+    if ($origin !== 'https://livechat.360cloud.site') {
+        lc_web_push_delete_endpoint($endpoint);
         return false;
     }
     lc_web_push_ensure_schema();
@@ -271,16 +283,30 @@ function lc_web_push_save_subscription(int $agentId, string $endpoint, string $p
     $hash = hash('sha256', $endpoint);
     try {
         $stmt = lc_db()->prepare('
-            INSERT INTO agent_push_subscriptions (agent_id, endpoint_hash, endpoint, p256dh, auth, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE endpoint = VALUES(endpoint), p256dh = VALUES(p256dh), auth = VALUES(auth), updated_at = VALUES(updated_at)
+            INSERT INTO agent_push_subscriptions (agent_id, endpoint_hash, endpoint, p256dh, auth, origin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE endpoint = VALUES(endpoint), p256dh = VALUES(p256dh), auth = VALUES(auth), origin = VALUES(origin), updated_at = VALUES(updated_at)
         ');
-        $stmt->execute([$agentId, $hash, $endpoint, $p256dh, $auth, $now, $now]);
+        $stmt->execute([$agentId, $hash, $endpoint, $p256dh, $auth, $origin, $now, $now]);
         lc_db()->prepare('DELETE FROM agent_push_subscriptions WHERE endpoint_hash = ? AND agent_id <> ?')
             ->execute([$hash, $agentId]);
         return true;
     } catch (Throwable $e) {
         return false;
+    }
+}
+
+/** Drop every stored push subscription that is not the 360cloud admin. */
+function lc_web_push_clear_old_subscriptions(?int $agentId = null): void
+{
+    lc_web_push_ensure_schema();
+    try {
+        if ($agentId !== null && $agentId > 0) {
+            lc_db()->prepare("DELETE FROM agent_push_subscriptions WHERE agent_id = ? AND (origin IS NULL OR origin <> 'https://livechat.360cloud.site')")->execute([$agentId]);
+            return;
+        }
+        lc_db()->exec("DELETE FROM agent_push_subscriptions WHERE origin IS NULL OR origin <> 'https://livechat.360cloud.site'");
+    } catch (Throwable $e) {
     }
 }
 
@@ -397,7 +423,7 @@ function lc_web_push_to_agents(array $agentIds, array $message): void
     }
     try {
         $marks = implode(',', array_fill(0, count($agentIds), '?'));
-        $stmt = lc_db()->prepare("SELECT endpoint, p256dh, auth FROM agent_push_subscriptions WHERE agent_id IN ($marks)");
+        $stmt = lc_db()->prepare("SELECT endpoint, p256dh, auth FROM agent_push_subscriptions WHERE origin = 'https://livechat.360cloud.site' AND agent_id IN ($marks)");
         $stmt->execute($agentIds);
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             lc_web_push_send_row($row, $payload);

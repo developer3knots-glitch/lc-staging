@@ -28,7 +28,8 @@ if ($method === 'POST') {
     if (!preg_match('#^https://#', $endpoint) || $p256dh === '' || $auth === '') {
         lc_json(['success' => false, 'error' => 'Invalid subscription'], 400);
     }
-    $saved = lc_web_push_save_subscription((int) ($agent['id'] ?? 0), $endpoint, $p256dh, $auth);
+    $origin = 'https://' . strtolower(trim((string) preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? ''))));
+    $saved = lc_web_push_save_subscription((int) ($agent['id'] ?? 0), $endpoint, $p256dh, $auth, $origin);
     lc_json(['success' => $saved]);
 }
 

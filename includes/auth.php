@@ -121,6 +121,15 @@ function lc_login_agent(string $email, string $password): bool
     $_SESSION['agent_id'] = (int) $agent['id'];
     $_SESSION['agent_name'] = $agent['name'];
     $_SESSION['agent_role'] = $agent['role'];
+    if (!function_exists('lc_web_push_clear_old_subscriptions')) {
+        $pushFile = __DIR__ . '/web-push.php';
+        if (is_file($pushFile)) {
+            require_once $pushFile;
+        }
+    }
+    if (function_exists('lc_web_push_clear_old_subscriptions')) {
+        lc_web_push_clear_old_subscriptions((int) $agent['id']);
+    }
     $upd = lc_db()->prepare("UPDATE agents SET status = 'online', last_seen = UTC_TIMESTAMP() WHERE id = ?");
     $upd->execute([(int) $agent['id']]);
     if (function_exists('lc_drain_waiting_queue_for_agent')) {
