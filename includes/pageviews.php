@@ -819,22 +819,50 @@ function lc_gclid_visits_without_chat(
         $byVisitor[$visitorId][] = $page;
     }
 
-    $chatAt = [];
+    $chatVisitors = [];
+    $chatIps = [];
     $visitorIds = array_keys($byVisitor);
-    $marks = implode(',', array_fill(0, count($visitorIds), '?'));
-    try {
-        $chatStmt = lc_db()->prepare("SELECT visitor_id, started_at FROM conversations WHERE visitor_id IN ({$marks})");
-        $chatStmt->execute($visitorIds);
-        foreach ($chatStmt->fetchAll(PDO::FETCH_ASSOC) as $chat) {
-            $cid = (int) ($chat['visitor_id'] ?? 0);
-            $raw = trim((string) ($chat['started_at'] ?? ''));
-            $ts = $raw !== '' ? strtotime($raw . ' UTC') : false;
-            if ($cid > 0 && $ts !== false) {
-                $chatAt[$cid][] = $ts;
-            }
+    $ips = [];
+    foreach ($pages as $page) {
+        $ip = trim((string) ($page['ip'] ?? ''));
+        if ($ip !== '' && !in_array($ip, ['127.0.0.1', '::1', '0.0.0.0'], true)) {
+            $ips[$ip] = true;
         }
-    } catch (Throwable $e) {
-        $chatAt = [];
+    }
+    $ipList = array_keys($ips);
+    if ($visitorIds) {
+        $visitorMarks = implode(',', array_fill(0, count($visitorIds), '?'));
+        $chatWhere = "c.visitor_id IN ({$visitorMarks})";
+        $chatParams = $visitorIds;
+        if ($ipList) {
+            $ipMarks = implode(',', array_fill(0, count($ipList), '?'));
+            $chatWhere .= " OR v.ip_address IN ({$ipMarks}) OR c.client_ip IN ({$ipMarks})";
+            $chatParams = array_merge($chatParams, $ipList, $ipList);
+        }
+        try {
+            $chatStmt = lc_db()->prepare("
+                SELECT c.visitor_id, v.ip_address, c.client_ip
+                FROM conversations c
+                INNER JOIN visitors v ON v.id = c.visitor_id
+                WHERE {$chatWhere}
+            ");
+            $chatStmt->execute($chatParams);
+            foreach ($chatStmt->fetchAll(PDO::FETCH_ASSOC) as $chat) {
+                $cid = (int) ($chat['visitor_id'] ?? 0);
+                if ($cid > 0) {
+                    $chatVisitors[$cid] = true;
+                }
+                foreach ([(string) ($chat['ip_address'] ?? ''), (string) ($chat['client_ip'] ?? '')] as $chatIp) {
+                    $chatIp = trim($chatIp);
+                    if ($chatIp !== '' && !in_array($chatIp, ['127.0.0.1', '::1', '0.0.0.0'], true)) {
+                        $chatIps[$chatIp] = true;
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            $chatVisitors = [];
+            $chatIps = [];
+        }
     }
 
     $gapSeconds = 1800;
@@ -902,19 +930,9 @@ function lc_gclid_visits_without_chat(
         foreach ($closed as $visit) {
             $lastPageTs = (int) $visit['last_ts'];
             $isOpenVisit = $stillHere && $latestTs > 0 && $lastPageTs === $latestTs;
-            $firstTs = (int) $visit['first_ts'];
-            $stay = 0;
-            $lastPage = $visit['pages'][count($visit['pages']) - 1];
-            if (isset($lastPage['duration_seconds']) && $lastPage['duration_seconds'] !== null && $lastPage['duration_seconds'] !== '') {
-                $stay = max(0, (int) $lastPage['duration_seconds']);
-            }
-            $hadChat = false;
-            foreach ($chatAt[$visitorId] ?? [] as $startedTs) {
-                if ($startedTs >= ($firstTs - 120) && $startedTs <= ($lastPageTs + max(120, $stay))) {
-                    $hadChat = true;
-                    break;
-                }
-            }
+            $visitIp = trim((string) ($visit['visitor']['ip'] ?? ''));
+            $hadChat = !empty($chatVisitors[$visitorId])
+                || ($visitIp !== '' && !empty($chatIps[$visitIp]));
             if ($hadChat) {
                 $chatted[] = $visit;
             } elseif (!$isOpenVisit) {
