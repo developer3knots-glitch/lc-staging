@@ -136,7 +136,7 @@
                 return (
                     '<div class="lc-traffic-actions">' +
                         '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(chatHref) + '">' +
-                            '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
+                            '<i class="ti ti-message-circle" aria-hidden="true"></i> Open chat' +
                         '</a>' +
                     '</div>'
                 );
@@ -166,7 +166,7 @@
         if (row.status === 'browsing' && row.same_ip_chat_url) {
             return (
                 '<a class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" href="' + esc(row.same_ip_chat_url) + '">' +
-                    '<i class="ti ti-message-circle" aria-hidden="true"></i> Open' +
+                    '<i class="ti ti-message-circle" aria-hidden="true"></i> Open chat' +
                 '</a>'
             );
         }
@@ -260,6 +260,40 @@
             });
     }
 
+    function showStartedChat(visitorId, data) {
+        visitorId = parseInt(visitorId, 10) || 0;
+        var convId = parseInt(data && data.conversation_id, 10) || 0;
+        var chatUrl = (data && data.chat_url) || (convId ? ('chats.php?id=' + encodeURIComponent(String(convId))) : '');
+        if (visitorId < 1 || !chatUrl) return;
+        var agentId = parseInt(data && data.agent_id, 10) || myAgentId;
+        var agentName = String((data && data.agent_name) || '').trim();
+        if (!agentName) {
+            var nameEl = document.querySelector('.lc-agent-name');
+            agentName = nameEl ? String(nameEl.textContent || '').trim() : '';
+        }
+        var target = null;
+        allVisitors.forEach(function (row) {
+            if ((parseInt(row.visitor_id, 10) || 0) === visitorId) target = row;
+        });
+        var ip = target && target.ip ? String(target.ip) : '';
+        allVisitors = allVisitors.map(function (row) {
+            var sameVisitor = (parseInt(row.visitor_id, 10) || 0) === visitorId;
+            var sameIpBrowsing = ip !== '' && String(row.ip || '') === ip && row.status === 'browsing';
+            if (!sameVisitor && !sameIpBrowsing) return row;
+            return Object.assign({}, row, {
+                status: 'chatting',
+                activity_label: 'Chatting',
+                conversation_id: convId,
+                conversation_status: 'active',
+                chat_url: chatUrl,
+                same_ip_chat_url: null,
+                agent_id: agentId,
+                agent_name: agentName || row.agent_name || ''
+            });
+        });
+        paintPage();
+    }
+
     function startChatWithVisitor(visitorId, brandId, btn, sendGreeting) {
         visitorId = parseInt(visitorId, 10) || 0;
         brandId = parseInt(brandId, 10) || 0;
@@ -289,7 +323,7 @@
                 if (!data || !data.success || !data.chat_url) {
                     throw new Error((data && data.error) || 'Could not start chat');
                 }
-                window.location.href = data.chat_url;
+                showStartedChat(visitorId, data);
             })
             .catch(function (err) {
                 if (btn) {

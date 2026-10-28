@@ -416,6 +416,8 @@ try {
         'conversation_id' => $convId,
         'created' => $created,
         'chat_url' => lc_admin_url('chats', ['id' => $convId]),
+        'agent_id' => (int) ($conv['agent_id'] ?? $agentId),
+        'agent_name' => trim((string) ($conv['agent_name'] ?? ($agent['name'] ?? ''))) ?: 'Agent',
         'visitor_name' => trim((string) ($visitor['name'] ?? '')) ?: 'Visitor',
     ]);
 } catch (Throwable $e) {
