@@ -31,7 +31,7 @@ require __DIR__ . '/includes/header.php';
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-clicks">0</span><small>Clicks</small></div>
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-today">0</span><small>Today</small></div>
             <div class="lc-hero-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-avg">0</span><small>Avg / IP</small></div>
-            <div class="lc-hero-stat lc-vis-gclid-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-gclid">0</span><small>GCLID visitors</small></div>
+            <div class="lc-hero-stat lc-vis-gclid-stat"><span class="lc-hero-stat-val" id="lc-visitors-stat-gclid">0</span><small>GCLID, no chat</small></div>
         </div>
     </section>
 

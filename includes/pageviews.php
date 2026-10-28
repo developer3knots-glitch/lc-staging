@@ -741,6 +741,279 @@ function lc_visitors_row_duration(array $row): array
     ];
 }
 
+/**
+ * GCLID visits that ended with no chat.
+ * One visit is the pages after a Google click until the visitor leaves or a new click starts.
+ * A conversation in that window (agent Start chat or the visitor opening chat) drops the visit.
+ * Count is the full set. Rows are the newest visits, capped by $limit.
+ *
+ * @param list<mixed> $brandParams
+ * @param list<mixed> $dateParams
+ * @return array{count:int, rows:list<array<string, mixed>>}
+ */
+function lc_gclid_visits_without_chat(
+    string $brandSql,
+    array $brandParams,
+    string $dateSql,
+    array $dateParams,
+    string $search = '',
+    int $limit = 200
+): array {
+    $empty = ['count' => 0, 'rows' => []];
+    if ($brandSql === '' || !function_exists('lc_db')) {
+        return $empty;
+    }
+    $limit = max(1, min(500, $limit));
+    $gclidSql = "(pv2.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(pv2.referrer, '') REGEXP '(^|[?&#])gclid=')";
+    $dateSqlInner = str_replace('pv.visited_at', 'pv2.visited_at', $dateSql);
+    $sql = '
+        SELECT
+            pv.id,
+            pv.visitor_id,
+            v.ip_address AS ip,
+            NULLIF(TRIM(v.name), \'\') AS visitor_name,
+            NULLIF(TRIM(v.email), \'\') AS visitor_email,
+            NULLIF(TRIM(v.country), \'\') AS country,
+            pv.page_url,
+            pv.page_title,
+            pv.referrer,
+            pv.visited_at,
+            pv.duration_seconds,
+            v.left_site_at,
+            v.last_seen
+        FROM visitor_page_views pv
+        INNER JOIN visitors v ON v.id = pv.visitor_id
+        INNER JOIN (
+            SELECT DISTINCT pv2.visitor_id
+            FROM visitor_page_views pv2
+            INNER JOIN visitors v2 ON v2.id = pv2.visitor_id
+            WHERE pv2.' . $brandSql . '
+              AND v2.ip_address IS NOT NULL AND TRIM(v2.ip_address) <> \'\'
+              ' . $dateSqlInner . '
+              AND ' . $gclidSql . '
+        ) g ON g.visitor_id = pv.visitor_id
+        WHERE pv.' . $brandSql . '
+          AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> \'\'
+          ' . $dateSql . '
+        ORDER BY pv.visitor_id ASC, pv.visited_at ASC, pv.id ASC
+        LIMIT 8000
+    ';
+
+    try {
+        $stmt = lc_db()->prepare($sql);
+        $stmt->execute(array_merge($brandParams, $dateParams, $brandParams, $dateParams));
+        $pages = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        return $empty;
+    }
+    if (!$pages) {
+        return $empty;
+    }
+
+    $byVisitor = [];
+    foreach ($pages as $page) {
+        $visitorId = (int) ($page['visitor_id'] ?? 0);
+        if ($visitorId < 1) {
+            continue;
+        }
+        $byVisitor[$visitorId][] = $page;
+    }
+
+    $chatAt = [];
+    $visitorIds = array_keys($byVisitor);
+    $marks = implode(',', array_fill(0, count($visitorIds), '?'));
+    try {
+        $chatStmt = lc_db()->prepare("SELECT visitor_id, started_at FROM conversations WHERE visitor_id IN ({$marks})");
+        $chatStmt->execute($visitorIds);
+        foreach ($chatStmt->fetchAll(PDO::FETCH_ASSOC) as $chat) {
+            $cid = (int) ($chat['visitor_id'] ?? 0);
+            $raw = trim((string) ($chat['started_at'] ?? ''));
+            $ts = $raw !== '' ? strtotime($raw . ' UTC') : false;
+            if ($cid > 0 && $ts !== false) {
+                $chatAt[$cid][] = $ts;
+            }
+        }
+    } catch (Throwable $e) {
+        $chatAt = [];
+    }
+
+    $gapSeconds = 1800;
+    $visits = [];
+    foreach ($byVisitor as $visitorId => $rows) {
+        $latestTs = 0;
+        foreach ($rows as $row) {
+            $ts = strtotime(trim((string) ($row['visited_at'] ?? '')) . ' UTC');
+            if ($ts !== false && $ts > $latestTs) {
+                $latestTs = $ts;
+            }
+        }
+        $current = null;
+        $closed = [];
+        $close = static function (?array $visit) use (&$closed): void {
+            if ($visit && !empty($visit['pages'])) {
+                $closed[] = $visit;
+            }
+        };
+        foreach ($rows as $row) {
+            $ts = strtotime(trim((string) ($row['visited_at'] ?? '')) . ' UTC');
+            if ($ts === false) {
+                continue;
+            }
+            $gclid = lc_extract_gclid((string) ($row['page_url'] ?? ''));
+            if ($gclid === '') {
+                $gclid = lc_extract_gclid((string) ($row['referrer'] ?? ''));
+            }
+            $startNew = false;
+            if ($current === null) {
+                $startNew = $gclid !== '';
+            } else {
+                $quiet = ($ts - (int) $current['last_ts']) > $gapSeconds;
+                $newClick = $gclid !== '' && $gclid !== (string) $current['gclid'];
+                if ($quiet || $newClick) {
+                    $close($current);
+                    $current = null;
+                    $startNew = $gclid !== '';
+                }
+            }
+            if ($startNew) {
+                $current = [
+                    'gclid' => $gclid,
+                    'pages' => [],
+                    'first_ts' => $ts,
+                    'last_ts' => $ts,
+                    'visitor' => $row,
+                ];
+            }
+            if ($current === null) {
+                continue;
+            }
+            $current['pages'][] = $row;
+            $current['last_ts'] = $ts;
+        }
+        $close($current);
+
+        $leftRaw = trim((string) ($rows[0]['left_site_at'] ?? ''));
+        $leftTs = $leftRaw !== '' ? strtotime($leftRaw . ' UTC') : false;
+        $seenRaw = trim((string) ($rows[0]['last_seen'] ?? ''));
+        $seenTs = $seenRaw !== '' ? strtotime($seenRaw . ' UTC') : false;
+        $stillHere = ($leftTs === false) && ($seenTs !== false) && ((time() - $seenTs) < 90);
+
+        foreach ($closed as $visit) {
+            $lastPageTs = (int) $visit['last_ts'];
+            $isOpenVisit = $stillHere && $latestTs > 0 && $lastPageTs === $latestTs;
+            if ($isOpenVisit) {
+                continue;
+            }
+            $firstTs = (int) $visit['first_ts'];
+            $stay = 0;
+            $lastPage = $visit['pages'][count($visit['pages']) - 1];
+            if (isset($lastPage['duration_seconds']) && $lastPage['duration_seconds'] !== null && $lastPage['duration_seconds'] !== '') {
+                $stay = max(0, (int) $lastPage['duration_seconds']);
+            }
+            $hadChat = false;
+            foreach ($chatAt[$visitorId] ?? [] as $startedTs) {
+                if ($startedTs >= ($firstTs - 120) && $startedTs <= ($lastPageTs + max(120, $stay))) {
+                    $hadChat = true;
+                    break;
+                }
+            }
+            if ($hadChat) {
+                continue;
+            }
+            $visits[] = $visit;
+        }
+    }
+
+    $search = trim($search);
+    if ($search !== '') {
+        $needle = function_exists('mb_strtolower') ? mb_strtolower($search) : strtolower($search);
+        $visits = array_values(array_filter($visits, static function (array $visit) use ($needle): bool {
+            $parts = [
+                (string) ($visit['visitor']['ip'] ?? ''),
+                (string) ($visit['visitor']['visitor_name'] ?? ''),
+                (string) ($visit['visitor']['visitor_email'] ?? ''),
+                (string) ($visit['gclid'] ?? ''),
+            ];
+            foreach ($visit['pages'] as $page) {
+                $parts[] = (string) ($page['page_url'] ?? '');
+                $parts[] = (string) ($page['page_title'] ?? '');
+            }
+            $hay = function_exists('mb_strtolower') ? mb_strtolower(implode(' ', $parts)) : strtolower(implode(' ', $parts));
+            return $needle !== '' && strpos($hay, $needle) !== false;
+        }));
+    }
+
+    usort($visits, static function (array $a, array $b): int {
+        return ((int) $b['first_ts']) <=> ((int) $a['first_ts']);
+    });
+
+    if (count($visits) > $limit) {
+        $visits = array_slice($visits, 0, $limit);
+    }
+    $count = count($visits);
+    $pagePath = static function (string $pageUrl): string {
+        if ($pageUrl === '') {
+            return '';
+        }
+        $parsed = parse_url($pageUrl);
+        if (!is_array($parsed) || empty($parsed['path'])) {
+            return $pageUrl;
+        }
+        $path = (string) $parsed['path'];
+        if (!empty($parsed['query'])) {
+            $path .= '?' . $parsed['query'];
+        }
+        return $path;
+    };
+
+    $out = [];
+    foreach ($visits as $visit) {
+        $first = $visit['pages'][0];
+        $last = $visit['pages'][count($visit['pages']) - 1];
+        $visitor = $visit['visitor'];
+        $name = trim((string) ($visitor['visitor_name'] ?? ''));
+        if ($name === '') {
+            $name = 'Visitor';
+        }
+        $firstTs = (int) $visit['first_ts'];
+        $lastTs = (int) $visit['last_ts'];
+        $endTs = $lastTs;
+        $pageDur = isset($last['duration_seconds']) && $last['duration_seconds'] !== null && $last['duration_seconds'] !== ''
+            ? (int) $last['duration_seconds']
+            : 0;
+        if ($pageDur > 0) {
+            $endTs += $pageDur;
+        }
+        $leftRaw = trim((string) ($visitor['left_site_at'] ?? ''));
+        $leftTs = $leftRaw !== '' ? strtotime($leftRaw . ' UTC') : false;
+        if ($leftTs !== false && $leftTs >= $firstTs && $leftTs >= $lastTs && $leftTs <= ($lastTs + 7200)) {
+            $endTs = $leftTs;
+        }
+        $seconds = max(0, $endTs - $firstTs);
+        $url = (string) ($first['page_url'] ?? '');
+        $visitedRaw = trim((string) ($first['visited_at'] ?? ''));
+        $out[] = [
+            'id' => (int) ($first['id'] ?? 0),
+            'visitor_id' => (int) ($first['visitor_id'] ?? 0),
+            'ip' => (string) ($visitor['ip'] ?? ''),
+            'name' => $name,
+            'initials' => function_exists('lc_avatar_initials') ? lc_avatar_initials($name) : 'V',
+            'country' => (string) ($visitor['country'] ?? ''),
+            'clicks' => count($visit['pages']),
+            'page_url' => $url,
+            'page_path' => $pagePath($url),
+            'page_title' => (string) ($first['page_title'] ?? ''),
+            'gclid' => (string) $visit['gclid'],
+            'visited_at' => ($visitedRaw !== '' && function_exists('lc_to_iso8601')) ? lc_to_iso8601($visitedRaw) : null,
+            'duration_seconds' => $seconds,
+            'duration_label' => lc_format_duration_label($seconds) ?: '0s',
+            'duration_live' => false,
+        ];
+    }
+
+    return ['count' => $count, 'rows' => $out];
+}
+
 function lc_extract_gclid(string $url): string
 {
     if ($url === '') {

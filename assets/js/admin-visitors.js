@@ -228,16 +228,16 @@
                 if (statAvg) statAvg.textContent = String(stats.avg || 0);
                 if (statGclid) statGclid.textContent = String(stats.gclid || 0);
                 if (tableEl) tableEl.classList.toggle('is-gclid', view === 'gclid');
-                if (feedTitle) feedTitle.textContent = view === 'gclid' ? 'GCLID visits' : 'Latest visits';
+                if (feedTitle) feedTitle.textContent = view === 'gclid' ? 'GCLID visits, no chat' : 'Latest visits';
                 if (feedSub) {
                     feedSub.textContent = view === 'gclid'
-                        ? 'Visitors who arrived with a Google click ID. Duration is that visit on the site.'
+                        ? 'One row per visit. They arrived with a Google click ID and left without a chat. Clicks is the pages in that visit. The counter matches this list.'
                         : 'Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.';
                 }
-                if (emptyTitle) emptyTitle.textContent = view === 'gclid' ? 'No GCLID visitors in this range' : 'No clicks in this range';
+                if (emptyTitle) emptyTitle.textContent = view === 'gclid' ? 'No GCLID visits without a chat' : 'No clicks in this range';
                 if (emptySub) {
                     emptySub.textContent = view === 'gclid'
-                        ? 'A visitor shows up here when their page URL includes a gclid.'
+                        ? 'A row appears when someone lands with a gclid, browses, and leaves. If you or they start a chat, that visit stays off this list.'
                         : 'When someone opens a page with your widget, the visit shows up here.';
                 }
                 paintReport(data.report || {});

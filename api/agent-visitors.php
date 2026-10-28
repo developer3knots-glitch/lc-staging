@@ -148,36 +148,10 @@ try {
     }
     $scopedWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> '' {$dateSql} {$searchSql}";
     $scopeParams = array_merge($brandParams, $dateParams, $searchParams);
-    $gclidOnHit = "(pv.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(pv.referrer, '') REGEXP '(^|[?&#])gclid=')";
-    $gclidVisitorSql = "(
-        {$gclidOnHit}
-        OR (
-            v.visit_started_at IS NOT NULL
-            AND pv.visited_at >= v.visit_started_at
-            AND EXISTS (
-                SELECT 1 FROM visitor_page_views gp
-                WHERE gp.visitor_id = pv.visitor_id
-                  AND gp.{$brandSql}
-                  AND gp.visited_at >= v.visit_started_at
-                  AND (gp.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(gp.referrer, '') REGEXP '(^|[?&#])gclid=')
-            )
-        )
-    )";
-    $gclidVisitorParams = $brandParams;
-
-    $gclidStmt = $db->prepare("
-        SELECT COUNT(DISTINCT v.ip_address)
-        FROM visitor_page_views pv
-        INNER JOIN visitors v ON v.id = pv.visitor_id
-        WHERE {$scopedWhere} AND {$gclidVisitorSql}
-    ");
-    $gclidStmt->execute(array_merge($scopeParams, $gclidVisitorParams));
-    $gclidVisitors = (int) $gclidStmt->fetchColumn();
-
-    if ($view === 'gclid') {
-        $scopedWhere .= ' AND ' . $gclidVisitorSql;
-        $scopeParams = array_merge($scopeParams, $gclidVisitorParams);
-    }
+    $gclidPack = function_exists('lc_gclid_visits_without_chat')
+        ? lc_gclid_visits_without_chat($brandSql, $brandParams, $dateSql, $dateParams, $q, 500)
+        : ['count' => 0, 'rows' => []];
+    $gclidVisitors = (int) ($gclidPack['count'] ?? 0);
 
     $statsStmt = $db->prepare("
         SELECT COUNT(DISTINCT v.ip_address) AS ips, COUNT(pv.id) AS clicks
@@ -220,7 +194,10 @@ try {
     $listStmt->execute(array_merge($brandParams, $scopeParams));
 
     $visitors = [];
-    foreach ($listStmt->fetchAll() as $row) {
+    if ($view === 'gclid') {
+        $visitors = $gclidPack['rows'] ?? [];
+    }
+    foreach ($view === 'gclid' ? [] : $listStmt->fetchAll() as $row) {
         $url = (string) ($row['page_url'] ?? '');
         $referrer = (string) ($row['referrer'] ?? '');
         $gclid = function_exists('lc_extract_gclid') ? lc_extract_gclid($url) : '';
@@ -251,50 +228,6 @@ try {
         ];
     }
 
-    if ($view === 'gclid' && $visitors) {
-        $needIds = [];
-        foreach ($visitors as $item) {
-            if ($item['gclid'] === '' && $item['visitor_id'] > 0) {
-                $needIds[$item['visitor_id']] = true;
-            }
-        }
-        if ($needIds) {
-            $idList = array_keys($needIds);
-            $marks = implode(',', array_fill(0, count($idList), '?'));
-            $fill = $db->prepare("
-                SELECT pv.visitor_id, pv.page_url, pv.referrer
-                FROM visitor_page_views pv
-                INNER JOIN visitors v ON v.id = pv.visitor_id
-                WHERE pv.visitor_id IN ({$marks})
-                  AND pv.{$brandSql}
-                  AND pv.visited_at >= v.visit_started_at
-                  AND (pv.page_url REGEXP '(^|[?&#])gclid=' OR IFNULL(pv.referrer, '') REGEXP '(^|[?&#])gclid=')
-                ORDER BY pv.id DESC
-            ");
-            $fill->execute(array_merge($idList, $brandParams));
-            $gclidByVisitor = [];
-            foreach ($fill->fetchAll() as $hit) {
-                $hitId = (int) $hit['visitor_id'];
-                if (isset($gclidByVisitor[$hitId])) {
-                    continue;
-                }
-                $found = lc_extract_gclid((string) ($hit['page_url'] ?? ''));
-                if ($found === '') {
-                    $found = lc_extract_gclid((string) ($hit['referrer'] ?? ''));
-                }
-                if ($found !== '') {
-                    $gclidByVisitor[$hitId] = $found;
-                }
-            }
-            foreach ($visitors as $index => $item) {
-                $visitorId = (int) $item['visitor_id'];
-                if ($item['gclid'] === '' && isset($gclidByVisitor[$visitorId])) {
-                    $visitors[$index]['gclid'] = $gclidByVisitor[$visitorId];
-                }
-            }
-        }
-    }
-
     $baseWhere = "pv.{$brandSql} AND v.ip_address IS NOT NULL AND TRIM(v.ip_address) <> ''";
     $accountTodayStart = $todayLocal->setTime(0, 0, 0);
     $accountTodayEnd = $accountTodayStart->modify('+1 day');
@@ -303,10 +236,6 @@ try {
         $accountTodayStart->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
         $accountTodayEnd->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
     ], $searchParams);
-    if ($view === 'gclid') {
-        $todayWhere .= ' AND ' . $gclidVisitorSql;
-        $todayParams = array_merge($todayParams, $gclidVisitorParams);
-    }
     $todayStmt = $db->prepare("
         SELECT COUNT(*) FROM visitor_page_views pv
         INNER JOIN visitors v ON v.id = pv.visitor_id
