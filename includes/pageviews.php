@@ -1046,9 +1046,11 @@ function lc_gclid_visits_without_chat(
         if (!$hadChat && $item['ip'] !== '') {
             $hadChat = $chatInWindow($chatAtIp[$item['ip']] ?? [], $start, $end);
         }
+        $hasAnyChat = !empty($chatAtVisitor[$item['visitor_id']])
+            || ($item['ip'] !== '' && !empty($chatAtIp[$item['ip']]));
         if ($hadChat) {
             $chatted[] = $item['visit'];
-        } elseif (empty($item['open'])) {
+        } elseif (!$hasAnyChat && empty($item['open'])) {
             $noChat[] = $item['visit'];
         }
     }
