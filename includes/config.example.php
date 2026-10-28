@@ -7,8 +7,8 @@
 define('LC_APP_NAME', '3Knots LiveChat');
 define('LC_VERSION', '1.0.0');
 
-/** Fallback public base (no trailing slash). Live request host wins in lc_base_url(). */
-define('LC_PUBLIC_BASE_URL', 'https://livechat.3knotsdigital.com');
+/** Fallback public base (no trailing slash). Notification clicks use lc_notify_base_url(). */
+define('LC_PUBLIC_BASE_URL', 'https://livechat.360cloud.site');
 
 $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'livechat.3knotsdigital.com';

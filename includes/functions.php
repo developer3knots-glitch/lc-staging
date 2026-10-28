@@ -179,13 +179,10 @@ function lc_base_url(): string
     return $resolved;
 }
 
-/** One public admin host for notification clicks. Set LC_PUBLIC_BASE_URL in config.php. */
+/** Notification clicks open this admin only. The other host must not be used. */
 function lc_notify_base_url(): string
 {
-    if (defined('LC_PUBLIC_BASE_URL') && trim((string) LC_PUBLIC_BASE_URL) !== '') {
-        return rtrim((string) LC_PUBLIC_BASE_URL, '/');
-    }
-    return rtrim(lc_base_url(), '/');
+    return 'https://livechat.360cloud.site';
 }
 
 /**

@@ -786,7 +786,7 @@
                 });
                 retN.onclick = function () {
                     try { window.focus(); } catch (eF) {}
-                    window.location.href = (window.LC_NOTIFY_BASE || base) + '/admin/chats.php';
+                    window.location.href = 'https://livechat.360cloud.site/admin/chats.php';
                     try { retN.close(); } catch (eC) {}
                 };
                 setTimeout(function () {

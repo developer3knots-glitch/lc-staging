@@ -176,7 +176,7 @@
        Reliability: WebSocket only while connected. Poll ONLY if WS is down. */
     (function initVisitorLandPush() {
         var base = window.LC_BASE_URL || '';
-        var notifyBase = window.LC_NOTIFY_BASE || base;
+        var notifyBase = 'https://livechat.360cloud.site';
         var seenAt = {};
         var knownOnSite = null;
         var landRt = null;
