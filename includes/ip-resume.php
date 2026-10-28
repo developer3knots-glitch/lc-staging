@@ -60,14 +60,21 @@ function lc_identity_ip(string $ip): ?string
  * Exception: if this visitor already has an open chat today, do NOT rotate mid-session
  * (server IP vs ipify / IPv4↔IPv6 mismatch was wiping chat_token → Invalid session).
  *
+ * A connection IP with no browser-reported public_ipv4 must not mint a new visitor.
+ * Settings polls omit that field; Cloudflare and ipify then disagree and the
+ * same browser was split into a new row about every 15 seconds.
+ *
  * @param array<string,mixed>|false|null $visitor
  * @return array{visitor: ?array, visitor_uid: string, rotated: bool}
  */
-function lc_visitor_for_current_ip($visitor, string $visitorUid, string $currentIp): array
+function lc_visitor_for_current_ip($visitor, string $visitorUid, string $currentIp, bool $reportedByBrowser = true): array
 {
     $visitorUid = trim($visitorUid);
     if (!$visitor || !is_array($visitor)) {
         return ['visitor' => null, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    }
+    if (!$reportedByBrowser) {
+        return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
     }
 
     $storedRaw = trim((string) ($visitor['ip_address'] ?? ''));

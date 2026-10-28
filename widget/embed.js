@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 182;
+    var LC_WIDGET_BUILD = 183;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -3160,6 +3160,7 @@
                 brand_key: brandKey,
                 page_url: window.location.href,
                 website_url: '',
+                public_ipv4: publicIpv4,
                 settings_only: true
             })
         })

@@ -18,7 +18,8 @@ if ($visitorUid === '') {
     lc_json(['success' => false, 'error' => 'visitor_uid required'], 400);
 }
 
-$ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
+    $ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
+    $reportedIpv4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($input['public_ipv4'] ?? '') : null;
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
 $security = lc_widget_security_check($input, $ip, $userAgent, false);
@@ -56,7 +57,7 @@ try {
 
     // Different public IP = different visitor. Never keep old identity/chats on a new IP.
     $ipBind = function_exists('lc_visitor_for_current_ip')
-        ? lc_visitor_for_current_ip($visitor ?: null, $visitorUid, $ip)
+        ? lc_visitor_for_current_ip($visitor ?: null, $visitorUid, $ip, $reportedIpv4 !== null)
         : ['visitor' => $visitor ?: null, 'visitor_uid' => $visitorUid, 'rotated' => false];
     $visitor = $ipBind['visitor'];
     $visitorUid = $ipBind['visitor_uid'];

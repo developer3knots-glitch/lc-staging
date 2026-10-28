@@ -19,8 +19,9 @@ if ($visitorUid === '' || $pageUrl === '') {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
 
-$ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
-$userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $ip = function_exists('lc_resolve_visitor_ip') ? lc_resolve_visitor_ip($input) : lc_client_ip();
+    $reportedIpv4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($input['public_ipv4'] ?? '') : null;
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
 if (!lc_rate_limit('ip:' . $ip . ':pageview', 120, 60)) {
     lc_json(['success' => false, 'error' => 'Too many requests. Please wait a moment.'], 429);
@@ -42,7 +43,7 @@ try {
     $visitor = $stmt->fetch();
 
     $ipBind = function_exists('lc_visitor_for_current_ip')
-        ? lc_visitor_for_current_ip($visitor ?: null, $visitorUid, $ip)
+        ? lc_visitor_for_current_ip($visitor ?: null, $visitorUid, $ip, $reportedIpv4 !== null)
         : ['visitor' => $visitor ?: null, 'visitor_uid' => $visitorUid, 'rotated' => false];
     $visitor = $ipBind['visitor'];
     $visitorUid = $ipBind['visitor_uid'];
