@@ -47,12 +47,41 @@ try {
             lc_json(['success' => true, 'typing' => false]);
         }
 
-        $preview = '';
         if ($isTyping) {
             $preview = lc_sanitize_typing_preview((string) ($input['draft'] ?? $input['preview'] ?? ''));
+            if ($preview === '') {
+                try {
+                    $keep = $db->prepare('SELECT visitor_typing_preview FROM conversations WHERE id = ? LIMIT 1');
+                    $keep->execute([$conversationId]);
+                    $preview = lc_sanitize_typing_preview((string) ($keep->fetchColumn() ?: ''));
+                } catch (Throwable $e) {
+                    $preview = '';
+                }
+            }
+            lc_set_typing($conversationId, 'visitor', $preview !== '', $preview);
+            lc_json(['success' => true, 'typing' => $preview !== '', 'preview' => $preview]);
         }
-        lc_set_typing($conversationId, 'visitor', $isTyping, $preview);
-        lc_json(['success' => true, 'typing' => $isTyping, 'preview' => $preview]);
+
+        $cleared = !empty($input['cleared']) && (
+            $input['cleared'] === true || $input['cleared'] === 1
+            || $input['cleared'] === '1' || $input['cleared'] === 'true'
+        );
+        if (!$cleared) {
+            $kept = '';
+            try {
+                $keep = $db->prepare('SELECT visitor_typing_preview FROM conversations WHERE id = ? LIMIT 1');
+                $keep->execute([$conversationId]);
+                $kept = lc_sanitize_typing_preview((string) ($keep->fetchColumn() ?: ''));
+            } catch (Throwable $e) {
+                $kept = '';
+            }
+            if ($kept !== '') {
+                lc_set_typing($conversationId, 'visitor', true, $kept);
+                lc_json(['success' => true, 'typing' => true, 'preview' => $kept]);
+            }
+        }
+        lc_set_typing($conversationId, 'visitor', false, '');
+        lc_json(['success' => true, 'typing' => false, 'preview' => '', 'cleared' => true]);
     }
 
     // Agent path

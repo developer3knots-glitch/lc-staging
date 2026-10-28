@@ -106,6 +106,9 @@ function lc_set_typing(int $conversationId, string $role, bool $isTyping, string
             if ($preview !== '') {
                 $extra['preview'] = $preview;
             }
+            if (!$isTyping) {
+                $extra['cleared'] = true;
+            }
             // Include visitor display name for agent UI
             try {
                 $nameStmt = $db->prepare('

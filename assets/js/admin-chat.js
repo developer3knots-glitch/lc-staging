@@ -1451,7 +1451,6 @@
             visitorTypingMap[id] = true;
         } else {
             visitorTypingMap[id] = false;
-            if (selectedId === id) setPeerTypingVisible(false);
         }
         refreshSidebarTyping(id);
     }
@@ -4725,7 +4724,13 @@
                 if (!opts.skipJourney) {
                     loadPageJourney(false);
                 }
-                setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (c && c.visitor_name), data.peer_typing_preview || '');
+                var draftText = String(data.peer_typing_preview || '');
+                var draftLeft = draftText.replace(/\s/g, '') !== '';
+                if (data.peer_typing || draftLeft) {
+                    setPeerTypingVisible(true, data.peer_typing_name || (c && c.visitor_name), draftText);
+                } else if (!(typingLabelEl && typingLabelEl.classList.contains('has-preview'))) {
+                    setPeerTypingVisible(false);
+                }
             })
             .catch(function (err) {
                 console.error('Agent poll error:', err);
@@ -6680,9 +6685,22 @@
             realtimeClient.on('typing', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid || (payload.role || '') !== 'visitor') return;
-                setVisitorSidebarTyping(cid, !!payload.typing);
-                if (selectedId && cid === selectedId) {
-                    setPeerTypingVisible(!!payload.typing, payload.name || 'Visitor', payload.preview || '');
+                var cleared = payload.cleared === true || payload.cleared === 1 || payload.cleared === '1';
+                var draftText = String((payload && payload.preview) || '');
+                var draftLeft = draftText.replace(/\s/g, '') !== '';
+                if (cleared) {
+                    setVisitorSidebarTyping(cid, false);
+                    if (selectedId && cid === selectedId) setPeerTypingVisible(false);
+                    return;
+                }
+                if (payload.typing || draftLeft) {
+                    setVisitorSidebarTyping(cid, true);
+                    if (selectedId && cid === selectedId && draftLeft) {
+                        setPeerTypingVisible(true, payload.name || 'Visitor', draftText);
+                    } else if (selectedId && cid === selectedId && !(typingLabelEl && typingLabelEl.classList.contains('has-preview'))) {
+                        setPeerTypingVisible(true, payload.name || 'Visitor');
+                    }
+                    return;
                 }
             });
             realtimeClient.on('message.reaction', function (payload) {
