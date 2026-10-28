@@ -359,9 +359,21 @@
             }).catch(function () {});
         }
 
+        function notifyHostOk() {
+            return window.location.hostname === 'livechat.360cloud.site';
+        }
+
         function registerNotifySW() {
             if (!('serviceWorker' in navigator)) return Promise.resolve(null);
-            return navigator.serviceWorker.register(base + '/sw-admin.js?v=5', { scope: base + '/admin/' })
+            if (!notifyHostOk()) {
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                    (regs || []).forEach(function (reg) {
+                        reg.unregister();
+                    });
+                }).catch(function () {});
+                return Promise.resolve(null);
+            }
+            return navigator.serviceWorker.register(base + '/sw-admin.js?v=6', { scope: base + '/admin/' })
                 .then(function (reg) {
                     swReg = reg;
                     return reg;
@@ -445,6 +457,7 @@
 
         function fireBrowserPush(name, detail, visitorKey, options) {
             options = options || {};
+            if (!notifyHostOk()) return;
             if (!window.Notification || Notification.permission !== 'granted') {
                 showPermissionBanner();
                 return;

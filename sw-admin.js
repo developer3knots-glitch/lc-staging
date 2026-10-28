@@ -8,10 +8,18 @@ self.addEventListener('install', function (event) {
 });
 
 self.addEventListener('activate', function (event) {
+    if (self.location.hostname !== 'livechat.360cloud.site') {
+        event.waitUntil(self.registration.unregister());
+        return;
+    }
     event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('push', function (event) {
+    if (self.location.hostname !== 'livechat.360cloud.site') {
+        event.waitUntil(self.registration.unregister());
+        return;
+    }
     var data = {};
     try {
         data = event.data ? event.data.json() : {};
