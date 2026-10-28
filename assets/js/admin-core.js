@@ -11,7 +11,13 @@
             } catch (eUrl) {
                 return;
             }
-            if (next.origin !== window.location.origin) return;
+            var notifyOrigin = '';
+            try {
+                if (window.LC_NOTIFY_BASE) {
+                    notifyOrigin = new URL(String(window.LC_NOTIFY_BASE), window.location.origin).origin;
+                }
+            } catch (eNotify) {}
+            if (next.origin !== window.location.origin && next.origin !== notifyOrigin) return;
             if (next.pathname.indexOf('/admin/') !== 0 && next.pathname !== '/admin') return;
             window.location.href = next.href;
         });
@@ -170,6 +176,7 @@
        Reliability: WebSocket only while connected. Poll ONLY if WS is down. */
     (function initVisitorLandPush() {
         var base = window.LC_BASE_URL || '';
+        var notifyBase = window.LC_NOTIFY_BASE || base;
         var seenAt = {};
         var knownOnSite = null;
         var landRt = null;
@@ -177,7 +184,7 @@
         var swReg = null;
         var DEDUPE_MS = 45000;
         var POLL_MS = 4000;
-        var trafficUrl = base + '/admin/traffic.php';
+        var trafficUrl = notifyBase + '/admin/traffic.php';
 
         function esc(s) {
             return String(s == null ? '' : s)
@@ -408,7 +415,7 @@
                 el.classList.remove('is-visible');
             }, 10000);
             el.onclick = function () {
-                window.location.href = chatUrl || (base + '/admin/chats.php');
+                window.location.href = chatUrl || (notifyBase + '/admin/chats.php');
             };
         }
 
@@ -432,7 +439,7 @@
                 el.classList.remove('is-visible');
             }, 12000);
             el.onclick = function () {
-                window.location.href = chatUrl || (base + '/admin/chats.php');
+                window.location.href = chatUrl || (notifyBase + '/admin/chats.php');
             };
         }
 
@@ -582,8 +589,8 @@
                 ? ((name || 'Visitor') + ' started a chat again')
                 : ((name || 'Visitor') + ' is waiting' + (detail ? ' — ' + detail : ''));
             var chatUrl = cid
-                ? (base + '/admin/chats.php?id=' + cid)
-                : (base + '/admin/chats.php');
+                ? (notifyBase + '/admin/chats.php?id=' + cid)
+                : (notifyBase + '/admin/chats.php');
             showIncomingToast(name, detail, chatUrl, incomingTitle);
             fireBrowserPush(name, detail, dedupeKey, {
                 title: incomingTitle,
@@ -622,8 +629,8 @@
             if (note.length > 90) note = note.slice(0, 87) + '...';
             var line = fromName + ' transferred ' + visitor;
             var chatUrl = cid
-                ? (base + '/admin/chats.php?id=' + cid)
-                : (base + '/admin/chats.php');
+                ? (notifyBase + '/admin/chats.php?id=' + cid)
+                : (notifyBase + '/admin/chats.php');
             showTransferToast(line, note, chatUrl);
             fireBrowserPush(visitor, note, dedupeKey, {
                 title: 'Chat transferred to you',
@@ -656,7 +663,7 @@
             var text = String(msg.message || '').replace(/\s+/g, ' ').trim();
             if (text.length > 140) text = text.slice(0, 137) + '...';
             var name = payload.name || 'Visitor';
-            var chatUrl = cid ? (base + '/admin/chats.php?id=' + cid) : (base + '/admin/chats.php');
+            var chatUrl = cid ? (notifyBase + '/admin/chats.php?id=' + cid) : (notifyBase + '/admin/chats.php');
             fireBrowserPush(name, text, 'msg:' + (mid || cid), {
                 title: 'New message',
                 body: name + (text ? ' — ' + text : ' sent a message'),

@@ -179,6 +179,15 @@ function lc_base_url(): string
     return $resolved;
 }
 
+/** One public admin host for notification clicks. Set LC_PUBLIC_BASE_URL in config.php. */
+function lc_notify_base_url(): string
+{
+    if (defined('LC_PUBLIC_BASE_URL') && trim((string) LC_PUBLIC_BASE_URL) !== '') {
+        return rtrim((string) LC_PUBLIC_BASE_URL, '/');
+    }
+    return rtrim(lc_base_url(), '/');
+}
+
 /**
  * Build a public URL. Always includes .php so Nginx/aaPanel works
  * without extensionless rewrite (Apache .htaccess is ignored there).

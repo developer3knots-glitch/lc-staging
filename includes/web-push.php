@@ -408,7 +408,13 @@ function lc_web_push_to_agents(array $agentIds, array $message): void
 
 function lc_web_push_admin_url(string $path): string
 {
-    $base = function_exists('lc_base_url') ? rtrim(lc_base_url(), '/') : '';
+    if (function_exists('lc_notify_base_url')) {
+        $base = rtrim(lc_notify_base_url(), '/');
+    } elseif (function_exists('lc_base_url')) {
+        $base = rtrim(lc_base_url(), '/');
+    } else {
+        $base = '';
+    }
     return $base . $path;
 }
 
