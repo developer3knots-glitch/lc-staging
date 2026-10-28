@@ -819,8 +819,7 @@ function lc_gclid_visits_without_chat(
         $byVisitor[$visitorId][] = $page;
     }
 
-    $chatVisitors = [];
-    $chatIps = [];
+    $chatEvents = [];
     $visitorIds = array_keys($byVisitor);
     $ips = [];
     foreach ($pages as $page) {
@@ -839,35 +838,69 @@ function lc_gclid_visits_without_chat(
             $chatWhere .= " OR v.ip_address IN ({$ipMarks}) OR c.client_ip IN ({$ipMarks})";
             $chatParams = array_merge($chatParams, $ipList, $ipList);
         }
+        $msgDateSql = '';
+        $msgDateParams = [];
+        if (count($dateParams) >= 2) {
+            $rangeStart = strtotime(((string) $dateParams[0]) . ' UTC');
+            $rangeEnd = strtotime(((string) $dateParams[1]) . ' UTC');
+            if ($rangeStart !== false && $rangeEnd !== false) {
+                $msgDateSql = ' AND m.created_at >= ? AND m.created_at < ?';
+                $msgDateParams = [
+                    gmdate('Y-m-d H:i:s', $rangeStart - 7200),
+                    gmdate('Y-m-d H:i:s', $rangeEnd + 7200),
+                ];
+            }
+        }
+        $convBrand = 'c.' . $brandSql;
         try {
             $chatStmt = lc_db()->prepare("
-                SELECT c.visitor_id, v.ip_address, c.client_ip
+                SELECT c.id, c.visitor_id, v.ip_address, c.client_ip, MIN(m.created_at) AS chat_at
                 FROM conversations c
                 INNER JOIN visitors v ON v.id = c.visitor_id
-                WHERE {$chatWhere}
+                INNER JOIN messages m ON m.conversation_id = c.id
+                WHERE ({$chatWhere})
+                  AND {$convBrand}
+                  AND (
+                    m.sender_type IN ('visitor', 'agent')
+                    OR (
+                      m.sender_type = 'system'
+                      AND (
+                        m.message LIKE '%joined the chat%'
+                        OR m.message LIKE '%contacted by an agent%'
+                      )
+                    )
+                  )
+                  {$msgDateSql}
+                GROUP BY c.id, c.visitor_id, v.ip_address, c.client_ip
             ");
-            $chatStmt->execute($chatParams);
+            $chatStmt->execute(array_merge($chatParams, $brandParams, $msgDateParams));
             foreach ($chatStmt->fetchAll(PDO::FETCH_ASSOC) as $chat) {
-                $cid = (int) ($chat['visitor_id'] ?? 0);
-                if ($cid > 0) {
-                    $chatVisitors[$cid] = true;
+                $ts = strtotime(trim((string) ($chat['chat_at'] ?? '')) . ' UTC');
+                if ($ts === false) {
+                    continue;
                 }
+                $eventIps = [];
                 foreach ([(string) ($chat['ip_address'] ?? ''), (string) ($chat['client_ip'] ?? '')] as $chatIp) {
                     $chatIp = trim($chatIp);
                     if ($chatIp !== '' && !in_array($chatIp, ['127.0.0.1', '::1', '0.0.0.0'], true)) {
-                        $chatIps[$chatIp] = true;
+                        $eventIps[$chatIp] = true;
                     }
                 }
+                $chatEvents[] = [
+                    'visitor_id' => (int) ($chat['visitor_id'] ?? 0),
+                    'ips' => $eventIps,
+                    'ts' => $ts,
+                ];
             }
         } catch (Throwable $e) {
-            $chatVisitors = [];
-            $chatIps = [];
+            $chatEvents = [];
         }
     }
 
     $gapSeconds = 1800;
     $noChat = [];
     $chatted = [];
+    $pending = [];
     foreach ($byVisitor as $visitorId => $rows) {
         $latestTs = 0;
         foreach ($rows as $row) {
@@ -927,17 +960,60 @@ function lc_gclid_visits_without_chat(
         $seenTs = $seenRaw !== '' ? strtotime($seenRaw . ' UTC') : false;
         $stillHere = ($leftTs === false) && ($seenTs !== false) && ((time() - $seenTs) < 90);
 
-        foreach ($closed as $visit) {
+        $clusterCount = count($closed);
+        foreach ($closed as $index => $visit) {
+            $firstTs = (int) $visit['first_ts'];
             $lastPageTs = (int) $visit['last_ts'];
             $isOpenVisit = $stillHere && $latestTs > 0 && $lastPageTs === $latestTs;
-            $visitIp = trim((string) ($visit['visitor']['ip'] ?? ''));
-            $hadChat = !empty($chatVisitors[$visitorId])
-                || ($visitIp !== '' && !empty($chatIps[$visitIp]));
-            if ($hadChat) {
-                $chatted[] = $visit;
-            } elseif (!$isOpenVisit) {
-                $noChat[] = $visit;
+            $lastPage = $visit['pages'][count($visit['pages']) - 1];
+            $pageDur = isset($lastPage['duration_seconds']) && $lastPage['duration_seconds'] !== null && $lastPage['duration_seconds'] !== ''
+                ? (int) $lastPage['duration_seconds']
+                : 0;
+            $endTs = $lastPageTs + max($pageDur, 7200);
+            $nextFirst = ($index + 1 < $clusterCount) ? (int) $closed[$index + 1]['first_ts'] : 0;
+            if ($nextFirst > $firstTs) {
+                $endTs = min($endTs, $nextFirst - 1);
             }
+            if ($endTs < $lastPageTs) {
+                $endTs = $lastPageTs;
+            }
+            $pending[] = [
+                'visit' => $visit,
+                'visitor_id' => (int) $visitorId,
+                'ip' => trim((string) ($visit['visitor']['ip'] ?? '')),
+                'first_ts' => $firstTs,
+                'end_ts' => $endTs,
+                'open' => $isOpenVisit,
+            ];
+        }
+    }
+
+    $chattedIndex = [];
+    foreach ($chatEvents as $event) {
+        $best = null;
+        foreach ($pending as $index => $item) {
+            $samePerson = ((int) $event['visitor_id'] === (int) $item['visitor_id'])
+                || ($item['ip'] !== '' && !empty($event['ips'][$item['ip']]));
+            if (!$samePerson) {
+                continue;
+            }
+            $eventTs = (int) $event['ts'];
+            if ($eventTs < ($item['first_ts'] - 120) || $eventTs > $item['end_ts']) {
+                continue;
+            }
+            if ($best === null || $item['first_ts'] > $pending[$best]['first_ts']) {
+                $best = $index;
+            }
+        }
+        if ($best !== null) {
+            $chattedIndex[$best] = true;
+        }
+    }
+    foreach ($pending as $index => $item) {
+        if (!empty($chattedIndex[$index])) {
+            $chatted[] = $item['visit'];
+        } elseif (empty($item['open'])) {
+            $noChat[] = $item['visit'];
         }
     }
 
