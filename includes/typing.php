@@ -208,9 +208,9 @@ function lc_typing_state_for_viewer(int $conversationId, string $viewerRole): ar
     }
 
     if ($viewerRole === 'agent') {
-        $active = lc_typing_heartbeat_is_active($row['visitor_typing_at'] ?? null);
+        $preview = lc_sanitize_typing_preview((string) ($row['visitor_typing_preview'] ?? ''));
+        $active = lc_typing_heartbeat_is_active($row['visitor_typing_at'] ?? null) || $preview !== '';
         $name = trim((string) ($row['visitor_name'] ?? '')) ?: 'Visitor';
-        $preview = $active ? lc_sanitize_typing_preview((string) ($row['visitor_typing_preview'] ?? '')) : '';
         return ['peer_typing' => $active, 'peer_name' => $name, 'peer_typing_preview' => $preview];
     }
 

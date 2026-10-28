@@ -1449,14 +1449,9 @@
         }
         if (isTyping) {
             visitorTypingMap[id] = true;
-            visitorTypingTimers[id] = setTimeout(function () {
-                visitorTypingMap[id] = false;
-                visitorTypingTimers[id] = null;
-                refreshSidebarTyping(id);
-                if (selectedId === id) setPeerTypingVisible(false);
-            }, 5500);
         } else {
             visitorTypingMap[id] = false;
+            if (selectedId === id) setPeerTypingVisible(false);
         }
         refreshSidebarTyping(id);
     }

@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 184;
+    var LC_WIDGET_BUILD = 185;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5629,11 +5629,6 @@
                 postOwnTyping(true);
             }, 2000);
         }
-        if (typingIdleTimer) clearTimeout(typingIdleTimer);
-        // Mobile typists pause longer between words — keep indicator alive ~6s.
-        typingIdleTimer = setTimeout(function () {
-            stopOwnTyping();
-        }, 6000);
     }
 
     function playJoinChime() {
