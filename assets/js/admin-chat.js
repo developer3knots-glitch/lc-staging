@@ -2004,6 +2004,14 @@
         }
     }
 
+    function isInactivityNotice(m) {
+        var t = String((m && (m.message || m.body)) || '');
+        if (!t) return false;
+        return /will close soon due to inactivity/i.test(t)
+            || /are you still there/i.test(t)
+            || /closed automatically due to inactivity/i.test(t);
+    }
+
     function isCloseSystemMessage(m) {
         if (!m || (m.sender_type && m.sender_type !== 'system')) {
             if (m && m.sender_type && m.sender_type !== 'system') return false;
@@ -6632,7 +6640,7 @@
                     syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
                 }
                 if (cid && patchInboxRowActivity(cid, msg)) {
-                    if (msg && isPresenceLogText(msg.message)) {
+                    if (msg && (isPresenceLogText(msg.message) || isInactivityNotice(msg))) {
                         return;
                     }
                     if (!(msg && msg.sender_type === 'visitor' && recentContinue(cid))) {
@@ -6797,6 +6805,15 @@
                 }
                 if (payload && payload.status === 'closed' && cid) {
                     var closedBy = String(payload.closed_by || '');
+                    if (closedBy === 'inactivity') {
+                        applyConversationClosedLocally(cid, 'inactivity');
+                        if (selectedId && cid === selectedId) {
+                            pollMessages({ skipJourney: true });
+                        } else if (!(payload && (payload.transferred || payload.taken_over))) {
+                            loadConversations();
+                        }
+                        return;
+                    }
                     if (closedBy === 'visitor') {
                         playNotifyEvent('chat_closed', 'close:' + cid);
                     } else if (closedBy === 'leave') {
