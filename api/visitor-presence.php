@@ -154,7 +154,12 @@ try {
         lc_mark_visitor_left_site($visitorId);
         $leftAt = gmdate('Y-m-d H:i:s');
     } elseif ($leftAt && $presenceTs > $prevTs) {
-        $db->prepare('UPDATE visitors SET left_site_at = NULL WHERE id = ?')->execute([$visitorId]);
+        $db->prepare('
+            UPDATE visitors
+            SET visit_started_at = UTC_TIMESTAMP(),
+                left_site_at = NULL
+            WHERE id = ? AND left_site_at IS NOT NULL
+        ')->execute([$visitorId]);
         $leftAt = null;
     }
 

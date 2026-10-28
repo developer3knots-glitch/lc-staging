@@ -73,8 +73,13 @@ function lc_mark_visitor_on_site(int $visitorId): void
     }
     lc_ensure_visitor_presence_schema();
     try {
-        lc_db()->prepare('UPDATE visitors SET left_site_at = NULL, last_seen = UTC_TIMESTAMP() WHERE id = ?')
-            ->execute([$visitorId]);
+        lc_db()->prepare('
+            UPDATE visitors
+            SET visit_started_at = IF(left_site_at IS NULL, visit_started_at, UTC_TIMESTAMP()),
+                left_site_at = NULL,
+                last_seen = UTC_TIMESTAMP()
+            WHERE id = ?
+        ')->execute([$visitorId]);
     } catch (Throwable $e) {
     }
 }
