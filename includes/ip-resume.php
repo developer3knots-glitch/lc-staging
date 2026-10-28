@@ -83,6 +83,16 @@ function lc_visitor_for_current_ip($visitor, string $visitorUid, string $current
         return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
     }
 
+    // Same browser, dual stack: IPv6 from Cloudflare and IPv4 from the browser
+    // are one visitor. Keep the row so the dotted IPv4 can replace the IPv6.
+    $storedIsV6 = filter_var($storedRaw, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+    $currentIsV6 = filter_var(trim($currentIp), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+    $storedV4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($storedRaw) : null;
+    $currentV4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($currentIp) : null;
+    if (($storedIsV6 && $currentV4 !== null) || ($currentIsV6 && $storedV4 !== null)) {
+        return ['visitor' => $visitor, 'visitor_uid' => $visitorUid, 'rotated' => false];
+    }
+
     // Keep identity while a live chat is in progress — avoid mid-chat token wipe.
     $visitorId = (int) ($visitor['id'] ?? 0);
     if ($visitorId > 0) {

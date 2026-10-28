@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 179;
+    var LC_WIDGET_BUILD = 180;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5708,6 +5708,19 @@
             return;
         }
         publicIpv4 = ip;
+        fetch(siteUrl + '/api/visitor-pageview.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                page_url: window.location.href,
+                page_title: document.title || '',
+                event: 'ping',
+                public_ipv4: ip,
+                website_url: ''
+            })
+        }).catch(function () {});
         fetch(siteUrl + '/api/visitor-ipv4.php', {
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),

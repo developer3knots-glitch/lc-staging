@@ -551,7 +551,7 @@ function lc_record_visitor_ip(int $visitorId, string $ip): void
         $primaryIsV6 = filter_var($primary, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
         if ($primaryIsLoopback || ($primaryIsV6 && $v4 !== null)) {
             $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ?, country = CASE WHEN country IN (\'Local\', \'Local network\') THEN \'\' ELSE country END WHERE id = ?')
-                ->execute([$ip, $v4 ?: $ip, $visitorId]);
+                ->execute([$ip, $v4, $visitorId]);
             $primary = $ip;
         }
 
@@ -576,6 +576,7 @@ function lc_record_visitor_ip(int $visitorId, string $ip): void
 
 function lc_best_public_ip(string ...$ips): string
 {
+    $v6 = '';
     foreach ($ips as $ip) {
         $ip = trim($ip);
         if ($ip === '') {
@@ -585,18 +586,16 @@ function lc_best_public_ip(string ...$ips): string
         if ($v4 !== null) {
             return $v4;
         }
-        if (function_exists('lc_ipv4_from_any')) {
-            $mapped = lc_ipv4_from_any($ip);
-            if ($mapped !== null) {
-                return $mapped;
-            }
+        $mapped = lc_ipv4_from_any($ip);
+        if ($mapped !== null) {
+            return $mapped;
         }
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            return $ip;
+        if ($v6 === '' && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            $v6 = $ip;
         }
     }
 
-    return '';
+    return $v6;
 }
 
 /**
