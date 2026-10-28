@@ -187,6 +187,8 @@ try {
     }
     if ($event !== 'ping') {
         lc_record_visitor_page_view($visitorId, $brandId, $pageUrl, $pageTitle, $referrer);
+    } elseif ($durationSeconds > 0 && $pageUrl !== '') {
+        lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
     lc_mark_visitor_on_site($visitorId);

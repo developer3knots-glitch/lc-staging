@@ -622,7 +622,7 @@ function lc_update_last_page_view_duration(int $visitorId, int $brandId, string 
 
     $db = lc_db();
     $stmt = $db->prepare('
-        SELECT id FROM visitor_page_views
+        SELECT id, visited_at FROM visitor_page_views
         WHERE visitor_id = ? AND brand_id = ? AND page_url = ?
         ORDER BY id DESC LIMIT 1
     ');
@@ -631,8 +631,16 @@ function lc_update_last_page_view_duration(int $visitorId, int $brandId, string 
     if (!$row) {
         return;
     }
+    $visitedTs = strtotime(trim((string) ($row['visited_at'] ?? '')) . ' UTC');
+    if ($visitedTs === false || $visitedTs < (time() - ($durationSeconds + 180))) {
+        return;
+    }
 
-    $upd = $db->prepare('UPDATE visitor_page_views SET duration_seconds = ? WHERE id = ?');
+    $upd = $db->prepare('
+        UPDATE visitor_page_views
+        SET duration_seconds = GREATEST(IFNULL(duration_seconds, 0), ?)
+        WHERE id = ?
+    ');
     $upd->execute([$durationSeconds, (int) $row['id']]);
 }
 

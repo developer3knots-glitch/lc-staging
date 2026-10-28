@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 180;
+    var LC_WIDGET_BUILD = 181;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -355,28 +355,40 @@
             }).catch(function () {});
         }
 
+        function pageStaySeconds() {
+            return Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
+        }
+
         function sendLeave(url, useBeacon) {
             if (!url || leaveSentForUrl === url) return;
-            var duration = Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
             leaveSentForUrl = url;
             postPageEvent({
                 event: 'leave',
                 page_url: url,
-                duration_seconds: duration
+                duration_seconds: pageStaySeconds()
             }, useBeacon);
+        }
+
+        function sendStay(useBeacon) {
+            var url = lastSentUrl || window.location.href;
+            if (!url) return;
+            postPageEvent({
+                event: 'ping',
+                page_url: url,
+                duration_seconds: pageStaySeconds()
+            }, !!useBeacon);
         }
 
         function sendSiteLeave() {
             if (siteLeaveSent) return;
             siteLeaveSent = true;
             var url = lastSentUrl || window.location.href;
-            var duration = Math.max(1, Math.round((Date.now() - currentEnteredAt) / 1000));
             // Instant "Left website" on agent chat via WS before tab dies
             reportEngagementPresence(true, true, { chat_open: 0, page_visible: 0, left_site: 1 });
             postPageEvent({
                 event: 'unload',
                 page_url: url,
-                duration_seconds: duration
+                duration_seconds: pageStaySeconds()
             }, true);
         }
 
@@ -577,16 +589,15 @@
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
             if (document.visibilityState !== 'visible') return;
-            postPageEvent({ event: 'ping' }, false);
+            sendStay(false);
         }, 15000);
 
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
                 siteLeaveSent = false;
-                currentEnteredAt = Date.now();
                 leaveSentForUrl = '';
                 reportEngagementPresence(false, true);
-                postPageEvent({ event: 'ping' }, false);
+                sendStay(false);
                 if (conversationId && !chatClosed) {
                     scheduleCatchupSync();
                     if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
@@ -594,7 +605,8 @@
                     }
                 }
             } else {
-                // Tab hidden ≠ left website — report Away while keeping on-site presence.
+                // Tab hidden ≠ left website — save the stay, then report Away.
+                sendStay(true);
                 reportEngagementPresence(true, true);
             }
         });
