@@ -238,9 +238,9 @@
                 }
                 if (feedSub) {
                     feedSub.textContent = view === 'gclid'
-                        ? 'Only visitors with no chat at all. Not one message. Anyone who has a chat is on GCLID chat, not here.'
+                        ? 'Only this visit. An older chat on the same person does not put the visit here.'
                         : (view === 'gclid_chat'
-                            ? 'Only visitors who have a chat. Anyone with no chat is on GCLID, not here.'
+                            ? 'Only a chat that happened during this visit. An older chat stays off this list.'
                             : 'Newest visit first. Duration is how long that visit stayed on the site. Clicks is that IP’s running total.');
                 }
                 if (emptyTitle) {
@@ -250,9 +250,9 @@
                 }
                 if (emptySub) {
                     emptySub.textContent = view === 'gclid'
-                        ? 'This list is only people who never started a chat. A visitor with even one message is listed under GCLID chat.'
+                        ? 'A visit stays here when nobody chatted during that visit. A chat on a different visit does not move it.'
                         : (view === 'gclid_chat'
-                            ? 'This list is only people who have a chat. A visitor with no messages is listed under GCLID.'
+                            ? 'A visit appears here only when a chat was started during that visit.'
                             : 'When someone opens a page with your widget, the visit shows up here.');
                 }
                 paintReport(data.report || {});

@@ -819,18 +819,30 @@ function lc_gclid_visits_without_chat(
         $byVisitor[$visitorId][] = $page;
     }
 
-    $chatVisitors = [];
-    $chatIps = [];
+    $chatAtVisitor = [];
+    $chatAtIp = [];
     $visitorIds = array_keys($byVisitor);
     $ips = [];
+    $pageMin = null;
+    $pageMax = null;
     foreach ($pages as $page) {
         $ip = trim((string) ($page['ip'] ?? ''));
         if ($ip !== '' && !in_array($ip, ['127.0.0.1', '::1', '0.0.0.0'], true)) {
             $ips[$ip] = true;
         }
+        $pageTs = strtotime(trim((string) ($page['visited_at'] ?? '')) . ' UTC');
+        if ($pageTs === false) {
+            continue;
+        }
+        if ($pageMin === null || $pageTs < $pageMin) {
+            $pageMin = $pageTs;
+        }
+        if ($pageMax === null || $pageTs > $pageMax) {
+            $pageMax = $pageTs;
+        }
     }
     $ipList = array_keys($ips);
-    if ($visitorIds) {
+    if ($visitorIds && $pageMin !== null && $pageMax !== null) {
         $visitorMarks = implode(',', array_fill(0, count($visitorIds), '?'));
         $chatWhere = "c.visitor_id IN ({$visitorMarks})";
         $chatParams = $visitorIds;
@@ -840,14 +852,19 @@ function lc_gclid_visits_without_chat(
             $chatParams = array_merge($chatParams, $ipList, $ipList);
         }
         $convBrand = 'c.' . $brandSql;
+        $msgDateParams = [
+            gmdate('Y-m-d H:i:s', $pageMin - 10800),
+            gmdate('Y-m-d H:i:s', $pageMax + 10800),
+        ];
         try {
             $chatStmt = lc_db()->prepare("
-                SELECT DISTINCT c.visitor_id, v.ip_address, c.client_ip
+                SELECT c.visitor_id, v.ip_address, c.client_ip, m.created_at
                 FROM conversations c
                 INNER JOIN visitors v ON v.id = c.visitor_id
                 INNER JOIN messages m ON m.conversation_id = c.id
                 WHERE ({$chatWhere})
                   AND {$convBrand}
+                  AND m.created_at >= ? AND m.created_at <= ?
                   AND (
                     m.sender_type IN ('visitor', 'agent')
                     OR (
@@ -859,28 +876,60 @@ function lc_gclid_visits_without_chat(
                     )
                   )
             ");
-            $chatStmt->execute(array_merge($chatParams, $brandParams));
+            $chatStmt->execute(array_merge($chatParams, $brandParams, $msgDateParams));
             foreach ($chatStmt->fetchAll(PDO::FETCH_ASSOC) as $chat) {
+                $ts = strtotime(trim((string) ($chat['created_at'] ?? '')) . ' UTC');
+                if ($ts === false) {
+                    continue;
+                }
                 $cid = (int) ($chat['visitor_id'] ?? 0);
                 if ($cid > 0) {
-                    $chatVisitors[$cid] = true;
+                    $chatAtVisitor[$cid][] = $ts;
                 }
                 foreach ([(string) ($chat['ip_address'] ?? ''), (string) ($chat['client_ip'] ?? '')] as $chatIp) {
                     $chatIp = trim($chatIp);
                     if ($chatIp !== '' && !in_array($chatIp, ['127.0.0.1', '::1', '0.0.0.0'], true)) {
-                        $chatIps[$chatIp] = true;
+                        $chatAtIp[$chatIp][] = $ts;
                     }
                 }
             }
         } catch (Throwable $e) {
-            $chatVisitors = [];
-            $chatIps = [];
+            $chatAtVisitor = [];
+            $chatAtIp = [];
         }
     }
+    $sortTimes = static function (array &$lists): void {
+        foreach ($lists as &$times) {
+            $times = array_values(array_unique($times));
+            sort($times);
+        }
+        unset($times);
+    };
+    $sortTimes($chatAtVisitor);
+    $sortTimes($chatAtIp);
+    $chatInWindow = static function (array $times, int $start, int $end): bool {
+        if (!$times || $end < $start) {
+            return false;
+        }
+        $lo = 0;
+        $hi = count($times) - 1;
+        while ($lo <= $hi) {
+            $mid = intdiv($lo + $hi, 2);
+            if ($times[$mid] < $start) {
+                $lo = $mid + 1;
+            } elseif ($times[$mid] > $end) {
+                $hi = $mid - 1;
+            } else {
+                return true;
+            }
+        }
+        return false;
+    };
 
     $gapSeconds = 1800;
     $noChat = [];
     $chatted = [];
+    $pending = [];
     foreach ($byVisitor as $visitorId => $rows) {
         $latestTs = 0;
         foreach ($rows as $row) {
@@ -943,14 +992,56 @@ function lc_gclid_visits_without_chat(
         foreach ($closed as $visit) {
             $lastPageTs = (int) $visit['last_ts'];
             $isOpenVisit = $stillHere && $latestTs > 0 && $lastPageTs === $latestTs;
-            $visitIp = trim((string) ($visit['visitor']['ip'] ?? ''));
-            $hadChat = !empty($chatVisitors[$visitorId])
-                || ($visitIp !== '' && !empty($chatIps[$visitIp]));
-            if ($hadChat) {
-                $chatted[] = $visit;
-            } elseif (!$isOpenVisit) {
-                $noChat[] = $visit;
+            $lastPage = $visit['pages'][count($visit['pages']) - 1];
+            $pageDur = isset($lastPage['duration_seconds']) && $lastPage['duration_seconds'] !== null && $lastPage['duration_seconds'] !== ''
+                ? (int) $lastPage['duration_seconds']
+                : 0;
+            $endTs = $lastPageTs + max($pageDur, $gapSeconds);
+            if ($leftTs !== false && $leftTs >= $lastPageTs && $leftTs <= ($lastPageTs + 7200)) {
+                $endTs = max($endTs, $leftTs);
             }
+            $pending[] = [
+                'visit' => $visit,
+                'visitor_id' => (int) $visitorId,
+                'ip' => trim((string) ($visit['visitor']['ip'] ?? '')),
+                'first_ts' => (int) $visit['first_ts'],
+                'end_ts' => $endTs,
+                'open' => $isOpenVisit,
+            ];
+        }
+    }
+
+    $groups = [];
+    foreach ($pending as $index => $item) {
+        $groups['v:' . $item['visitor_id']][] = $index;
+        if ($item['ip'] !== '') {
+            $groups['i:' . $item['ip']][] = $index;
+        }
+    }
+    foreach ($groups as $indexes) {
+        usort($indexes, static function (int $a, int $b) use ($pending): int {
+            return $pending[$a]['first_ts'] <=> $pending[$b]['first_ts'];
+        });
+        $groupCount = count($indexes);
+        for ($k = 0; $k < $groupCount - 1; $k++) {
+            $cur = $indexes[$k];
+            $nextTs = $pending[$indexes[$k + 1]]['first_ts'];
+            if ($nextTs > $pending[$cur]['first_ts'] && ($nextTs - 1) < $pending[$cur]['end_ts']) {
+                $pending[$cur]['end_ts'] = $nextTs - 1;
+            }
+        }
+    }
+    foreach ($pending as $item) {
+        $start = $item['first_ts'] - 120;
+        $end = max($item['end_ts'], $item['first_ts']);
+        $hadChat = $chatInWindow($chatAtVisitor[$item['visitor_id']] ?? [], $start, $end);
+        if (!$hadChat && $item['ip'] !== '') {
+            $hadChat = $chatInWindow($chatAtIp[$item['ip']] ?? [], $start, $end);
+        }
+        if ($hadChat) {
+            $chatted[] = $item['visit'];
+        } elseif (empty($item['open'])) {
+            $noChat[] = $item['visit'];
         }
     }
 
