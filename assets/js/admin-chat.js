@@ -571,6 +571,13 @@
         return /^(Visitor maximized the chat|Visitor returned to the tab|Visitor returned to the window|Visitor is active in chat|Visitor minimized the chat \(still on website\)|Visitor switched tab|Visitor switched window|Visitor left the website|Visitor appears disconnected)/.test(String(text || '').trim());
     }
 
+    function presenceLogText(node) {
+        if (!node) return '';
+        var body = node.querySelector ? node.querySelector('.lc-msg-body') : null;
+        var raw = body ? body.textContent : node.textContent;
+        return String(raw || '').replace(/\s+/g, ' ').trim();
+    }
+
     function absorbPresenceLog(text, messageId) {
         if (!messagesEl) return false;
         text = String(text || '').replace(/\s+/g, ' ').trim();
@@ -578,20 +585,22 @@
         var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
         if (!nodes.length) return false;
         var last = nodes[nodes.length - 1];
-        if (last.getAttribute('data-id')) return false;
-        var current = String(last.textContent || '').replace(/\s+/g, ' ').trim();
-        if (current !== text) return false;
+        var existingId = parseInt(last.getAttribute('data-id'), 10) || 0;
+        if (existingId > 0) return false;
+        if (presenceLogText(last) !== text) return false;
         if (messageId) {
             last.setAttribute('data-id', String(messageId));
         }
         return true;
     }
 
-    function keepUnsavedPresenceLogs() {
+    function keepUnsavedPresenceLogs(incomingIds) {
         if (!messagesEl) return [];
         var saved = [];
         messagesEl.querySelectorAll('.lc-msg.system.is-presence').forEach(function (node) {
-            if (!node.getAttribute('data-id')) saved.push(node.outerHTML);
+            var id = parseInt(node.getAttribute('data-id'), 10) || 0;
+            if (id > 0 && incomingIds && incomingIds[id]) return;
+            saved.push(node.outerHTML);
         });
         return saved;
     }
@@ -601,11 +610,16 @@
         saved.forEach(function (html) {
             var tmp = document.createElement('div');
             tmp.innerHTML = html;
-            var text = String(tmp.textContent || '').replace(/\s+/g, ' ').trim();
-            var bodies = messagesEl.querySelectorAll('.lc-msg.system .lc-msg-body');
-            var lastBody = bodies.length ? String(bodies[bodies.length - 1].textContent || '').replace(/\s+/g, ' ').trim() : '';
-            if (lastBody === text) return;
-            messagesEl.insertAdjacentHTML('beforeend', html);
+            var node = tmp.firstElementChild;
+            if (!node) return;
+            var id = parseInt(node.getAttribute('data-id'), 10) || 0;
+            if (id > 0 && messagesEl.querySelector('.lc-msg[data-id="' + id + '"]')) return;
+            var text = presenceLogText(node);
+            if (!text) return;
+            var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
+            var last = nodes.length ? nodes[nodes.length - 1] : null;
+            if (!id && last && presenceLogText(last) === text) return;
+            messagesEl.insertAdjacentHTML('beforeend', node.outerHTML);
         });
         scrollMessagesToBottom(false);
     }
@@ -616,11 +630,11 @@
         if (!line) return;
         var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
         var last = nodes.length ? nodes[nodes.length - 1] : null;
-        if (last && last.getAttribute('data-presence') === presence.status && last.textContent === line) {
+        if (last && last.getAttribute('data-presence') === presence.status && presenceLogText(last) === line) {
             return;
         }
         var html = '<div class="lc-msg system is-presence is-' + esc(presence.status) + '" data-presence="' +
-            esc(presence.status) + '" role="status">' + esc(line) + '</div>';
+            esc(presence.status) + '" role="status"><div class="lc-msg-body">' + esc(line) + '</div></div>';
         messagesEl.insertAdjacentHTML('beforeend', html);
         scrollMessagesToBottom(false);
     }
@@ -4536,14 +4550,17 @@
                         }
                         return (isNaN(ta) ? 0 : ta) - (isNaN(tb) ? 0 : tb);
                     });
+                    var incomingPresenceIds = {};
                     feedItems.forEach(function (entry) {
                         if (entry.type === 'note') {
                             html += renderInlineNote(entry.item);
                         } else {
+                            var paintedId = parseInt(entry.item && entry.item.id, 10) || 0;
+                            if (paintedId > 0) incomingPresenceIds[paintedId] = true;
                             html += renderMessage(entry.item);
                         }
                     });
-                    var unsavedPresence = keepUnsavedPresenceLogs();
+                    var unsavedPresence = keepUnsavedPresenceLogs(incomingPresenceIds);
                     messagesEl.innerHTML = html;
                     restoreUnsavedPresenceLogs(unsavedPresence);
                     needsFullHistory = false;

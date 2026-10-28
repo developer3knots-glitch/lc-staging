@@ -82,9 +82,6 @@ try {
         $prevTs = (int) ($row['presence_ts'] ?? 0);
         $widgetOpen = (int) ($row['widget_open'] ?? 0);
         $pageVisible = (int) ($row['page_visible'] ?? 1);
-        if (!in_array((string) ($row['status'] ?? ''), ['waiting', 'active'], true)) {
-            $conversationId = 0;
-        }
     } else {
         $stmt = $db->prepare('SELECT id, left_site_at, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
         $stmt->execute([$visitorUid]);
@@ -116,18 +113,9 @@ try {
             && function_exists('lc_presence_chat_line')
             && function_exists('lc_add_system_message')) {
             $staleLine = lc_presence_chat_line($clientStatusEarly, $fromStatusEarly);
-            if ($staleLine !== '') {
+            if ($staleLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $staleLine)) {
                 try {
-                    $dup = $db->prepare("
-                        SELECT message FROM messages
-                        WHERE conversation_id = ? AND sender_type = 'system'
-                        ORDER BY id DESC
-                        LIMIT 1
-                    ");
-                    $dup->execute([$conversationId]);
-                    if ((string) $dup->fetchColumn() !== $staleLine) {
-                        lc_add_system_message($conversationId, $staleLine, true);
-                    }
+                    lc_add_system_message($conversationId, $staleLine, true);
                 } catch (Throwable $e) {
                 }
             }
@@ -211,18 +199,9 @@ try {
     $statusChanged = $fromStatus !== (string) ($presence['status'] ?? '');
     if ($conversationId > 0 && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
         $presenceLine = lc_presence_chat_line((string) ($presence['status'] ?? ''), $fromStatus);
-        if ($presenceLine !== '') {
+        if ($presenceLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $presenceLine)) {
             try {
-                $dup = $db->prepare("
-                    SELECT message FROM messages
-                    WHERE conversation_id = ? AND sender_type = 'system'
-                    ORDER BY id DESC
-                    LIMIT 1
-                ");
-                $dup->execute([$conversationId]);
-                if ((string) $dup->fetchColumn() !== $presenceLine) {
-                    lc_add_system_message($conversationId, $presenceLine, true);
-                }
+                lc_add_system_message($conversationId, $presenceLine, true);
             } catch (Throwable $e) {
             }
         }

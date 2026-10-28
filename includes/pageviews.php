@@ -303,6 +303,26 @@ function lc_presence_chat_line(string $status, string $prevStatus): string
     }
 }
 
+/** Skip only a consecutive duplicate. An older identical line must not block the next event. */
+function lc_presence_log_is_repeat(int $conversationId, string $line): bool
+{
+    if ($conversationId < 1 || $line === '') {
+        return true;
+    }
+    try {
+        $dup = lc_db()->prepare('SELECT sender_type, message FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1');
+        $dup->execute([$conversationId]);
+        $row = $dup->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return false;
+        }
+        return (string) ($row['sender_type'] ?? '') === 'system'
+            && (string) ($row['message'] ?? '') === $line;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 /**
  * Apply optional chat_open / page_visible from a visitor API payload and notify agents on change.
  *
