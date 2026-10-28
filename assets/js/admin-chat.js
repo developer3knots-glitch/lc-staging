@@ -51,20 +51,6 @@
         }
     }
 
-    function newestOpenChatId(threads, conversation) {
-        var best = 0;
-        function consider(row) {
-            if (!row) return;
-            var id = parseInt(row.id, 10) || 0;
-            var status = String(row.status || '').toLowerCase();
-            if (id < 1 || (status !== 'active' && status !== 'waiting')) return;
-            if (id > best) best = id;
-        }
-        (threads || []).forEach(consider);
-        consider(conversation);
-        return best;
-    }
-
     function loadPriorThreads(conversationId) {
         if (!conversationId) return;
         priorHistoryLoadingId = conversationId;
@@ -73,13 +59,9 @@
             .then(function (data) {
                 if (selectedId !== conversationId || priorHistoryLoadingId !== conversationId) return;
                 if (!data || !data.success) return;
-                var threads = data.prior_threads || [];
-                var newest = newestOpenChatId(threads, data.conversation || null);
-                if (newest && newest !== conversationId && typeof openConversation === 'function') {
-                    openConversation(newest);
-                    return;
-                }
-                prependPriorThreads(threads, data.conversation || null);
+                // Older chats for this visitor stay in the transcript. Never swap
+                // the open row — that jump cleared the thread and bounced the URL.
+                prependPriorThreads(data.prior_threads || [], data.conversation || null);
             })
             .catch(function () {});
     }
@@ -4105,9 +4087,27 @@
         try { replyInput.setSelectionRange(len, len); } catch (e3) {}
     }
 
+    var openingConversationId = 0;
+    var openingConversationAt = 0;
+
     function openConversation(id) {
         id = parseInt(id, 10) || 0;
         if (!id) return;
+        var threadReady = !!(messagesEl && messagesEl.childElementCount > 0 && !needsFullHistory);
+        if (id === selectedId && threadReady) {
+            setChatThreadOpen(true);
+            document.querySelectorAll('.lc-chat-item').forEach(function (el) {
+                el.classList.toggle('active', parseInt(el.dataset.id, 10) === id);
+            });
+            return;
+        }
+        // A second click while this chat is still loading must not wipe the pane.
+        if (id === openingConversationId && needsFullHistory && (Date.now() - openingConversationAt) < 900) {
+            setChatThreadOpen(true);
+            return;
+        }
+        openingConversationId = id;
+        openingConversationAt = Date.now();
         var previousId = selectedId;
         var previousBlocked = !!currentIpBlocked;
         if (!previousBlocked && previousId && lastConversations && lastConversations.length) {
