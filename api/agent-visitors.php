@@ -226,6 +226,8 @@ try {
             'page_title' => (string) ($row['page_title'] ?? ''),
             'gclid' => $gclid,
             'visited_at' => !empty($row['visited_at']) ? lc_to_iso8601($row['visited_at']) : null,
+            'arrived_at' => $duration['arrived_at'] ?? null,
+            'left_at' => $duration['left_at'] ?? null,
             'duration_seconds' => $duration['seconds'],
             'duration_label' => $duration['label'],
             'duration_live' => $duration['live'],

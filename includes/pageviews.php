@@ -759,17 +759,30 @@ function lc_get_visitor_page_journey(int $visitorId, int $brandId, int $limit = 
     return $out;
 }
 
+function lc_utc_ts_to_iso(int $ts): ?string
+{
+    if ($ts < 1) {
+        return null;
+    }
+    $raw = gmdate('Y-m-d H:i:s', $ts);
+    if (function_exists('lc_to_iso8601')) {
+        return lc_to_iso8601($raw);
+    }
+    return $raw;
+}
+
 /**
  * How long this page view's visit stayed on the site.
  * Pages inside the current visit share that visit's clock.
  * Older pages fall back to the time recorded on that page.
+ * arrived_at / left_at are the visit clock. left_at is empty while they are still on the site.
  *
  * @param array<string, mixed> $row
- * @return array{seconds: ?int, label: string, live: bool}
+ * @return array{seconds: ?int, label: string, live: bool, arrived_at: ?string, left_at: ?string}
  */
 function lc_visitors_row_duration(array $row): array
 {
-    $none = ['seconds' => null, 'label' => '', 'live' => false];
+    $none = ['seconds' => null, 'label' => '', 'live' => false, 'arrived_at' => null, 'left_at' => null];
     $visitedRaw = trim((string) ($row['visited_at'] ?? ''));
     $visitedTs = $visitedRaw !== '' ? strtotime($visitedRaw . ' UTC') : false;
     $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
@@ -799,10 +812,14 @@ function lc_visitors_row_duration(array $row): array
             'seconds' => $seconds,
             'label' => lc_format_duration_label($seconds) ?: '0s',
             'live' => $live,
+            'arrived_at' => lc_utc_ts_to_iso((int) $startedTs),
+            'left_at' => $live ? null : lc_utc_ts_to_iso((int) $endTs),
         ];
     }
 
+    $arrivedAt = $visitedTs !== false ? lc_utc_ts_to_iso((int) $visitedTs) : null;
     if ($pageDur === null) {
+        $none['arrived_at'] = $arrivedAt;
         return $none;
     }
     $pageDur = max(0, $pageDur);
@@ -810,6 +827,8 @@ function lc_visitors_row_duration(array $row): array
         'seconds' => $pageDur,
         'label' => lc_format_duration_label($pageDur) ?: '0s',
         'live' => false,
+        'arrived_at' => $arrivedAt,
+        'left_at' => $visitedTs !== false ? lc_utc_ts_to_iso((int) $visitedTs + $pageDur) : null,
     ];
 }
 
@@ -1204,6 +1223,8 @@ function lc_gclid_visits_without_chat(
             'page_title' => (string) ($first['page_title'] ?? ''),
             'gclid' => (string) $visit['gclid'],
             'visited_at' => ($visitedRaw !== '' && function_exists('lc_to_iso8601')) ? lc_to_iso8601($visitedRaw) : null,
+            'arrived_at' => ($visitedRaw !== '' && function_exists('lc_to_iso8601')) ? lc_to_iso8601($visitedRaw) : lc_utc_ts_to_iso($firstTs),
+            'left_at' => lc_utc_ts_to_iso($endTs),
             'duration_seconds' => $seconds,
             'duration_label' => lc_format_duration_label($seconds) ?: '0s',
             'duration_live' => false,

@@ -16913,6 +16913,11 @@ button.lc-hero-chip {
     white-space: nowrap;
 }
 .lc-vis-dur.is-live { color: #166534; }
+.lc-vis-when {
+    white-space: nowrap;
+    font-size: 0.82rem;
+    color: #334155;
+}
 .lc-visitors-clicks-num {
     display: inline-flex;
     min-width: 1.6rem;

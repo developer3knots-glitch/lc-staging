@@ -50,6 +50,12 @@
         return '<span class="lc-time" data-timestamp="' + esc(iso) + '">' + esc(label) + '</span>';
     }
 
+    function absTimeHtml(iso) {
+        if (!iso) return '—';
+        var label = window.LCTime && window.LCTime.formatAbsolute ? window.LCTime.formatAbsolute(iso) : iso;
+        return '<span class="lc-time lc-vis-when" data-timestamp="' + esc(iso) + '" data-time-mode="absolute">' + esc(label) + '</span>';
+    }
+
     function colorFor(text) {
         var hues = [168, 200, 262, 24, 340];
         var n = 0;
@@ -206,7 +212,8 @@
                 '<td><strong class="lc-visitors-clicks-num">' + esc(row.clicks || 0) + '</strong></td>' +
                 '<td><span class="lc-traffic-page" title="' + esc(row.page_url || '') + '">' + esc(page) + '</span></td>' +
                 '<td class="lc-vis-dur' + (row.duration_live ? ' is-live' : '') + '" data-sec="' + esc(row.duration_seconds == null ? '' : row.duration_seconds) + '" data-live="' + (row.duration_live ? '1' : '0') + '" data-at="' + Date.now() + '">' + esc(row.duration_label || '—') + '</td>' +
-                '<td>' + timeHtml(row.visited_at) + '</td>' +
+                '<td>' + absTimeHtml(row.arrived_at || row.visited_at) + '</td>' +
+                '<td>' + (row.duration_live ? '<span class="lc-vis-dur is-live">On site</span>' : absTimeHtml(row.left_at)) + '</td>' +
                 '</tr>';
         }).join('');
         rows.forEach(function (row) {
@@ -260,7 +267,7 @@
                 syncDurations(data.visitors || []);
             })
             .catch(function () {
-                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="7">Could not load visitors.</td></tr>';
+                if (bodyEl && !lastSig) bodyEl.innerHTML = '<tr><td colspan="8">Could not load visitors.</td></tr>';
             })
             .finally(function () {
                 if (refreshBtn && !quiet) refreshBtn.classList.remove('is-spinning');
