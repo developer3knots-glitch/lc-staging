@@ -337,16 +337,10 @@ function lc_presence_chat_line(string $status, string $prevStatus): string
     if ($prevStatus === '' && $status === 'active') {
         return '';
     }
-    switch ($status) {
-        case 'minimized':
-            return 'Visitor minimized the chat (still on website)';
-        case 'left':
-            return 'Visitor left the website';
-        case 'disconnected':
-            return 'Visitor appears disconnected';
-        default:
-            return '';
+    if ($status !== 'minimized') {
+        return '';
     }
+    return 'Visitor minimized the chat (still on website)';
 }
 
 /** Skip only a consecutive duplicate. An older identical line must not block the next event. */

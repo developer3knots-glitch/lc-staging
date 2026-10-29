@@ -559,17 +559,12 @@
     }
 
     function presenceChatLine(presence, prevStatus) {
-        if (!presence) return '';
-        switch (presence.status) {
-            case 'minimized': return 'Visitor minimized the chat (still on website)';
-            case 'left': return 'Visitor left the website';
-            case 'disconnected': return 'Visitor appears disconnected';
-            default: return '';
-        }
+        if (!presence || String(presence.status || '') !== 'minimized') return '';
+        return 'Visitor minimized the chat (still on website)';
     }
 
     function isHiddenChatPresenceLog(text) {
-        return /^(Visitor maximized the chat|Visitor returned to the tab|Visitor returned to the window|Visitor is active in chat|Visitor switched tab|Visitor switched window)/.test(String(text || '').trim());
+        return /^(Visitor maximized the chat|Visitor returned to the tab|Visitor returned to the window|Visitor is active in chat|Visitor switched tab|Visitor switched window|Visitor left the website|Visitor appears disconnected)/.test(String(text || '').trim());
     }
 
     function isPresenceLogText(text) {
@@ -722,6 +717,7 @@
                 }
                 if (textEl) textEl.textContent = 'Visitor status unknown';
                 lastPresenceStatusKey = '';
+                agentSawWidgetOpen = null;
                 livePresenceTs = 0;
                 livePresenceSource = '';
             }
@@ -753,10 +749,17 @@
             livePresenceSource = source;
         }
 
-        var fromStatus = String(presence.from_status || '');
-        var prev = fromStatus || lastPresenceStatusKey;
-        var next = String(presence.status || '');
-        var statusChanged = !!prev && prev !== next && lastPresenceStatusKey !== next;
+        var next = String(presence.status || '').toLowerCase();
+        var fromStatus = String(presence.from_status || '').toLowerCase();
+        var leftNow = next === 'left' || presence.left_site === true || presence.left_site === 1 || presence.left_site === '1';
+        var explicitlyClosed = presence.widget_open === false || presence.widget_open === 0 || presence.widget_open === '0';
+        var widgetOpenNow = !leftNow && next !== 'minimized' && !(explicitlyClosed && next !== 'active');
+        // Paint as soon as the open panel closes, even if the window is blurred.
+        var sawOpen = agentSawWidgetOpen === true || fromStatus === 'active';
+        if (sawOpen && !widgetOpenNow && !leftNow) {
+            appendPresenceSystemMessage({ status: 'minimized' }, 'active');
+        }
+        agentSawWidgetOpen = leftNow ? false : widgetOpenNow;
         lastPresenceStatusKey = next;
         // Presence log lives only inside the chat transcript, not the header strip.
         if (bar) {
@@ -766,9 +769,6 @@
         if (textEl) textEl.textContent = '';
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
-        }
-        if (statusChanged) {
-            appendPresenceSystemMessage(presence, prev);
         }
     }
 
@@ -2612,8 +2612,10 @@
         if (sender === 'system' && isHiddenChatPresenceLog(m.message || '')) {
             return '';
         }
+        var presenceAttr = '';
         if (sender === 'system' && isPresenceLogText(m.message || '')) {
             cls += ' is-presence';
+            presenceAttr = ' data-presence="minimized" data-presence-at="' + Date.now() + '"';
         }
         if (opts.history) {
             cls += ' is-history';
@@ -2627,7 +2629,7 @@
                 ? window.LCChatFiles.linkifyText(m.message)
                 : esc(m.message));
         var html = '<div class="lc-msg ' + cls + (m.attachment ? ' has-attachment' : '') + '" data-id="' + m.id + '"' +
-            (opts.history ? ' data-history="1"' : '') + '>';
+            presenceAttr + (opts.history ? ' data-history="1"' : '') + '>';
         html += '<div class="lc-msg-body">' + bodyHtml + '</div>';
         html += '<div class="lc-msg-foot">';
         html += '<span class="lc-msg-time">';
@@ -4235,6 +4237,7 @@
         livePresenceTs = 0;
         livePresenceSource = '';
         lastPresenceStatusKey = '';
+        agentSawWidgetOpen = null;
         setText('lc-details-ip', ' - ');
         setText('lc-details-country', ' - ');
         setText('lc-details-brand', ' - ');
@@ -4280,6 +4283,7 @@
         }
         pollMessages();
         lastPresenceStatusKey = '';
+        agentSawWidgetOpen = null;
         scheduleReceiptSyncBursts();
         updateHeaderAvatar(visitorNameEl.textContent);
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
@@ -6360,6 +6364,7 @@
     }
 
     var lastPresenceStatusKey = '';
+    var agentSawWidgetOpen = null;
 
     function resetPollTimers() {
         if (pollTimer) clearInterval(pollTimer);

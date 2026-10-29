@@ -102,17 +102,23 @@ try {
     }
 
     $clientStatusEarly = strtolower(trim((string) ($input['status'] ?? '')));
-    $fromStatusEarly = strtolower(trim((string) ($input['from_status'] ?? '')));
-    $allowedStatusEarly = ['active', 'minimized', 'away', 'window', 'left', 'disconnected'];
-    // A slow minimize can arrive after maximize. Still write that log.
-    // Only the stored flags stay on the newer pulse.
+    $chatOpenEarly = $parseFlag($input['chat_open'] ?? $input['widget_open'] ?? null);
+    $leftEarly = !empty($input['left_site']) && (
+        $input['left_site'] === true || $input['left_site'] === 1
+        || $input['left_site'] === '1' || $input['left_site'] === 'true'
+    );
+    // A slow minimize can arrive after a newer pulse. Still write that one line.
+    // Flags stay on the newer pulse. Left never writes a chat line.
     if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
-        if ($conversationId > 0
-            && in_array($clientStatusEarly, $allowedStatusEarly, true)
-            && in_array($fromStatusEarly, $allowedStatusEarly, true)
+        $staleMinimize = $conversationId > 0
+            && !$leftEarly
+            && $clientStatusEarly !== 'left'
+            && (int) $widgetOpen === 1
+            && ($chatOpenEarly === false || $clientStatusEarly === 'minimized');
+        if ($staleMinimize
             && function_exists('lc_presence_chat_line')
             && function_exists('lc_add_system_message')) {
-            $staleLine = lc_presence_chat_line($clientStatusEarly, $fromStatusEarly);
+            $staleLine = lc_presence_chat_line('minimized', 'active');
             if ($staleLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $staleLine)) {
                 try {
                     lc_add_system_message($conversationId, $staleLine, true);
@@ -163,6 +169,7 @@ try {
         $leftAt = null;
     }
 
+    $widgetOpenBefore = (int) $widgetOpen;
     if ($chatOpen !== null) {
         $widgetOpen = $chatOpen ? 1 : 0;
     }
@@ -202,8 +209,14 @@ try {
         $fromStatus = $prevStatus;
     }
     $statusChanged = $fromStatus !== (string) ($presence['status'] ?? '');
-    if ($conversationId > 0 && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
-        $presenceLine = lc_presence_chat_line((string) ($presence['status'] ?? ''), $fromStatus);
+    // Chat line only when the panel actually closes while they are still on the site.
+    // Blur/away must not swallow that, and leaving the site must not add a line.
+    $justMinimized = $conversationId > 0
+        && !$leftSite
+        && $widgetOpenBefore === 1
+        && (int) $widgetOpen === 0;
+    if ($justMinimized && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
+        $presenceLine = lc_presence_chat_line('minimized', 'active');
         if ($presenceLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $presenceLine)) {
             try {
                 lc_add_system_message($conversationId, $presenceLine, true);
