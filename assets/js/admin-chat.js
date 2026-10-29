@@ -5579,11 +5579,7 @@
                 syncBrowserState(0, currentTab);
                 setChatThreadOpen(false);
             }
-            lastConversations = (lastConversations || []).filter(function (row) {
-                return (parseInt(row.id, 10) || 0) !== id;
-            });
-            pruneInboxStableIds();
-            paintConversationList(filterConversations(lastConversations));
+            syncConversationListStatus({ id: id, status: 'closed', agent_id: 0 });
             loadConversations();
         }).catch(function () {
             alert('Could not close chat');
