@@ -725,6 +725,35 @@ function lc_realtime_defer(callable $fn): void
     });
 }
 
+function lc_realtime_publish_agent_presence(array $agent, string $status): void
+{
+    $channels = [];
+    $brandId = function_exists('lc_agent_brand_id') ? lc_agent_brand_id($agent) : null;
+    $accountId = function_exists('lc_agent_account_id') ? (int) lc_agent_account_id($agent) : 0;
+    if ($brandId !== null && (int) $brandId > 0) {
+        $channels[] = lc_realtime_channel_brand_inbox((int) $brandId);
+    } elseif ($accountId > 0) {
+        try {
+            $stmt = lc_db()->prepare('SELECT id FROM brands WHERE account_id = ? AND is_active = 1');
+            $stmt->execute([$accountId]);
+            foreach ($stmt->fetchAll() as $row) {
+                $id = (int) ($row['id'] ?? 0);
+                if ($id > 0) {
+                    $channels[] = lc_realtime_channel_brand_inbox($id);
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    }
+    if ($channels === []) {
+        return;
+    }
+    lc_realtime_publish_channels($channels, 'agent.presence', [
+        'agent_id' => (int) ($agent['id'] ?? 0),
+        'status' => $status,
+    ], 120);
+}
+
 function lc_realtime_publish_traffic(int $brandId, string $presence, array $extra = []): void
 {
     if ($brandId < 1) {

@@ -9,16 +9,17 @@ try {
     lc_ensure_brands_schema();
     lc_ensure_accounts_schema();
     $agent = lc_ensure_agent_workspace($agent);
-    if (function_exists('lc_sweep_inactive_conversations')) {
+    $overviewOnly = (string) ($_GET['overview'] ?? '') === '1';
+    if (!$overviewOnly && function_exists('lc_sweep_inactive_conversations')) {
         try {
             lc_sweep_inactive_conversations(lc_agent_account_id($agent));
         } catch (Throwable $e) {
         }
     }
-    if (is_file(__DIR__ . '/../includes/ip-resume.php')) {
+    if (!$overviewOnly && is_file(__DIR__ . '/../includes/ip-resume.php')) {
         require_once __DIR__ . '/../includes/ip-resume.php';
     }
-    if (function_exists('lc_merge_same_ip_conversations')) {
+    if (!$overviewOnly && function_exists('lc_merge_same_ip_conversations')) {
         try {
             lc_merge_same_ip_conversations();
         } catch (Throwable $e) {
@@ -76,6 +77,21 @@ try {
     }
 
     $unread = lc_unread_count_for_agent($agentId);
+
+    if ($overviewOnly) {
+        lc_json([
+            'success' => true,
+            'overview' => true,
+            'stats' => [
+                'waiting' => $waiting,
+                'browsing' => $browsing,
+                'customers_online' => $customersOnline,
+                'active' => $activeAll,
+                'online_agents' => $onlineAgents,
+                'total_agents' => $totalAgents,
+            ],
+        ]);
+    }
 
     if (function_exists('lc_ensure_conversation_transfer_schema')) {
         lc_ensure_conversation_transfer_schema();

@@ -23,7 +23,11 @@
     };
     var supervisingIds = {};
     var refreshInFlight = false;
+    var refreshQueued = false;
+    var overviewInFlight = false;
+    var overviewQueued = false;
     var pollTimer = null;
+    var overviewTimer = null;
     var wsConnected = false;
     var realtimeClient = null;
     var useWebsocket = rtCfg.mode === 'ws' && !!rtCfg.wsUrl && !!window.LCRealtime;
@@ -196,6 +200,25 @@
         return html;
     }
 
+    function applyRealtimeBoxes(s) {
+        s = s || {};
+        var onlineCount = s.customers_online != null ? s.customers_online
+            : (s.browsing != null ? s.browsing : s.waiting);
+        if (onlineCount != null) {
+            heroWaiting.textContent = onlineCount;
+            var kpiWaiting = document.getElementById('lc-kpi-waiting');
+            if (kpiWaiting) kpiWaiting.textContent = onlineCount;
+        }
+        var heroActive = document.getElementById('lc-dash-active');
+        var kpiActive = document.getElementById('lc-kpi-active');
+        if (heroActive && s.active != null) heroActive.textContent = s.active;
+        if (kpiActive && s.active != null) kpiActive.textContent = s.active;
+        var kpiAgents = document.getElementById('lc-kpi-agents');
+        if (kpiAgents && s.online_agents != null && s.total_agents != null) {
+            kpiAgents.textContent = s.online_agents + '/' + s.total_agents;
+        }
+    }
+
     function updateWaitingCta(count) {
         var wrap = document.getElementById('lc-dash-cta-wrap');
         var cta = document.getElementById('lc-dash-cta');
@@ -354,7 +377,8 @@
 
     function schedulePoll() {
         stopPoll();
-        // WebSocket live = no interval. Poll only when WS is off / disconnected.
+        // Full page refresh only while the socket is down. The three counters
+        // keep their own timer so they still move when no chat event fires.
         if (useWebsocket && wsConnected) {
             return;
         }
@@ -363,8 +387,40 @@
         }, pollMs);
     }
 
+    function startOverviewPoll() {
+        if (overviewTimer) return;
+        overviewTimer = setInterval(function () {
+            refreshOverview();
+        }, 4000);
+    }
+
+    function refreshOverview() {
+        if (overviewInFlight) {
+            overviewQueued = true;
+            return;
+        }
+        overviewInFlight = true;
+        fetch(base + '/api/dashboard-stats.php?overview=1', { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success) return;
+                applyRealtimeBoxes(data.stats || {});
+            })
+            .catch(function () {})
+            .then(function () {
+                overviewInFlight = false;
+                if (overviewQueued) {
+                    overviewQueued = false;
+                    refreshOverview();
+                }
+            });
+    }
+
     function refreshDashboard(force) {
-        if (refreshInFlight) return;
+        if (refreshInFlight) {
+            refreshQueued = true;
+            return;
+        }
         refreshInFlight = true;
         fetch(base + '/api/dashboard-stats.php?scope=' + encodeURIComponent(statsScope), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
@@ -386,25 +442,15 @@
 
                 if (force || nextStats !== lastSig.stats) {
                     lastSig.stats = nextStats;
-                    var onlineCount = s.customers_online != null ? s.customers_online
-                        : (s.browsing != null ? s.browsing : s.waiting);
-                    heroWaiting.textContent = onlineCount;
+                    applyRealtimeBoxes(s);
 
-                    var heroActive = document.getElementById('lc-dash-active');
                     var heroStarted = document.getElementById('lc-dash-started');
-                    if (heroActive) heroActive.textContent = s.active;
                     if (heroStarted) heroStarted.textContent = s.started_today;
 
-                    var kpiWaiting = document.getElementById('lc-kpi-waiting');
-                    var kpiActive = document.getElementById('lc-kpi-active');
                     var kpiUnread = document.getElementById('lc-kpi-unread');
-                    var kpiAgents = document.getElementById('lc-kpi-agents');
                     var kpiClosed = document.getElementById('lc-kpi-closed');
 
-                    if (kpiWaiting) kpiWaiting.textContent = onlineCount;
-                    if (kpiActive) kpiActive.textContent = s.active;
                     if (kpiUnread) kpiUnread.textContent = s.unread;
-                    if (kpiAgents) kpiAgents.textContent = s.online_agents + '/' + s.total_agents;
                     if (kpiClosed) kpiClosed.textContent = s.closed_today;
 
                     var alertEl = document.getElementById('lc-dash-unread-alert');
@@ -460,6 +506,10 @@
             .catch(function () {})
             .then(function () {
                 refreshInFlight = false;
+                if (refreshQueued) {
+                    refreshQueued = false;
+                    refreshDashboard(false);
+                }
             });
     }
 
@@ -506,11 +556,18 @@
                     schedulePoll();
                 });
                 function onChange() {
+                    refreshOverview();
                     refreshDashboard(false);
                 }
                 realtimeClient.on('inbox.changed', onChange);
                 realtimeClient.on('conversation.updated', onChange);
                 realtimeClient.on('message.new', onChange);
+                realtimeClient.on('traffic.changed', function () {
+                    refreshOverview();
+                });
+                realtimeClient.on('agent.presence', function () {
+                    refreshOverview();
+                });
                 if (typeof realtimeClient.connect === 'function') {
                     realtimeClient.connect();
                 }
@@ -585,7 +642,7 @@
 
     bindRealtime();
     refreshDashboard(true);
-    // Start poll only if WS is not in use; WS path stops poll on connect.
+    startOverviewPoll();
     if (!useWebsocket) {
         schedulePoll();
     }

@@ -30,6 +30,12 @@ if (!in_array($status, ['online', 'away', 'offline'], true)) {
 try {
     $stmt = lc_db()->prepare('UPDATE agents SET status = ?, last_seen = UTC_TIMESTAMP() WHERE id = ?');
     $stmt->execute([$status, (int) $agent['id']]);
+    if (function_exists('lc_realtime_publish_agent_presence')) {
+        try {
+            lc_realtime_publish_agent_presence($agent, $status);
+        } catch (Throwable $e) {
+        }
+    }
     $assigned = 0;
     if ($status === 'online' && function_exists('lc_drain_waiting_queue_for_agent')) {
         $assigned = lc_drain_waiting_queue_for_agent((int) $agent['id']);
