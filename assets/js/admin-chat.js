@@ -16,18 +16,7 @@
 
     if (!selectedId) {
         try {
-            var savedChatId = parseInt(sessionStorage.getItem('lc_last_selected_chat_' + myAgentId), 10) || 0;
-            var savedTab = sessionStorage.getItem('lc_last_tab_' + myAgentId) || '';
-            if (savedChatId > 0) {
-                selectedId = savedChatId;
-                app.dataset.selected = String(savedChatId);
-                if (savedTab) {
-                    currentTab = savedTab;
-                    document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
-                        t.classList.toggle('active', t.dataset.tab === currentTab);
-                    });
-                }
-            }
+            sessionStorage.removeItem('lc_last_selected_chat_' + myAgentId);
         } catch (e) {}
     }
     var lastMsgId = 0;
