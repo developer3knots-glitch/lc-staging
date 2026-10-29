@@ -5,6 +5,7 @@
 window.LC_BASE_URL = <?= json_encode(lc_base_url()) ?>;
 window.LC_NOTIFY_BASE = <?= json_encode(function_exists('lc_notify_base_url') ? lc_notify_base_url() : lc_base_url()) ?>;
 window.LC_AGENT_ID = <?= (int) ($agent['id'] ?? 0) ?>;
+window.LC_LOGIN_GEN = <?= json_encode((string) ($_SESSION['lc_login_banner'] ?? '')) ?>;
 window.LC_POLL_INTERVAL = <?= (int) lc_account_setting(lc_current_account_id(), 'poll_interval_ms', (string) LC_POLL_INTERVAL) ?>;
 window.LC_POLL_DISABLED = <?= lc_account_setting(lc_current_account_id(), 'poll_disabled', '0') === '1' ? 'true' : 'false' ?>;
 window.LC_ATTACHMENT_LIMITS = <?= json_encode(lc_attachment_public_config()) ?>;
@@ -32,7 +33,7 @@ window.LC_CMDK_NAV = <?= json_encode(array_map(static function (array $item): ar
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-notify-sound.js?v=46"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-tab-notify.js?v=41"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/lc-realtime.js?v=13"></script>
-<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=63"></script>
+<script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-core.js?v=64"></script>
 <script src="<?= htmlspecialchars(lc_base_url(), ENT_QUOTES, 'UTF-8') ?>/assets/js/admin-cmdk.js?v=40"></script>
 <?php
 $footerScripts = $extraScripts ?? [];

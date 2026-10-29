@@ -247,7 +247,31 @@
             if (el) el.remove();
         }
 
+        function loginGen() {
+            return String(window.LC_LOGIN_GEN || '');
+        }
+
+        function bannerDismissed() {
+            var gen = loginGen();
+            if (!gen) return false;
+            try {
+                return localStorage.getItem('lc_notify_banner_for') === gen;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function dismissPermissionBanner() {
+            var gen = loginGen();
+            if (gen) {
+                try { localStorage.setItem('lc_notify_banner_for', gen); } catch (eS) {}
+            }
+            try { sessionStorage.removeItem('lc_notify_banner_dismiss'); } catch (eOld) {}
+            hidePermissionBanner();
+        }
+
         function showPermissionBanner() {
+            if (bannerDismissed()) return;
             if (permissionState() === 'granted' || permissionState() === 'unsupported') {
                 hidePermissionBanner();
                 return;
@@ -284,13 +308,11 @@
                 } else if (action === 'recheck') {
                     if (permissionState() === 'granted') {
                         hidePermissionBanner();
-                        try { sessionStorage.removeItem('lc_notify_banner_dismiss'); } catch (eR) {}
                     } else {
                         window.location.reload();
                     }
                 } else {
-                    try { sessionStorage.setItem('lc_notify_banner_dismiss', '1'); } catch (eS) {}
-                    hidePermissionBanner();
+                    dismissPermissionBanner();
                 }
             });
         }
@@ -928,12 +950,8 @@
         loadSeenMap();
         registerNotifySW();
         subscribeWebPush();
-        try {
-            if (!sessionStorage.getItem('lc_notify_banner_dismiss') && permissionState() !== 'granted') {
-                showPermissionBanner();
-            }
-        } catch (eB) {
-            if (permissionState() !== 'granted') showPermissionBanner();
+        if (!bannerDismissed() && permissionState() !== 'granted') {
+            showPermissionBanner();
         }
 
         document.addEventListener('click', function () {

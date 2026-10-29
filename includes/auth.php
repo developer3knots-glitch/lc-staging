@@ -71,6 +71,9 @@ function lc_require_auth(): array
         header('Location: ' . lc_admin_url('login'));
         exit;
     }
+    if (empty($_SESSION['lc_login_banner'])) {
+        $_SESSION['lc_login_banner'] = bin2hex(random_bytes(8));
+    }
     try {
         return lc_ensure_agent_workspace($agent);
     } catch (Throwable $e) {
@@ -121,6 +124,7 @@ function lc_login_agent(string $email, string $password): bool
     $_SESSION['agent_id'] = (int) $agent['id'];
     $_SESSION['agent_name'] = $agent['name'];
     $_SESSION['agent_role'] = $agent['role'];
+    $_SESSION['lc_login_banner'] = bin2hex(random_bytes(8));
     if (!function_exists('lc_web_push_clear_old_subscriptions')) {
         $pushFile = __DIR__ . '/web-push.php';
         if (is_file($pushFile)) {
