@@ -561,18 +561,15 @@
     function presenceChatLine(presence, prevStatus) {
         if (!presence) return '';
         switch (presence.status) {
-            case 'active':
-                if (prevStatus === 'minimized') return 'Visitor maximized the chat';
-                if (prevStatus === 'away') return 'Visitor returned to the tab';
-                if (prevStatus === 'window') return 'Visitor returned to the window';
-                return 'Visitor is active in chat';
             case 'minimized': return 'Visitor minimized the chat (still on website)';
-            case 'away': return 'Visitor switched tab';
-            case 'window': return 'Visitor switched window';
             case 'left': return 'Visitor left the website';
             case 'disconnected': return 'Visitor appears disconnected';
-            default: return presence.label || '';
+            default: return '';
         }
+    }
+
+    function isHiddenChatPresenceLog(text) {
+        return /^(Visitor maximized the chat|Visitor returned to the tab|Visitor returned to the window|Visitor is active in chat|Visitor switched tab|Visitor switched window)/.test(String(text || '').trim());
     }
 
     function isPresenceLogText(text) {
@@ -2610,6 +2607,9 @@
         }
         if (sender === 'system' && (m.message || '').indexOf('Visitor closed the live chat') !== -1) {
             cls += ' is-visitor-close';
+        }
+        if (sender === 'system' && isHiddenChatPresenceLog(m.message || '')) {
+            return '';
         }
         if (sender === 'system' && isPresenceLogText(m.message || '')) {
             cls += ' is-presence';

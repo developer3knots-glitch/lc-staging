@@ -338,23 +338,8 @@ function lc_presence_chat_line(string $status, string $prevStatus): string
         return '';
     }
     switch ($status) {
-        case 'active':
-            if ($prevStatus === 'minimized') {
-                return 'Visitor maximized the chat';
-            }
-            if ($prevStatus === 'away') {
-                return 'Visitor returned to the tab';
-            }
-            if ($prevStatus === 'window') {
-                return 'Visitor returned to the window';
-            }
-            return 'Visitor is active in chat';
         case 'minimized':
             return 'Visitor minimized the chat (still on website)';
-        case 'away':
-            return 'Visitor switched tab';
-        case 'window':
-            return 'Visitor switched window';
         case 'left':
             return 'Visitor left the website';
         case 'disconnected':
