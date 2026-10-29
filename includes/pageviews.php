@@ -356,14 +356,17 @@ function lc_presence_log_is_repeat(int $conversationId, string $line): bool
         return true;
     }
     try {
-        $dup = lc_db()->prepare('SELECT sender_type, message FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1');
-        $dup->execute([$conversationId]);
-        $row = $dup->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            return false;
-        }
-        return (string) ($row['sender_type'] ?? '') === 'system'
-            && (string) ($row['message'] ?? '') === $line;
+        $dup = lc_db()->prepare('
+            SELECT id FROM messages
+            WHERE conversation_id = ?
+              AND sender_type = \'system\'
+              AND message = ?
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 2 SECOND)
+            ORDER BY id DESC
+            LIMIT 1
+        ');
+        $dup->execute([$conversationId, $line]);
+        return (bool) $dup->fetchColumn();
     } catch (Throwable $e) {
         return false;
     }

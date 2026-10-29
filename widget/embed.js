@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 186;
+    var LC_WIDGET_BUILD = 187;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -442,6 +442,9 @@
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
+            } else if (fields.force_status === 'minimized') {
+                status = 'minimized';
+                label = 'Chat minimized';
             } else if (tabHidden) {
                 status = 'away';
                 label = 'Switched tab';
@@ -3899,7 +3902,7 @@
         hideTranscriptConfirm();
         persistPanelOpen(false);
         // Force chat_open=0 — do not trust engagementFields alone during races
-        reportEngagementPresence(false, true, { chat_open: 0, page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
+        reportEngagementPresence(false, true, { chat_open: 0, force_status: 'minimized', page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
         if (!wasOpen) {
             // still push in case prior open never reported
             reportEngagementPresence(true, true, { chat_open: 0 });

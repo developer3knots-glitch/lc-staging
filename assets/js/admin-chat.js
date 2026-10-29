@@ -636,10 +636,11 @@
         var nodes = messagesEl.querySelectorAll('.lc-msg.system.is-presence');
         var last = nodes.length ? nodes[nodes.length - 1] : null;
         if (last && last.getAttribute('data-presence') === presence.status && presenceLogText(last) === line) {
-            return;
+            var stamped = parseInt(last.getAttribute('data-presence-at'), 10) || 0;
+            if (stamped && (Date.now() - stamped) < 2000) return;
         }
         var html = '<div class="lc-msg system is-presence is-' + esc(presence.status) + '" data-presence="' +
-            esc(presence.status) + '" role="status"><div class="lc-msg-body">' + esc(line) + '</div></div>';
+            esc(presence.status) + '" data-presence-at="' + Date.now() + '" role="status"><div class="lc-msg-body">' + esc(line) + '</div></div>';
         messagesEl.insertAdjacentHTML('beforeend', html);
         scrollMessagesToBottom(false);
     }
