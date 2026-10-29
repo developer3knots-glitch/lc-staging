@@ -71,6 +71,36 @@
         return day + ' ' + month + ' ' + year + ', ' + hours + ':' + mins + ' ' + ampm;
     }
 
+    function formatClock(value) {
+        var date = value instanceof Date ? value : parseTimestamp(value);
+        if (!date) {
+            return '';
+        }
+        if (fixedTimezone) {
+            try {
+                return date.toLocaleString(undefined, {
+                    timeZone: fixedTimezone,
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {}
+        }
+        var day = String(date.getDate()).padStart(2, '0');
+        var month = MONTHS[date.getMonth()];
+        var year = date.getFullYear();
+        var hours = date.getHours();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        var mins = String(date.getMinutes()).padStart(2, '0');
+        var secs = String(date.getSeconds()).padStart(2, '0');
+        return day + ' ' + month + ' ' + year + ', ' + hours + ':' + mins + ':' + secs + ' ' + ampm;
+    }
+
     function formatRelative(value) {
         var date = parseTimestamp(value);
         if (!date) {
@@ -148,6 +178,9 @@
         if (mode === 'absolute') {
             var d = parseTimestamp(ts);
             el.textContent = d ? formatAbsolute(d) : '';
+        } else if (mode === 'clock') {
+            var clockDate = parseTimestamp(ts);
+            el.textContent = clockDate ? formatClock(clockDate) : '';
         } else if (mode === 'local-time') {
             el.textContent = formatLocalTime(ts);
         } else {
@@ -216,6 +249,7 @@
         toIso: toIso,
         formatRelative: formatRelative,
         formatAbsolute: formatAbsolute,
+        formatClock: formatClock,
         formatLocalTime: formatLocalTime,
         formatDateLabel: formatDateLabel,
         register: register,

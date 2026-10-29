@@ -52,8 +52,8 @@
 
     function absTimeHtml(iso) {
         if (!iso) return '—';
-        var label = window.LCTime && window.LCTime.formatAbsolute ? window.LCTime.formatAbsolute(iso) : iso;
-        return '<span class="lc-time lc-vis-when" data-timestamp="' + esc(iso) + '" data-time-mode="absolute">' + esc(label) + '</span>';
+        var label = window.LCTime && window.LCTime.formatClock ? window.LCTime.formatClock(iso) : iso;
+        return '<span class="lc-time lc-vis-when" data-timestamp="' + esc(iso) + '" data-time-mode="clock">' + esc(label) + '</span>';
     }
 
     function colorFor(text) {
