@@ -656,6 +656,13 @@
             if ((parseInt(lastConversations[i].id, 10) || 0) === conversationId) {
                 lastConversations[i].visitor_presence = presence;
                 changed = true;
+                if (String(lastConversations[i].status || '') === 'closed' && !visitorIsBrowsing(lastConversations[i]) && !inboxSearch && currentTab === 'all') {
+                    lastConversations = lastConversations.filter(function (row) {
+                        return (parseInt(row.id, 10) || 0) !== conversationId;
+                    });
+                    paintConversationList(filterConversations(lastConversations));
+                    return;
+                }
                 break;
             }
         }
@@ -1344,7 +1351,8 @@
             return isUnassigned;
         }
         if (tab === 'all') {
-            return status !== 'closed';
+            if (status !== 'closed') return true;
+            return visitorIsBrowsing(c);
         }
         return true;
     }
@@ -1734,8 +1742,15 @@
                 lastConversations = applyStableInboxOrder([seeded].concat(lastConversations || []));
             }
         } else {
+            var kept = null;
+            for (var ki = 0; ki < lastConversations.length; ki++) {
+                if ((parseInt(lastConversations[ki].id, 10) || 0) === id) {
+                    kept = lastConversations[ki];
+                    break;
+                }
+            }
             // If it was found but its status/agent changed so it no longer matches currentTab, remove it from list
-            if (!inboxSearch && !conversationMatchesTab(c, currentTab)) {
+            if (!inboxSearch && kept && !conversationMatchesTab(kept, currentTab)) {
                 lastConversations = (lastConversations || []).filter(function (row) {
                     return (parseInt(row.id, 10) || 0) !== id;
                 });
@@ -1910,13 +1925,13 @@
             if (other.length) {
                 html += section('Active', other, 'Other agents');
             }
-            if (closed.length && inboxSearch) {
-                html += section('Closed', closed, '');
+            if (closed.length && (inboxSearch || currentTab === 'all')) {
+                html += section('Closed', closed, inboxSearch ? '' : 'Still on site');
             }
         }
         if (!html) {
             conversations.forEach(function (c) {
-                if (!inboxSearch && String(c.status || '') === 'closed') {
+                if (!inboxSearch && String(c.status || '') === 'closed' && currentTab !== 'all') {
                     return;
                 }
                 html += renderConversationItem(c);

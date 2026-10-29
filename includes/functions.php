@@ -862,13 +862,13 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
 
         if ($isAdmin) {
             return [
-                "{$a}.status IN ('waiting','active')" . $accountFilter,
+                "({$a}.status IN ('waiting','active') OR ({$a}.status = 'closed' AND v.left_site_at IS NULL AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)))" . $accountFilter,
                 $accountParams,
             ];
         }
 
         return [
-            "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $accountFilter,
+            "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)) OR ({$a}.status = 'closed' AND v.left_site_at IS NULL AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)))" . $accountFilter,
             array_merge([$agentId, $agentId, $agentId], $accountParams),
         ];
     }
@@ -901,13 +901,13 @@ function lc_agent_inbox_sql(array $agent, string $tab, string $alias = 'c'): arr
 
     if ($isAdmin) {
         return [
-            "{$a}.status IN ('waiting','active')" . $extra,
+            "({$a}.status IN ('waiting','active') OR ({$a}.status = 'closed' AND v.left_site_at IS NULL AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)))" . $extra,
             $extraParams,
         ];
     }
 
     return [
-        "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)))" . $extra,
+        "(({$a}.status = 'active' AND {$a}.agent_id = ?) OR {$a}.status = 'waiting' OR ({$a}.status = 'active' AND ({$a}.agent_id IS NULL OR {$a}.agent_id = 0)) OR ({$a}.status = 'active' AND {$a}.agent_id != ? AND {$a}.id IN (SELECT conversation_id FROM conversation_supervisors WHERE agent_id = ? AND dismissed_at IS NULL)) OR ({$a}.status = 'closed' AND v.left_site_at IS NULL AND v.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)))" . $extra,
         array_merge([$agentId, $agentId, $agentId], $extraParams),
     ];
 }
