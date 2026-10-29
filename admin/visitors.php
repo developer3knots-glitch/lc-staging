@@ -39,7 +39,7 @@ require __DIR__ . '/includes/header.php';
     <div class="lc-vis-toolbar">
         <div class="lc-vis-view" role="tablist" aria-label="Visitor view">
             <button type="button" data-view="all" class="is-on" role="tab" aria-selected="true">All</button>
-            <button type="button" data-view="gclid" role="tab" aria-selected="false">GCLID</button>
+            <button type="button" data-view="gclid" role="tab" aria-selected="false">GCLID No Chat</button>
             <button type="button" data-view="gclid_chat" role="tab" aria-selected="false">GCLID chat</button>
         </div>
         <div class="lc-vis-range" role="tablist" aria-label="Report range">
