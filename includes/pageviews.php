@@ -312,14 +312,15 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
     if ($seenTs === null || (time() - $seenTs) > $staleSec) {
         return array_merge($base, ['status' => 'disconnected', 'label' => 'Disconnected']);
     }
+    // Closed panel is Minimized even if this window is blurred or the tab is in the background.
+    if (!$widgetOpen) {
+        return array_merge($base, ['status' => 'minimized', 'label' => 'Chat minimized']);
+    }
     if (!$pageVisible) {
         return array_merge($base, ['status' => 'away', 'label' => 'Switched tab']);
     }
     if (!$windowFocused) {
         return array_merge($base, ['status' => 'window', 'label' => 'Switched window']);
-    }
-    if (!$widgetOpen) {
-        return array_merge($base, ['status' => 'minimized', 'label' => 'Chat minimized']);
     }
     return array_merge($base, ['status' => 'active', 'label' => 'Active']);
 }

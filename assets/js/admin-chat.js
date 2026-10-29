@@ -549,7 +549,9 @@
         return {
             status: status,
             label: presence.label || labels[status],
-            widget_open: flagOn(presence.widget_open, false),
+            widget_open: (presence.widget_open === undefined || presence.widget_open === null || presence.widget_open === '')
+                ? (status !== 'minimized' && status !== 'left')
+                : flagOn(presence.widget_open, true),
             page_visible: flagOn(presence.page_visible, true),
             window_focused: flagOn(presence.window_focused, status !== 'window'),
             left_site: !!presence.left_site,
@@ -750,17 +752,19 @@
         }
 
         var next = String(presence.status || '').toLowerCase();
-        var fromStatus = String(presence.from_status || '').toLowerCase();
         var leftNow = next === 'left' || presence.left_site === true || presence.left_site === 1 || presence.left_site === '1';
-        var explicitlyClosed = presence.widget_open === false || presence.widget_open === 0 || presence.widget_open === '0';
-        var widgetOpenNow = !leftNow && next !== 'minimized' && !(explicitlyClosed && next !== 'active');
-        // Paint as soon as the open panel closes, even if the window is blurred.
-        var sawOpen = agentSawWidgetOpen === true || fromStatus === 'active';
-        if (sawOpen && !widgetOpenNow && !leftNow) {
-            appendPresenceSystemMessage({ status: 'minimized' }, 'active');
+        var panelClosed = !leftNow && (presence.widget_open === false || next === 'minimized');
+        if (panelClosed) {
+            next = 'minimized';
+            presence.status = 'minimized';
+            presence.label = 'Chat minimized';
+            presence.widget_open = false;
         }
-        agentSawWidgetOpen = leftNow ? false : widgetOpenNow;
-        lastPresenceStatusKey = next;
+        if (panelClosed && lastPresenceStatusKey && lastPresenceStatusKey !== 'minimized') {
+            appendPresenceSystemMessage({ status: 'minimized' }, lastPresenceStatusKey);
+        }
+        agentSawWidgetOpen = panelClosed ? false : !leftNow;
+        lastPresenceStatusKey = leftNow ? 'left' : next;
         // Presence log lives only inside the chat transcript, not the header strip.
         if (bar) {
             bar.hidden = true;
@@ -1500,8 +1504,9 @@
                 if (eng && status !== 'closed') {
                     var engLabel = eng.status === 'minimized' ? 'Minimized'
                         : (eng.status === 'away' ? 'Away'
+                        : (eng.status === 'window' ? 'Window'
                         : (eng.status === 'left' ? 'Left site'
-                        : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat')));
+                        : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
                     html += '<span class="lc-badge lc-badge-presence is-' + esc(eng.status) + '">' + esc(engLabel) + '</span>';
                 } else {
                     var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');

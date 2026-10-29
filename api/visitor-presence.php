@@ -113,17 +113,41 @@ try {
         $staleMinimize = $conversationId > 0
             && !$leftEarly
             && $clientStatusEarly !== 'left'
-            && (int) $widgetOpen === 1
             && ($chatOpenEarly === false || $clientStatusEarly === 'minimized');
-        if ($staleMinimize
-            && function_exists('lc_presence_chat_line')
-            && function_exists('lc_add_system_message')) {
-            $staleLine = lc_presence_chat_line('minimized', 'active');
-            if ($staleLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $staleLine)) {
-                try {
-                    lc_add_system_message($conversationId, $staleLine, true);
-                } catch (Throwable $e) {
+        if ($staleMinimize && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
+            $fromEarly = strtolower(trim((string) ($input['from_status'] ?? '')));
+            if ($fromEarly !== 'minimized' && $fromEarly !== '') {
+                $staleLine = lc_presence_chat_line('minimized', 'active');
+                if ($staleLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $staleLine)) {
+                    try {
+                        lc_add_system_message($conversationId, $staleLine, true);
+                    } catch (Throwable $e) {
+                    }
                 }
+            }
+            if (function_exists('lc_realtime_publish_channels') && function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
+                $stalePresence = [
+                    'status' => 'minimized',
+                    'label' => 'Chat minimized',
+                    'widget_open' => false,
+                    'page_visible' => true,
+                    'window_focused' => true,
+                    'left_site' => false,
+                    'presence_ts' => $presenceTs,
+                    'from_status' => 'active',
+                ];
+                $staleChannels = [
+                    lc_realtime_channel_conversation($conversationId),
+                    lc_realtime_channel_staff_conversation($conversationId),
+                ];
+                if ($agentId > 0) {
+                    $staleChannels[] = lc_realtime_channel_agent($agentId);
+                }
+                lc_realtime_publish_channels($staleChannels, 'visitor.presence', [
+                    'conversation_id' => $conversationId,
+                    'visitor_id' => $visitorId,
+                    'visitor_presence' => $stalePresence,
+                ], 180);
             }
         }
         $presence = lc_visitor_engagement_status([
@@ -169,7 +193,6 @@ try {
         $leftAt = null;
     }
 
-    $widgetOpenBefore = (int) $widgetOpen;
     if ($chatOpen !== null) {
         $widgetOpen = $chatOpen ? 1 : 0;
     }
@@ -200,7 +223,12 @@ try {
     }
     $clientStatus = strtolower(trim((string) ($input['status'] ?? '')));
     $allowedStatus = ['active', 'minimized', 'away', 'window', 'left', 'disconnected'];
-    if (in_array($clientStatus, $allowedStatus, true)) {
+    $panelClosed = !$leftSite && (int) $widgetOpen === 0;
+    if ($panelClosed) {
+        $presence['status'] = 'minimized';
+        $presence['label'] = 'Chat minimized';
+        $presence['widget_open'] = false;
+    } elseif (in_array($clientStatus, $allowedStatus, true)) {
         $presence['status'] = $clientStatus;
     }
     $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : $prevTs;
@@ -208,13 +236,14 @@ try {
     if (!in_array($fromStatus, $allowedStatus, true)) {
         $fromStatus = $prevStatus;
     }
+    $presence['from_status'] = $fromStatus;
     $statusChanged = $fromStatus !== (string) ($presence['status'] ?? '');
-    // Chat line only when the panel actually closes while they are still on the site.
-    // Blur/away must not swallow that, and leaving the site must not add a line.
+    // Closed panel is always Minimized, even when the browser window is blurred.
     $justMinimized = $conversationId > 0
-        && !$leftSite
-        && $widgetOpenBefore === 1
-        && (int) $widgetOpen === 0;
+        && $panelClosed
+        && $fromStatus !== ''
+        && $fromStatus !== 'minimized'
+        && $fromStatus !== 'left';
     if ($justMinimized && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
         $presenceLine = lc_presence_chat_line('minimized', 'active');
         if ($presenceLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $presenceLine)) {

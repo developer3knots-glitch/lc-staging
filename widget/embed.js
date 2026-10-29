@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 187;
+    var LC_WIDGET_BUILD = 188;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -442,7 +442,7 @@
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
-            } else if (fields.force_status === 'minimized') {
+            } else if (fields.force_status === 'minimized' || !fields.chat_open) {
                 status = 'minimized';
                 label = 'Chat minimized';
             } else if (tabHidden) {
@@ -451,9 +451,6 @@
             } else if (windowBlurred) {
                 status = 'window';
                 label = 'Switched window';
-            } else if (!fields.chat_open) {
-                status = 'minimized';
-                label = 'Chat minimized';
             }
             return {
                 status: status,
