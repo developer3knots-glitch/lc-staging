@@ -241,18 +241,31 @@ try {
         'left' => 0,
     ];
 
-    $openByIp = [];
+    $trafficBrandId = static function (array $scan) use ($pageBrandByVisitor): int {
+        $bid = (int) ($scan['conversation_brand_id'] ?? 0);
+        if ($bid > 0) {
+            return $bid;
+        }
+        $vid = (int) ($scan['visitor_id'] ?? 0);
+
+        return (int) ($pageBrandByVisitor[$vid]['id'] ?? 0);
+    };
+
+    // Same public IP on two brands stays two chats. Mirror only inside one brand.
+    $openByIpBrand = [];
     foreach ($rows as $scan) {
         $scanIp = trim((string) ($scan['visitor_ip'] ?? ''));
+        $scanBrand = $trafficBrandId($scan);
         $scanStatus = (string) ($scan['conversation_status'] ?? '');
         $scanConvId = (int) ($scan['conversation_id'] ?? 0);
-        if ($scanIp === '' || $scanConvId < 1 || !in_array($scanStatus, ['waiting', 'active'], true)) {
+        if ($scanIp === '' || $scanBrand < 1 || $scanConvId < 1 || !in_array($scanStatus, ['waiting', 'active'], true)) {
             continue;
         }
+        $scanKey = $scanIp . ':' . $scanBrand;
         $scanRank = $scanStatus === 'active' ? 2 : 1;
-        $known = $openByIp[$scanIp] ?? null;
+        $known = $openByIpBrand[$scanKey] ?? null;
         if ($known === null || $scanRank > $known['rank'] || ($scanRank === $known['rank'] && $scanConvId > $known['id'])) {
-            $openByIp[$scanIp] = [
+            $openByIpBrand[$scanKey] = [
                 'id' => $scanConvId,
                 'rank' => $scanRank,
                 'conv_status' => $scanStatus,
@@ -312,7 +325,9 @@ try {
         }
 
         $ownConvId = (int) ($row['conversation_id'] ?? 0);
-        $sharedChat = ($rowIp !== '' && isset($openByIp[$rowIp])) ? $openByIp[$rowIp] : null;
+        $rowBrand = $trafficBrandId($row);
+        $ipBrandKey = ($rowIp !== '' && $rowBrand > 0) ? ($rowIp . ':' . $rowBrand) : '';
+        $sharedChat = ($ipBrandKey !== '' && isset($openByIpBrand[$ipBrandKey])) ? $openByIpBrand[$ipBrandKey] : null;
         $mirrorChat = $sharedChat && $ownConvId !== (int) $sharedChat['id'] && $status === 'browsing';
         if ($mirrorChat) {
             $status = $sharedChat['conv_status'] === 'waiting' ? 'queued' : 'chatting';
@@ -453,8 +468,8 @@ try {
             'chat_url' => $conversationId
                 ? lc_admin_url('chats', ['id' => (int) $conversationId])
                 : null,
-            'same_ip_chat_url' => ($ip !== '' && isset($openByIp[$ip]) && (int) ($row['conversation_id'] ?? 0) !== $openByIp[$ip]['id'])
-                ? lc_admin_url('chats', ['id' => $openByIp[$ip]['id']])
+            'same_ip_chat_url' => ($ipBrandKey !== '' && isset($openByIpBrand[$ipBrandKey]) && (int) ($row['conversation_id'] ?? 0) !== $openByIpBrand[$ipBrandKey]['id'])
+                ? lc_admin_url('chats', ['id' => $openByIpBrand[$ipBrandKey]['id']])
                 : null,
         ];
     }
