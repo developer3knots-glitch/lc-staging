@@ -107,7 +107,7 @@ try {
     } catch (Throwable $e) {
     }
     $recentSql = "
-        SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
+        SELECT c.id, c.status, c.agent_id, c.visitor_id, c.brand_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
                COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region, v.email AS visitor_email,
                v.user_agent AS visitor_user_agent, {$dashTransferSelect}

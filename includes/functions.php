@@ -1410,6 +1410,7 @@ function lc_sanitize_system_message_for_visitor(string $message): string
 
 /**
  * Prior conversations for the same visitor IP and/or visitor record (agent-only).
+ * Same brand only. Another brand's chats stay out of this transcript.
  * Visitor widgets never use this list for auto-resume.
  *
  * @return list<array{id:int,status:string,reference:string,visitor_name:string,started_at:?string,last_message_at:?string,preview:string}>
@@ -1419,7 +1420,8 @@ function lc_conversations_related_by_ip(
     int $excludeConversationId,
     ?array $agent = null,
     int $limit = 12,
-    int $visitorId = 0
+    int $visitorId = 0,
+    int $brandId = 0
 ): array {
     $ip = trim($ip);
     if ($excludeConversationId < 1 && $visitorId < 1 && $ip === '') {
@@ -1462,7 +1464,10 @@ function lc_conversations_related_by_ip(
           AND c.id <> ?
     ';
 
-    if ($agent && function_exists('lc_agent_account_id')) {
+    if ($brandId > 0) {
+        $sql .= ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($agent && function_exists('lc_agent_account_id')) {
         $accountId = lc_agent_account_id($agent);
         if ($accountId > 0) {
             $sql .= ' AND (c.brand_id IS NULL OR c.brand_id IN (SELECT id FROM brands WHERE account_id = ?))';
@@ -1513,7 +1518,7 @@ function lc_conversations_related_by_ip(
 }
 
 /**
- * Agent-only continuous history: full message threads for prior same-visitor/IP chats.
+ * Agent-only continuous history: full message threads for prior same-brand chats.
  * Oldest first so the inbox can paint LiveChat-style session markers + messages in one scroll.
  *
  * @return list<array{id:int,status:string,reference:string,started_at:?string,ended_at:?string,messages:list<array<string,mixed>>}>
@@ -1523,9 +1528,10 @@ function lc_agent_prior_threads_with_messages(
     int $excludeConversationId,
     ?array $agent = null,
     int $visitorId = 0,
-    int $threadLimit = 8
+    int $threadLimit = 8,
+    int $brandId = 0
 ): array {
-    $metas = lc_conversations_related_by_ip($ip, $excludeConversationId, $agent, $threadLimit, $visitorId);
+    $metas = lc_conversations_related_by_ip($ip, $excludeConversationId, $agent, $threadLimit, $visitorId, $brandId);
     if (!$metas) {
         return [];
     }

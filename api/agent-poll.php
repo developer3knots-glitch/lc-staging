@@ -178,7 +178,8 @@ try {
             $conversationId,
             $agent,
             (int) ($conv['visitor_id'] ?? 0),
-            12
+            12,
+            (int) ($conv['brand_id'] ?? 0)
         );
     }
 

@@ -562,8 +562,8 @@ function lc_resume_conversation_by_ip(array $conv, int $currentVisitorId): array
 }
 
 /**
- * Live inbox: one row per public IP per calendar day (started_at date).
- * Same IP + same date = one chat row. Different date = separate row.
+ * Live inbox: one row per public IP, per brand, per calendar day.
+ * Same IP on two brands stays two chats. Same IP + same brand + same date stays one row.
  */
 function lc_inbox_identity_key(array $row): string
 {
@@ -572,18 +572,25 @@ function lc_inbox_identity_key(array $row): string
         ? lc_normalize_visitor_email((string) ($row['visitor_email'] ?? ''))
         : strtolower(trim((string) ($row['visitor_email'] ?? '')));
     $visitorId = (int) ($row['visitor_id'] ?? 0);
+    $brandId = (int) ($row['brand_id'] ?? 0);
+    if ($brandId < 1) {
+        $brandName = strtolower(trim((string) ($row['brand_name'] ?? $row['brand_key'] ?? '')));
+        $brandPart = $brandName !== '' ? $brandName : '0';
+    } else {
+        $brandPart = (string) $brandId;
+    }
     $day = function_exists('lc_conversation_day_key')
         ? lc_conversation_day_key((string) ($row['started_at'] ?? $row['last_message_at'] ?? ''))
         : date('Y-m-d');
 
     if (function_exists('lc_ip_usable_for_identity') ? lc_ip_usable_for_identity($ip) : ($ip !== '' && $ip !== '127.0.0.1' && $ip !== '::1')) {
-        return 'ip:' . $ip . ':' . $day;
+        return 'ip:' . $ip . ':b' . $brandPart . ':' . $day;
     }
     if ($email !== '') {
-        return 'em:' . $email . ':' . $day;
+        return 'em:' . $email . ':b' . $brandPart . ':' . $day;
     }
     if ($visitorId > 0) {
-        return 'vid:' . $visitorId . ':' . $day;
+        return 'vid:' . $visitorId . ':b' . $brandPart . ':' . $day;
     }
     return 'id:' . (int) ($row['id'] ?? 0);
 }
@@ -601,7 +608,7 @@ function lc_inbox_row_rank(array $row): array
 }
 
 /**
- * One inbox/dashboard row per public IP per calendar day.
+ * One inbox/dashboard row per public IP, per brand, per calendar day.
  *
  * @param list<array<string,mixed>> $conversations
  * @return list<array<string,mixed>>
@@ -741,8 +748,8 @@ function lc_merge_same_ip_conversations(): array
 }
 
 /**
- * Manual-only: merge CLOSED chats that share the same IP on the same calendar day.
- * Different dates stay separate tickets. Never merges by email alone.
+ * Manual-only: merge CLOSED chats that share the same IP, same brand, and same calendar day.
+ * Different brands and different dates stay separate tickets. Never merges by email alone.
  */
 function lc_merge_same_ip_conversations_manual(): array
 {
@@ -752,26 +759,33 @@ function lc_merge_same_ip_conversations_manual(): array
     $removedConversations = 0;
 
     $ipGroups = $db->query("
-        SELECT v.ip_address AS ip, DATE(c.started_at) AS day
+        SELECT v.ip_address AS ip, c.brand_id AS brand_id, DATE(c.started_at) AS day
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id
         WHERE c.status = 'closed'
           AND v.ip_address IS NOT NULL
           AND v.ip_address NOT IN ('', '0.0.0.0', '127.0.0.1', '::1')
-        GROUP BY v.ip_address, DATE(c.started_at)
+        GROUP BY v.ip_address, c.brand_id, DATE(c.started_at)
         HAVING COUNT(*) > 1
     ")->fetchAll();
 
     foreach ($ipGroups as $g) {
+        $brandSql = 'c.brand_id IS NULL';
+        $brandParams = [];
+        if ($g['brand_id'] !== null && $g['brand_id'] !== '') {
+            $brandSql = 'c.brand_id = ?';
+            $brandParams[] = (int) $g['brand_id'];
+        }
         $stmt = $db->prepare("
             SELECT c.id
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
             WHERE v.ip_address = ? AND c.status = 'closed'
+              AND {$brandSql}
               AND DATE(c.started_at) = ?
             ORDER BY COALESCE(c.last_message_at, c.started_at) DESC, c.id DESC
         ");
-        $stmt->execute([(string) $g['ip'], (string) $g['day']]);
+        $stmt->execute(array_merge([(string) $g['ip']], $brandParams, [(string) $g['day']]));
         $ids = array_map(static function ($row) {
             return (int) $row['id'];
         }, $stmt->fetchAll());

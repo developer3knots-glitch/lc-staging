@@ -942,7 +942,7 @@ function lc_build_chat_transcript_scope(int $conversationId, string $scope = 'cu
 
     if (function_exists('lc_conversations_related_by_ip')) {
         // exclude id 0 => all related (same visitor/IP), including current
-        $related = lc_conversations_related_by_ip($ip, 0, $agent, 25, $visitorId);
+        $related = lc_conversations_related_by_ip($ip, 0, $agent, 25, $visitorId, (int) ($conv['brand_id'] ?? 0));
         usort($related, static function ($a, $b) {
             $ta = strtotime((string) ($a['started_at'] ?? $a['last_message_at'] ?? '')) ?: 0;
             $tb = strtotime((string) ($b['started_at'] ?? $b['last_message_at'] ?? '')) ?: 0;
