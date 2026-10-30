@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 190;
+    var LC_WIDGET_BUILD = 191;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -690,8 +690,14 @@
         tryRevealWidget();
     }
 
+    function chatResumePending() {
+        return !!(chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0));
+    }
+
     function tryRevealWidget() {
-        if (widgetRevealed || !widgetStylesReady || !widgetEntryReady || chatHistoryLoading) return;
+        if (widgetRevealed || !widgetStylesReady || !widgetEntryReady || chatHistoryLoading || chatInitInFlight) return;
+        // An already-started chat must not flash the idle screen first.
+        if (isIdleLandingVisible() && (chatResumePending() || (parseInt(serverLiveConversationId, 10) || 0) > 0)) return;
         revealWidgetNow();
     }
 
@@ -1188,19 +1194,20 @@
             }
         });
 
-        // Maximize immediately — don't wait for settings/access network round-trips.
-        // The root stays hidden until styles and the first real screen are ready.
+        // Panel opens hidden. Idle is painted only when settings say there is no chat.
         openPanelInstantIdle();
         setTimeout(function () {
             widgetStylesReady = true;
-            widgetEntryReady = true;
-            if (!chatHistoryLoading) tryRevealWidget();
+            tryRevealWidget();
         }, 2200);
         setTimeout(function () {
             widgetStylesReady = true;
-            widgetEntryReady = true;
-            revealWidgetNow();
-        }, 4000);
+            if (!widgetEntryReady && !chatResumePending()) {
+                widgetEntryReady = true;
+            }
+            tryRevealWidget();
+            if (!widgetRevealed && !chatResumePending() && !chatInitInFlight) revealWidgetNow();
+        }, 8000);
         scheduleWelcomeEngagement();
         loadWidgetSettings();
         startSettingsSync();
@@ -1969,6 +1976,9 @@
     }
 
     function showIdleIntro() {
+        if (chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0)) {
+            return;
+        }
         var panel = document.getElementById('lc-panel');
         var intro = document.getElementById('lc-idle-intro');
         if (!intro || !panel) return;
@@ -3609,6 +3619,11 @@
         }
         var keepResume = !!options.keepResume;
         var keepResumeId = keepResume ? (pendingResumeConvId || serverLiveConversationId || getStoredConversationId() || null) : null;
+        if (keepResumeId) {
+            pendingResumeConvId = keepResumeId;
+            initChat({ resumeConversationId: keepResumeId });
+            return;
+        }
         chatClosed = false;
         leaveCloseSent = false;
         conversationId = null;
@@ -4086,10 +4101,11 @@
 
     function openPanelInstantIdle() {
         if (!autoOpenOnLoad || didAutoOpenOnLoad || isOpen) return;
-        try {
-            showIdleIntro();
-        } catch (eIdle) {}
         didAutoOpenOnLoad = true;
+        var storedChat = parseInt(getStoredConversationId(), 10) || 0;
+        if (storedChat > 0) pendingResumeConvId = storedChat;
+        // Do not paint the idle screen here. Settings will open the chat
+        // directly when one is already started, or the idle screen when it is not.
         openPanel({ silenceFlow: true });
     }
 
