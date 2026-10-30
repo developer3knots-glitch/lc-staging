@@ -276,10 +276,13 @@
             if ((parseInt(row.visitor_id, 10) || 0) === visitorId) target = row;
         });
         var ip = target && target.ip ? String(target.ip) : '';
+        var brandId = target ? (parseInt(target.brand_id, 10) || 0) : 0;
         allVisitors = allVisitors.map(function (row) {
             var sameVisitor = (parseInt(row.visitor_id, 10) || 0) === visitorId;
-            var sameIpBrowsing = ip !== '' && String(row.ip || '') === ip && row.status === 'browsing';
-            if (!sameVisitor && !sameIpBrowsing) return row;
+            var rowBrand = parseInt(row.brand_id, 10) || 0;
+            var sameIpSameBrand = ip !== '' && brandId > 0 && rowBrand === brandId
+                && String(row.ip || '') === ip && row.status === 'browsing';
+            if (!sameVisitor && !sameIpSameBrand) return row;
             return Object.assign({}, row, {
                 status: 'chatting',
                 activity_label: 'Chatting',
