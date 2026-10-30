@@ -570,8 +570,8 @@
             status = status.charAt(0).toUpperCase() + status.slice(1);
             var geo = c.visitor_geo || {};
             var location = (geo.label || (c.visitor_country || '')).trim();
-            if (location && location !== 'Unknown') {
-                location += String(geo.source || 'ip').toLowerCase() === 'browser' ? ' (device GPS)' : ' (approx. from IP)';
+            if (location && location !== 'Unknown' && String(geo.source || '').toLowerCase() === 'browser') {
+                location += ' (device GPS)';
             }
             var stats = c.visitor_stats || {};
             var chats = parseInt(stats.chat_count, 10) || ((parseInt(c.prior_chat_count, 10) || 0) + (c.id ? 1 : 0));

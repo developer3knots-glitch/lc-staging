@@ -490,8 +490,8 @@
         var status = statusRaw ? statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1) : (visitor.conversation_id ? 'Chat' : 'No chat');
         var geo = visitor.geo || {};
         var location = (geo.label || visitor.country || (row && row.country) || '').trim();
-        if (location && location !== 'Unknown') {
-            location += String(geo.source || 'ip').toLowerCase() === 'browser' ? ' (device GPS)' : ' (approx. from IP)';
+        if (location && location !== 'Unknown' && String(geo.source || '').toLowerCase() === 'browser') {
+            location += ' (device GPS)';
         }
         var chats = parseInt(visitor.chat_count, 10) || 0;
         var pages = parseInt(visitor.page_count, 10) || ((visitor.pages || []).length);

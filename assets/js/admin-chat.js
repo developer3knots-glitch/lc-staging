@@ -1176,10 +1176,7 @@
 
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
-        var geoSource = String(geo.source || 'ip').toLowerCase();
-        if (location && location !== '-' && geoSource !== 'browser') {
-            location = location + ' (approx. from IP)';
-        } else if (location && location !== '-' && geoSource === 'browser') {
+        if (location && location !== '-' && String(geo.source || '').toLowerCase() === 'browser') {
             location = location + ' (device GPS)';
         }
         setText('lc-details-location', location);
