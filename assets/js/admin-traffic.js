@@ -518,10 +518,17 @@
         return Math.floor(m / 60) + 'h ' + (m % 60) + 'm ' + s + 's';
     }
 
+    var frozenSiteTime = {};
+
     function rowTimeSeconds(row) {
         if (!row) return 0;
+        if (row._timeFrozen) {
+            var locked = parseInt(row._timeBase, 10);
+            if (!isNaN(locked)) return locked;
+        }
         var base = parseInt(row._timeBase, 10);
         if (isNaN(base)) base = parseInt(row.time_on_pages_seconds, 10) || 0;
+        if (row.status === 'left') return base;
         if (row._timeTicking && row._timeAt) {
             base += Math.max(0, Math.floor((Date.now() - row._timeAt) / 1000));
         }
@@ -530,15 +537,34 @@
 
     function stampVisitTimer(row) {
         if (!row) return;
+        var id = String(parseInt(row.visitor_id, 10) || 0);
         var ticking = row.status && row.status !== 'left';
-        if (row._timeAt && row._timeTicking && !ticking) {
-            row._timeBase = rowTimeSeconds(row);
+        if (!ticking) {
+            var serverSec = parseInt(row.time_on_pages_seconds, 10) || 0;
+            var fromLiveClock = !!(row._timeAt && row._timeTicking);
+            if (id !== '0' && fromLiveClock && frozenSiteTime[id] == null) {
+                var prior = parseInt(row._timeBase, 10);
+                if (isNaN(prior)) prior = serverSec;
+                frozenSiteTime[id] = prior + Math.max(0, Math.floor((Date.now() - row._timeAt) / 1000));
+            } else if (id !== '0' && !fromLiveClock) {
+                frozenSiteTime[id] = serverSec;
+            }
+            if (id !== '0' && frozenSiteTime[id] != null) {
+                row._timeBase = frozenSiteTime[id];
+                row.time_on_pages_seconds = frozenSiteTime[id];
+            } else {
+                row._timeBase = parseInt(row.time_on_pages_seconds, 10) || 0;
+            }
             row._timeTicking = false;
+            row._timeAt = 0;
+            row._timeFrozen = true;
             return;
         }
+        if (id !== '0') delete frozenSiteTime[id];
+        row._timeFrozen = false;
         row._timeBase = parseInt(row.time_on_pages_seconds, 10) || 0;
         row._timeAt = Date.now();
-        row._timeTicking = !!ticking;
+        row._timeTicking = true;
     }
 
     function tickVisitTimers() {
