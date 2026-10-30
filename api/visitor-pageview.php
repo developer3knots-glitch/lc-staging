@@ -274,12 +274,19 @@ try {
                 $pagePath .= '?' . $parsed['query'];
             }
         }
+        $publishIp = $ip;
+        if (function_exists('lc_valid_public_ipv4') && !lc_valid_public_ipv4($publishIp) && function_exists('lc_visitor_stored_ipv4')) {
+            $keptIp = lc_visitor_stored_ipv4($visitorId);
+            if ($keptIp) {
+                $publishIp = $keptIp;
+            }
+        }
         lc_realtime_publish_traffic($brandId, 'browsing', [
             'visitor_id' => $visitorId,
             'visitor_uid' => $visitorUid,
             'name' => $visitorName !== '' ? $visitorName : 'Visitor',
             'email' => $visitorEmail,
-            'ip' => $ip,
+            'ip' => $publishIp,
             'page_url' => $pageUrl,
             'page_path' => $pagePath,
             'notify' => $shouldNotify,

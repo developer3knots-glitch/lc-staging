@@ -89,12 +89,15 @@ function lc_client_ip(): string
     // Cloudflare off: the first public address in X-Forwarded-For, X-Real-IP,
     // then REMOTE_ADDR. IPv4 wins inside a chain; IPv6 is used when that is
     // the only public address.
-    $cf = lc_first_public_ip(array_merge(
+    $trusted = array_merge(
         lc_header_ips('HTTP_CF_CONNECTING_IP'),
         lc_header_ips('HTTP_TRUE_CLIENT_IP')
-    ));
-    if ($cf !== '') {
-        return $cf;
+    );
+    if ($trusted) {
+        $cf = lc_best_public_ip(...$trusted);
+        if ($cf !== '') {
+            return $cf;
+        }
     }
 
     foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'] as $header) {
@@ -639,7 +642,7 @@ function lc_heal_visitor_loopback_ips(array &$rows): void
             $stmt->execute($ids);
             foreach ($stmt->fetchAll() as $hit) {
                 $id = (int) ($hit['visitor_id'] ?? 0);
-                if ($id < 1 || isset($fromHistory[$id])) {
+                if ($id < 1) {
                     continue;
                 }
                 $public = lc_best_public_ip((string) ($hit['ip_address'] ?? ''));
@@ -647,8 +650,10 @@ function lc_heal_visitor_loopback_ips(array &$rows): void
                     continue;
                 }
                 $publicV4 = lc_valid_public_ipv4($public) ?: lc_ipv4_from_any($public);
-                $knownV4 = isset($fromHistory[$id]) ? (lc_valid_public_ipv4($fromHistory[$id]) ?: lc_ipv4_from_any($fromHistory[$id])) : null;
-                if (!isset($fromHistory[$id]) || ($publicV4 !== null && $knownV4 === null)) {
+                $known = $fromHistory[$id] ?? null;
+                $knownV4 = $known !== null ? (lc_valid_public_ipv4($known) ?: lc_ipv4_from_any($known)) : null;
+                // A newer IPv6 heartbeat must not hide an older public IPv4.
+                if ($known === null || ($publicV4 !== null && $knownV4 === null)) {
                     $fromHistory[$id] = $publicV4 ?: $public;
                 }
             }
@@ -680,16 +685,21 @@ function lc_heal_visitor_loopback_ips(array &$rows): void
         $upgradeV6 = $storedV4 === null && $bestV4Now !== null && filter_var($stored, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6);
         if ($best !== '' && ($storedIsLocal || $upgradeV6) && $visitorId > 0) {
             try {
+                $ipv4Store = lc_valid_public_ipv4($best) ?: lc_ipv4_from_any($best);
                 $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ? WHERE id = ?')
-                    ->execute([$best, lc_valid_public_ipv4($best) ?: $best, $visitorId]);
+                    ->execute([$ipv4Store ?: $best, $ipv4Store, $visitorId]);
                 $convId = (int) ($row['conversation_id'] ?? 0);
-                if ($convId > 0) {
+                if ($convId > 0 && $ipv4Store !== null) {
                     $db->prepare("
                         UPDATE conversations
                         SET client_ip = ?
                         WHERE id = ?
-                          AND (client_ip IS NULL OR TRIM(client_ip) = '' OR client_ip IN ('127.0.0.1', '::1', '0.0.0.0'))
-                    ")->execute([$best, $convId]);
+                          AND (
+                              client_ip IS NULL OR TRIM(client_ip) = ''
+                              OR client_ip IN ('127.0.0.1', '::1', '0.0.0.0')
+                              OR client_ip LIKE '%:%'
+                          )
+                    ")->execute([$ipv4Store, $convId]);
                 }
             } catch (Throwable $e) {
             }

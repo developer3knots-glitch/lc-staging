@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 188;
+    var LC_WIDGET_BUILD = 189;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5748,18 +5748,31 @@
         }).catch(function () {});
     }
 
+    var ipv4CaptureTries = 0;
+
     function capturePublicIpv4() {
         if (publicIpv4) {
             reportPublicIpv4(publicIpv4);
             return;
         }
+        if (ipv4CaptureTries >= 6) {
+            return;
+        }
+        ipv4CaptureTries += 1;
         var urls = [
-            'https://api.ipify.org?format=json',
+            'https://api4.ipify.org?format=json',
             'https://ipv4.icanhazip.com',
-            'https://v4.ident.me'
+            'https://v4.ident.me',
+            'https://api.ipify.org?format=json'
         ];
         function tryNext(i) {
-            if (publicIpv4 || i >= urls.length) {
+            if (publicIpv4) {
+                return;
+            }
+            if (i >= urls.length) {
+                if (ipv4CaptureTries < 6) {
+                    setTimeout(capturePublicIpv4, 5000);
+                }
                 return;
             }
             var url = urls[i];
