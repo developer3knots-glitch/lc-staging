@@ -867,9 +867,10 @@
         var lon = geo.lon;
         var label = String(geo.label || geo.country || '').trim();
         var source = String(geo.source || 'ip').toLowerCase();
-        var key = source === 'browser' && lat && lon
+        var hasPoint = lat && lon && isFinite(parseFloat(lat)) && isFinite(parseFloat(lon));
+        var key = source === 'browser' && hasPoint
             ? ('gps:' + lat + ',' + lon)
-            : (label && label !== 'Unknown' ? ('ip:' + label) : ((lat && lon) ? ('ipxy:' + lat + ',' + lon) : ''));
+            : (hasPoint ? ('ipxy:' + lat + ',' + lon) : (label && label !== 'Unknown' ? ('ip:' + label) : ''));
         if (!key) {
             metaMapKey = '';
             iframe.removeAttribute('src');
@@ -879,12 +880,12 @@
         wrap.hidden = false;
         if (key === metaMapKey) return;
         metaMapKey = key;
-        if (source === 'browser' && lat && lon) {
+        if (source === 'browser' && hasPoint) {
             iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
-        } else if (label && label !== 'Unknown') {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
+        } else if (hasPoint) {
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=11&output=embed';
         } else {
-            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
+            iframe.src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
         }
     }
 

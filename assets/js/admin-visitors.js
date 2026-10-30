@@ -397,12 +397,13 @@
         var lon = geo.lon;
         var label = String(geo.label || geo.country || '').trim();
         var src = '';
-        if (String(geo.source || '').toLowerCase() === 'browser' && lat && lon) {
+        var hasPoint = lat && lon && isFinite(parseFloat(lat)) && isFinite(parseFloat(lon));
+        if (String(geo.source || '').toLowerCase() === 'browser' && hasPoint) {
             src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+        } else if (hasPoint) {
+            src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=11&output=embed';
         } else if (label && label !== 'Unknown') {
             src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
-        } else if (lat && lon) {
-            src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
         }
         if (!src) {
             wrap.hidden = true;

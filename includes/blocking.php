@@ -95,6 +95,63 @@ function lc_http_get_json(string $url, float $timeout = 3.0, array $headers = []
 }
 
 /**
+ * @param list<string> $urls
+ * @return list<array<string, mixed>|null>
+ */
+function lc_http_get_json_many(array $urls, float $timeout = 2.5): array
+{
+    $out = array_fill(0, count($urls), null);
+    if ($urls === []) {
+        return $out;
+    }
+    if (!function_exists('curl_multi_init')) {
+        foreach ($urls as $i => $url) {
+            $out[$i] = lc_http_get_json($url, $timeout);
+        }
+        return $out;
+    }
+
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($urls as $i => $url) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => (int) ceil($timeout),
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_HTTPHEADER => ['User-Agent: 3Knots-LiveChat/1.0'],
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$i] = $ch;
+    }
+
+    $running = null;
+    do {
+        $status = curl_multi_exec($mh, $running);
+        if ($running) {
+            curl_multi_select($mh, 0.2);
+        }
+    } while ($running && $status === CURLM_OK);
+
+    foreach ($handles as $i => $ch) {
+        $raw = curl_multi_getcontent($ch);
+        if (is_string($raw) && $raw !== '') {
+            $data = json_decode($raw, true);
+            if (is_array($data)) {
+                $out[$i] = $data;
+            }
+        }
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($mh);
+
+    return $out;
+}
+
+/**
  * @param array<string, mixed> $data
  * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}|null
  */
@@ -230,28 +287,26 @@ function lc_resolve_geo_full(string $ip): array
     }
 
     $encoded = urlencode($ip);
-    $candidates = [];
+    // ip-api.com often pins Pakistan ISP blocks to Lahore. Ask every database
+    // and keep the city the majority agrees on (ipwho.is + freeipapi).
     $sources = [
-        ['http://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon', 'lc_geo_payload_from_ip_api'],
-        ['https://ipwho.is/' . $encoded, 'lc_geo_payload_from_ipwho'],
-        ['https://freeipapi.com/api/json/' . $encoded, 'lc_geo_payload_from_freeipapi'],
+        ['https://ipwho.is/' . $encoded, 'lc_geo_payload_from_ipwho', 2],
+        ['https://freeipapi.com/api/json/' . $encoded, 'lc_geo_payload_from_freeipapi', 2],
+        ['http://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon', 'lc_geo_payload_from_ip_api', 1],
     ];
-    foreach ($sources as $source) {
-        $raw = lc_http_get_json($source[0], 2.0);
-        if (!$raw) {
+    $raws = lc_http_get_json_many(array_column($sources, 0), 2.5);
+    $candidates = [];
+    foreach ($sources as $i => $source) {
+        $raw = $raws[$i] ?? null;
+        if (!is_array($raw)) {
             continue;
         }
         $payload = $source[1]($raw);
         if (!$payload) {
             continue;
         }
+        $payload['trust'] = $source[2];
         $candidates[] = $payload;
-        $city = trim((string) ($payload['city'] ?? ''));
-        $region = trim((string) ($payload['region'] ?? ''));
-        $country = trim((string) ($payload['country'] ?? ''));
-        if ($city !== '' && $region !== '' && $country !== '' && strcasecmp($country, 'Unknown') !== 0) {
-            break;
-        }
     }
 
     $result = lc_pick_best_geo_payload_multi($candidates);
@@ -277,7 +332,7 @@ function lc_pick_best_geo_payload_multi(array $candidates): ?array
         return null;
     }
     if (count($candidates) === 1) {
-        return $candidates[0];
+        return lc_geo_finish_payload($candidates[0]);
     }
 
     $votes = [];
@@ -312,16 +367,19 @@ function lc_pick_best_geo_payload_multi(array $candidates): ?array
                 break;
             }
         }
-        return $pick;
+        return lc_geo_finish_payload($pick);
     }
 
-    // No majority city. Still show city, state, and country from the fullest answer.
+    // No majority. Prefer the databases that match iplocation / ipinfo over ip-api.com.
     $best = $candidates[0];
+    $bestTrust = (int) ($best['trust'] ?? 0);
     $bestScore = lc_geo_payload_score($best);
     foreach ($candidates as $row) {
+        $trust = (int) ($row['trust'] ?? 0);
         $score = lc_geo_payload_score($row);
-        if ($score > $bestScore) {
+        if ($trust > $bestTrust || ($trust === $bestTrust && $score > $bestScore)) {
             $best = $row;
+            $bestTrust = $trust;
             $bestScore = $score;
         }
     }
@@ -330,7 +388,8 @@ function lc_pick_best_geo_payload_multi(array $candidates): ?array
         foreach ($candidates as $row) {
             $rowCode = strtoupper(trim((string) ($row['country_code'] ?? '')));
             $rowRegion = trim((string) ($row['region'] ?? ''));
-            if ($rowRegion !== '' && ($countryCode === '' || $rowCode === '' || $rowCode === $countryCode)) {
+            $sameCity = lc_geo_city_vote_key((string) ($row['city'] ?? '')) === lc_geo_city_vote_key((string) ($best['city'] ?? ''));
+            if ($rowRegion !== '' && $sameCity && ($countryCode === '' || $rowCode === '' || $rowCode === $countryCode)) {
                 $best['region'] = $rowRegion;
                 break;
             }
@@ -356,7 +415,32 @@ function lc_pick_best_geo_payload_multi(array $candidates): ?array
     ]));
     $best['label'] = $parts ? implode(', ', $parts) : 'Unknown';
 
-    return $best;
+    return lc_geo_finish_payload($best);
+}
+
+/**
+ * @param array{country?:string,country_code?:string,city?:string,region?:string,lat?:?float,lon?:?float,label?:string} $row
+ * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}
+ */
+function lc_geo_finish_payload(array $row): array
+{
+    $city = trim((string) ($row['city'] ?? ''));
+    $region = trim((string) ($row['region'] ?? ''));
+    $country = trim((string) ($row['country'] ?? ''));
+    if ($country === '') {
+        $country = 'Unknown';
+    }
+    $parts = array_values(array_filter([$city, $region, $country !== 'Unknown' ? $country : '']));
+
+    return [
+        'country' => $country,
+        'country_code' => strtoupper(trim((string) ($row['country_code'] ?? ''))),
+        'city' => $city,
+        'region' => $region,
+        'lat' => isset($row['lat']) && $row['lat'] !== null ? (float) $row['lat'] : null,
+        'lon' => isset($row['lon']) && $row['lon'] !== null ? (float) $row['lon'] : null,
+        'label' => $parts ? implode(', ', $parts) : $country,
+    ];
 }
 
 function lc_geo_payload_score(array $row): int

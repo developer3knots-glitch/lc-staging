@@ -1622,6 +1622,7 @@ function lc_ensure_visitor_geo_schema(): void
         'geo_lon DECIMAL(10,7) NULL',
         'geo_source VARCHAR(16) NULL',
         'geo_checked_at DATETIME NULL',
+        'geo_rev TINYINT NULL',
     ] as $def) {
         try {
             $pdo->exec('ALTER TABLE visitors ADD COLUMN ' . $def);
@@ -1782,7 +1783,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     }
 
     if ($row === null) {
-        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source, geo_checked_at, ip_address, ipv4_address FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source, geo_checked_at, geo_rev, ip_address, ipv4_address FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $row = $stmt->fetch() ?: [];
     }
@@ -1801,12 +1802,16 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         return $payload;
     }
     $countryOk = $payload['country'] !== '' && strcasecmp($payload['country'], 'Unknown') !== 0;
-    if ($payload['city'] !== '' && $payload['region'] !== '' && $countryOk) {
-        return $payload;
-    }
+    $complete = $payload['city'] !== '' && $payload['region'] !== '' && $countryOk;
+    // geo_rev 2 = looked up with the majority vote. Older rows (Lahore from ip-api) refresh once.
+    $rev = (int) ($row['geo_rev'] ?? 0);
     $checkedRaw = trim((string) ($row['geo_checked_at'] ?? ''));
     $checkedTs = $checkedRaw !== '' ? strtotime($checkedRaw . ' UTC') : false;
-    if ($checkedTs !== false && (time() - $checkedTs) < 180) {
+    $checkedRecently = $checkedTs !== false && (time() - $checkedTs) < 180;
+    if ($rev >= 2 && $complete) {
+        return $payload;
+    }
+    if ($rev >= 1 && $checkedRecently) {
         return $payload;
     }
 
@@ -1828,7 +1833,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     // Empty Unknown only — still persist country-only results so stale Lahore/Karachi pins clear.
     if (($geo['label'] ?? '') === 'Unknown' && ($geo['city'] ?? '') === '' && ($geo['country'] ?? '') === 'Unknown') {
         try {
-            lc_db()->prepare('UPDATE visitors SET geo_checked_at = UTC_TIMESTAMP() WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')')
+            lc_db()->prepare('UPDATE visitors SET geo_checked_at = UTC_TIMESTAMP(), geo_rev = 1 WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')')
                 ->execute([$visitorId]);
         } catch (Throwable $e) {
         }
@@ -1850,6 +1855,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
             geo_lat = IF(? = 1, ?, geo_lat),
             geo_lon = IF(? = 1, ?, geo_lon),
             geo_source = ?,
+            geo_rev = 2,
             geo_checked_at = UTC_TIMESTAMP(),
             country = CASE
                 WHEN ? <> "" AND ? NOT IN ("Unknown", "Local") THEN ?
@@ -1904,6 +1910,7 @@ function lc_get_conversation(int $id): ?array
                v.phone AS visitor_phone,
                v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
                v.geo_lat AS visitor_geo_lat, v.geo_lon AS visitor_geo_lon, v.geo_source AS visitor_geo_source,
+               v.geo_rev AS visitor_geo_rev,
                a.name AS agent_name, b.name AS brand_name, b.brand_key
         FROM conversations c
         JOIN visitors v ON v.id = c.visitor_id

@@ -97,7 +97,7 @@ try {
 
     $visitorStmt = $db->prepare('
         SELECT id, name, email, phone, ip_address, ipv4_address, country, user_agent, page_url, last_seen, created_at,
-               geo_city, geo_region, geo_lat, geo_lon, geo_source
+               geo_city, geo_region, geo_lat, geo_lon, geo_source, geo_rev
         FROM visitors
         WHERE id = ?
         LIMIT 1
@@ -184,7 +184,9 @@ try {
             'geo_source' => $visitor['geo_source'] ?? '',
         ])
         : ['label' => (string) ($visitor['country'] ?? ''), 'city' => '', 'region' => '', 'country' => (string) ($visitor['country'] ?? ''), 'lat' => null, 'lon' => null, 'source' => 'ip'];
-    $placeMissing = trim((string) ($geo['city'] ?? '')) === '' || trim((string) ($geo['region'] ?? '')) === '';
+    $placeMissing = trim((string) ($geo['city'] ?? '')) === ''
+        || trim((string) ($geo['region'] ?? '')) === ''
+        || (int) ($visitor['geo_rev'] ?? 0) < 2;
     if ($placeMissing && function_exists('lc_refresh_visitor_geo')) {
         $geoIp = trim((string) ($visitor['ipv4_address'] ?? ''));
         if ($geoIp === '') {

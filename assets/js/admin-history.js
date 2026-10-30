@@ -480,12 +480,13 @@
             var label = (geo.label || geo.country || '').trim();
             var source = String(geo.source || 'ip').toLowerCase();
             var src = '';
-            if (source === 'browser' && lat && lon) {
+            var hasPoint = lat && lon && isFinite(parseFloat(lat)) && isFinite(parseFloat(lon));
+            if (source === 'browser' && hasPoint) {
                 src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=16&output=embed';
+            } else if (hasPoint) {
+                src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=11&output=embed';
             } else if (label && label !== 'Unknown' && label !== '-') {
                 src = 'https://www.google.com/maps?q=' + encodeURIComponent(label) + '&z=10&output=embed';
-            } else if (lat && lon) {
-                src = 'https://www.google.com/maps?q=' + encodeURIComponent(lat + ',' + lon) + '&z=10&output=embed';
             }
             if (!src) {
                 wrap.hidden = true;

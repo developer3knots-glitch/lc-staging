@@ -128,7 +128,9 @@ try {
                     'visitor_geo_lon' => $conv['visitor_geo_lon'] ?? null,
                     'geo_source' => $conv['visitor_geo_source'] ?? null,
                 ]);
-                $placeMissing = trim((string) ($geo['city'] ?? '')) === '' || trim((string) ($geo['region'] ?? '')) === '';
+                $placeMissing = trim((string) ($geo['city'] ?? '')) === ''
+                    || trim((string) ($geo['region'] ?? '')) === ''
+                    || (int) ($conv['visitor_geo_rev'] ?? 0) < 2;
                 if ($placeMissing && function_exists('lc_refresh_visitor_geo')) {
                     $geoIp = trim((string) ($conv['visitor_ipv4'] ?? ''));
                     if ($geoIp === '') {
