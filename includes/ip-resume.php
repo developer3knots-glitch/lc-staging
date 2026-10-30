@@ -208,11 +208,140 @@ function lc_collapse_duplicate_visitor_uids(int $limit = 40): bool
 }
 
 /**
+ * Same browser opened a second uid while the first is still on the site.
+ * Reuse that row instead of showing two Traffic lines.
+ *
+ * @return array<string,mixed>|null
+ */
+function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exceptUid = ''): ?array
+{
+    $ip = trim($ip);
+    $userAgent = trim($userAgent);
+    $exceptUid = trim($exceptUid);
+    if ($ip === '' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
+        return null;
+    }
+    try {
+        $stmt = lc_db()->prepare('
+            SELECT *
+            FROM visitors
+            WHERE user_agent = ?
+              AND visitor_uid <> ?
+              AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)
+              AND (ip_address = ? OR ipv4_address = ?)
+            ORDER BY last_seen DESC, id DESC
+            LIMIT 1
+        ');
+        $stmt->execute([$userAgent, $exceptUid, $ip, $ip]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    } catch (Throwable $e) {
+        try {
+            $stmt = lc_db()->prepare('
+                SELECT *
+                FROM visitors
+                WHERE user_agent = ?
+                  AND visitor_uid <> ?
+                  AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)
+                  AND ip_address = ?
+                ORDER BY last_seen DESC, id DESC
+                LIMIT 1
+            ');
+            $stmt->execute([$userAgent, $exceptUid, $ip]);
+            $row = $stmt->fetch();
+            return $row ?: null;
+        } catch (Throwable $e2) {
+            return null;
+        }
+    }
+}
+
+/**
  * Traffic list: one row per browser uid. Same uid from a double insert stays one row.
  *
  * @param list<array<string,mixed>> $rows
  * @return list<array<string,mixed>>
  */
+/**
+ * Hide a second browsing row for the same IP, brand, and browser.
+ * A row that has its own chat stays.
+ *
+ * @param list<array<string,mixed>> $rows
+ * @param array<int,array{id:int,key:string}> $pageBrandByVisitor
+ * @return list<array<string,mixed>>
+ */
+function lc_traffic_collapse_browser_twins(array $rows, array $pageBrandByVisitor): array
+{
+    $groups = [];
+    $loose = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        $ua = trim((string) ($row['visitor_user_agent'] ?? ''));
+        $brand = (int) ($row['conversation_brand_id'] ?? 0);
+        if ($brand < 1) {
+            $vid = (int) ($row['visitor_id'] ?? 0);
+            $brand = (int) ($pageBrandByVisitor[$vid]['id'] ?? 0);
+        }
+        if ($ip === '' || $ua === '' || $brand < 1) {
+            $loose[] = $row;
+            continue;
+        }
+        $key = $ip . '|' . $brand . '|' . sha1($ua);
+        $groups[$key][] = $row;
+    }
+
+    $out = $loose;
+    foreach ($groups as $list) {
+        $chatting = [];
+        $browsing = [];
+        foreach ($list as $row) {
+            if ((int) ($row['conversation_id'] ?? 0) > 0) {
+                $chatting[] = $row;
+            } else {
+                $browsing[] = $row;
+            }
+        }
+        if ($chatting !== []) {
+            $seen = [];
+            foreach ($chatting as $row) {
+                $cid = (int) ($row['conversation_id'] ?? 0);
+                if ($cid > 0 && isset($seen[$cid])) {
+                    continue;
+                }
+                if ($cid > 0) {
+                    $seen[$cid] = true;
+                }
+                $out[] = $row;
+            }
+            continue;
+        }
+        usort($browsing, static function ($a, $b) {
+            $ta = strtotime((string) ($a['visit_started_at'] ?? $a['visitor_created_at'] ?? '')) ?: 0;
+            $tb = strtotime((string) ($b['visit_started_at'] ?? $b['visitor_created_at'] ?? '')) ?: 0;
+            if ($ta === $tb) {
+                return ((int) ($a['visitor_id'] ?? 0)) <=> ((int) ($b['visitor_id'] ?? 0));
+            }
+
+            return $ta <=> $tb;
+        });
+        if ($browsing !== []) {
+            $out[] = $browsing[0];
+        }
+    }
+
+    usort($out, static function ($a, $b) {
+        $ta = strtotime((string) ($a['visit_started_at'] ?? $a['visitor_created_at'] ?? '')) ?: 0;
+        $tb = strtotime((string) ($b['visit_started_at'] ?? $b['visitor_created_at'] ?? '')) ?: 0;
+
+        return $tb <=> $ta;
+    });
+
+    return $out;
+}
+
 function lc_traffic_rows_one_per_uid(array $rows): array
 {
     $best = [];

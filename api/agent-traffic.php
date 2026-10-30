@@ -201,6 +201,9 @@ try {
             $pageBrandByVisitor = [];
         }
     }
+    if (function_exists('lc_traffic_collapse_browser_twins')) {
+        $rows = lc_traffic_collapse_browser_twins($rows, $pageBrandByVisitor);
+    }
 
     $blockedSet = [];
     $blockIps = [];

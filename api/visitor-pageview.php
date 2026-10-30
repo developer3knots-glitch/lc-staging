@@ -51,6 +51,15 @@ try {
     $isNewVisitor = false;
     $returnKnown = false;
 
+    if (!$visitor && function_exists('lc_reuse_recent_same_browser')) {
+        $reused = lc_reuse_recent_same_browser($ip, $userAgent, $visitorUid);
+        if ($reused) {
+            $visitor = $reused;
+            $visitorUid = trim((string) ($reused['visitor_uid'] ?? $visitorUid));
+            $visitorUidRotated = true;
+        }
+    }
+
     if (!$visitor) {
         $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
         $country = $storedIp ? lc_resolve_country($storedIp) : '';
@@ -111,7 +120,7 @@ try {
                 $presenceAway = false;
             }
         }
-        if ($isNewVisitor || $presenceWasLeft || $presenceAway) {
+        if ($isNewVisitor) {
             lc_mark_visitor_visit_started($visitorId);
         }
         $presence = function_exists('lc_apply_visitor_presence_input')
@@ -270,9 +279,6 @@ try {
         if ($prevTs !== false && (time() - $prevTs) < 90 && !$wasLeft) {
             $wasAway = false;
         }
-    }
-    if ($wasLeft || $wasAway) {
-        lc_mark_visitor_visit_started($visitorId);
     }
     // Notify on first land / return / IP rotate — never on quiet SPA hops or heartbeats.
     // Important: new visitors must notify. Insert sets last_seen=NOW which used to

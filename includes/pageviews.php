@@ -130,9 +130,16 @@ function lc_mark_visitor_on_site(int $visitorId): void
     }
     lc_ensure_visitor_presence_schema();
     try {
+        // A reload sets Left and comes back within a second. Keep the same
+        // visit clock. A real return after they have been gone restarts it.
         lc_db()->prepare('
             UPDATE visitors
-            SET visit_started_at = IF(left_site_at IS NULL, visit_started_at, UTC_TIMESTAMP()),
+            SET visit_started_at = IF(
+                    left_site_at IS NOT NULL
+                    AND left_site_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND),
+                    UTC_TIMESTAMP(),
+                    visit_started_at
+                ),
                 left_site_at = NULL,
                 last_seen = UTC_TIMESTAMP()
             WHERE id = ?

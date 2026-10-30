@@ -62,6 +62,14 @@ try {
     $visitor = $ipBind['visitor'];
     $visitorUid = $ipBind['visitor_uid'];
     $visitorUidRotated = !empty($ipBind['rotated']);
+    if (!$visitor && function_exists('lc_reuse_recent_same_browser')) {
+        $reused = lc_reuse_recent_same_browser($ip, $userAgent, $visitorUid);
+        if ($reused) {
+            $visitor = $reused;
+            $visitorUid = trim((string) ($reused['visitor_uid'] ?? $visitorUid));
+            $visitorUidRotated = true;
+        }
+    }
 
     $brandAccountId = (int) ($brand['account_id'] ?? 0);
     $prechatRequired = function_exists('lc_brand_prechat_enabled')
