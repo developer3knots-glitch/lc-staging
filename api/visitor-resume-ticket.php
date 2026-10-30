@@ -39,16 +39,24 @@ try {
     $brandSettings = lc_brand_settings($brand);
 
     $db = lc_db();
-    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ?');
+    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ? ORDER BY id ASC LIMIT 1');
     $stmt->execute([$visitorUid]);
     $visitor = $stmt->fetch();
 
     if (!$visitor) {
         $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
         $country = $storedIp ? lc_resolve_country($storedIp) : '';
-        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, name, email, ip_address, user_agent, page_url, country, last_seen) VALUES (?, NULL, ?, ?, ?, ?, ?, NOW())');
-        $ins->execute([$visitorUid, $email, $storedIp, $userAgent ?: null, $pageUrl ?: null, $country]);
-        $visitorId = (int) $db->lastInsertId();
+        $createdVisitor = function_exists('lc_insert_visitor_by_uid')
+            ? lc_insert_visitor_by_uid(
+                $visitorUid,
+                'INSERT INTO visitors (visitor_uid, name, email, ip_address, user_agent, page_url, country, last_seen) VALUES (?, NULL, ?, ?, ?, ?, ?, NOW())',
+                [$visitorUid, $email, $storedIp, $userAgent ?: null, $pageUrl ?: null, $country]
+            )
+            : ['id' => 0, 'created' => false];
+        $visitorId = (int) ($createdVisitor['id'] ?? 0);
+        if ($visitorId < 1) {
+            lc_json(['success' => false, 'error' => 'Server error'], 500);
+        }
     } else {
         $visitorId = (int) $visitor['id'];
         lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);

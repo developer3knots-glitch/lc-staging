@@ -4,9 +4,11 @@
  */
 (function () {
     'use strict';
+    if (window.__LC_WIDGET_APP) return;
+    window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 195;
+    var LC_WIDGET_BUILD = 196;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5891,10 +5893,6 @@
                 public_ipv4: ip,
                 website_url: ''
             })
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            if (data && data.success) {
-                applyVisitorIdentityFromResponse(data);
-            }
         }).catch(function () {});
     }
 

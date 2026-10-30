@@ -38,7 +38,7 @@ try {
     $brandId = (int) $brand['id'];
 
     $db = lc_db();
-    $stmt = $db->prepare('SELECT id, ip_address, visitor_uid FROM visitors WHERE visitor_uid = ? LIMIT 1');
+    $stmt = $db->prepare('SELECT id, ip_address, visitor_uid FROM visitors WHERE visitor_uid = ? ORDER BY id ASC LIMIT 1');
     $stmt->execute([$visitorUid]);
     $visitor = $stmt->fetch();
 
@@ -54,13 +54,23 @@ try {
     if (!$visitor) {
         $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
         $country = $storedIp ? lc_resolve_country($storedIp) : '';
-        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())');
-        $ins->execute([$visitorUid, $storedIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]);
-        $visitorId = (int) $db->lastInsertId();
-        $isNewVisitor = true;
-        lc_mark_visitor_visit_started($visitorId);
-        if (function_exists('lc_record_visitor_ip') && $ip !== '') {
-            lc_record_visitor_ip($visitorId, $ip);
+        $created = function_exists('lc_insert_visitor_by_uid')
+            ? lc_insert_visitor_by_uid(
+                $visitorUid,
+                'INSERT INTO visitors (visitor_uid, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+                [$visitorUid, $storedIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $country]
+            )
+            : ['id' => 0, 'created' => false];
+        $visitorId = (int) ($created['id'] ?? 0);
+        if ($visitorId < 1) {
+            lc_json(['success' => false, 'error' => 'Server error'], 500);
+        }
+        $isNewVisitor = !empty($created['created']);
+        if ($isNewVisitor) {
+            lc_mark_visitor_visit_started($visitorId);
+            if (function_exists('lc_record_visitor_ip') && $ip !== '') {
+                lc_record_visitor_ip($visitorId, $ip);
+            }
         }
         // Same browser after an IP change, or this IP/email already visited. Notification only.
         $returnKnown = $visitorUidRotated

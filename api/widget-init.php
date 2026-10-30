@@ -51,7 +51,7 @@ try {
     if (function_exists('lc_ensure_visitor_phone_schema')) {
         try { lc_ensure_visitor_phone_schema(); } catch (Throwable $e) {}
     }
-    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ?');
+    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ? ORDER BY id ASC LIMIT 1');
     $stmt->execute([$visitorUid]);
     $visitor = $stmt->fetch();
 
@@ -118,18 +118,26 @@ try {
     if (!$visitor) {
         $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
         $country = $storedIp ? lc_resolve_country($storedIp) : '';
-        $ins = $db->prepare('INSERT INTO visitors (visitor_uid, name, email, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
-        $ins->execute([
-            $visitorUid,
-            $name ?: null,
-            $email ?: null,
-            $storedIp,
-            $userAgent ?: null,
-            $pageUrl ?: null,
-            $country,
-        ]);
-        $visitorId = (int) $db->lastInsertId();
-        if (function_exists('lc_mark_visitor_visit_started')) {
+        $createdVisitor = function_exists('lc_insert_visitor_by_uid')
+            ? lc_insert_visitor_by_uid(
+                $visitorUid,
+                'INSERT INTO visitors (visitor_uid, name, email, ip_address, user_agent, page_url, country, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+                [
+                    $visitorUid,
+                    $name ?: null,
+                    $email ?: null,
+                    $storedIp,
+                    $userAgent ?: null,
+                    $pageUrl ?: null,
+                    $country,
+                ]
+            )
+            : ['id' => 0, 'created' => false];
+        $visitorId = (int) ($createdVisitor['id'] ?? 0);
+        if ($visitorId < 1) {
+            lc_json(['success' => false, 'error' => 'Server error'], 500);
+        }
+        if (!empty($createdVisitor['created']) && function_exists('lc_mark_visitor_visit_started')) {
             lc_mark_visitor_visit_started($visitorId);
         }
         $visitorName = $name;

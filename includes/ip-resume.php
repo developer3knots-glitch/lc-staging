@@ -126,6 +126,153 @@ function lc_visitor_for_current_ip($visitor, string $visitorUid, string $current
 }
 
 /**
+ * One visitor_uid is one person. Collapse races, then keep a unique key.
+ */
+function lc_ensure_visitor_uid_schema(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    try {
+        $db = lc_db();
+        $pending = true;
+        for ($i = 0; $i < 8 && $pending; $i++) {
+            $pending = lc_collapse_duplicate_visitor_uids(40);
+        }
+        if ($pending) {
+            return;
+        }
+        $has = $db->query("SHOW INDEX FROM visitors WHERE Column_name = 'visitor_uid' AND Non_unique = 0")->fetch();
+        if (!$has) {
+            $db->exec('ALTER TABLE visitors ADD UNIQUE KEY uniq_visitor_uid (visitor_uid)');
+        }
+        $done = true;
+    } catch (Throwable $e) {
+    }
+}
+
+/** @return bool true when more duplicate uids remain */
+function lc_collapse_duplicate_visitor_uids(int $limit = 40): bool
+{
+    $limit = max(1, min(100, $limit));
+    $db = lc_db();
+    $uids = $db->query("
+        SELECT visitor_uid
+        FROM visitors
+        WHERE visitor_uid IS NOT NULL AND TRIM(visitor_uid) <> ''
+        GROUP BY visitor_uid
+        HAVING COUNT(*) > 1
+        LIMIT {$limit}
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    if (!$uids) {
+        return false;
+    }
+    foreach ($uids as $uid) {
+        $stmt = $db->prepare('SELECT id FROM visitors WHERE visitor_uid = ? ORDER BY last_seen DESC, id DESC');
+        $stmt->execute([(string) $uid]);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        if (count($ids) < 2) {
+            continue;
+        }
+        $keep = $ids[0];
+        $drop = array_values(array_filter(array_slice($ids, 1)));
+        if ($keep < 1 || $drop === []) {
+            continue;
+        }
+        $ph = implode(',', array_fill(0, count($drop), '?'));
+        foreach (['conversations', 'visitor_page_views'] as $table) {
+            try {
+                $db->prepare("UPDATE {$table} SET visitor_id = ? WHERE visitor_id IN ({$ph})")
+                    ->execute(array_merge([$keep], $drop));
+            } catch (Throwable $e) {
+            }
+        }
+        try {
+            $db->prepare("DELETE FROM visitor_ip_history WHERE visitor_id IN ({$ph})")->execute($drop);
+        } catch (Throwable $e) {
+        }
+        $db->prepare("DELETE FROM visitors WHERE id IN ({$ph})")->execute($drop);
+    }
+
+    $more = $db->query("
+        SELECT visitor_uid
+        FROM visitors
+        WHERE visitor_uid IS NOT NULL AND TRIM(visitor_uid) <> ''
+        GROUP BY visitor_uid
+        HAVING COUNT(*) > 1
+        LIMIT 1
+    ")->fetchColumn();
+
+    return $more !== false && $more !== null;
+}
+
+/**
+ * Traffic list: one row per browser uid. Same uid from a double insert stays one row.
+ *
+ * @param list<array<string,mixed>> $rows
+ * @return list<array<string,mixed>>
+ */
+function lc_traffic_rows_one_per_uid(array $rows): array
+{
+    $best = [];
+    $order = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $uid = trim((string) ($row['visitor_uid'] ?? ''));
+        $key = $uid !== '' ? $uid : ('id:' . (int) ($row['visitor_id'] ?? 0));
+        if (!isset($best[$key])) {
+            $best[$key] = $row;
+            $order[] = $key;
+            continue;
+        }
+        $prevChat = (int) ($best[$key]['conversation_id'] ?? 0) > 0;
+        $thisChat = (int) ($row['conversation_id'] ?? 0) > 0;
+        if ($thisChat && !$prevChat) {
+            $best[$key] = $row;
+        }
+    }
+    $out = [];
+    foreach ($order as $key) {
+        $out[] = $best[$key];
+    }
+
+    return $out;
+}
+
+/**
+ * Insert a visitor. A parallel request with the same uid reuses the row that won.
+ *
+ * @param list<mixed> $params
+ * @return array{id:int,created:bool}
+ */
+function lc_insert_visitor_by_uid(string $visitorUid, string $sql, array $params): array
+{
+    lc_ensure_visitor_uid_schema();
+    $visitorUid = trim($visitorUid);
+    $db = lc_db();
+    try {
+        $db->prepare($sql)->execute($params);
+        $id = (int) $db->lastInsertId();
+        if ($id > 0) {
+            return ['id' => $id, 'created' => true];
+        }
+    } catch (Throwable $e) {
+        $message = $e->getMessage();
+        $duplicate = str_contains($message, '1062') || stripos($message, 'Duplicate') !== false;
+        if (!$duplicate) {
+            throw $e;
+        }
+    }
+    $stmt = $db->prepare('SELECT id FROM visitors WHERE visitor_uid = ? ORDER BY id ASC LIMIT 1');
+    $stmt->execute([$visitorUid]);
+
+    return ['id' => (int) ($stmt->fetchColumn() ?: 0), 'created' => false];
+}
+
+/**
  * Calendar day for IP+date inbox grouping (Y-m-d). Uses conversation started_at.
  */
 function lc_conversation_day_key(?string $startedAt): string

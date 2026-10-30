@@ -160,6 +160,9 @@ try {
     if (function_exists('lc_heal_visitor_loopback_ips')) {
         lc_heal_visitor_loopback_ips($rows);
     }
+    if (function_exists('lc_traffic_rows_one_per_uid')) {
+        $rows = lc_traffic_rows_one_per_uid($rows);
+    }
 
     $pageBrandByVisitor = [];
     $needBrand = [];

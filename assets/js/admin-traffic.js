@@ -462,7 +462,9 @@
     }
 
     function visitorKey(row) {
-        return String((row && (row.visitor_id || row.visitor_uid)) || '');
+        var uid = String((row && row.visitor_uid) || '');
+        if (uid) return 'u:' + uid;
+        return 'id:' + String((row && row.visitor_id) || '');
     }
 
     function filterKey() {
@@ -489,7 +491,7 @@
         var used = {};
         allSessionRows.forEach(function (row) {
             var key = visitorKey(row);
-            if (!key || !seenOnSite[key]) return;
+            if (!key || !seenOnSite[key] || used[key]) return;
             if (row.status === 'left' && freshMap[key]) return;
             used[key] = true;
             if (freshMap[key]) {

@@ -4,6 +4,8 @@
  * A pinned ?v= on the website does not freeze future widget updates.
  */
 (function () {
+    if (window.__LC_WIDGET_LOADER) return;
+    window.__LC_WIDGET_LOADER = true;
     var current = document.currentScript;
     if (!current || !current.src) return;
     var origin = String(current.src).replace(/\/widget\/embed\.js(?:\?.*)?$/i, '');
