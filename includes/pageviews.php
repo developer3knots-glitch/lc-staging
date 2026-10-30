@@ -49,11 +49,64 @@ function lc_ensure_visitor_presence_schema(): void
         if (!in_array('visit_started_at', $cols, true)) {
             lc_db()->exec('ALTER TABLE visitors ADD COLUMN visit_started_at DATETIME NULL DEFAULT NULL AFTER created_at');
         }
+        if (!in_array('return_known', $cols, true)) {
+            lc_db()->exec('ALTER TABLE visitors ADD COLUMN return_known TINYINT(1) NOT NULL DEFAULT 0');
+        }
         $seenIdx = lc_db()->query("SHOW INDEX FROM visitors WHERE Key_name = 'idx_visitors_last_seen'")->fetch();
         if (!$seenIdx) {
             lc_db()->exec('ALTER TABLE visitors ADD INDEX idx_visitors_last_seen (last_seen)');
         }
     } catch (Throwable $e) {
+    }
+}
+
+function lc_mark_visitor_return_known(int $visitorId): void
+{
+    if ($visitorId < 1) {
+        return;
+    }
+    lc_ensure_visitor_presence_schema();
+    try {
+        lc_db()->prepare('UPDATE visitors SET return_known = 1 WHERE id = ? AND return_known = 0')
+            ->execute([$visitorId]);
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Land/poll flag. A later visit on the same row, a remembered identity, or a
+ * row older than three minutes is a return. A row created this visit stays new.
+ *
+ * @param array<string, mixed> $row
+ */
+function lc_traffic_visitor_is_returning(array $row): bool
+{
+    if (!empty($row['return_known'])) {
+        return true;
+    }
+    $createdRaw = trim((string) ($row['visitor_created_at'] ?? ''));
+    $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
+    $createdTs = $createdRaw !== '' ? strtotime($createdRaw . ' UTC') : false;
+    $startedTs = $startedRaw !== '' ? strtotime($startedRaw . ' UTC') : false;
+    if ($createdTs !== false && $startedTs !== false && ($startedTs - $createdTs) >= 30) {
+        return true;
+    }
+
+    return $createdTs !== false && (time() - $createdTs) > 180;
+}
+
+function lc_visitor_return_known(int $visitorId): bool
+{
+    if ($visitorId < 1) {
+        return false;
+    }
+    lc_ensure_visitor_presence_schema();
+    try {
+        $stmt = lc_db()->prepare('SELECT return_known FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        return (int) $stmt->fetchColumn() === 1;
+    } catch (Throwable $e) {
+        return false;
     }
 }
 

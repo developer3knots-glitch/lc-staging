@@ -102,6 +102,7 @@ try {
             v.left_site_at,
             v.visit_started_at,
             v.created_at AS visitor_created_at,
+            v.return_known,
             c.id AS conversation_id,
             c.status AS conversation_status,
             c.brand_id AS conversation_brand_id,
@@ -448,7 +449,7 @@ try {
             'time_on_pages_seconds' => $timeSec,
             'time_on_pages_label' => lc_format_duration_label($timeSec) ?: '0s',
             'last_seen' => !empty($row['last_seen']) ? lc_to_iso8601($row['last_seen']) : null,
-            'returning' => !empty($row['visitor_created_at']) && strtotime((string) $row['visitor_created_at'] . ' UTC') !== false && (time() - strtotime((string) $row['visitor_created_at'] . ' UTC')) > 180,
+            'returning' => lc_traffic_visitor_is_returning($row),
             'chat_url' => $conversationId
                 ? lc_admin_url('chats', ['id' => (int) $conversationId])
                 : null,

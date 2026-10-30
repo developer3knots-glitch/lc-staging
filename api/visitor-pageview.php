@@ -49,6 +49,7 @@ try {
     $visitorUid = $ipBind['visitor_uid'];
     $visitorUidRotated = !empty($ipBind['rotated']);
     $isNewVisitor = false;
+    $returnKnown = false;
 
     if (!$visitor) {
         $storedIp = function_exists('lc_visitor_ip_for_storage') ? lc_visitor_ip_for_storage($ip) : $ip;
@@ -60,6 +61,12 @@ try {
         lc_mark_visitor_visit_started($visitorId);
         if (function_exists('lc_record_visitor_ip') && $ip !== '') {
             lc_record_visitor_ip($visitorId, $ip);
+        }
+        // Same browser after an IP change, or this IP/email already visited. Notification only.
+        $returnKnown = $visitorUidRotated
+            || (function_exists('lc_visitor_identity_seen_before') && lc_visitor_identity_seen_before($visitorId, $ip, $brandId));
+        if ($returnKnown && function_exists('lc_mark_visitor_return_known')) {
+            lc_mark_visitor_return_known($visitorId);
         }
     } else {
         $visitorId = (int) $visitor['id'];
@@ -290,8 +297,8 @@ try {
             'page_url' => $pageUrl,
             'page_path' => $pagePath,
             'notify' => $shouldNotify,
-            'is_new' => $isNewVisitor,
-            'returning' => !$isNewVisitor,
+            'is_new' => $isNewVisitor && !$returnKnown,
+            'returning' => !$isNewVisitor || $returnKnown,
         ]);
     }
 

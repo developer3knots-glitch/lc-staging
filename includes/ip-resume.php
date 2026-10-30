@@ -990,7 +990,90 @@ function lc_ensure_returning_visitor_schema(): void
 }
 
 /**
+ * Comparable forms of one address: raw, public IPv4, and IPv4-mapped IPv6.
+ *
+ * @return list<string>
+ */
+function lc_visitor_ip_match_list(string $ip): array
+{
+    $ip = trim($ip);
+    if ($ip === '' || !lc_ip_usable_for_identity($ip)) {
+        return [];
+    }
+    $list = [$ip];
+    if (function_exists('lc_valid_public_ipv4')) {
+        $v4 = lc_valid_public_ipv4($ip);
+        if ($v4 !== null) {
+            $list[] = $v4;
+        }
+    }
+    if (function_exists('lc_ipv4_from_any')) {
+        $mapped = lc_ipv4_from_any($ip);
+        if ($mapped !== null) {
+            $list[] = $mapped;
+        }
+    }
+    $identity = lc_identity_ip($ip);
+    if ($identity !== null) {
+        $list[] = $identity;
+    }
+
+    return array_values(array_unique($list));
+}
+
+/**
+ * Same browser already visited or chatted on this brand under this IP.
+ * Does not merge visitor rows. Used only to choose the notification.
+ */
+function lc_visitor_identity_seen_before(int $visitorId, string $ip, int $brandId): bool
+{
+    if ($visitorId < 1 || $brandId < 1) {
+        return false;
+    }
+    $ips = lc_visitor_ip_match_list($ip);
+    if ($ips === []) {
+        return false;
+    }
+    if (function_exists('lc_ensure_visitor_ipv4_schema')) {
+        lc_ensure_visitor_ipv4_schema();
+    }
+    if (function_exists('lc_ensure_conversation_client_ip_schema')) {
+        lc_ensure_conversation_client_ip_schema();
+    }
+    $ph = implode(',', array_fill(0, count($ips), '?'));
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT v.id
+            FROM visitors v
+            WHERE v.id <> ?
+              AND (v.ip_address IN ($ph) OR v.ipv4_address IN ($ph))
+              AND (
+                EXISTS (SELECT 1 FROM visitor_page_views pv WHERE pv.visitor_id = v.id AND pv.brand_id = ?)
+                OR EXISTS (SELECT 1 FROM conversations c WHERE c.visitor_id = v.id AND c.brand_id = ?)
+              )
+            LIMIT 1
+        ");
+        $stmt->execute(array_merge([$visitorId], $ips, $ips, [$brandId, $brandId]));
+        if ($stmt->fetchColumn()) {
+            return true;
+        }
+        $stmt = lc_db()->prepare("
+            SELECT c.id
+            FROM conversations c
+            WHERE c.brand_id = ? AND c.visitor_id <> ? AND c.client_ip IN ($ph)
+            LIMIT 1
+        ");
+        $stmt->execute(array_merge([$brandId, $visitorId], $ips));
+        return (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
  * Prior chats for same brand + usable IP and/or email (excluding current).
+ * IP match includes ipv4_address and the chat's saved client_ip, so an old
+ * IPv6 row and a later IPv4 visit still count as the same person.
  *
  * @return array{is_returning:bool,prior_count:int,match_by:string}
  */
@@ -1008,14 +1091,45 @@ function lc_detect_returning_visitor(string $ip, string $email, int $brandId, in
     $matchBy = '';
 
     if ($ipOk) {
-        $stmt = $db->prepare('
-            SELECT COUNT(*)
-            FROM conversations c
-            JOIN visitors v ON v.id = c.visitor_id
-            WHERE c.brand_id = ? AND c.id <> ? AND v.ip_address = ?
-        ');
-        $stmt->execute([$brandId, max(0, $excludeConversationId), $ip]);
-        $prior = (int) $stmt->fetchColumn();
+        $ips = lc_visitor_ip_match_list($ip);
+        if ($ips !== []) {
+            if (function_exists('lc_ensure_visitor_ipv4_schema')) {
+                lc_ensure_visitor_ipv4_schema();
+            }
+            if (function_exists('lc_ensure_conversation_client_ip_schema')) {
+                lc_ensure_conversation_client_ip_schema();
+            }
+            $ph = implode(',', array_fill(0, count($ips), '?'));
+            try {
+                $stmt = $db->prepare("
+                    SELECT COUNT(*)
+                    FROM conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    WHERE c.brand_id = ? AND c.id <> ?
+                      AND (
+                        v.ip_address IN ($ph)
+                        OR v.ipv4_address IN ($ph)
+                        OR c.client_ip IN ($ph)
+                      )
+                ");
+                $stmt->execute(array_merge(
+                    [$brandId, max(0, $excludeConversationId)],
+                    $ips,
+                    $ips,
+                    $ips
+                ));
+                $prior = (int) $stmt->fetchColumn();
+            } catch (Throwable $e) {
+                $stmt = $db->prepare('
+                    SELECT COUNT(*)
+                    FROM conversations c
+                    JOIN visitors v ON v.id = c.visitor_id
+                    WHERE c.brand_id = ? AND c.id <> ? AND v.ip_address = ?
+                ');
+                $stmt->execute([$brandId, max(0, $excludeConversationId), $ip]);
+                $prior = (int) $stmt->fetchColumn();
+            }
+        }
         if ($prior > 0) {
             $matchBy = 'ip';
         }
@@ -1120,8 +1234,16 @@ function lc_enrich_returning_visitor_flags(array $row): array
             }
         }
 
+        if (!$is && $visitorId > 0 && function_exists('lc_visitor_return_known') && lc_visitor_return_known($visitorId)) {
+            $is = true;
+            $prior = max($prior, 1);
+        }
+
         if ($is) {
             lc_mark_conversation_returning($cid, max(1, $prior));
+            if ($visitorId > 0 && function_exists('lc_mark_visitor_return_known')) {
+                lc_mark_visitor_return_known($visitorId);
+            }
         }
     }
 

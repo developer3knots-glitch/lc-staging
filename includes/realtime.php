@@ -794,6 +794,9 @@ function lc_realtime_publish_incoming_chat(int $conversationId, array $extra = [
         return;
     }
     $conv = lc_get_conversation($conversationId);
+    if (is_array($conv) && function_exists('lc_enrich_returning_visitor_flags')) {
+        $conv = lc_enrich_returning_visitor_flags($conv);
+    }
     $status = is_array($conv) ? (string) ($conv['status'] ?? '') : '';
     $allowActive = !empty($extra['allow_active']);
     if (!$conv || ($status !== 'waiting' && !($allowActive && $status === 'active'))) {
