@@ -32,8 +32,8 @@
             try {
                 var data = JSON.parse(xhr.responseText);
                 if (data && data.v) version = data.v;
-            } catch (e) {}
-        }
+        } catch (e) {}
+    }
         mount(version);
     };
     xhr.onerror = function () { mount(Date.now()); };

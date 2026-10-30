@@ -5101,10 +5101,11 @@ body.lc-avatar-modal-open {
 
 .lc-traffic-page {
     display: inline-block;
-    max-width: 420px;
-    overflow: visible;
-    white-space: normal;
-    word-break: break-all;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
     padding: 0.22rem 0.55rem;
     border-radius: 7px;
     background: #f1f5f9;
