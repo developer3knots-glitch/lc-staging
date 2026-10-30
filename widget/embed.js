@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 191;
+    var LC_WIDGET_BUILD = 192;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -671,12 +671,14 @@
     var widgetStylesReady = false;
     var widgetEntryReady = false;
     var widgetRevealed = false;
+    var bootHoldForChat = false;
+    var bootHistorySettled = false;
 
     function injectBootShield() {
         if (document.getElementById('lc-widget-boot')) return;
         var style = document.createElement('style');
         style.id = 'lc-widget-boot';
-        style.textContent = '#lc-widget-root.lcw-booting{visibility:hidden!important}#lc-widget-root.lcw-booting #lc-panel,#lc-widget-root.lcw-booting .lcw-teaser{animation:none!important}';
+        style.textContent = '#lc-widget-root.lcw-booting{visibility:hidden!important;opacity:0!important;pointer-events:none!important}#lc-widget-root.lcw-booting #lc-panel,#lc-widget-root.lcw-booting .lcw-teaser{animation:none!important;background:transparent!important}';
         (document.head || document.documentElement).appendChild(style);
     }
 
@@ -691,13 +693,35 @@
     }
 
     function chatResumePending() {
-        return !!(chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0));
+        return !!(bootHoldForChat || chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0));
+    }
+
+    function transcriptHasBubbles() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box || box.style.display === 'none') return false;
+        return !!box.querySelector('.lcw-msg, .lcw-msg-row, .lcw-system, .lcw-join-event, [data-msg-id]');
+    }
+
+    function chatViewIsShowing() {
+        var panel = document.getElementById('lc-panel');
+        if (!panel || !panel.classList.contains('lcw-chat-active')) return false;
+        if (panel.classList.contains('lcw-mode-idle') || panel.classList.contains('lcw-mode-prechat')) return false;
+        if (isIdleLandingVisible()) return false;
+        var box = document.getElementById('lc-panel-messages');
+        return !!(box && box.style.display !== 'none');
     }
 
     function tryRevealWidget() {
-        if (widgetRevealed || !widgetStylesReady || !widgetEntryReady || chatHistoryLoading || chatInitInFlight) return;
-        // An already-started chat must not flash the idle screen first.
-        if (isIdleLandingVisible() && (chatResumePending() || (parseInt(serverLiveConversationId, 10) || 0) > 0)) return;
+        if (widgetRevealed || !widgetStylesReady || chatHistoryLoading || chatInitInFlight) return;
+        // Existing chat: stay invisible until the transcript itself is on screen.
+        // Idle and the empty dark panel must never be the first thing the visitor sees.
+        if (chatResumePending()) {
+            if (!chatViewIsShowing()) return;
+            if (!transcriptHasBubbles() && !bootHistorySettled) return;
+            revealWidgetNow();
+            return;
+        }
+        if (!widgetEntryReady) return;
         revealWidgetNow();
     }
 
@@ -1194,7 +1218,7 @@
             }
         });
 
-        // Panel opens hidden. Idle is painted only when settings say there is no chat.
+        // Panel stays invisible until the final screen is ready.
         openPanelInstantIdle();
         setTimeout(function () {
             widgetStylesReady = true;
@@ -1202,11 +1226,15 @@
         }, 2200);
         setTimeout(function () {
             widgetStylesReady = true;
-            if (!widgetEntryReady && !chatResumePending()) {
-                widgetEntryReady = true;
+            if (chatResumePending()) {
+                if (!chatInitInFlight && !chatHistoryLoading && chatViewIsShowing()) {
+                    bootHistorySettled = true;
+                }
+                tryRevealWidget();
+                return;
             }
+            if (!widgetEntryReady) widgetEntryReady = true;
             tryRevealWidget();
-            if (!widgetRevealed && !chatResumePending() && !chatInitInFlight) revealWidgetNow();
         }, 8000);
         scheduleWelcomeEngagement();
         loadWidgetSettings();
@@ -1319,6 +1347,9 @@
         conversationId = null;
         chatToken = '';
         lastMsgId = 0;
+        pendingResumeConvId = null;
+        bootHoldForChat = false;
+        bootHistorySettled = true;
         persistConversationId(null);
         persistChatToken('');
         if (pollTimer) {
@@ -1330,6 +1361,7 @@
             if (errorMsg && errorMsg !== 'Pre-chat form required') {
                 showPrechatError(errorMsg);
             }
+            markWidgetViewReady();
             return;
         }
         showChatView();
@@ -1337,6 +1369,7 @@
         if (errorMsg) {
             appendMessage({ sender_type: 'system', message: errorMsg });
         }
+        markWidgetViewReady();
     }
 
     function isWidgetIpBlockedError(msgOrData) {
@@ -1976,7 +2009,7 @@
     }
 
     function showIdleIntro() {
-        if (chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0)) {
+        if (bootHoldForChat || chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0) || (parseInt(serverLiveConversationId, 10) || 0)) {
             return;
         }
         var panel = document.getElementById('lc-panel');
@@ -3298,7 +3331,7 @@
         var serverIdNow = parseInt(serverLiveConversationId, 10) || 0;
         var openIdNow = parseInt(conversationId, 10) || 0;
         var keepActiveThread = liveStatusNow === 'active' && (serverIdNow > 0 || openIdNow > 0);
-        if (agentsAreOffline() && !keepActiveThread) {
+        if (agentsAreOffline() && !keepActiveThread && !bootHoldForChat && !chatInitInFlight && !(parseInt(getStoredConversationId(), 10) || 0)) {
             entryRouted = true;
             var thanksNow = readAwayThanksId();
             if (thanksNow > 0 && serverIdNow === thanksNow && liveStatusNow === 'waiting') {
@@ -3353,6 +3386,7 @@
 
         // New IP / rotated identity → never reopen someone else's (or previous IP) closed screen
         if (data.visitor_uid_rotated) {
+            bootHoldForChat = false;
             pendingResumeConvId = null;
             serverLiveConversationId = 0;
             serverLiveConversationStatus = '';
@@ -3384,24 +3418,29 @@
         // Already-started chat (waiting queue OR active with agent) → open thread now.
         if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = serverId;
+            bootHoldForChat = true;
             initChat({ resumeConversationId: serverId });
-            markWidgetViewReady();
             return;
         }
 
         // Soft-closed: ONLY when server confirms THIS visitor's closed ticket today
         if (serverId > 0 && liveStatus === 'closed') {
             pendingResumeConvId = serverId;
+            bootHoldForChat = true;
             initChat({ resumeConversationId: serverId });
-            markWidgetViewReady();
             return;
         }
 
         // Stored id without server confirmation: resume only if server echoed same waiting/active
         if (resumeId && serverId === resumeId && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = resumeId;
+            bootHoldForChat = true;
             initChat({ resumeConversationId: resumeId });
-            markWidgetViewReady();
+            return;
+        }
+
+        // A resume is already loading behind the boot shield. Do not paint idle over it.
+        if (bootHoldForChat || chatInitInFlight) {
             return;
         }
 
@@ -3606,6 +3645,16 @@
 
     function showIdleChatReady(options) {
         options = options || {};
+        var keepResume = !!options.keepResume;
+        var keepResumeId = keepResume ? (pendingResumeConvId || serverLiveConversationId || getStoredConversationId() || null) : null;
+        if (keepResumeId || bootHoldForChat || chatInitInFlight) {
+            if (keepResumeId) {
+                pendingResumeConvId = keepResumeId;
+                bootHoldForChat = true;
+                initChat({ resumeConversationId: keepResumeId });
+            }
+            return;
+        }
         if (agentsAreOffline() && !(parseInt(conversationId, 10) > 0)) {
             showAwayForm();
             return;
@@ -3615,13 +3664,6 @@
             return;
         }
         if (!options.force && entryRouted && !isIdleLandingVisible()) {
-            return;
-        }
-        var keepResume = !!options.keepResume;
-        var keepResumeId = keepResume ? (pendingResumeConvId || serverLiveConversationId || getStoredConversationId() || null) : null;
-        if (keepResumeId) {
-            pendingResumeConvId = keepResumeId;
-            initChat({ resumeConversationId: keepResumeId });
             return;
         }
         chatClosed = false;
@@ -4103,10 +4145,13 @@
         if (!autoOpenOnLoad || didAutoOpenOnLoad || isOpen) return;
         didAutoOpenOnLoad = true;
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
-        if (storedChat > 0) pendingResumeConvId = storedChat;
-        // Do not paint the idle screen here. Settings will open the chat
-        // directly when one is already started, or the idle screen when it is not.
+        if (storedChat > 0) {
+            pendingResumeConvId = storedChat;
+            bootHoldForChat = true;
+        }
+        // Do not paint idle or an empty panel. A stored chat resumes while hidden.
         openPanel({ silenceFlow: true });
+        if (storedChat > 0) initChat({ resumeConversationId: storedChat });
     }
 
     function welcomeSeenKey() {
@@ -5163,10 +5208,9 @@
             try { persistLastMsgId(0); } catch (eLm) {}
         }
 
-        // Paint transcript from widget-init immediately (no blank wait for poll/WS)
+        // Paint transcript before the boot shield can lift. An empty dark panel is the black flash.
         var bootMsgs = Array.isArray(data.messages) ? data.messages : [];
         if (bootMsgs.length) {
-            hideChatLoading();
             bootMsgs.forEach(function (m) {
                 try {
                     appendMessage(m, {
@@ -5177,10 +5221,13 @@
                 } catch (eBoot) {}
             });
             pendingHistoryWipe = false;
+            if (transcriptHasBubbles()) bootHistorySettled = true;
         }
 
         var isResume = !!(options.resumeConversationId);
-        if (isResume && options.fromProactiveInvite && !messagesNeedHistoryReload()) {
+        if (isResume && transcriptHasBubbles()) {
+            hideChatLoading();
+        } else if (isResume && options.fromProactiveInvite && !messagesNeedHistoryReload()) {
             // Seeded invite transcript already painted — don't flash blank loading
             pendingResumeStatus = null;
             hideChatLoading();
@@ -6815,6 +6862,9 @@
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
                 if (data.reactions) applyWidgetReactionSnapshot(data.reactions);
+                if (isHistoryLoad && (transcriptHasBubbles() || !historyRetryTimer)) {
+                    bootHistorySettled = true;
+                }
                 hideChatLoading();
                 if (viewing === '1') {
                     // Poll already marked read server-side when viewing=1; nudge again if needed
