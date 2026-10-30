@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 196;
+    var LC_WIDGET_BUILD = 197;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5903,7 +5903,7 @@
             reportPublicIpv4(publicIpv4);
             return;
         }
-        if (ipv4CaptureTries >= 6) {
+        if (ipv4CaptureTries >= 40) {
             return;
         }
         ipv4CaptureTries += 1;
@@ -5918,8 +5918,8 @@
                 return;
             }
             if (i >= urls.length) {
-                if (ipv4CaptureTries < 6) {
-                    setTimeout(capturePublicIpv4, 5000);
+                if (ipv4CaptureTries < 40) {
+                    setTimeout(capturePublicIpv4, 15000);
                 }
                 return;
             }

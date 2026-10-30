@@ -123,6 +123,57 @@ function lc_mark_visitor_visit_started(int $visitorId): void
     }
 }
 
+/**
+ * A long Time on site that jumped back onto an old visit. The current burst is
+ * the first page opened in the last 20 minutes, when the page before that is
+ * at least 5 minutes older. Continuous browsing is left alone.
+ *
+ * @param list<int> $visitorIds
+ * @return array<int,int> visitor id => unix start of the current burst
+ */
+function lc_traffic_current_visit_bursts(array $visitorIds): array
+{
+    $visitorIds = array_values(array_unique(array_filter(array_map('intval', $visitorIds))));
+    if (!$visitorIds) {
+        return [];
+    }
+    lc_ensure_page_views_schema();
+    $marks = implode(',', array_fill(0, count($visitorIds), '?'));
+    try {
+        $stmt = lc_db()->prepare("
+            SELECT visitor_id,
+                   MIN(CASE WHEN visited_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 MINUTE) THEN visited_at END) AS burst,
+                   MAX(CASE WHEN visited_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 MINUTE) THEN visited_at END) AS older
+            FROM visitor_page_views
+            WHERE visitor_id IN ({$marks})
+            GROUP BY visitor_id
+        ");
+        $stmt->execute($visitorIds);
+    } catch (Throwable $e) {
+        return [];
+    }
+    $out = [];
+    foreach ($stmt->fetchAll() as $hit) {
+        $id = (int) ($hit['visitor_id'] ?? 0);
+        $burstRaw = trim((string) ($hit['burst'] ?? ''));
+        if ($id < 1 || $burstRaw === '') {
+            continue;
+        }
+        $burstTs = strtotime($burstRaw . ' UTC');
+        if ($burstTs === false) {
+            continue;
+        }
+        $olderRaw = trim((string) ($hit['older'] ?? ''));
+        $olderTs = $olderRaw !== '' ? strtotime($olderRaw . ' UTC') : false;
+        if ($olderTs !== false && ($burstTs - $olderTs) < 300) {
+            continue;
+        }
+        $out[$id] = $burstTs;
+    }
+
+    return $out;
+}
+
 function lc_mark_visitor_on_site(int $visitorId): void
 {
     if ($visitorId < 1) {
@@ -130,13 +181,13 @@ function lc_mark_visitor_on_site(int $visitorId): void
     }
     lc_ensure_visitor_presence_schema();
     try {
-        // A reload sets Left and comes back within a second. Keep the same
-        // visit clock. A real return after they have been gone restarts it.
+        // A reload sets Left and comes back within a few seconds. Keep the same
+        // visit clock. Coming back after 5 minutes is a new visit.
         lc_db()->prepare('
             UPDATE visitors
             SET visit_started_at = IF(
                     left_site_at IS NOT NULL
-                    AND left_site_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND),
+                    AND left_site_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 SECOND),
                     UTC_TIMESTAMP(),
                     visit_started_at
                 ),

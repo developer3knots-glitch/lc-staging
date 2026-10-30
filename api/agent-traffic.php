@@ -281,6 +281,20 @@ try {
         }
     }
 
+    $visitBursts = [];
+    if (function_exists('lc_traffic_current_visit_bursts')) {
+        $longVisitIds = [];
+        foreach ($rows as $row) {
+            $vid = (int) ($row['visitor_id'] ?? 0);
+            $startedRaw = trim((string) ($row['visit_started_at'] ?? ''));
+            $startedTs = $startedRaw !== '' ? strtotime($startedRaw . ' UTC') : false;
+            if ($vid > 0 && $startedTs !== false && (time() - $startedTs) > 1200) {
+                $longVisitIds[] = $vid;
+            }
+        }
+        $visitBursts = lc_traffic_current_visit_bursts($longVisitIds);
+    }
+
     $visitors = [];
     $supervisedIds = [];
     if (function_exists('lc_ensure_supervisors_schema')) {
@@ -373,6 +387,15 @@ try {
             }
         }
         if ($startedTs !== false) {
+            $visitorIdForBurst = (int) ($row['visitor_id'] ?? 0);
+            if ($visitorIdForBurst > 0 && isset($visitBursts[$visitorIdForBurst]) && $visitBursts[$visitorIdForBurst] > $startedTs + 300) {
+                $startedTs = $visitBursts[$visitorIdForBurst];
+                try {
+                    $db->prepare('UPDATE visitors SET visit_started_at = ? WHERE id = ?')
+                        ->execute([gmdate('Y-m-d H:i:s', $startedTs), $visitorIdForBurst]);
+                } catch (Throwable $e) {
+                }
+            }
             $timeSec = max(0, $endTs - $startedTs);
         } else {
             $timeSec = $onSite ? $openPage : 0;

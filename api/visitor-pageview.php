@@ -112,14 +112,13 @@ try {
                 'ignored_stale' => true,
             ]);
         }
-        lc_mark_visitor_on_site($visitorId);
-        $presenceAway = true;
         if (!$isNewVisitor && $presencePrevSeen) {
             $presencePrevTs = strtotime((string) $presencePrevSeen . ' UTC');
-            if ($presencePrevTs !== false && (time() - $presencePrevTs) < 90 && !$presenceWasLeft) {
-                $presenceAway = false;
+            if ($presencePrevTs !== false && (time() - $presencePrevTs) >= 300 && function_exists('lc_mark_visitor_visit_started')) {
+                lc_mark_visitor_visit_started($visitorId);
             }
         }
+        lc_mark_visitor_on_site($visitorId);
         if ($isNewVisitor) {
             lc_mark_visitor_visit_started($visitorId);
         }
@@ -263,6 +262,13 @@ try {
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
     }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
+    if (!$isNewVisitor && $prevLastSeen) {
+        $prevTs = strtotime((string) $prevLastSeen . ' UTC');
+        // Quiet for 5 minutes, then a new hit: this is a new visit, not the old clock.
+        if ($prevTs !== false && (time() - $prevTs) >= 300 && function_exists('lc_mark_visitor_visit_started')) {
+            lc_mark_visitor_visit_started($visitorId);
+        }
+    }
     lc_mark_visitor_on_site($visitorId);
     if ($clientTs > 0 && function_exists('lc_note_visitor_presence_ts')) {
         lc_note_visitor_presence_ts($visitorId, $clientTs);

@@ -218,7 +218,7 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
     $ip = trim($ip);
     $userAgent = trim($userAgent);
     $exceptUid = trim($exceptUid);
-    if ($ip === '' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
+    if ($ip === '' || $ip === '154.57.197.92' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
         return null;
     }
     try {
@@ -285,7 +285,7 @@ function lc_traffic_collapse_browser_twins(array $rows, array $pageBrandByVisito
             $vid = (int) ($row['visitor_id'] ?? 0);
             $brand = (int) ($pageBrandByVisitor[$vid]['id'] ?? 0);
         }
-        if ($ip === '' || $ua === '' || $brand < 1) {
+        if ($ip === '' || $ip === '154.57.197.92' || $ua === '' || $brand < 1) {
             $loose[] = $row;
             continue;
         }
