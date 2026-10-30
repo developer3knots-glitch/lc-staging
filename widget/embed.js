@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 189;
+    var LC_WIDGET_BUILD = 190;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -668,8 +668,52 @@
         sessionStorage.removeItem(RELOAD_FLAG_KEY);
     }
 
+    var widgetStylesReady = false;
+    var widgetEntryReady = false;
+    var widgetRevealed = false;
+
+    function injectBootShield() {
+        if (document.getElementById('lc-widget-boot')) return;
+        var style = document.createElement('style');
+        style.id = 'lc-widget-boot';
+        style.textContent = '#lc-widget-root.lcw-booting{visibility:hidden!important}#lc-widget-root.lcw-booting #lc-panel,#lc-widget-root.lcw-booting .lcw-teaser{animation:none!important}';
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    function markWidgetStylesReady() {
+        widgetStylesReady = true;
+        tryRevealWidget();
+    }
+
+    function markWidgetViewReady() {
+        widgetEntryReady = true;
+        tryRevealWidget();
+    }
+
+    function tryRevealWidget() {
+        if (widgetRevealed || !widgetStylesReady || !widgetEntryReady || chatHistoryLoading) return;
+        revealWidgetNow();
+    }
+
+    function revealWidgetNow() {
+        if (widgetRevealed) return;
+        var root = document.getElementById('lc-widget-root');
+        if (!root) return;
+        widgetRevealed = true;
+        var panel = document.getElementById('lc-panel');
+        var teaser = document.getElementById('lc-teaser');
+        if (panel) panel.style.animation = 'none';
+        if (teaser) teaser.style.animation = 'none';
+        root.classList.remove('lcw-booting');
+        if (!isOpen && panel) panel.style.animation = '';
+    }
+
     function injectStyles() {
-        if (document.getElementById('lc-widget-styles')) return;
+        injectBootShield();
+        if (document.getElementById('lc-widget-styles')) {
+            markWidgetStylesReady();
+            return;
+        }
         var font = document.createElement('link');
         font.rel = 'stylesheet';
         font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
@@ -678,6 +722,8 @@
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
         link.href = siteUrl + '/assets/css/widget-premium.css?v=78';
+        link.onload = markWidgetStylesReady;
+        link.onerror = markWidgetStylesReady;
         document.head.appendChild(link);
     }
 
@@ -737,6 +783,7 @@
         injectStyles();
         var root = document.createElement('div');
         root.id = 'lc-widget-root';
+        root.className = 'lcw-booting';
         root.innerHTML =
             '<div id="lc-teaser" class="lcw-teaser" style="display:none" role="button" tabindex="0">' +
                 '<button type="button" class="lcw-teaser-close" id="lc-teaser-close" aria-label="Dismiss">&times;</button>' +
@@ -1141,8 +1188,19 @@
             }
         });
 
-        // Maximize immediately — don't wait for settings/access network round-trips
+        // Maximize immediately — don't wait for settings/access network round-trips.
+        // The root stays hidden until styles and the first real screen are ready.
         openPanelInstantIdle();
+        setTimeout(function () {
+            widgetStylesReady = true;
+            widgetEntryReady = true;
+            if (!chatHistoryLoading) tryRevealWidget();
+        }, 2200);
+        setTimeout(function () {
+            widgetStylesReady = true;
+            widgetEntryReady = true;
+            revealWidgetNow();
+        }, 4000);
         scheduleWelcomeEngagement();
         loadWidgetSettings();
         startSettingsSync();
@@ -3240,13 +3298,18 @@
             }
             scheduleAutoOpenOnLoad();
             requestBrowserGeo();
+            markWidgetViewReady();
             return;
         }
         // First successful route wins — later settings fetches must not blink form ↔ idle.
         // Also: user already clicked Let's chat / started compose — never reset.
-        if (entryRouted) return;
+        if (entryRouted) {
+            markWidgetViewReady();
+            return;
+        }
         if (!isIdleLandingVisible() && (conversationId || chatInitInFlight || chatComposerActive())) {
             entryRouted = true;
+            markWidgetViewReady();
             return;
         }
         entryRouted = true;
@@ -3304,6 +3367,7 @@
             && serverId === thanksId && liveStatus === 'waiting') {
             showAwayThanks();
             scheduleAutoOpenOnLoad();
+            markWidgetViewReady();
             return;
         }
 
@@ -3311,6 +3375,7 @@
         if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = serverId;
             initChat({ resumeConversationId: serverId });
+            markWidgetViewReady();
             return;
         }
 
@@ -3318,6 +3383,7 @@
         if (serverId > 0 && liveStatus === 'closed') {
             pendingResumeConvId = serverId;
             initChat({ resumeConversationId: serverId });
+            markWidgetViewReady();
             return;
         }
 
@@ -3325,6 +3391,7 @@
         if (resumeId && serverId === resumeId && (liveStatus === 'active' || liveStatus === 'waiting')) {
             pendingResumeConvId = resumeId;
             initChat({ resumeConversationId: resumeId });
+            markWidgetViewReady();
             return;
         }
 
@@ -3343,6 +3410,7 @@
             showAwayForm();
             scheduleAutoOpenOnLoad();
             requestBrowserGeo();
+            markWidgetViewReady();
             return;
         }
 
@@ -3351,11 +3419,13 @@
                 showIdleChatReady({ keepResume: true });
                 scheduleAutoOpenOnLoad();
                 requestBrowserGeo();
+                markWidgetViewReady();
                 return;
             }
             showPrechatForm(true);
             scheduleAutoOpenOnLoad();
             requestBrowserGeo();
+            markWidgetViewReady();
             return;
         }
 
@@ -3363,6 +3433,7 @@
         scheduleAutoOpenOnLoad();
         scheduleWelcomeEngagement();
         requestBrowserGeo();
+        markWidgetViewReady();
     }
 
     /**
@@ -3891,7 +3962,10 @@
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
-        if (panel) panel.style.display = 'none';
+        if (panel) {
+            panel.style.display = 'none';
+            panel.style.animation = '';
+        }
         if (bubble) bubble.classList.remove('lcw-open');
         if (root) root.classList.remove('lcw-panel-open');
         hideHeadMenu();
@@ -5511,6 +5585,7 @@
                 try { node.remove(); } catch (eRem) {}
             });
         } catch (eAny) {}
+        tryRevealWidget();
         if (pendingResumeStatus) {
             var st = pendingResumeStatus;
             pendingResumeStatus = null;
