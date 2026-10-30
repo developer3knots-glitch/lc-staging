@@ -21,6 +21,9 @@ if (function_exists('lc_ensure_visitor_phone_schema')) {
 if (function_exists('lc_ensure_visitor_geo_schema')) {
     lc_ensure_visitor_geo_schema();
 }
+if (function_exists('lc_ensure_visitor_ipv4_schema')) {
+    lc_ensure_visitor_ipv4_schema();
+}
 if (function_exists('lc_ensure_ticket_schema')) {
     lc_ensure_ticket_schema();
 }
@@ -93,7 +96,7 @@ try {
     }
 
     $visitorStmt = $db->prepare('
-        SELECT id, name, email, phone, ip_address, country, user_agent, page_url, last_seen, created_at,
+        SELECT id, name, email, phone, ip_address, ipv4_address, country, user_agent, page_url, last_seen, created_at,
                geo_city, geo_region, geo_lat, geo_lon, geo_source
         FROM visitors
         WHERE id = ?
@@ -180,7 +183,18 @@ try {
             'visitor_geo_lon' => $visitor['geo_lon'] ?? null,
             'geo_source' => $visitor['geo_source'] ?? '',
         ])
-        : ['label' => (string) ($visitor['country'] ?? ''), 'lat' => null, 'lon' => null, 'source' => 'ip'];
+        : ['label' => (string) ($visitor['country'] ?? ''), 'city' => '', 'region' => '', 'country' => (string) ($visitor['country'] ?? ''), 'lat' => null, 'lon' => null, 'source' => 'ip'];
+    $placeMissing = trim((string) ($geo['city'] ?? '')) === '' || trim((string) ($geo['region'] ?? '')) === '';
+    if ($placeMissing && function_exists('lc_refresh_visitor_geo')) {
+        $geoIp = trim((string) ($visitor['ipv4_address'] ?? ''));
+        if ($geoIp === '') {
+            $geoIp = trim((string) ($visitor['ip_address'] ?? ''));
+        }
+        $fresh = lc_refresh_visitor_geo($visitorId, $geoIp);
+        if (trim((string) ($fresh['label'] ?? '')) !== '' && strcasecmp((string) $fresh['label'], 'Unknown') !== 0) {
+            $geo = $fresh;
+        }
+    }
 
     $name = trim((string) ($visitor['name'] ?? ''));
     if ($name === '') {

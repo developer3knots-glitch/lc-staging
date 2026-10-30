@@ -119,9 +119,8 @@ try {
             } elseif (function_exists('lc_visitor_engagement_status')) {
                 $formattedConv['visitor_presence'] = lc_visitor_engagement_status($conv);
             }
-            // Use stored geo only — never block chat open on external IP lookups.
             if ($visitorId > 0 && function_exists('lc_visitor_geo_payload')) {
-                $formattedConv['visitor_geo'] = lc_visitor_geo_payload([
+                $geo = lc_visitor_geo_payload([
                     'visitor_country' => $conv['visitor_country'] ?? '',
                     'visitor_geo_city' => $conv['visitor_geo_city'] ?? null,
                     'visitor_geo_region' => $conv['visitor_geo_region'] ?? null,
@@ -129,6 +128,18 @@ try {
                     'visitor_geo_lon' => $conv['visitor_geo_lon'] ?? null,
                     'geo_source' => $conv['visitor_geo_source'] ?? null,
                 ]);
+                $placeMissing = trim((string) ($geo['city'] ?? '')) === '' || trim((string) ($geo['region'] ?? '')) === '';
+                if ($placeMissing && function_exists('lc_refresh_visitor_geo')) {
+                    $geoIp = trim((string) ($conv['visitor_ipv4'] ?? ''));
+                    if ($geoIp === '') {
+                        $geoIp = trim((string) ($conv['visitor_ip'] ?? ''));
+                    }
+                    $fresh = lc_refresh_visitor_geo($visitorId, $geoIp);
+                    if (trim((string) ($fresh['label'] ?? '')) !== '' && strcasecmp((string) $fresh['label'], 'Unknown') !== 0) {
+                        $geo = $fresh;
+                    }
+                }
+                $formattedConv['visitor_geo'] = $geo;
             }
             return $formattedConv;
         })(),

@@ -1621,12 +1621,24 @@ function lc_ensure_visitor_geo_schema(): void
         'geo_lat DECIMAL(10,7) NULL',
         'geo_lon DECIMAL(10,7) NULL',
         'geo_source VARCHAR(16) NULL',
+        'geo_checked_at DATETIME NULL',
     ] as $def) {
         try {
             $pdo->exec('ALTER TABLE visitors ADD COLUMN ' . $def);
         } catch (Throwable $e) {
         }
     }
+}
+
+function lc_visitor_place_label(array $row): string
+{
+    $geo = lc_visitor_geo_payload($row);
+    $label = trim((string) ($geo['label'] ?? ''));
+    if ($label === '' || strcasecmp($label, 'Unknown') === 0) {
+        $label = trim((string) ($row['visitor_country'] ?? $row['country'] ?? ''));
+    }
+
+    return $label;
 }
 
 function lc_geo_text_is_english(string $text): bool
@@ -1770,7 +1782,7 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     }
 
     if ($row === null) {
-        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source, ip_address FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT country, geo_city, geo_region, geo_lat, geo_lon, geo_source, geo_checked_at, ip_address, ipv4_address FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $row = $stmt->fetch() ?: [];
     }
@@ -1788,9 +1800,20 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     if ($geoSource === 'browser' && $payload['lat'] !== null && $payload['lon'] !== null) {
         return $payload;
     }
-    // Do not permanently freeze wrong IP-city guesses — re-resolve below when source is IP.
+    $countryOk = $payload['country'] !== '' && strcasecmp($payload['country'], 'Unknown') !== 0;
+    if ($payload['city'] !== '' && $payload['region'] !== '' && $countryOk) {
+        return $payload;
+    }
+    $checkedRaw = trim((string) ($row['geo_checked_at'] ?? ''));
+    $checkedTs = $checkedRaw !== '' ? strtotime($checkedRaw . ' UTC') : false;
+    if ($checkedTs !== false && (time() - $checkedTs) < 180) {
+        return $payload;
+    }
 
     $ip = trim($ip);
+    if (($ip === '' || (function_exists('lc_valid_public_ipv4') && !lc_valid_public_ipv4($ip))) && !empty($row['ipv4_address'])) {
+        $ip = trim((string) $row['ipv4_address']);
+    }
     if ($ip === '' && !empty($row['ip_address'])) {
         $ip = trim((string) $row['ip_address']);
     }
@@ -1804,6 +1827,11 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
     $geo = lc_resolve_geo_full($ip);
     // Empty Unknown only — still persist country-only results so stale Lahore/Karachi pins clear.
     if (($geo['label'] ?? '') === 'Unknown' && ($geo['city'] ?? '') === '' && ($geo['country'] ?? '') === 'Unknown') {
+        try {
+            lc_db()->prepare('UPDATE visitors SET geo_checked_at = UTC_TIMESTAMP() WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')')
+                ->execute([$visitorId]);
+        } catch (Throwable $e) {
+        }
         return $payload;
     }
 
@@ -1812,19 +1840,33 @@ function lc_refresh_visitor_geo(int $visitorId, string $ip, ?array $row = null):
         $countryStore .= ' (' . $geo['country_code'] . ')';
     }
 
-    // Always refresh IP guesses (never freeze a wrong Lahore/Karachi pin), but never overwrite GPS.
+    // Fill city, state, and country. Never wipe a saved place with a blank lookup.
+    $hasLat = $geo['lat'] !== null ? 1 : 0;
+    $hasLon = $geo['lon'] !== null ? 1 : 0;
     $upd = lc_db()->prepare('
         UPDATE visitors
-        SET geo_city = ?, geo_region = ?, geo_lat = ?, geo_lon = ?, geo_source = ?,
-            country = CASE WHEN country IS NULL OR country = "" OR country = "Unknown" THEN ? ELSE country END
+        SET geo_city = COALESCE(NULLIF(?, ""), geo_city),
+            geo_region = COALESCE(NULLIF(?, ""), geo_region),
+            geo_lat = IF(? = 1, ?, geo_lat),
+            geo_lon = IF(? = 1, ?, geo_lon),
+            geo_source = ?,
+            geo_checked_at = UTC_TIMESTAMP(),
+            country = CASE
+                WHEN ? <> "" AND ? NOT IN ("Unknown", "Local") THEN ?
+                ELSE country
+            END
         WHERE id = ? AND (geo_source IS NULL OR geo_source <> \'browser\')
     ');
     $upd->execute([
-        $geo['city'] !== '' ? $geo['city'] : null,
-        $geo['region'] !== '' ? $geo['region'] : null,
-        $geo['lat'],
-        $geo['lon'],
+        $geo['city'],
+        $geo['region'],
+        $hasLat,
+        $hasLat ? $geo['lat'] : 0,
+        $hasLon,
+        $hasLon ? $geo['lon'] : 0,
         'ip',
+        $countryStore,
+        $countryStore,
         $countryStore,
         $visitorId,
     ]);

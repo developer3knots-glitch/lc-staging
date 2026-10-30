@@ -4503,9 +4503,11 @@
                 html += '<span class="is-ip"><i class="ti ti-world"></i> <span>' + esc(chipIp) + '</span>';
                 html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(chipIp) + '" aria-label="Copy IP"><i class="ti ti-copy"></i></button></span>';
             }
-            if (c && c.visitor_country) {
-                html += '<span class="is-country"><i class="ti ti-map-pin"></i> <span>' + esc(c.visitor_country) + '</span>';
-                html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(c.visitor_country) + '" aria-label="Copy location"><i class="ti ti-copy"></i></button></span>';
+            var placeLabel = (c && c.visitor_geo && c.visitor_geo.label) ? String(c.visitor_geo.label).trim() : '';
+            if (!placeLabel && c && c.visitor_country) placeLabel = String(c.visitor_country).trim();
+            if (placeLabel && !/^unknown$/i.test(placeLabel)) {
+                html += '<span class="is-country"><i class="ti ti-map-pin"></i> <span>' + esc(placeLabel) + '</span>';
+                html += '<button type="button" class="lc-meta-copy" data-copy="' + esc(placeLabel) + '" aria-label="Copy location"><i class="ti ti-copy"></i></button></span>';
             }
             if (visitorDetailsEl.dataset.paint !== html) {
                 visitorDetailsEl.dataset.paint = html;

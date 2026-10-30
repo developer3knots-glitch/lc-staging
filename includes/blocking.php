@@ -231,26 +231,26 @@ function lc_resolve_geo_full(string $ip): array
 
     $encoded = urlencode($ip);
     $candidates = [];
-
-    $ipApi = lc_http_get_json('http://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon');
-    if ($ipApi) {
-        $payload = lc_geo_payload_from_ip_api($ipApi);
-        if ($payload) {
-            $candidates[] = $payload;
+    $sources = [
+        ['http://ip-api.com/json/' . $encoded . '?fields=status,country,countryCode,city,regionName,lat,lon', 'lc_geo_payload_from_ip_api'],
+        ['https://ipwho.is/' . $encoded, 'lc_geo_payload_from_ipwho'],
+        ['https://freeipapi.com/api/json/' . $encoded, 'lc_geo_payload_from_freeipapi'],
+    ];
+    foreach ($sources as $source) {
+        $raw = lc_http_get_json($source[0], 2.0);
+        if (!$raw) {
+            continue;
         }
-    }
-    $ipWho = lc_http_get_json('https://ipwho.is/' . $encoded);
-    if ($ipWho) {
-        $payload = lc_geo_payload_from_ipwho($ipWho);
-        if ($payload) {
-            $candidates[] = $payload;
+        $payload = $source[1]($raw);
+        if (!$payload) {
+            continue;
         }
-    }
-    $freeIp = lc_http_get_json('https://freeipapi.com/api/json/' . $encoded);
-    if ($freeIp) {
-        $payload = lc_geo_payload_from_freeipapi($freeIp);
-        if ($payload) {
-            $candidates[] = $payload;
+        $candidates[] = $payload;
+        $city = trim((string) ($payload['city'] ?? ''));
+        $region = trim((string) ($payload['region'] ?? ''));
+        $country = trim((string) ($payload['country'] ?? ''));
+        if ($city !== '' && $region !== '' && $country !== '' && strcasecmp($country, 'Unknown') !== 0) {
+            break;
         }
     }
 
@@ -265,7 +265,7 @@ function lc_resolve_geo_full(string $ip): array
 }
 
 /**
- * Majority city vote across providers. Disagreement → country-only (no fake street pin).
+ * Majority city vote across providers. If they disagree, keep the fullest city, state, and country.
  *
  * @param list<array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}> $candidates
  * @return array{country:string,country_code:string,city:string,region:string,lat:?float,lon:?float,label:string}|null
@@ -315,37 +315,68 @@ function lc_pick_best_geo_payload_multi(array $candidates): ?array
         return $pick;
     }
 
-    // Providers disagree (e.g. Lahore vs Karachi on same ISP block).
-    // Keep country/region only — do not invent a neighborhood pin.
-    $base = $candidates[0];
+    // No majority city. Still show city, state, and country from the fullest answer.
+    $best = $candidates[0];
+    $bestScore = lc_geo_payload_score($best);
     foreach ($candidates as $row) {
-        if (strtoupper(trim((string) ($row['country_code'] ?? ''))) !== '') {
-            $base = $row;
-            break;
+        $score = lc_geo_payload_score($row);
+        if ($score > $bestScore) {
+            $best = $row;
+            $bestScore = $score;
         }
     }
-    $country = trim((string) ($base['country'] ?? 'Unknown'));
-    $code = strtoupper(trim((string) ($base['country_code'] ?? '')));
-    $regions = [];
-    foreach ($candidates as $row) {
-        $r = trim((string) ($row['region'] ?? ''));
-        if ($r !== '') {
-            $regions[strtolower($r)] = $r;
+    $countryCode = strtoupper(trim((string) ($best['country_code'] ?? '')));
+    if (trim((string) ($best['region'] ?? '')) === '') {
+        foreach ($candidates as $row) {
+            $rowCode = strtoupper(trim((string) ($row['country_code'] ?? '')));
+            $rowRegion = trim((string) ($row['region'] ?? ''));
+            if ($rowRegion !== '' && ($countryCode === '' || $rowCode === '' || $rowCode === $countryCode)) {
+                $best['region'] = $rowRegion;
+                break;
+            }
         }
     }
-    // Only keep region if all providers that have one agree
-    $region = count($regions) === 1 ? (string) reset($regions) : '';
-    $parts = array_values(array_filter([$region, $country]));
+    if (trim((string) ($best['city'] ?? '')) === '') {
+        foreach ($candidates as $row) {
+            $rowCity = trim((string) ($row['city'] ?? ''));
+            if ($rowCity !== '') {
+                $best['city'] = $rowCity;
+                if (($best['lat'] ?? null) === null && ($row['lat'] ?? null) !== null) {
+                    $best['lat'] = $row['lat'];
+                    $best['lon'] = $row['lon'];
+                }
+                break;
+            }
+        }
+    }
+    $parts = array_values(array_filter([
+        trim((string) ($best['city'] ?? '')),
+        trim((string) ($best['region'] ?? '')),
+        trim((string) ($best['country'] ?? '')),
+    ]));
+    $best['label'] = $parts ? implode(', ', $parts) : 'Unknown';
 
-    return [
-        'country' => $country !== '' ? $country : 'Unknown',
-        'country_code' => $code,
-        'city' => '',
-        'region' => $region,
-        'lat' => null,
-        'lon' => null,
-        'label' => $parts ? implode(', ', $parts) : ($country !== '' ? $country : 'Unknown'),
-    ];
+    return $best;
+}
+
+function lc_geo_payload_score(array $row): int
+{
+    $score = 0;
+    if (trim((string) ($row['city'] ?? '')) !== '') {
+        $score += 4;
+    }
+    if (trim((string) ($row['region'] ?? '')) !== '') {
+        $score += 2;
+    }
+    $country = trim((string) ($row['country'] ?? ''));
+    if ($country !== '' && strcasecmp($country, 'Unknown') !== 0) {
+        $score += 1;
+    }
+    if (($row['lat'] ?? null) !== null && ($row['lon'] ?? null) !== null) {
+        $score += 1;
+    }
+
+    return $score;
 }
 
 /**

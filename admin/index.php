@@ -55,10 +55,11 @@ if ($agentBrandId === null) {
     $brands = [];
 }
 $unread = lc_unread_count_for_agent((int) $agent['id']);
+lc_ensure_visitor_geo_schema();
 
 $waitingSql = "
     SELECT c.id, v.name AS visitor_name, c.last_message_at, b.name AS brand_name,
-           v.country AS visitor_country,
+           v.country AS visitor_country, v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region,
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg
     FROM conversations c
     JOIN visitors v ON v.id = c.visitor_id
@@ -70,6 +71,10 @@ $waitingSql = "
 $stmt = $db->prepare($waitingSql);
 $stmt->execute($brandParams);
 $waitingChats = $stmt->fetchAll();
+foreach ($waitingChats as &$waitingRow) {
+    $waitingRow['visitor_country'] = lc_visitor_place_label($waitingRow);
+}
+unset($waitingRow);
 
 if (is_file(__DIR__ . '/../includes/ip-resume.php')) {
     require_once __DIR__ . '/../includes/ip-resume.php';
@@ -93,7 +98,8 @@ try {
 }
 $recentSql = "
     SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
-               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country,
+               v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region, v.email AS visitor_email,
                v.user_agent AS visitor_user_agent, {$homeTransferSelect}
            (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
            (CASE
@@ -115,6 +121,10 @@ if (function_exists('lc_dedupe_inbox_conversations_by_ip')) {
     $recent = lc_dedupe_inbox_conversations_by_ip($recent);
 }
 $recent = array_slice($recent, 0, 20);
+foreach ($recent as &$recentRow) {
+    $recentRow['visitor_country'] = lc_visitor_place_label($recentRow);
+}
+unset($recentRow);
 
 $homeSupervisedIds = [];
 if (function_exists('lc_ensure_supervisors_schema')) {

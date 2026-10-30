@@ -749,9 +749,8 @@ function lc_update_visitor_geo(int $visitorId, string $ip, ?string $userAgent, ?
         $geoIp = $ip;
     }
 
-    $geo = lc_resolve_geo($geoIp);
-    $stmt = lc_db()->prepare('UPDATE visitors SET user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP(), country = COALESCE(NULLIF(?, ""), country) WHERE id = ?');
-    $stmt->execute([$userAgent, $pageUrl, $geo['country'] ?? '', $visitorId]);
+    $stmt = lc_db()->prepare('UPDATE visitors SET user_agent = ?, page_url = COALESCE(?, page_url), last_seen = UTC_TIMESTAMP() WHERE id = ?');
+    $stmt->execute([$userAgent, $pageUrl, $visitorId]);
     if (function_exists('lc_refresh_visitor_geo')) {
         lc_refresh_visitor_geo($visitorId, $geoIp);
     }

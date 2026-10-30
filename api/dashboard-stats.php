@@ -93,6 +93,9 @@ try {
         ]);
     }
 
+    if (function_exists('lc_ensure_visitor_geo_schema')) {
+        lc_ensure_visitor_geo_schema();
+    }
     if (function_exists('lc_ensure_conversation_transfer_schema')) {
         lc_ensure_conversation_transfer_schema();
     }
@@ -105,7 +108,8 @@ try {
     }
     $recentSql = "
         SELECT c.id, c.status, c.agent_id, c.visitor_id, v.name AS visitor_name, c.last_message_at, c.started_at, b.name AS brand_name,
-               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country, v.email AS visitor_email,
+               COALESCE(NULLIF(TRIM(c.client_ip), ''), v.ip_address) AS visitor_ip, v.country AS visitor_country,
+               v.geo_city AS visitor_geo_city, v.geo_region AS visitor_geo_region, v.email AS visitor_email,
                v.user_agent AS visitor_user_agent, {$dashTransferSelect}
                (SELECT message FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_msg,
                (CASE
@@ -177,7 +181,7 @@ try {
             'visitor_initials' => lc_avatar_initials($name),
             'brand_name' => $r['brand_name'] ?? '',
             'visitor_ip' => $r['visitor_ip'] ?? '',
-            'visitor_country' => $r['visitor_country'] ?? '',
+            'visitor_country' => lc_visitor_place_label($r),
             'device' => $device['device'] ?? 'Unknown',
             'device_os' => $device['os'] ?? 'Unknown',
             'device_browser' => $device['browser'] ?? 'Unknown',
