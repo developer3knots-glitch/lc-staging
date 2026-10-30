@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 193;
+    var LC_WIDGET_BUILD = 194;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -673,6 +673,8 @@
     var widgetRevealed = false;
     var bootHoldForChat = false;
     var bootHistorySettled = false;
+    var widgetShowAt = Date.now() + 3000;
+    var widgetShowTimer = null;
 
     function injectBootShield() {
         if (document.getElementById('lc-widget-boot')) return;
@@ -727,6 +729,16 @@
 
     function revealWidgetNow() {
         if (widgetRevealed) return;
+        var wait = widgetShowAt - Date.now();
+        if (wait > 0) {
+            if (!widgetShowTimer) {
+                widgetShowTimer = setTimeout(function () {
+                    widgetShowTimer = null;
+                    revealWidgetNow();
+                }, wait);
+            }
+            return;
+        }
         var root = document.getElementById('lc-widget-root');
         if (!root) return;
         widgetRevealed = true;
@@ -1218,24 +1230,14 @@
             }
         });
 
-        // Panel stays invisible until the final screen is ready.
+        // Widget loads in the background and stays hidden for 3 seconds, then shows.
         openPanelInstantIdle();
         setTimeout(function () {
             widgetStylesReady = true;
-            tryRevealWidget();
-        }, 2200);
-        setTimeout(function () {
-            widgetStylesReady = true;
-            if (chatResumePending()) {
-                if (!chatInitInFlight && !chatHistoryLoading && chatViewIsShowing()) {
-                    bootHistorySettled = true;
-                }
-                tryRevealWidget();
-                return;
-            }
-            if (!widgetEntryReady) widgetEntryReady = true;
-            tryRevealWidget();
-        }, 8000);
+            widgetEntryReady = true;
+            bootHistorySettled = true;
+            revealWidgetNow();
+        }, 3000);
         scheduleWelcomeEngagement();
         loadWidgetSettings();
         startSettingsSync();
