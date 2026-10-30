@@ -426,7 +426,7 @@
             var name = row.name || 'Visitor';
             var ip = row.ip || '';
             var email = row.email || '';
-            var page = row.page_path || row.page_url || '—';
+            var page = row.page_url || row.page_path || '—';
             var time = formatSiteTime(rowTimeSeconds(row));
             var status = row.status || 'left';
             var blocked = !!row.ip_blocked;
