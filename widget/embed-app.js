@@ -6,7 +6,7 @@
     'use strict';
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 194;
+    var LC_WIDGET_BUILD = 195;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -763,7 +763,7 @@
         var link = document.createElement('link');
         link.id = 'lc-widget-styles';
         link.rel = 'stylesheet';
-        link.href = siteUrl + '/assets/css/widget-premium.css?v=78';
+        link.href = siteUrl + '/assets/css/widget-premium.css?v=79';
         link.onload = markWidgetStylesReady;
         link.onerror = markWidgetStylesReady;
         document.head.appendChild(link);
@@ -1137,6 +1137,15 @@
         document.getElementById('lc-ticket-resume-back').addEventListener('click', function () { hideTicketResumePanel(true); });
         document.getElementById('lc-ticket-resume-form').addEventListener('submit', submitTicketResumeForm);
         document.getElementById('lc-send').addEventListener('click', sendMessage);
+        var msgBox = document.getElementById('lc-panel-messages');
+        if (msgBox) {
+            msgBox.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('.lcw-msg-retry') : null;
+                if (!btn || !msgBox.contains(btn)) return;
+                var wrap = btn.closest('[data-msg-id]');
+                if (wrap) retryVisitorMessage(wrap);
+            });
+        }
         bindEmojiPicker();
         document.getElementById('lc-prechat-form').addEventListener('submit', function (e) {
             e.preventDefault();
@@ -3603,7 +3612,8 @@
                 return true;
             }
             el.setAttribute('data-msg-id', String(mid));
-            el.classList.remove('lcw-msg-pending');
+            el.classList.remove('lcw-msg-pending', 'lcw-msg-failed');
+            el.removeAttribute('data-retrying');
             try {
                 updateVisitorTicks(String(mid), m.delivery_status || (m.is_read ? 'read' : (m.is_delivered ? 'delivered' : 'sent')));
             } catch (eTicks) {}
@@ -6535,6 +6545,9 @@
             return '<span class="lcw-msg-ticks is-pending" title="Sending..." aria-label="Sending">' +
                 '<svg class="lcw-tick-svg lcw-tick-clock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M6 3.2V6l1.8 1.4"/></svg></span>';
         }
+        if (status === 'failed') {
+            return '<button type="button" class="lcw-msg-retry">Retry</button>';
+        }
         if (status === 'read') {
             return '<span class="lcw-msg-read-label" title="Read" aria-label="Read">Read</span>';
         }
@@ -7188,25 +7201,8 @@
         })
         .then(function (res) {
             var data = res && res.data;
-            if ((!data || !data.success) && !isRetry && data && /invalid session/i.test(String(data.error || ''))) {
-                return refreshChatToken().then(function (token) {
-                    if (token) {
-                        return postVisitorMessage(msg, tempId, wasClosed, sendBtn, true);
-                    }
-                    finishVisitorSend(data, tempId, wasClosed, sendBtn);
-                    return data;
-                });
-            }
             if (data && data.success) {
                 finishVisitorSend(data, tempId, wasClosed, sendBtn);
-                return data;
-            }
-            // Empty/HTML body but optimistic bubble still there — recover quietly
-            var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
-            if (!data && pending) {
-                pending.classList.remove('lcw-msg-pending');
-                if (sendBtn) sendBtn.classList.remove('is-sending');
-                pollMessages(false);
                 return data;
             }
             finishVisitorSend(data || { success: false, error: 'Could not send. Please try again.' }, tempId, wasClosed, sendBtn);
@@ -7214,20 +7210,46 @@
         })
         .catch(function () {
             if (sendBtn) sendBtn.classList.remove('is-sending');
-            var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
-            if (pending) {
-                // Keep bubble — message often already saved; confirm via poll
-                pending.classList.remove('lcw-msg-pending');
-                pollMessages(false);
-                return;
-            }
-            // Only show error if nothing was painted for this send
+            markVisitorSendFailed(tempId);
+        });
+    }
+
+    function markVisitorSendFailed(tempId) {
+        var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
+        if (!pending) {
             appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
+            return;
+        }
+        pending.classList.remove('lcw-msg-pending');
+        pending.classList.add('lcw-msg-failed');
+        pending.removeAttribute('data-retrying');
+        updateVisitorTicks(String(tempId), 'failed');
+    }
+
+    function retryVisitorMessage(wrap) {
+        if (!wrap || wrap.getAttribute('data-retrying') === '1') return;
+        if (Date.now() < sendCooldownUntil) return;
+        var tempId = wrap.getAttribute('data-msg-id') || '';
+        var body = wrap.querySelector('.lcw-msg-body');
+        var msg = body ? String(body.textContent || '').trim() : '';
+        if (!tempId || !msg) return;
+        wrap.setAttribute('data-retrying', '1');
+        wrap.classList.remove('lcw-msg-failed');
+        wrap.classList.add('lcw-msg-pending');
+        updateVisitorTicks(tempId, 'pending');
+        var sendBtn = document.getElementById('lc-send');
+        if (sendBtn) sendBtn.classList.add('is-sending');
+        var wasClosed = chatClosed;
+        refreshChatToken().then(function () {
+            return postVisitorMessage(msg, tempId, wasClosed, sendBtn, true);
+        }).catch(function () {
+            if (sendBtn) sendBtn.classList.remove('is-sending');
+            markVisitorSendFailed(tempId);
         });
     }
 
     function finishVisitorSend(data, tempId, wasClosed, sendBtn) {
-        sendBtn.classList.remove('is-sending');
+        if (sendBtn) sendBtn.classList.remove('is-sending');
         var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
         if (data && data.success) {
             if (wasClosed || data.reopened) {
@@ -7249,7 +7271,8 @@
             }
             if (pending && data.message_id) {
                 pending.setAttribute('data-msg-id', String(data.message_id));
-                pending.classList.remove('lcw-msg-pending');
+                pending.classList.remove('lcw-msg-pending', 'lcw-msg-failed');
+                pending.removeAttribute('data-retrying');
                 dropExtraMessageNodes(data.message_id);
                 updateVisitorTicks(String(data.message_id), 'sent');
                 // Do not blindly advance over holes — gap-fill pulls missed agent msgs
@@ -7260,7 +7283,8 @@
                     advanceLastMsgId(ownId);
                 }
             } else if (pending) {
-                pending.classList.remove('lcw-msg-pending');
+                pending.classList.remove('lcw-msg-pending', 'lcw-msg-failed');
+                pending.removeAttribute('data-retrying');
                 updateVisitorTicks(tempId, 'sent');
                 pollMessages(false);
             } else {
@@ -7274,14 +7298,12 @@
             }
             return;
         }
-        var failedText = '';
+        if (sendBtn) sendBtn.classList.remove('is-sending');
         if (pending) {
-            var body = pending.querySelector('.lcw-msg-body');
-            failedText = ((body && body.textContent) || '').trim();
-            pending.remove();
+            markVisitorSendFailed(tempId);
         }
-        if (data && data.error) {
-            showTransientSendError(data.error, failedText);
+        if (data && data.error && /too many requests|please wait/i.test(String(data.error))) {
+            showTransientSendError(data.error, '');
         }
     }
 

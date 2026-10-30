@@ -1205,6 +1205,17 @@
 }
 .lcw-visitor .lcw-msg-ticks.is-pending { color: rgba(255, 255, 255, 0.7); }
 .lcw-msg-pending { opacity: 0.72; }
+.lcw-msg-retry {
+    border: 0;
+    background: transparent;
+    color: #f87171;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+}
+.lcw-msg-retry:hover { text-decoration: underline; }
 /* Outer meta (off bubble) ??? keep classic blue read */
 .lcw-msg-meta .lcw-msg-ticks.is-sent,
 .lcw-msg-meta .lcw-msg-ticks.is-delivered { color: #94a3b8; }
