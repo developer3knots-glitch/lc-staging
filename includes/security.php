@@ -552,9 +552,30 @@ function lc_record_visitor_ip(int $visitorId, string $ip): void
             || (function_exists('lc_ip_usable_for_identity') && !lc_ip_usable_for_identity($primary))
             || (function_exists('lc_is_local_ip') && lc_is_local_ip($primary));
         $primaryIsV6 = filter_var($primary, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
-        if ($primaryIsLoopback || ($primaryIsV6 && $v4 !== null)) {
+        // Cloudflare often hands us only the IPv6. The browser's public IPv4
+        // must replace that, including on an open chat that already stored the v6.
+        if ($v4 !== null && ($primaryIsLoopback || $primaryIsV6 || $primary === '' || $primary === $v4)) {
             $db->prepare('UPDATE visitors SET ip_address = ?, ipv4_address = ?, country = CASE WHEN country IN (\'Local\', \'Local network\') THEN \'\' ELSE country END WHERE id = ?')
-                ->execute([$ip, $v4, $visitorId]);
+                ->execute([$v4, $v4, $visitorId]);
+            if ($primaryIsV6 || $primaryIsLoopback || $primary === '') {
+                try {
+                    $db->prepare("
+                        UPDATE conversations
+                        SET client_ip = ?
+                        WHERE visitor_id = ?
+                          AND (
+                              client_ip IS NULL OR TRIM(client_ip) = ''
+                              OR client_ip LIKE '%:%'
+                              OR client_ip IN ('127.0.0.1', '::1', '0.0.0.0')
+                          )
+                    ")->execute([$v4, $visitorId]);
+                } catch (Throwable $e) {
+                }
+            }
+            $primary = $v4;
+            $ip = $v4;
+        } elseif ($primaryIsLoopback) {
+            $db->prepare('UPDATE visitors SET ip_address = ? WHERE id = ?')->execute([$ip, $visitorId]);
             $primary = $ip;
         }
 

@@ -96,6 +96,11 @@ try {
         $pageVisible = (int) ($row['page_visible'] ?? 1);
     }
 
+    $reportedIpv4 = function_exists('lc_valid_public_ipv4') ? lc_valid_public_ipv4($input['public_ipv4'] ?? '') : null;
+    if ($reportedIpv4 !== null && $visitorId > 0 && function_exists('lc_record_visitor_ip')) {
+        lc_record_visitor_ip($visitorId, $reportedIpv4);
+    }
+
     $presenceTs = (int) ($input['presence_ts'] ?? $input['ts'] ?? 0);
     if ($presenceTs > 1000000000 && $presenceTs < 20000000000) {
         $presenceTs *= 1000;

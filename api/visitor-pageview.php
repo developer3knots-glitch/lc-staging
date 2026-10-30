@@ -91,6 +91,12 @@ try {
         $visitorId = (int) $visitor['id'];
     }
 
+    // Save a browser IPv4 on every event. Presence returns before geo, so an
+    // IPv6 from Cloudflare was staying on the row forever.
+    if ($reportedIpv4 !== null && $visitorId > 0 && function_exists('lc_record_visitor_ip')) {
+        lc_record_visitor_ip($visitorId, $reportedIpv4);
+    }
+
     // Lightweight presence-only pulse (minimize / tab hide / open) — skip geo & traffic.
     if ($event === 'presence' || $event === 'widget') {
         $presenceWasLeft = false;

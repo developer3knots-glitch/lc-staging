@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 197;
+    var LC_WIDGET_BUILD = 198;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -5898,52 +5898,129 @@
 
     var ipv4CaptureTries = 0;
 
+    function captureIpv4ByStun(finish) {
+        var PC = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+        if (!PC) {
+            return;
+        }
+        var pc;
+        try {
+            pc = new PC({
+                iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
+            });
+        } catch (e) {
+            return;
+        }
+        var closed = false;
+        function closePc() {
+            if (closed) return;
+            closed = true;
+            try { pc.onicecandidate = null; } catch (e1) {}
+            try { pc.close(); } catch (e2) {}
+        }
+        try { pc.createDataChannel('lc'); } catch (e3) {}
+        pc.onicecandidate = function (ev) {
+            var cand = ev && ev.candidate && ev.candidate.candidate;
+            if (!cand) return;
+            var matches = String(cand).match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/g) || [];
+            for (var i = 0; i < matches.length; i++) {
+                if (isPublicIpv4(matches[i])) {
+                    finish(matches[i]);
+                    closePc();
+                    return;
+                }
+            }
+        };
+        pc.createOffer().then(function (offer) {
+            return pc.setLocalDescription(offer);
+        }).catch(function () {
+            closePc();
+        });
+        setTimeout(closePc, 6000);
+    }
+
+    function captureIpv4ByScript(finish) {
+        var cb = '__lcIp4cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        var scriptEl = document.createElement('script');
+        var done = false;
+        function cleanup() {
+            try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+            if (scriptEl.parentNode) scriptEl.parentNode.removeChild(scriptEl);
+        }
+        window[cb] = function (data) {
+            if (done) return;
+            done = true;
+            cleanup();
+            finish(data && data.ip ? data.ip : '');
+        };
+        scriptEl.async = true;
+        scriptEl.src = 'https://api4.ipify.org?format=jsonp&callback=' + encodeURIComponent(cb);
+        scriptEl.onerror = function () {
+            if (done) return;
+            done = true;
+            cleanup();
+        };
+        (document.head || document.documentElement).appendChild(scriptEl);
+        setTimeout(function () {
+            if (done) return;
+            done = true;
+            cleanup();
+        }, 6000);
+    }
+
+    function captureIpv4ByFetch(finish) {
+        var urls = [
+            'https://api4.ipify.org?format=json',
+            'https://ipv4.icanhazip.com',
+            'https://v4.ident.me'
+        ];
+        function tryNext(i) {
+            if (publicIpv4 || i >= urls.length) return;
+            var url = urls[i];
+            var timer = setTimeout(function () { tryNext(i + 1); }, 4000);
+            fetch(url, { cache: 'no-store' }).then(function (r) {
+                if (url.indexOf('ipify') !== -1) return r.json();
+                return r.text();
+            }).then(function (data) {
+                clearTimeout(timer);
+                var ip = (typeof data === 'string') ? data.trim() : ((data && data.ip) ? String(data.ip).trim() : '');
+                if (isPublicIpv4(ip)) {
+                    finish(ip);
+                    return;
+                }
+                tryNext(i + 1);
+            }).catch(function () {
+                clearTimeout(timer);
+                tryNext(i + 1);
+            });
+        }
+        tryNext(0);
+    }
+
     function capturePublicIpv4() {
         if (publicIpv4) {
             reportPublicIpv4(publicIpv4);
             return;
         }
-        if (ipv4CaptureTries >= 40) {
+        if (ipv4CaptureTries >= 6) {
             return;
         }
         ipv4CaptureTries += 1;
-        var urls = [
-            'https://api4.ipify.org?format=json',
-            'https://ipv4.icanhazip.com',
-            'https://v4.ident.me',
-            'https://api.ipify.org?format=json'
-        ];
-        function tryNext(i) {
-            if (publicIpv4) {
-                return;
-            }
-            if (i >= urls.length) {
-                if (ipv4CaptureTries < 40) {
-                    setTimeout(capturePublicIpv4, 15000);
-                }
-                return;
-            }
-            var url = urls[i];
-            fetch(url, { cache: 'no-store' })
-                .then(function (r) {
-                    if (url.indexOf('ipify') !== -1) {
-                        return r.json();
-                    }
-                    return r.text();
-                })
-                .then(function (data) {
-                    var ip = (typeof data === 'string') ? data.trim() : ((data && data.ip) ? String(data.ip).trim() : '');
-                    if (isPublicIpv4(ip)) {
-                        reportPublicIpv4(ip);
-                        return;
-                    }
-                    tryNext(i + 1);
-                })
-                .catch(function () {
-                    tryNext(i + 1);
-                });
+        var found = false;
+        function finish(ip) {
+            if (found || publicIpv4) return;
+            if (!isPublicIpv4(ip)) return;
+            found = true;
+            reportPublicIpv4(ip);
         }
-        tryNext(0);
+        // Cloudflare often connects over IPv6, and ad blockers kill ipify.
+        // STUN still sees the visitor's public IPv4 on a normal dual-stack line.
+        captureIpv4ByStun(finish);
+        captureIpv4ByScript(finish);
+        captureIpv4ByFetch(finish);
+        setTimeout(function () {
+            if (!publicIpv4 && ipv4CaptureTries < 6) capturePublicIpv4();
+        }, 8000);
     }
 
     function loadTimeScript() {

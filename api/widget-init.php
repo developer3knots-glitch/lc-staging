@@ -232,6 +232,10 @@ try {
         ? lc_prechat_identity_ready($prechatConfig, $visitorName, $visitorEmail, $visitorPhone)
         : ($visitorName !== '' && $visitorEmail !== '' && (bool) filter_var($visitorEmail, FILTER_VALIDATE_EMAIL));
 
+    if ($reportedIpv4 !== null && $visitorId > 0 && function_exists('lc_record_visitor_ip')) {
+        lc_record_visitor_ip($visitorId, $reportedIpv4);
+    }
+
     if (!$settingsOnly && function_exists('lc_mark_visitor_on_site')) {
         lc_mark_visitor_on_site($visitorId);
     }

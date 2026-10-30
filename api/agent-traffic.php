@@ -451,6 +451,14 @@ try {
         }
 
         $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        if (function_exists('lc_valid_public_ipv4')) {
+            $preferV4 = lc_valid_public_ipv4((string) ($row['visitor_ipv4'] ?? ''))
+                ?: lc_valid_public_ipv4($ip)
+                ?: lc_valid_public_ipv4((string) ($row['conversation_client_ip'] ?? ''));
+            if ($preferV4) {
+                $ip = $preferV4;
+            }
+        }
         $ipBlocked = $ip !== '' && !empty($blockedSet[$ip]);
 
         $conversationId = $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null;
