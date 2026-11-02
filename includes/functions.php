@@ -1954,21 +1954,67 @@ function lc_get_conversation(int $id): ?array
 
 /**
  * Extra fields for the admin customer-details rail.
+ * Chat count is every chat saved on this IP (all brands, open and closed).
+ * Page count stays on this visitor row.
  *
  * @return array{chat_count:int,page_count:int,referrer:string}
  */
 function lc_visitor_detail_stats(int $visitorId, int $brandId = 0): array
 {
     $db = lc_db();
-    $chatSql = 'SELECT COUNT(*) FROM conversations WHERE visitor_id = ?';
-    $chatParams = [$visitorId];
-    if ($brandId > 0) {
-        $chatSql .= ' AND brand_id = ?';
-        $chatParams[] = $brandId;
+    $chatCount = 0;
+    $ip = '';
+    try {
+        $ipStmt = $db->prepare('SELECT ip_address, ipv4_address FROM visitors WHERE id = ? LIMIT 1');
+        $ipStmt->execute([$visitorId]);
+        $ipRow = $ipStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        foreach (['ip_address', 'ipv4_address'] as $ipKey) {
+            $candidate = trim((string) ($ipRow[$ipKey] ?? ''));
+            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_IP)) {
+                $ip = $candidate;
+                break;
+            }
+        }
+    } catch (Throwable $e) {
+        $ip = '';
     }
-    $stmt = $db->prepare($chatSql);
-    $stmt->execute($chatParams);
-    $chatCount = (int) $stmt->fetchColumn();
+
+    if ($ip !== '') {
+        $accountId = 0;
+        if ($brandId > 0) {
+            try {
+                $accountStmt = $db->prepare('SELECT account_id FROM brands WHERE id = ? LIMIT 1');
+                $accountStmt->execute([$brandId]);
+                $accountId = (int) $accountStmt->fetchColumn();
+            } catch (Throwable $e) {
+                $accountId = 0;
+            }
+        }
+        $chatSql = '
+            SELECT COUNT(*)
+            FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE COALESCE(NULLIF(TRIM(c.client_ip), \'\'), v.ip_address) = ?
+        ';
+        $chatParams = [$ip];
+        if ($accountId > 0) {
+            $chatSql .= ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+            $chatParams[] = $accountId;
+        }
+        $stmt = $db->prepare($chatSql);
+        $stmt->execute($chatParams);
+        $chatCount = (int) $stmt->fetchColumn();
+    } else {
+        $chatSql = 'SELECT COUNT(*) FROM conversations WHERE visitor_id = ?';
+        $chatParams = [$visitorId];
+        if ($brandId > 0) {
+            $chatSql .= ' AND brand_id = ?';
+            $chatParams[] = $brandId;
+        }
+        $stmt = $db->prepare($chatSql);
+        $stmt->execute($chatParams);
+        $chatCount = (int) $stmt->fetchColumn();
+    }
 
     $pageCount = 0;
     $referrer = '';
