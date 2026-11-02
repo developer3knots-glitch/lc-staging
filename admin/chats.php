@@ -384,6 +384,10 @@ require __DIR__ . '/includes/header.php';
                                 <dt>Returning visitor</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-returning">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-returning" aria-label="Copy returning visitor" hidden><i class="ti ti-copy"></i></button></dd>
                             </div>
+                            <div class="lc-details-kv" data-rail-field="chats">
+                                <dt>Chats</dt>
+                                <dd class="lc-details-copyline"><span id="lc-details-chats">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-chats" aria-label="Copy chats" hidden><i class="ti ti-copy"></i></button></dd>
+                            </div>
                             <div class="lc-details-kv" data-rail-field="last_seen">
                                 <dt>Last seen</dt>
                                 <dd class="lc-details-copyline"><span id="lc-details-last-seen">-</span><button type="button" class="lc-meta-copy" data-copy-target="lc-details-last-seen" aria-label="Copy last seen" hidden><i class="ti ti-copy"></i></button></dd>

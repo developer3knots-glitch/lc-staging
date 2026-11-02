@@ -998,6 +998,9 @@
         setMetaText('lc-traffic-meta-phone', phone);
         setMetaText('lc-traffic-meta-status', extra.activity_label || row.activity_label || '');
         setMetaText('lc-traffic-meta-returning', (extra.returning || row.returning) ? 'Yes' : 'No');
+        var chatCount = parseInt(extra.chat_count, 10);
+        if (isNaN(chatCount)) chatCount = 0;
+        setMetaText('lc-traffic-meta-chats', (extra.chat_count == null && !extra.visitor_id) ? '' : (chatCount + ' chat' + (chatCount === 1 ? '' : 's')));
         setMetaText('lc-traffic-meta-seen', formatSeen(extra.last_seen || row.last_seen));
         setMetaText('lc-traffic-meta-from', stripUrlParam(extra.referrer || '', 'gclid'));
         setMetaText('lc-traffic-meta-gclid', gclid);

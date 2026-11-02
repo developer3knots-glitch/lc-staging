@@ -452,6 +452,7 @@ require __DIR__ . '/includes/header.php';
                 <div data-rail-section="info">
                     <dl class="lc-hx-archive-dl">
                         <div data-rail-field="returning"><dt>Returning visitor</dt><dd id="lc-hx-d-returning">—</dd></div>
+                        <div data-rail-field="chats"><dt>Chats</dt><dd id="lc-hx-d-chats">—</dd></div>
                         <div data-rail-field="last_seen"><dt>Last seen</dt><dd id="lc-hx-d-seen">—</dd></div>
                         <div data-rail-field="came_from"><dt>Came from</dt><dd id="lc-hx-d-from">—</dd></div>
                         <div data-rail-field="chat_page"><dt>Chat page</dt><dd id="lc-hx-d-page">—</dd></div>

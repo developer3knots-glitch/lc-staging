@@ -1193,6 +1193,7 @@
             ? (Math.max(visitCount, 1) + ' visits, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'))
             : ('New visitor, ' + chatCount + ' chat' + (chatCount === 1 ? '' : 's'));
         setText('lc-details-returning', returningLine);
+        setText('lc-details-chats', chatCount + ' chat' + (chatCount === 1 ? '' : 's'));
 
         setHtmlTime('lc-details-last-seen', c.visitor_last_seen || c.last_message_at || '');
 

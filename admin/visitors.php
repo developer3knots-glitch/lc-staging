@@ -167,6 +167,7 @@ require __DIR__ . '/includes/header.php';
                     <dl class="lc-hx-archive-dl">
                         <div data-rail-field="clicks"><dt>Clicks</dt><dd id="lc-vis-d-clicks">—</dd></div>
                         <div data-rail-field="returning"><dt>Returning visitor</dt><dd id="lc-vis-d-returning">—</dd></div>
+                        <div data-rail-field="chats"><dt>Chats</dt><dd id="lc-vis-d-chats">—</dd></div>
                         <div data-rail-field="last_seen"><dt>Last seen</dt><dd id="lc-vis-d-seen">—</dd></div>
                         <div data-rail-field="came_from"><dt>Came from</dt><dd id="lc-vis-d-from">—</dd></div>
                         <div data-rail-field="chat_page"><dt>Chat page</dt><dd id="lc-vis-d-page">—</dd></div>

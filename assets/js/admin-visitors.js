@@ -516,6 +516,7 @@
         setDetail('lc-vis-d-clicks', (row && row.clicks) || visitor.clicks || '');
         setDetail('lc-vis-d-location', location);
         setDetail('lc-vis-d-returning', returningLine);
+        setDetail('lc-vis-d-chats', chats + ' chat' + (chats === 1 ? '' : 's'));
         setDetail('lc-vis-d-seen', timeLabel(visitor.last_seen));
         setDetail('lc-vis-d-from', hostFromUrl(visitor.referrer || '') || visitor.referrer || '');
         setDetail('lc-vis-d-page', visitor.page_url || (row && row.page_url) || '');

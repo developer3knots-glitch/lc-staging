@@ -582,6 +582,7 @@
                 returningLine = (returning ? 'Returning' : 'New visitor') + ', ' + chats + ' chat' + (chats === 1 ? '' : 's');
                 if (pages > 0) returningLine += ', ' + pages + ' page' + (pages === 1 ? '' : 's');
             }
+            setDetail('lc-hx-d-chats', chats + ' chat' + (chats === 1 ? '' : 's'));
             archiveConv = c;
             var came = hostFromUrl(stats.referrer || '') || hostFromUrl(c.visitor_page || c.page_url || '');
             var device = c.visitor_device || {};

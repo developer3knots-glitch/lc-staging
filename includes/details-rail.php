@@ -88,6 +88,7 @@ function lc_details_rail_field_groups(): array
         'info' => [
             'status' => 'Status',
             'returning' => 'Returning visitor',
+            'chats' => 'Chats',
             'last_seen' => 'Last seen',
             'came_from' => 'Came from',
             'gclid' => 'GCLID',
