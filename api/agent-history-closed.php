@@ -23,9 +23,10 @@ if (function_exists('lc_ensure_conversation_client_ip_schema')) {
 }
 
 $period = strtolower(trim((string) ($_GET['period'] ?? 'week')));
-if (!in_array($period, ['today', 'week', 'month'], true)) {
+if (!in_array($period, ['today', 'week', 'month', 'overall'], true)) {
     $period = 'week';
 }
+$overall = $period === 'overall';
 $periodDays = $period === 'today' ? 1 : ($period === 'month' ? 30 : 7);
 
 $brandFilter = (int) ($_GET['brand'] ?? 0);
@@ -51,11 +52,15 @@ try {
         }
     }
 
-    $rangeStart = (new DateTimeImmutable('today'))->modify('-' . ($periodDays - 1) . ' days')->format('Y-m-d') . ' 00:00:00';
-    $rangeEnd = (new DateTimeImmutable('today'))->format('Y-m-d') . ' 23:59:59';
-
-    $where = ["c.status = 'closed'", 'c.started_at >= ?', 'c.started_at <= ?'];
-    $params = [$rangeStart, $rangeEnd];
+    if ($overall) {
+        $where = ["c.status = 'closed'"];
+        $params = [];
+    } else {
+        $rangeStart = (new DateTimeImmutable('today'))->modify('-' . ($periodDays - 1) . ' days')->format('Y-m-d') . ' 00:00:00';
+        $rangeEnd = (new DateTimeImmutable('today'))->format('Y-m-d') . ' 23:59:59';
+        $where = ["c.status = 'closed'", 'c.started_at >= ?', 'c.started_at <= ?'];
+        $params = [$rangeStart, $rangeEnd];
+    }
 
     if ($scopeBrandId !== null) {
         $where[] = 'c.brand_id = ?';

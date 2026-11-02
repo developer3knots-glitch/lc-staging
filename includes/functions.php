@@ -2232,6 +2232,66 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
 }
 
 /**
+ * One bar per month for the History Overall period.
+ *
+ * @return array<int, array{label:string,full_label:string,count:int,iso:string,header:string}>
+ */
+function lc_history_activity_chart_overall(?int $brandId, ?int $accountId = null, ?int $agentId = null): array
+{
+    lc_ensure_brands_schema();
+    $brandFilter = '';
+    $params = [];
+    if ($brandId !== null) {
+        $brandFilter = ' AND c.brand_id = ?';
+        $params[] = $brandId;
+    } elseif ($accountId !== null && $accountId > 0) {
+        $brandFilter = ' AND c.brand_id IN (SELECT id FROM brands WHERE account_id = ?)';
+        $params[] = $accountId;
+    }
+    $agentFilter = '';
+    if ($agentId !== null && $agentId > 0) {
+        $agentFilter = ' AND c.agent_id = ?';
+        $params[] = $agentId;
+    }
+
+    $stmt = lc_db()->prepare("
+        SELECT DATE_FORMAT(c.started_at, '%Y-%m-01') AS month_start, COUNT(*) AS cnt
+        FROM conversations c
+        WHERE c.started_at IS NOT NULL {$brandFilter}{$agentFilter}
+        GROUP BY DATE_FORMAT(c.started_at, '%Y-%m-01')
+        ORDER BY month_start ASC
+    ");
+    $stmt->execute($params);
+    $rows = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $rows[(string) $row['month_start']] = (int) $row['cnt'];
+    }
+
+    $end = new DateTimeImmutable('first day of this month');
+    $startKey = $rows ? (string) array_key_first($rows) : $end->format('Y-m-01');
+    $start = DateTimeImmutable::createFromFormat('Y-m-d', $startKey) ?: $end;
+    $start = $start->modify('first day of this month');
+
+    $chart = [];
+    $cursor = $start;
+    $guard = 0;
+    while ($cursor <= $end && $guard < 120) {
+        $key = $cursor->format('Y-m-01');
+        $chart[] = [
+            'label' => $cursor->format('M y'),
+            'full_label' => $cursor->format('F Y'),
+            'header' => $cursor->format("M 'y"),
+            'count' => $rows[$key] ?? 0,
+            'iso' => $key,
+        ];
+        $cursor = $cursor->modify('+1 month');
+        $guard++;
+    }
+
+    return $chart;
+}
+
+/**
  * Chat volume by day for History / Total chats report (one count per conversation).
  *
  * @return array<int, array{label:string,full_label:string,count:int,iso:string}>
@@ -2239,6 +2299,9 @@ function lc_dashboard_activity_chart(?int $brandId, int $days = 7, ?int $account
 function lc_history_activity_chart(?int $brandId, int $days = 7, ?int $accountId = null, ?int $agentId = null): array
 {
     lc_ensure_brands_schema();
+    if ($days === 0) {
+        return lc_history_activity_chart_overall($brandId, $accountId, $agentId);
+    }
     $days = max(1, min(30, $days));
     $end = new DateTimeImmutable('today');
     $start = $end->modify('-' . ($days - 1) . ' days');

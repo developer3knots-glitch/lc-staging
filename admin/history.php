@@ -11,14 +11,15 @@ $accountId = lc_agent_account_id($agent);
 $brandFilter = (int) ($_GET['brand'] ?? 0);
 $agentFilter = (int) ($_GET['agent'] ?? 0);
 $period = $_GET['period'] ?? 'week';
-if (!in_array($period, ['today', 'week', 'month'], true)) {
+if (!in_array($period, ['today', 'week', 'month', 'overall'], true)) {
     $period = 'week';
 }
-$periodDays = $period === 'today' ? 1 : ($period === 'month' ? 30 : 7);
+$periodDays = $period === 'overall' ? 0 : ($period === 'today' ? 1 : ($period === 'month' ? 30 : 7));
 $periodLabels = [
     'today' => 'Today',
     'week' => 'Last 7 days',
     'month' => 'Last 30 days',
+    'overall' => 'Overall',
 ];
 
 $scopeBrandId = $agentBrandId;
@@ -43,7 +44,7 @@ $agents = [];
 
 try {
     $chart = lc_history_activity_chart($scopeBrandId, $periodDays, $accountId > 0 ? $accountId : null, $reportAgentId);
-    $heatmap = lc_history_heatmap($scopeBrandId, $periodDays, $accountId > 0 ? $accountId : null, $reportAgentId);
+    $heatmap = lc_history_heatmap($scopeBrandId, $period === 'overall' ? 30 : $periodDays, $accountId > 0 ? $accountId : null, $reportAgentId);
     $totalChats = array_sum(array_map(static function ($b) {
         return (int) ($b['count'] ?? 0);
     }, $chart));
@@ -153,6 +154,7 @@ require __DIR__ . '/includes/header.php';
                     <option value="today"<?= $period === 'today' ? ' selected' : '' ?>>Today</option>
                     <option value="week"<?= $period === 'week' ? ' selected' : '' ?>>Last 7 days</option>
                     <option value="month"<?= $period === 'month' ? ' selected' : '' ?>>Last 30 days</option>
+                    <option value="overall"<?= $period === 'overall' ? ' selected' : '' ?>>Overall</option>
                 </select>
             </label>
             <?php if ($agentBrandId === null && !empty($brands)): ?>
@@ -256,7 +258,7 @@ require __DIR__ . '/includes/header.php';
                 <button type="button" class="lc-rpt-collapse" data-target="lc-rpt-heatmap-body" aria-expanded="true">
                     <i class="ti ti-chevron-down"></i> Total chats heatmap
                 </button>
-                <i class="ti ti-info-circle" title="Chat starts by hour of day"></i>
+                <i class="ti ti-info-circle" title="<?= $period === 'overall' ? 'Last 30 days. The closed list below is every chat.' : 'Chat starts by hour of day' ?>"></i>
             </h2>
             <button type="button" class="lc-rpt-btn lc-rpt-btn-sm" id="lc-rpt-export-heatmap"><i class="ti ti-download"></i> Export CSV</button>
         </div>
