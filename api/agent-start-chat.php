@@ -239,12 +239,18 @@ try {
             }
         }
         $sendGreeting = !empty($input['greeting']) && (string) $input['greeting'] !== '0' && $input['greeting'] !== false;
+        $greetingText = function_exists('lc_brand_start_chat_greeting_message')
+            ? lc_brand_start_chat_greeting_message($brand)
+            : 'Hello How are you doing?';
         if ($sendGreeting && function_exists('lc_brand_start_chat_greeting_enabled') && !lc_brand_start_chat_greeting_enabled($brand)) {
+            $sendGreeting = false;
+        }
+        if ($sendGreeting && $greetingText === '') {
             $sendGreeting = false;
         }
         if ($sendGreeting) {
             $greet = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
-            $greet->execute([$convId, 'agent', $agentId, 'Hello How are you doing?']);
+            $greet->execute([$convId, 'agent', $agentId, $greetingText]);
             $greetId = (int) $db->lastInsertId();
             if ($greetId > 0) {
                 $pendingPublishIds[] = $greetId;
@@ -252,7 +258,7 @@ try {
                     'id' => $greetId,
                     'sender_type' => 'agent',
                     'sender_id' => $agentId,
-                    'message' => 'Hello How are you doing?',
+                    'message' => $greetingText,
                     'agent_name' => (string) ($agent['name'] ?? 'Agent'),
                     'agent_avatar' => null,
                 ];

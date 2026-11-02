@@ -30,6 +30,10 @@ function lc_ensure_brand_widget_columns(): void
         lc_db()->exec('ALTER TABLE brands ADD COLUMN start_chat_greeting TINYINT(1) NOT NULL DEFAULT 1');
     } catch (Throwable $e) {
     }
+    try {
+        lc_db()->exec("ALTER TABLE brands ADD COLUMN start_chat_greeting_message VARCHAR(1000) NOT NULL DEFAULT 'Hello How are you doing?'");
+    } catch (Throwable $e) {
+    }
     if (function_exists('lc_ensure_brand_prechat_columns')) {
         lc_ensure_brand_prechat_columns();
     }
@@ -43,6 +47,20 @@ function lc_brand_start_chat_greeting_enabled(array $brand): bool
     }
 
     return (int) $brand['start_chat_greeting'] === 1;
+}
+
+function lc_brand_start_chat_greeting_message(array $brand): string
+{
+    lc_ensure_brand_widget_columns();
+    if (!array_key_exists('start_chat_greeting_message', $brand)) {
+        return 'Hello How are you doing?';
+    }
+    $text = trim((string) $brand['start_chat_greeting_message']);
+    if (function_exists('mb_substr')) {
+        return mb_substr($text, 0, 1000);
+    }
+
+    return substr($text, 0, 1000);
 }
 
 function lc_ensure_brands_schema(): void

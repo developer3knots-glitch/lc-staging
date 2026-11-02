@@ -28,14 +28,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
         $prechatJson = lc_prechat_config_from_post();
         $startGreeting = isset($_POST['start_chat_greeting']) ? 1 : 0;
+        $startGreetingMessage = trim((string) ($_POST['start_chat_greeting_message'] ?? ''));
+        $startGreetingMessage = function_exists('mb_substr')
+            ? mb_substr($startGreetingMessage, 0, 1000)
+            : substr($startGreetingMessage, 0, 1000);
 
         if ($name === '') {
             $error = 'Brand name is required.';
         } else {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
-            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config, start_chat_greeting) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson, $startGreeting]);
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config, start_chat_greeting, start_chat_greeting_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson, $startGreeting, $startGreetingMessage]);
             $message = 'Brand created. Copy its install code and add it to the website.';
             $openEditId = (int) $db->lastInsertId();
         }
@@ -62,7 +66,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
             $prechatJson = lc_prechat_config_from_post();
             $startGreeting = isset($_POST['start_chat_greeting']) ? 1 : 0;
-            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ?, start_chat_greeting = ? WHERE id = ?';
+            $startGreetingMessage = trim((string) ($_POST['start_chat_greeting_message'] ?? ''));
+            $startGreetingMessage = function_exists('mb_substr')
+                ? mb_substr($startGreetingMessage, 0, 1000)
+                : substr($startGreetingMessage, 0, 1000);
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ?, start_chat_greeting = ?, start_chat_greeting_message = ? WHERE id = ?';
             $params = [
                 $name,
                 $key,
@@ -74,6 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $prechatOn,
                 $prechatJson,
                 $startGreeting,
+                $startGreetingMessage,
                 $id,
             ];
             if ($accountId > 0) {
@@ -235,9 +244,11 @@ require __DIR__ . '/includes/header.php';
                                 <span class="lc-settings-toggle-ui"></span>
                                 <span class="lc-settings-toggle-text">
                                     <strong>Send a message when an agent starts a chat</strong>
-                                    <small>Only this brand. On: Traffic “Start chat” sends “Hello How are you doing?” Off: the chat still opens, without that message.</small>
+                                    <small>Only this brand. On: Traffic “Start chat” sends the message below. Off: the chat still opens, without that message.</small>
                                 </span>
                             </label>
+                            <label>Start chat message</label>
+                            <textarea name="start_chat_greeting_message" rows="2" maxlength="1000">Hello How are you doing?</textarea>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Turn this on only for this brand. Other brands keep their own forms.</p>
@@ -331,9 +342,11 @@ require __DIR__ . '/includes/header.php';
                                 <span class="lc-settings-toggle-ui"></span>
                                 <span class="lc-settings-toggle-text">
                                     <strong>Send a message when an agent starts a chat</strong>
-                                    <small>Only this brand. On: Traffic “Start chat” sends “Hello How are you doing?” Off: the chat still opens, without that message.</small>
+                                    <small>Only this brand. On: Traffic “Start chat” sends the message below. Off: the chat still opens, without that message.</small>
                                 </span>
                             </label>
+                            <label>Start chat message</label>
+                            <textarea name="start_chat_greeting_message" rows="2" maxlength="1000"><?= lc_sanitize((string) ($b['start_chat_greeting_message'] ?? 'Hello How are you doing?')) ?></textarea>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Ask for details before a new chat. This form is not shared with other brands.</p>
