@@ -4141,6 +4141,10 @@ a.lc-history-item:hover .lc-history-item-arrow {
     gap: 0.65rem;
 }
 
+.lc-brand-pane .lc-settings-toggle {
+    margin-top: 1rem;
+}
+
 .lc-brand-check {
     display: flex !important;
     align-items: center;

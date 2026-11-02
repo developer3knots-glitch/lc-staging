@@ -176,7 +176,7 @@
                     '<button type="button" class="lc-btn lc-btn-primary lc-btn-sm lc-traffic-action-btn" ' +
                         'data-start-chat="' + esc(row.visitor_id) + '" ' +
                         'data-brand-id="' + esc(row.brand_id || 0) + '" ' +
-                        'data-greeting="1">' +
+                        'data-greeting="' + (row.start_chat_greeting ? '1' : '0') + '">' +
                         '<i class="ti ti-message-plus" aria-hidden="true"></i> Start chat' +
                     '</button>' +
                     '<button type="button" class="lc-traffic-start-quiet" ' +

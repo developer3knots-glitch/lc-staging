@@ -239,6 +239,9 @@ try {
             }
         }
         $sendGreeting = !empty($input['greeting']) && (string) $input['greeting'] !== '0' && $input['greeting'] !== false;
+        if ($sendGreeting && function_exists('lc_brand_start_chat_greeting_enabled') && !lc_brand_start_chat_greeting_enabled($brand)) {
+            $sendGreeting = false;
+        }
         if ($sendGreeting) {
             $greet = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $greet->execute([$convId, 'agent', $agentId, 'Hello How are you doing?']);

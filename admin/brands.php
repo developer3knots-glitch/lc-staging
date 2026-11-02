@@ -24,17 +24,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $welcome = trim($_POST['welcome_message'] ?? '');
         $offline = trim($_POST['offline_message'] ?? '');
         lc_ensure_brand_prechat_columns();
+        lc_ensure_brand_widget_columns();
         $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
         $prechatJson = lc_prechat_config_from_post();
+        $startGreeting = isset($_POST['start_chat_greeting']) ? 1 : 0;
 
         if ($name === '') {
             $error = 'Brand name is required.';
         } else {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
-            lc_ensure_brand_widget_columns();
-            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson]);
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config, start_chat_greeting) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson, $startGreeting]);
             $message = 'Brand created. Copy its install code and add it to the website.';
             $openEditId = (int) $db->lastInsertId();
         }
@@ -57,9 +58,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $theme = 'dark';
             }
             lc_ensure_brand_prechat_columns();
+            lc_ensure_brand_widget_columns();
             $prechatOn = isset($_POST['prechat_form_enabled']) ? 1 : 0;
             $prechatJson = lc_prechat_config_from_post();
-            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ? WHERE id = ?';
+            $startGreeting = isset($_POST['start_chat_greeting']) ? 1 : 0;
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ?, start_chat_greeting = ? WHERE id = ?';
             $params = [
                 $name,
                 $key,
@@ -70,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 isset($_POST['is_active']) ? 1 : 0,
                 $prechatOn,
                 $prechatJson,
+                $startGreeting,
                 $id,
             ];
             if ($accountId > 0) {
@@ -226,6 +230,14 @@ require __DIR__ . '/includes/header.php';
                             <textarea name="welcome_message" rows="3" placeholder="Leave blank if you do not want a greeting"></textarea>
                             <label>Offline message</label>
                             <textarea name="offline_message" rows="3" placeholder="We are away right now. Leave a message and we will reply."></textarea>
+                            <label class="lc-settings-toggle">
+                                <input type="checkbox" name="start_chat_greeting" checked>
+                                <span class="lc-settings-toggle-ui"></span>
+                                <span class="lc-settings-toggle-text">
+                                    <strong>Send a message when an agent starts a chat</strong>
+                                    <small>Only this brand. On: Traffic “Start chat” sends “Hello How are you doing?” Off: the chat still opens, without that message.</small>
+                                </span>
+                            </label>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Turn this on only for this brand. Other brands keep their own forms.</p>
@@ -314,6 +326,14 @@ require __DIR__ . '/includes/header.php';
                             <textarea name="welcome_message" rows="3"><?= lc_sanitize($b['welcome_message']) ?></textarea>
                             <label>Offline message</label>
                             <textarea name="offline_message" rows="3"><?= lc_sanitize($b['offline_message']) ?></textarea>
+                            <label class="lc-settings-toggle">
+                                <input type="checkbox" name="start_chat_greeting" <?= !isset($b['start_chat_greeting']) || (int) $b['start_chat_greeting'] === 1 ? 'checked' : '' ?>>
+                                <span class="lc-settings-toggle-ui"></span>
+                                <span class="lc-settings-toggle-text">
+                                    <strong>Send a message when an agent starts a chat</strong>
+                                    <small>Only this brand. On: Traffic “Start chat” sends “Hello How are you doing?” Off: the chat still opens, without that message.</small>
+                                </span>
+                            </label>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Ask for details before a new chat. This form is not shared with other brands.</p>

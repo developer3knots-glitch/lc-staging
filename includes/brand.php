@@ -26,9 +26,23 @@ function lc_ensure_brand_widget_columns(): void
         lc_db()->exec("ALTER TABLE brands ADD COLUMN widget_theme VARCHAR(10) NOT NULL DEFAULT 'dark'");
     } catch (Throwable $e) {
     }
+    try {
+        lc_db()->exec('ALTER TABLE brands ADD COLUMN start_chat_greeting TINYINT(1) NOT NULL DEFAULT 1');
+    } catch (Throwable $e) {
+    }
     if (function_exists('lc_ensure_brand_prechat_columns')) {
         lc_ensure_brand_prechat_columns();
     }
+}
+
+function lc_brand_start_chat_greeting_enabled(array $brand): bool
+{
+    lc_ensure_brand_widget_columns();
+    if (!array_key_exists('start_chat_greeting', $brand)) {
+        return true;
+    }
+
+    return (int) $brand['start_chat_greeting'] === 1;
 }
 
 function lc_ensure_brands_schema(): void

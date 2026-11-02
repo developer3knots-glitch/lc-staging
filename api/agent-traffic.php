@@ -295,6 +295,24 @@ try {
         $visitBursts = lc_traffic_current_visit_bursts($longVisitIds);
     }
 
+    $greetingByBrand = [];
+    if (function_exists('lc_ensure_brand_widget_columns')) {
+        lc_ensure_brand_widget_columns();
+    }
+    try {
+        if ($accountId > 0) {
+            $greetStmt = $db->prepare('SELECT id, start_chat_greeting FROM brands WHERE account_id = ?');
+            $greetStmt->execute([$accountId]);
+        } else {
+            $greetStmt = $db->query('SELECT id, start_chat_greeting FROM brands');
+        }
+        foreach ($greetStmt->fetchAll(PDO::FETCH_ASSOC) as $greetRow) {
+            $greetingByBrand[(int) ($greetRow['id'] ?? 0)] = (int) ($greetRow['start_chat_greeting'] ?? 1) === 1;
+        }
+    } catch (Throwable $e) {
+        $greetingByBrand = [];
+    }
+
     $visitors = [];
     $supervisedIds = [];
     if (function_exists('lc_ensure_supervisors_schema')) {
@@ -492,6 +510,7 @@ try {
             'activity_label' => $activity,
             'brand_id' => $resolvedBrandId,
             'brand_key' => $resolvedBrandKey,
+            'start_chat_greeting' => !array_key_exists($resolvedBrandId, $greetingByBrand) || !empty($greetingByBrand[$resolvedBrandId]),
             'conversation_id' => $conversationId,
             'conversation_status' => $conversationStatusOut,
             'agent_id' => $agentId,
