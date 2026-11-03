@@ -51,8 +51,10 @@
         this.retries = 0;
         this.shouldRun = false;
         this._opening = false;
+        this._openingSince = 0;
         this._wantChannels = {};
         this._authedChannels = {};
+        this._visBound = false;
     }
 
     WebSocketDriver.prototype.on = function (event, fn) {
@@ -133,9 +135,30 @@
         });
     };
 
+    WebSocketDriver.prototype._bindVisibility = function () {
+        var self = this;
+        if (self._visBound || !global.document || !global.document.addEventListener) return;
+        self._visBound = true;
+        global.document.addEventListener('visibilitychange', function () {
+            if (!self.shouldRun || global.document.visibilityState !== 'visible') return;
+            if (self.isConnected()) {
+                self._lastPongAt = Date.now();
+                try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e) { /* ignore */ }
+                return;
+            }
+            if (self.reconnectTimer) {
+                clearTimeout(self.reconnectTimer);
+                self.reconnectTimer = null;
+            }
+            self.retries = 0;
+            self.openSocket();
+        });
+    };
+
     WebSocketDriver.prototype.connect = function () {
         this.shouldRun = true;
         this.retries = 0;
+        this._bindVisibility();
         return this.openSocket();
     };
 
@@ -203,10 +226,13 @@
         if (!wsUrl || !global.WebSocket) {
             return Promise.resolve();
         }
-        if (self._opening) {
+        // A token fetch that never returns used to leave _opening stuck and
+        // swallow every later reconnect.
+        if (self._opening && self._openingSince && (Date.now() - self._openingSince) < 8000) {
             return Promise.resolve();
         }
         self._opening = true;
+        self._openingSince = Date.now();
 
         // Drop prior socket without double-reconnect
         self._clearSocket(true);
@@ -265,10 +291,20 @@
                         self._flushWantedChannels();
                         emitAll(self.handlers, 'connected', { mode: 'ws', channels: msg.channels || [] });
                         if (self.pingTimer) clearInterval(self.pingTimer);
+                        self._lastPingTick = Date.now();
                         self.pingTimer = setInterval(function () {
                             if (!self.ws || self.ws.readyState !== 1) return;
+                            var now = Date.now();
+                            var gap = now - (self._lastPingTick || now);
+                            self._lastPingTick = now;
+                            // Background tabs freeze timers. A late tick is not a dead socket.
+                            if (gap > 30000) {
+                                self._lastPongAt = now;
+                                try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
+                                return;
+                            }
                             // Dead socket watchdog: no pong for 45s → force reconnect
-                            if (self._lastPongAt && (Date.now() - self._lastPongAt) > 45000) {
+                            if (self._lastPongAt && (now - self._lastPongAt) > 45000) {
                                 self.connected = false;
                                 self._clearSocket(true);
                                 self.scheduleReconnect();
@@ -294,12 +330,16 @@
                         return;
                     }
 
-                    if (msg.type === 'pong') {
+                    if (msg.type === 'pong' || msg.type === 'ping') {
                         self._lastPongAt = Date.now();
+                        if (msg.type === 'ping' && self.ws && self.ws.readyState === 1) {
+                            try { self.ws.send(JSON.stringify({ type: 'pong' })); } catch (e3) { /* ignore */ }
+                        }
                         return;
                     }
 
                     if (msg.type === 'event' && msg.event) {
+                        self._lastPongAt = Date.now();
                         emitAll(self.handlers, msg.event, msg.data || {});
                         emitAll(self.handlers, 'event', msg);
                     }

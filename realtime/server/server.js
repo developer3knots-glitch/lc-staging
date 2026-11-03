@@ -40,6 +40,8 @@ if (!SECRET) {
 
 /** @type {Map<string, Set<import('ws').WebSocket>>} */
 const channelSubs = new Map();
+/** @type {Set<import('ws').WebSocket>} */
+const allSockets = new Set();
 
 function verifyToken(token) {
   if (!token || !token.includes('.')) return null;
@@ -205,6 +207,7 @@ function wireWebSocket(server) {
 
   wss.on('connection', function (ws) {
     ws._lcAuthed = false;
+    allSockets.add(ws);
 
     ws.on('message', function (raw) {
       let msg;
@@ -304,12 +307,22 @@ function wireWebSocket(server) {
     });
 
     ws.on('close', function () {
+      allSockets.delete(ws);
       unsubscribeAll(ws);
     });
   });
 
   return wss;
 }
+
+// Server-side ping keeps the proxy from closing an idle socket when a
+// background tab stops sending its own pings.
+setInterval(function () {
+  allSockets.forEach(function (ws) {
+    if (!ws._lcAuthed || ws.readyState !== 1) return;
+    try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) { /* ignore */ }
+  });
+}, 20000);
 
 const httpServer = http.createServer(requestHandler);
 wireWebSocket(httpServer);

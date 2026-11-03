@@ -6527,13 +6527,10 @@
         messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
         if (mid > lastMsgId) lastMsgId = mid;
         if (window.LCTime) window.LCTime.scan(messagesEl);
-        // Supervisors / other-agent traffic: keep view pinned so replies are visible
-        if (isSupervising || m.sender_type === 'visitor' || !isOwnAgentMsg) {
-            stickToBottom = true;
-            scrollMessagesToBottom(true);
-        } else {
-            scrollMessagesToBottom(false);
-        }
+        // Same account on another browser has no local temp bubble.
+        // Pin the new line the same way a visitor message is pinned.
+        stickToBottom = true;
+        scrollMessagesToBottom(true);
         if (m.sender_type === 'visitor' && !recentContinue(selectedId)) {
             playIncomingSound('message_here', 'msg:' + mid);
             setPeerTypingVisible(false);
@@ -6878,6 +6875,8 @@
                     loadConversations();
                 }
             });
+            // Join the open chat before auth returns, so the first frame is not missed.
+            if (selectedId) syncRealtimeConversationChannel(selectedId);
             realtimeClient.connect();
         });
     }

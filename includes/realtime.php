@@ -328,11 +328,32 @@ function lc_realtime_publish_staff_event(int $conversationId, string $event, arr
     }
     $payload = array_merge(['conversation_id' => $conversationId], $data);
     lc_realtime_publish_channels(
-        lc_realtime_staff_channels($conversationId, $conv),
+        lc_realtime_with_sender_agent(lc_realtime_staff_channels($conversationId, $conv), $data),
         $event,
         $payload,
         $timeoutMs
     );
+}
+
+/**
+ * Same agent logged in on Chrome and Edge both sit on agent:{id}.
+ * A chat assigned to that agent already includes the channel; this also
+ * covers the sender when the conversation row has not caught up yet.
+ *
+ * @param list<string> $channels
+ * @param array<string, mixed> $data
+ * @return list<string>
+ */
+function lc_realtime_with_sender_agent(array $channels, array $data): array
+{
+    $message = (isset($data['message']) && is_array($data['message'])) ? $data['message'] : [];
+    $senderType = (string) ($message['sender_type'] ?? ($data['sender_type'] ?? ''));
+    $senderId = (int) ($message['sender_id'] ?? ($data['sender_id'] ?? 0));
+    if ($senderType === 'agent' && $senderId > 0) {
+        $channels[] = lc_realtime_channel_agent($senderId);
+    }
+
+    return array_values(array_unique(array_filter($channels)));
 }
 
 /**
@@ -443,12 +464,10 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         return;
     }
 
-    // Curl already used a short timeout. A second blocking HTTP call here is what
-    // turned Start chat into a PHP fatal (HTML) when the realtime server was slow.
-    if (function_exists('curl_init')) {
-        return;
-    }
-
+    // Curl timed out or never connected. One short non-blocking write so the
+    // other browser still gets the event. A duplicate frame is safe: clients
+    // dedupe by message id. Do not open a second blocking curl (that fatal'd
+    // Start chat when Node was slow).
     if (lc_realtime_publish_fire_and_forget($url, $payload)) {
         return;
     }
@@ -555,6 +574,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
                 $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
             }
         }
+        $peerChannels = lc_realtime_with_sender_agent($peerChannels, $data);
         $peerChannels = array_values(array_unique(array_filter($peerChannels)));
         // Generous timeout — multi-supervisor fanout must not get truncated
         lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 200 : 220);
