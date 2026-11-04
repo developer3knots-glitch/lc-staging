@@ -44,6 +44,12 @@ require __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </select>
         <?php endif; ?>
+        <select id="lc-traffic-country" class="lc-traffic-brand" aria-label="Filter by country">
+            <option value="">All countries</option>
+            <option value="pk">Pakistan</option>
+            <option value="us">USA</option>
+            <option value="other">Other</option>
+        </select>
         <button type="button" class="lc-btn lc-btn-secondary lc-btn-sm lc-traffic-refresh" id="lc-traffic-refresh" title="Refresh now" aria-label="Refresh">
             <i class="ti ti-refresh"></i>
         </button>

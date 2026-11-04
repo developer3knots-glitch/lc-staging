@@ -20,6 +20,10 @@ if (!in_array($tab, $allowedTabs, true)) {
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $brandFilter = (int) ($_GET['brand'] ?? 0);
+$countryFilter = strtolower(trim((string) ($_GET['country'] ?? '')));
+if (!in_array($countryFilter, ['pk', 'us', 'other'], true)) {
+    $countryFilter = '';
+}
 $onlineSec = 120; // background tabs throttle the 15s ping to about a minute
 $leftSec = 86400;
 
@@ -371,6 +375,10 @@ try {
             $status = $sharedChat['conv_status'] === 'waiting' ? 'queued' : 'chatting';
         }
 
+        if ($countryFilter !== '' && lc_traffic_country_bucket((string) ($row['visitor_country'] ?? '')) !== $countryFilter) {
+            continue;
+        }
+
         $onSite = $status !== 'left';
         if ($onSite) {
             $counts['all']++;
@@ -539,4 +547,33 @@ try {
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
+}
+
+/** Pakistan, USA, or everything else. Empty country counts as other. */
+function lc_traffic_country_bucket(string $country): string
+{
+    $code = function_exists('lc_country_code_from_label')
+        ? strtoupper(lc_country_code_from_label($country))
+        : '';
+    if ($code === '' && preg_match('/\(([A-Z]{2})\)\s*$/', $country, $m)) {
+        $code = $m[1];
+    }
+    if ($code === '' && preg_match('/^[A-Za-z]{2}$/', trim($country))) {
+        $code = strtoupper(trim($country));
+    }
+    if ($code === 'PK') {
+        return 'pk';
+    }
+    if ($code === 'US') {
+        return 'us';
+    }
+    $name = strtolower(trim($country));
+    if ($name !== '' && str_contains($name, 'pakistan')) {
+        return 'pk';
+    }
+    if ($name === 'usa' || $name === 'u.s.' || $name === 'u.s.a.' || str_contains($name, 'united states')) {
+        return 'us';
+    }
+
+    return 'other';
 }

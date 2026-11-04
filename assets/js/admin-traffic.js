@@ -10,6 +10,7 @@
     var tableWrap = root.querySelector('.lc-traffic-table-wrap');
     var searchInput = document.getElementById('lc-traffic-q');
     var brandSelect = document.getElementById('lc-traffic-brand');
+    var countrySelect = document.getElementById('lc-traffic-country');
     var refreshBtn = document.getElementById('lc-traffic-refresh');
     var pagerEl = document.getElementById('lc-traffic-pager');
     var pagerMeta = document.getElementById('lc-traffic-pager-meta');
@@ -469,7 +470,8 @@
 
     function filterKey() {
         var brand = brandSelect && brandSelect.value ? brandSelect.value : '0';
-        return String(searchQ || '') + '|' + String(brand);
+        var country = countrySelect && countrySelect.value ? countrySelect.value : '';
+        return String(searchQ || '') + '|' + String(brand) + '|' + String(country);
     }
 
     function mergeAllWithDeparted(fresh) {
@@ -620,6 +622,9 @@
         if (brandSelect && brandSelect.value && brandSelect.value !== '0') {
             url += '&brand=' + encodeURIComponent(brandSelect.value);
         }
+        if (countrySelect && countrySelect.value) {
+            url += '&country=' + encodeURIComponent(countrySelect.value);
+        }
         return url;
     }
 
@@ -743,6 +748,12 @@
 
     if (brandSelect) {
         brandSelect.addEventListener('change', function () {
+            load({ resetPage: true });
+        });
+    }
+
+    if (countrySelect) {
+        countrySelect.addEventListener('change', function () {
             load({ resetPage: true });
         });
     }
