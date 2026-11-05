@@ -540,7 +540,7 @@
             disconnected: 'Disconnected'
         };
         if (!labels[status]) return null;
-        var ts = parseInt(presence.presence_ts || presence.ts || 0, 10) || 0;
+        var ts = normalizePresenceTs(presence.presence_ts || presence.ts || 0);
         function flagOn(value, fallback) {
             if (value === undefined || value === null || value === '') return fallback;
             if (value === false || value === 0 || value === '0' || value === 'false') return false;
@@ -642,8 +642,16 @@
         scrollMessagesToBottom(false);
     }
 
+    function normalizePresenceTs(ts) {
+        ts = parseInt(ts, 10) || 0;
+        if (ts >= 100000000000000) return Math.round(ts / 1000);
+        if (ts >= 100000000000) return ts;
+        if (ts >= 1000000000) return ts * 1000;
+        return ts;
+    }
+
     function presenceStamp(presence) {
-        return parseInt(presence && (presence.presence_ts || presence.ts) || 0, 10) || 0;
+        return normalizePresenceTs(presence && (presence.presence_ts || presence.ts));
     }
 
     function presenceMeansLeft(presence) {
@@ -801,7 +809,7 @@
             presence.status = 'active';
             presence.label = 'Active';
         }
-        var floor = Date.now() * 1000;
+        var floor = Date.now();
         if (livePresenceTs > floor) floor = livePresenceTs;
         for (var i = 0; i < (lastConversations || []).length; i++) {
             if ((parseInt(lastConversations[i].id, 10) || 0) !== conversationId) continue;

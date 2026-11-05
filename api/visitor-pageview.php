@@ -154,9 +154,6 @@ try {
     // Tab/window closed — mark Left website and push Traffic over WebSocket.
     if ($event === 'unload' || $event === 'site_leave') {
         $leaveTs = function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0;
-        if (function_exists('lc_normalize_presence_ts')) {
-            $leaveTs = lc_normalize_presence_ts($leaveTs);
-        }
         if ($leaveTs > 0 && function_exists('lc_visitor_signal_is_older_than_presence')
             && lc_visitor_signal_is_older_than_presence($visitorId, $leaveTs)) {
             lc_json([
@@ -192,10 +189,18 @@ try {
                 WHERE id = ?
             ')->execute([$storeIp, $userAgent ?: null, mb_substr($pageUrl, 0, 500), $visitorId]);
         }
-        lc_mark_visitor_left_site($visitorId);
-        $clientTs = function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0;
+        $markedLeft = lc_mark_visitor_left_site($visitorId, $leaveTs);
+        if (!$markedLeft) {
+            lc_json([
+                'success' => true,
+                'event' => 'unload',
+                'visitor_uid' => $visitorUid,
+                'visitor_uid_rotated' => $visitorUidRotated,
+                'ignored_stale' => true,
+            ]);
+        }
         if (function_exists('lc_note_visitor_presence_ts')) {
-            lc_note_visitor_presence_ts($visitorId, $clientTs);
+            lc_note_visitor_presence_ts($visitorId, $leaveTs);
         }
         $leftName = 'Visitor';
         try {
@@ -213,7 +218,8 @@ try {
             $presence = lc_apply_visitor_presence_input($visitorId, [
                 'chat_open' => 0,
                 'page_visible' => 0,
-            ], $brandId, true);
+                'presence_ts' => $leaveTs,
+            ], $brandId, true, false);
         } elseif (function_exists('lc_realtime_publish_visitor_presence') && function_exists('lc_visitor_engagement_status')) {
             $presence = lc_visitor_engagement_status([
                 'left_site_at' => date('Y-m-d H:i:s'),
@@ -222,6 +228,19 @@ try {
                 'last_seen' => date('Y-m-d H:i:s'),
             ]);
             lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId);
+        }
+        if (is_array($presence) && !empty($presence['ignored_stale'])) {
+            $staleLeft = !empty($presence['left_site']) || (($presence['status'] ?? '') === 'left');
+            if (!$staleLeft) {
+                lc_json([
+                    'success' => true,
+                    'event' => 'unload',
+                    'visitor_uid' => $visitorUid,
+                    'visitor_uid_rotated' => $visitorUidRotated,
+                    'ignored_stale' => true,
+                    'visitor_presence' => $presence,
+                ]);
+            }
         }
         if (function_exists('lc_realtime_publish_traffic')) {
             lc_realtime_publish_traffic($brandId, 'left', [

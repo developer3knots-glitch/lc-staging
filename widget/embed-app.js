@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 198;
+    var LC_WIDGET_BUILD = 199;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -258,14 +258,32 @@
     }
 
     function markSiteNavigation() {
+        var token = String(Date.now());
         try {
-            sessionStorage.setItem(SITE_NAV_FLAG_KEY, '1');
-        } catch (err) {}
+            sessionStorage.setItem(SITE_NAV_FLAG_KEY, token);
+        } catch (err) {
+            return;
+        }
+        // A click that never navigates must not block a later real tab close.
+        setTimeout(function () {
+            try {
+                if (sessionStorage.getItem(SITE_NAV_FLAG_KEY) === token) {
+                    sessionStorage.removeItem(SITE_NAV_FLAG_KEY);
+                }
+            } catch (err2) {}
+        }, 4000);
     }
 
     function isSiteNavigation() {
         try {
-            return sessionStorage.getItem(SITE_NAV_FLAG_KEY) === '1';
+            var raw = sessionStorage.getItem(SITE_NAV_FLAG_KEY);
+            if (!raw) return false;
+            var at = parseInt(raw, 10) || 0;
+            if (!at || (Date.now() - at) > 10000) {
+                sessionStorage.removeItem(SITE_NAV_FLAG_KEY);
+                return false;
+            }
+            return true;
         } catch (err) {
             return false;
         }
@@ -285,6 +303,7 @@
         var currentEnteredAt = Date.now();
         var leaveSentForUrl = '';
         var siteLeaveSent = false;
+        var sameSiteLeaveHandled = false;
         var presenceTimer = null;
         var lastPresenceKey = '';
         var pendingPresenceFields = null;
@@ -383,7 +402,24 @@
             }, !!useBeacon);
         }
 
-        function sendSiteLeave() {
+        function sendSiteLeave(e) {
+            if (e && e.persisted) return;
+            // Same-site click: the chat stays open on the next page. Do not mark Left.
+            // The flag is read here — pagehide/beforeunload both call this.
+            if (isSiteNavigation()) {
+                if (sameSiteLeaveHandled) return;
+                sameSiteLeaveHandled = true;
+                var navUrl = lastSentUrl || window.location.href;
+                if (navUrl && leaveSentForUrl !== navUrl) {
+                    leaveSentForUrl = navUrl;
+                    postPageEvent({
+                        event: 'leave',
+                        page_url: navUrl,
+                        duration_seconds: pageStaySeconds()
+                    }, true);
+                }
+                return;
+            }
             if (siteLeaveSent) return;
             siteLeaveSent = true;
             var url = lastSentUrl || window.location.href;
@@ -425,14 +461,12 @@
             window.addEventListener('popstate', recordView);
         }
 
-        var presenceSeq = 0;
         var windowFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
         var windowBlurTimer = null;
         var lastReportedStatus = '';
 
         function nextPresenceTs() {
-            presenceSeq += 1;
-            return Date.now() * 1000 + (presenceSeq % 1000);
+            return Date.now();
         }
 
         function localPresencePayload(fields, ts) {
@@ -585,16 +619,17 @@
             lastReportedStatus = nextStatus;
         };
 
-        window.__lcNoteVisitorStillHere = function () {
+        function signalVisitorHere() {
             siteLeaveSent = false;
             leaveSentForUrl = '';
             reportEngagementPresence(false, true);
+        }
+        window.__lcNoteVisitorStillHere = function () {
+            signalVisitorHere();
         };
         window.addEventListener('pageshow', function () {
             if (document.visibilityState === 'hidden') return;
-            siteLeaveSent = false;
-            leaveSentForUrl = '';
-            reportEngagementPresence(false, true);
+            signalVisitorHere();
         });
 
         // Expose flush for realtime connected handlers outside this closure
@@ -605,6 +640,10 @@
 
         recordView();
         hookHistory();
+        // The loader waits on rev.php, so pageshow has often already fired.
+        // First presence is the return signal for a same-site load.
+        signalVisitorHere();
+        clearSiteNavigation();
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
             if (siteLeaveSent) {
@@ -7280,7 +7319,7 @@
                 widget_loaded_at: widgetLoadedAt,
                 lc_hp: readHoneypotField('lc-honeypot'),
                 message: msg,
-                presence_ts: Date.now() * 1000
+                presence_ts: Date.now()
             })
         })
         .then(function (r) {

@@ -64,7 +64,7 @@ try {
     if ($conversationId > 0) {
         $stmt = $db->prepare('
             SELECT c.id, c.agent_id, c.brand_id, c.status,
-                   v.id AS visitor_id, v.left_site_at, v.widget_open, v.page_visible, v.window_focused, v.presence_ts
+                   v.id AS visitor_id, v.left_site_at, v.last_seen, v.widget_open, v.page_visible, v.window_focused, v.presence_ts
             FROM conversations c
             JOIN visitors v ON v.id = c.visitor_id
             WHERE c.id = ? AND v.visitor_uid = ?
@@ -79,11 +79,13 @@ try {
         $agentId = (int) ($row['agent_id'] ?? 0);
         $brandId = (int) ($row['brand_id'] ?? 0);
         $leftAt = $row['left_site_at'] ?? null;
-        $prevTs = (int) ($row['presence_ts'] ?? 0);
+        $prevTs = function_exists('lc_normalize_presence_ts')
+            ? lc_normalize_presence_ts((int) ($row['presence_ts'] ?? 0))
+            : (int) ($row['presence_ts'] ?? 0);
         $widgetOpen = (int) ($row['widget_open'] ?? 0);
         $pageVisible = (int) ($row['page_visible'] ?? 1);
     } else {
-        $stmt = $db->prepare('SELECT id, left_site_at, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
+        $stmt = $db->prepare('SELECT id, left_site_at, last_seen, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE visitor_uid = ? LIMIT 1');
         $stmt->execute([$visitorUid]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
@@ -91,7 +93,9 @@ try {
         }
         $visitorId = (int) $row['id'];
         $leftAt = $row['left_site_at'] ?? null;
-        $prevTs = (int) ($row['presence_ts'] ?? 0);
+        $prevTs = function_exists('lc_normalize_presence_ts')
+            ? lc_normalize_presence_ts((int) ($row['presence_ts'] ?? 0))
+            : (int) ($row['presence_ts'] ?? 0);
         $widgetOpen = (int) ($row['widget_open'] ?? 0);
         $pageVisible = (int) ($row['page_visible'] ?? 1);
     }
@@ -101,8 +105,10 @@ try {
         lc_record_visitor_ip($visitorId, $reportedIpv4);
     }
 
-    $presenceTs = (int) ($input['presence_ts'] ?? $input['ts'] ?? 0);
-    if ($presenceTs > 1000000000 && $presenceTs < 20000000000) {
+    $presenceTs = (int) ($input['presence_ts'] ?? $input['client_ts'] ?? $input['ts'] ?? 0);
+    if (function_exists('lc_normalize_presence_ts')) {
+        $presenceTs = lc_normalize_presence_ts($presenceTs);
+    } elseif ($presenceTs > 1000000000 && $presenceTs < 20000000000) {
         $presenceTs *= 1000;
     }
 
@@ -159,13 +165,15 @@ try {
             'left_site_at' => $leftAt,
             'widget_open' => $widgetOpen,
             'page_visible' => $pageVisible,
-            'last_seen' => gmdate('Y-m-d H:i:s'),
+            'last_seen' => $row['last_seen'] ?? null,
             'presence_ts' => $prevTs,
         ]);
         $presence['presence_ts'] = $prevTs;
         $presence['ignored_stale'] = true;
         lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
     }
+
+    $lastSeen = $row['last_seen'] ?? null;
 
     $leftSite = !empty($input['left_site']) && (
         $input['left_site'] === true || $input['left_site'] === 1
@@ -179,14 +187,27 @@ try {
         'widget_open' => $widgetOpen,
         'page_visible' => $pageVisible,
         'window_focused' => (int) ($row['window_focused'] ?? 1),
-        'last_seen' => gmdate('Y-m-d H:i:s'),
+        'last_seen' => $lastSeen,
         'presence_ts' => $prevTs,
     ])['status'] ?? '');
 
     if ($leftSite) {
         $chatOpen = false;
         $pageVis = false;
-        lc_mark_visitor_left_site($visitorId);
+        $markedLeft = lc_mark_visitor_left_site($visitorId, $presenceTs);
+        if (!$markedLeft) {
+            $fresh = [];
+            try {
+                $freshStmt = $db->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+                $freshStmt->execute([$visitorId]);
+                $fresh = $freshStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            } catch (Throwable $eFresh) {
+                $fresh = [];
+            }
+            $presence = lc_visitor_engagement_status($fresh);
+            $presence['ignored_stale'] = true;
+            lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
+        }
         $leftAt = gmdate('Y-m-d H:i:s');
     } elseif ($leftAt && $presenceTs > $prevTs) {
         // Back on site. Keep the visit clock unless they were gone more than 5 minutes.
@@ -212,15 +233,36 @@ try {
         $chatOpen,
         $pageVis,
         $presenceTs > 0 ? $presenceTs : 0,
-        $windowFocused
+        $windowFocused,
+        !$leftSite
     );
+
+    if ($leftSite) {
+        $confirmRow = [];
+        try {
+            $confirmStmt = $db->prepare('SELECT left_site_at, last_seen, widget_open, page_visible, window_focused, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+            $confirmStmt->execute([$visitorId]);
+            $confirmRow = $confirmStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $eConfirm) {
+            $confirmRow = ['left_site_at' => $leftAt, 'presence_ts' => $presenceTs];
+        }
+        $confirmTs = function_exists('lc_normalize_presence_ts')
+            ? lc_normalize_presence_ts((int) ($confirmRow['presence_ts'] ?? 0))
+            : (int) ($confirmRow['presence_ts'] ?? 0);
+        $stillLeft = !empty($confirmRow['left_site_at']) && ($presenceTs < 1 || $confirmTs <= $presenceTs);
+        if (!$stillLeft) {
+            $presence = lc_visitor_engagement_status($confirmRow);
+            $presence['ignored_stale'] = true;
+            lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
+        }
+    }
 
     $presence = lc_visitor_engagement_status([
         'left_site_at' => $leftAt,
         'widget_open' => $widgetOpen,
         'page_visible' => $pageVisible,
         'window_focused' => $windowOpenFlag,
-        'last_seen' => gmdate('Y-m-d H:i:s'),
+        'last_seen' => $leftSite ? $lastSeen : gmdate('Y-m-d H:i:s'),
     ]);
     if ($leftSite) {
         $presence['status'] = 'left';

@@ -199,61 +199,120 @@ function lc_mark_visitor_on_site(int $visitorId): void
     }
 }
 
-function lc_mark_visitor_left_site(int $visitorId): void
+/**
+ * Milliseconds, for SQL. Old rows may still hold Date.now()*1000.
+ * Column name is internal only.
+ */
+function lc_presence_ts_ms_sql(string $column = 'presence_ts'): string
+{
+    return '(CASE'
+        . ' WHEN COALESCE(' . $column . ', 0) >= 100000000000000 THEN COALESCE(' . $column . ', 0) DIV 1000'
+        . ' WHEN COALESCE(' . $column . ', 0) >= 100000000000 THEN COALESCE(' . $column . ', 0)'
+        . ' WHEN COALESCE(' . $column . ', 0) >= 1000000000 THEN COALESCE(' . $column . ', 0) * 1000'
+        . ' ELSE COALESCE(' . $column . ', 0) END)';
+}
+
+/**
+ * One clock for leave, heartbeats, page views, and chat messages: milliseconds.
+ * Seconds and the old Date.now()*1000 pulse both fold into that unit.
+ */
+function lc_normalize_presence_ts(int $ts): int
+{
+    if ($ts < 1) {
+        return 0;
+    }
+    if ($ts >= 100000000000000) {
+        return intdiv($ts, 1000);
+    }
+    if ($ts >= 100000000000) {
+        return $ts;
+    }
+    if ($ts >= 1000000000) {
+        return $ts * 1000;
+    }
+    return $ts;
+}
+
+/**
+ * Set Left only when this leave is at least as new as the latest on-site signal.
+ * A beacon that was already in flight when they sent a message must not win.
+ *
+ * @return bool true when the visitor is Left because of this signal
+ */
+function lc_mark_visitor_left_site(int $visitorId, int $signalTs = 0): bool
 {
     if ($visitorId < 1) {
-        return;
+        return false;
     }
     lc_ensure_visitor_presence_schema();
+    $signalTs = lc_normalize_presence_ts($signalTs);
+    $norm = lc_presence_ts_ms_sql('presence_ts');
     try {
+        if ($signalTs > 0) {
+            $stmt = lc_db()->prepare('
+                UPDATE visitors
+                SET left_site_at = IF(
+                        left_site_at IS NULL OR (last_seen IS NOT NULL AND last_seen > left_site_at),
+                        UTC_TIMESTAMP(),
+                        left_site_at
+                    ),
+                    widget_open = 0,
+                    page_visible = 0,
+                    presence_ts = ?
+                WHERE id = ?
+                  AND ' . $norm . ' <= ?
+            ');
+            $stmt->execute([$signalTs, $visitorId, $signalTs]);
+            if ($stmt->rowCount() > 0) {
+                return true;
+            }
+            $check = lc_db()->prepare('SELECT left_site_at, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+            $check->execute([$visitorId]);
+            $row = $check->fetch(PDO::FETCH_ASSOC) ?: [];
+            if (empty($row['left_site_at'])) {
+                return false;
+            }
+            $stored = lc_normalize_presence_ts((int) ($row['presence_ts'] ?? 0));
+            return $stored <= $signalTs;
+        }
         lc_db()->prepare('
             UPDATE visitors
-            SET left_site_at = COALESCE(left_site_at, UTC_TIMESTAMP()),
+            SET left_site_at = IF(
+                    left_site_at IS NULL OR (last_seen IS NOT NULL AND last_seen > left_site_at),
+                    UTC_TIMESTAMP(),
+                    left_site_at
+                ),
                 widget_open = 0,
                 page_visible = 0
             WHERE id = ?
         ')->execute([$visitorId]);
+        return true;
     } catch (Throwable $e) {
+        return false;
     }
 }
 
 function lc_client_presence_ms(array $input): int
 {
     $ts = (int) ($input['client_ts'] ?? $input['presence_ts'] ?? $input['ts'] ?? 0);
-    if ($ts > 1000000000 && $ts < 20000000000) {
-        $ts *= 1000;
-    }
-    return max(0, $ts);
+    return lc_normalize_presence_ts($ts);
 }
 
-/**
- * Widget presence pulses use Date.now()*1000. Page events use Date.now() milliseconds.
- * Both must compare on the pulse scale or a chat message looks older than Left.
- */
-function lc_normalize_presence_ts(int $ts): int
+function lc_presence_now_ms(): int
 {
-    if ($ts > 1000000000 && $ts < 20000000000) {
-        $ts *= 1000;
-    }
-    if ($ts > 1000000000000 && $ts < 20000000000000) {
-        $ts *= 1000;
-    }
-    return max(0, $ts);
-}
-
-function lc_presence_now_us(): int
-{
-    return (int) round(microtime(true) * 1000000);
+    return (int) floor(microtime(true) * 1000);
 }
 
 function lc_note_visitor_presence_ts(int $visitorId, int $clientTs): void
 {
+    $clientTs = lc_normalize_presence_ts($clientTs);
     if ($visitorId < 1 || $clientTs < 1) {
         return;
     }
+    $norm = lc_presence_ts_ms_sql('presence_ts');
     try {
-        lc_db()->prepare('UPDATE visitors SET presence_ts = IF(COALESCE(presence_ts, 0) < ?, ?, presence_ts) WHERE id = ?')
-            ->execute([$clientTs, $clientTs, $visitorId]);
+        lc_db()->prepare('UPDATE visitors SET presence_ts = ? WHERE id = ? AND ' . $norm . ' < ?')
+            ->execute([$clientTs, $visitorId, $clientTs]);
     } catch (Throwable $e) {
     }
 }
@@ -266,8 +325,9 @@ function lc_visitor_pulse_is_stale_after_leave(int $visitorId, int $clientTs): b
     if ($visitorId < 1) {
         return false;
     }
+    $clientTs = lc_normalize_presence_ts($clientTs);
     try {
-        $stmt = lc_db()->prepare('SELECT left_site_at, presence_ts FROM visitors WHERE id = ? LIMIT 1');
+        $stmt = lc_db()->prepare('SELECT left_site_at, last_seen, presence_ts FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) {
@@ -276,15 +336,17 @@ function lc_visitor_pulse_is_stale_after_leave(int $visitorId, int $clientTs): b
     if (empty($row['left_site_at'])) {
         return false;
     }
-    $stored = (int) ($row['presence_ts'] ?? 0);
+    $leftTs = lc_presence_timestamp((string) $row['left_site_at']);
+    $seenTs = lc_presence_timestamp(isset($row['last_seen']) ? (string) $row['last_seen'] : null);
+    if ($seenTs !== null && $leftTs !== null && $seenTs > $leftTs) {
+        return false;
+    }
+    $stored = lc_normalize_presence_ts((int) ($row['presence_ts'] ?? 0));
     if ($clientTs > 0 && $stored > 0 && $clientTs <= $stored) {
         return true;
     }
-    if ($clientTs < 1) {
-        $leftTs = strtotime((string) $row['left_site_at'] . ' UTC');
-        if ($leftTs !== false && (time() - $leftTs) >= 0 && (time() - $leftTs) < 12) {
-            return true;
-        }
+    if ($clientTs < 1 && $leftTs !== null && (time() - $leftTs) >= 0 && (time() - $leftTs) < 12) {
+        return true;
     }
     return false;
 }
@@ -295,13 +357,17 @@ function lc_visitor_pulse_is_stale_after_leave(int $visitorId, int $clientTs): b
  */
 function lc_visitor_signal_is_older_than_presence(int $visitorId, int $signalTs): bool
 {
-    if ($visitorId < 1 || $signalTs < 1) {
+    if ($visitorId < 1) {
+        return false;
+    }
+    $signalTs = lc_normalize_presence_ts($signalTs);
+    if ($signalTs < 1) {
         return false;
     }
     try {
         $stmt = lc_db()->prepare('SELECT presence_ts FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
-        $stored = (int) ($stmt->fetchColumn() ?: 0);
+        $stored = lc_normalize_presence_ts((int) ($stmt->fetchColumn() ?: 0));
     } catch (Throwable $e) {
         return false;
     }
@@ -314,12 +380,13 @@ function lc_visitor_signal_is_older_than_presence(int $visitorId, int $signalTs)
  *
  * @return bool true if row was updated
  */
-function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null, int $presenceTs = 0, ?bool $windowFocused = null): bool
+function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = null, ?bool $pageVisible = null, int $presenceTs = 0, ?bool $windowFocused = null, bool $bumpLastSeen = true): bool
 {
     if ($visitorId < 1 || ($widgetOpen === null && $pageVisible === null && $windowFocused === null)) {
         return false;
     }
     lc_ensure_visitor_presence_schema();
+    $presenceTs = lc_normalize_presence_ts($presenceTs);
     $sets = [];
     $params = [];
     if ($widgetOpen !== null) {
@@ -334,15 +401,20 @@ function lc_set_visitor_engagement_flags(int $visitorId, ?bool $widgetOpen = nul
         $sets[] = 'window_focused = ?';
         $params[] = $windowFocused ? 1 : 0;
     }
-    $sets[] = 'last_seen = UTC_TIMESTAMP()';
+    if ($bumpLastSeen) {
+        $sets[] = 'last_seen = UTC_TIMESTAMP()';
+    }
     if ($presenceTs > 0) {
         $sets[] = 'presence_ts = ?';
         $params[] = $presenceTs;
     }
+    if (!$sets) {
+        return false;
+    }
     $params[] = $visitorId;
     $sql = 'UPDATE visitors SET ' . implode(', ', $sets) . ' WHERE id = ?';
     if ($presenceTs > 0) {
-        $sql .= ' AND presence_ts <= ?';
+        $sql .= ' AND ' . lc_presence_ts_ms_sql('presence_ts') . ' <= ?';
         $params[] = $presenceTs;
     }
     try {
@@ -441,7 +513,14 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
         ? ((int) ($row['visitor_window_focused'] ?? $row['window_focused'] ?? 1) === 1)
         : true;
     $leftSite = $leftRaw !== null && trim((string) $leftRaw) !== '';
-    $presenceTs = (int) ($row['visitor_presence_ts'] ?? $row['presence_ts'] ?? 0);
+    $seenTs = lc_presence_timestamp($lastRaw !== null ? (string) $lastRaw : null);
+    if ($leftSite) {
+        $leftTs = lc_presence_timestamp(trim((string) $leftRaw));
+        if ($seenTs !== null && $leftTs !== null && $seenTs > $leftTs) {
+            $leftSite = false;
+        }
+    }
+    $presenceTs = lc_normalize_presence_ts((int) ($row['visitor_presence_ts'] ?? $row['presence_ts'] ?? 0));
 
     $base = [
         'widget_open' => $widgetOpen,
@@ -458,7 +537,6 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
         return array_merge($base, ['status' => 'left', 'label' => 'Left website']);
     }
 
-    $seenTs = lc_presence_timestamp($lastRaw !== null ? (string) $lastRaw : null);
     if ($seenTs === null || (time() - $seenTs) > $staleSec) {
         return array_merge($base, ['status' => 'disconnected', 'label' => 'Disconnected']);
     }
@@ -523,7 +601,7 @@ function lc_presence_log_is_repeat(int $conversationId, string $line): bool
  * @param array<string,mixed> $input
  * @return array{status:string,label:string,widget_open:bool,page_visible:bool,left_site:bool,last_seen:?string}|null
  */
-function lc_apply_visitor_presence_input(int $visitorId, array $input, int $brandId = 0, bool $forcePublish = false): ?array
+function lc_apply_visitor_presence_input(int $visitorId, array $input, int $brandId = 0, bool $forcePublish = false, bool $bumpLastSeen = true): ?array
 {
     if ($visitorId < 1) {
         return null;
@@ -569,14 +647,12 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
     $presenceTs = 0;
     if (isset($input['presence_ts'])) {
         $presenceTs = (int) $input['presence_ts'];
+    } elseif (isset($input['client_ts'])) {
+        $presenceTs = (int) $input['client_ts'];
     } elseif (isset($input['ts'])) {
         $presenceTs = (int) $input['ts'];
     }
-    if ($presenceTs > 20000000000) {
-        // already ms
-    } elseif ($presenceTs > 1000000000) {
-        $presenceTs *= 1000;
-    }
+    $presenceTs = lc_normalize_presence_ts($presenceTs);
 
     $prevRow = [];
     try {
@@ -587,9 +663,10 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         $prevRow = [];
     }
     $prevStatus = (string) (lc_visitor_engagement_status($prevRow)['status'] ?? '');
-    $prevTs = (int) ($prevRow['presence_ts'] ?? 0);
+    $prevTs = lc_normalize_presence_ts((int) ($prevRow['presence_ts'] ?? 0));
 
-    // Stale HTTP (e.g. slow minimize finishing after open) — ignore completely
+    // Stale HTTP (e.g. slow minimize finishing after open) — ignore completely.
+    // An older Left must not replace a live presence that is already back.
     if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
         $stale = lc_visitor_engagement_status($prevRow);
         $stale['presence_ts'] = $prevTs;
@@ -599,7 +676,7 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
 
     $applied = false;
     if ($widgetOpen !== null || $pageVisible !== null || $windowFocused !== null) {
-        $applied = lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible, $presenceTs, $windowFocused);
+        $applied = lc_set_visitor_engagement_flags($visitorId, $widgetOpen, $pageVisible, $presenceTs, $windowFocused, $bumpLastSeen);
         if (!$applied && $presenceTs > 0) {
             // Lost race to a newer pulse
             try {
@@ -609,7 +686,7 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
             } catch (Throwable $e) {
             }
             $presence = lc_visitor_engagement_status($prevRow);
-            $presence['presence_ts'] = (int) ($prevRow['presence_ts'] ?? $prevTs);
+            $presence['presence_ts'] = lc_normalize_presence_ts((int) ($prevRow['presence_ts'] ?? $prevTs));
             $presence['ignored_stale'] = true;
             return $presence;
         }
@@ -622,14 +699,16 @@ function lc_apply_visitor_presence_input(int $visitorId, array $input, int $bran
         if ($windowFocused !== null) {
             $prevRow['window_focused'] = $windowFocused ? 1 : 0;
         }
-        $prevRow['last_seen'] = gmdate('Y-m-d H:i:s');
+        if ($bumpLastSeen) {
+            $prevRow['last_seen'] = gmdate('Y-m-d H:i:s');
+        }
         if ($presenceTs > 0) {
             $prevRow['presence_ts'] = $presenceTs;
         }
     }
 
     $presence = lc_visitor_engagement_status($prevRow);
-    $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : (int) ($prevRow['presence_ts'] ?? 0);
+    $presence['presence_ts'] = $presenceTs > 0 ? $presenceTs : lc_normalize_presence_ts((int) ($prevRow['presence_ts'] ?? 0));
     $changed = $forcePublish || $prevStatus === '' || $prevStatus !== (string) ($presence['status'] ?? '');
     // Never re-broadcast stale/duplicate HTTP — live path is visitor WS client_event
     if ($changed && $applied) {
@@ -719,12 +798,18 @@ function lc_visitor_returned_by_message(int $visitorId, int $brandId = 0, int $c
     try {
         $stmt = lc_db()->prepare('SELECT presence_ts FROM visitors WHERE id = ? LIMIT 1');
         $stmt->execute([$visitorId]);
-        $stored = (int) ($stmt->fetchColumn() ?: 0);
+        $stored = lc_normalize_presence_ts((int) ($stmt->fetchColumn() ?: 0));
     } catch (Throwable $e) {
         $stored = 0;
     }
     $clientTs = lc_normalize_presence_ts($clientTs);
-    $presenceTs = max($stored + 1, lc_presence_now_us(), $clientTs);
+    if ($clientTs < 1) {
+        $clientTs = lc_presence_now_ms();
+    }
+    $presenceTs = $clientTs;
+    if ($stored > 0 && $presenceTs <= $stored) {
+        $presenceTs = $stored + 1;
+    }
 
     lc_mark_visitor_on_site($visitorId);
     lc_set_visitor_engagement_flags($visitorId, true, true, $presenceTs, true);
