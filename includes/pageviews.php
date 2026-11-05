@@ -226,6 +226,26 @@ function lc_client_presence_ms(array $input): int
     return max(0, $ts);
 }
 
+/**
+ * Widget presence pulses use Date.now()*1000. Page events use Date.now() milliseconds.
+ * Both must compare on the pulse scale or a chat message looks older than Left.
+ */
+function lc_normalize_presence_ts(int $ts): int
+{
+    if ($ts > 1000000000 && $ts < 20000000000) {
+        $ts *= 1000;
+    }
+    if ($ts > 1000000000000 && $ts < 20000000000000) {
+        $ts *= 1000;
+    }
+    return max(0, $ts);
+}
+
+function lc_presence_now_us(): int
+{
+    return (int) round(microtime(true) * 1000000);
+}
+
 function lc_note_visitor_presence_ts(int $visitorId, int $clientTs): void
 {
     if ($visitorId < 1 || $clientTs < 1) {
@@ -267,6 +287,25 @@ function lc_visitor_pulse_is_stale_after_leave(int $visitorId, int $clientTs): b
         }
     }
     return false;
+}
+
+/**
+ * A leave beacon that left the browser before a newer on-site signal (a chat
+ * message) must not mark the visitor Left again.
+ */
+function lc_visitor_signal_is_older_than_presence(int $visitorId, int $signalTs): bool
+{
+    if ($visitorId < 1 || $signalTs < 1) {
+        return false;
+    }
+    try {
+        $stmt = lc_db()->prepare('SELECT presence_ts FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $stored = (int) ($stmt->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+        return false;
+    }
+    return $stored > 0 && $signalTs <= $stored;
 }
 
 /**
@@ -639,13 +678,21 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
         if ($conversationId < 1) {
             continue;
         }
-        $channels = [
-            lc_realtime_channel_conversation($conversationId),
-            lc_realtime_channel_staff_conversation($conversationId),
-        ];
         $agentId = (int) ($conv['agent_id'] ?? 0);
-        if ($agentId > 0) {
-            $channels[] = lc_realtime_channel_agent($agentId);
+        $brandForStaff = (int) ($conv['brand_id'] ?? 0);
+        if (function_exists('lc_realtime_staff_channels')) {
+            $channels = lc_realtime_staff_channels($conversationId, [
+                'agent_id' => $agentId,
+                'brand_id' => $brandForStaff,
+            ]);
+        } else {
+            $channels = [
+                lc_realtime_channel_conversation($conversationId),
+                lc_realtime_channel_staff_conversation($conversationId),
+            ];
+            if ($agentId > 0) {
+                $channels[] = lc_realtime_channel_agent($agentId);
+            }
         }
         // Confirmed publish (typing-style) — fire-and-forget was dropping events → 3–4s poll lag
         lc_realtime_publish_channels($channels, 'visitor.presence', [
@@ -653,6 +700,54 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
             'visitor_presence' => $presence,
         ], 180);
     }
+}
+
+/**
+ * A visitor chat message means they are on the site. Clear Left website and
+ * tell agents immediately. The visit clock stays put unless they were gone
+ * more than 5 minutes (same rule as lc_mark_visitor_on_site).
+ *
+ * @return array<string,mixed>|null
+ */
+function lc_visitor_returned_by_message(int $visitorId, int $brandId = 0, int $clientTs = 0): ?array
+{
+    if ($visitorId < 1) {
+        return null;
+    }
+    lc_ensure_visitor_presence_schema();
+    $stored = 0;
+    try {
+        $stmt = lc_db()->prepare('SELECT presence_ts FROM visitors WHERE id = ? LIMIT 1');
+        $stmt->execute([$visitorId]);
+        $stored = (int) ($stmt->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+        $stored = 0;
+    }
+    $clientTs = lc_normalize_presence_ts($clientTs);
+    $presenceTs = max($stored + 1, lc_presence_now_us(), $clientTs);
+
+    lc_mark_visitor_on_site($visitorId);
+    lc_set_visitor_engagement_flags($visitorId, true, true, $presenceTs, true);
+    lc_note_visitor_presence_ts($visitorId, $presenceTs);
+
+    $presence = lc_visitor_engagement_status([
+        'left_site_at' => null,
+        'widget_open' => 1,
+        'page_visible' => 1,
+        'window_focused' => 1,
+        'last_seen' => gmdate('Y-m-d H:i:s'),
+        'presence_ts' => $presenceTs,
+    ]);
+    $presence['left_site'] = false;
+    $presence['presence_ts'] = $presenceTs;
+    if ((string) ($presence['status'] ?? '') === 'left') {
+        $presence['status'] = 'active';
+        $presence['label'] = 'Active';
+    }
+    if (function_exists('lc_realtime_publish_visitor_presence')) {
+        lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
+    }
+    return $presence;
 }
 
 /**

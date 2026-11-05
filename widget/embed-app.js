@@ -561,6 +561,9 @@
                     }
                 }
             }
+            if (!fields.left_site && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+                siteLeaveSent = false;
+            }
             var key = presenceKey(fields);
             if (!force && key === lastPresenceKey) {
                 return;
@@ -582,6 +585,18 @@
             lastReportedStatus = nextStatus;
         };
 
+        window.__lcNoteVisitorStillHere = function () {
+            siteLeaveSent = false;
+            leaveSentForUrl = '';
+            reportEngagementPresence(false, true);
+        };
+        window.addEventListener('pageshow', function () {
+            if (document.visibilityState === 'hidden') return;
+            siteLeaveSent = false;
+            leaveSentForUrl = '';
+            reportEngagementPresence(false, true);
+        });
+
         // Expose flush for realtime connected handlers outside this closure
         window.__lcFlushVisitorPresence = function () {
             var fields = pendingPresenceFields || engagementFields();
@@ -592,7 +607,11 @@
         hookHistory();
         if (presenceTimer) clearInterval(presenceTimer);
         presenceTimer = setInterval(function () {
-            if (siteLeaveSent) return;
+            if (siteLeaveSent) {
+                if (document.visibilityState === 'hidden') return;
+                siteLeaveSent = false;
+                reportEngagementPresence(false, true);
+            }
             sendStay(false);
         }, 15000);
 
@@ -7260,7 +7279,8 @@
                 brand_key: brandKey,
                 widget_loaded_at: widgetLoadedAt,
                 lc_hp: readHoneypotField('lc-honeypot'),
-                message: msg
+                message: msg,
+                presence_ts: Date.now() * 1000
             })
         })
         .then(function (r) {
@@ -7460,6 +7480,9 @@
         var sendBtn = document.getElementById('lc-send');
         sendBtn.classList.add('is-sending');
         var wasClosed = chatClosed;
+        if (typeof window.__lcNoteVisitorStillHere === 'function') {
+            window.__lcNoteVisitorStillHere();
+        }
 
         // Prefer stored token if in-memory was cleared by a settings race
         if (!chatToken) {

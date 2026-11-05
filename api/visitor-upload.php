@@ -54,6 +54,13 @@ try {
             ->execute([$userAgent !== '' ? $userAgent : null, (int) $conv['visitor_id']]);
     } catch (Throwable $e) {
     }
+    if (function_exists('lc_visitor_returned_by_message')) {
+        try {
+            $uploadTs = (int) ($_POST['presence_ts'] ?? $_POST['client_ts'] ?? 0);
+            lc_visitor_returned_by_message((int) $conv['visitor_id'], (int) ($conv['brand_id'] ?? 0), $uploadTs);
+        } catch (Throwable $eBack) {
+        }
+    }
 
     $saved = lc_attachment_save_message(
         $conversationId,

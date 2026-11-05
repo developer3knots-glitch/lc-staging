@@ -642,6 +642,74 @@
         scrollMessagesToBottom(false);
     }
 
+    function presenceStamp(presence) {
+        return parseInt(presence && (presence.presence_ts || presence.ts) || 0, 10) || 0;
+    }
+
+    function presenceMeansLeft(presence) {
+        if (!presence) return false;
+        var status = String(presence.status || '').toLowerCase();
+        return status === 'left' || presence.left_site === true || presence.left_site === 1 || presence.left_site === '1';
+    }
+
+    function preferVisitorPresence(local, server) {
+        var keptLocal = normalizeVisitorPresence(local);
+        var keptServer = normalizeVisitorPresence(server);
+        if (!keptLocal) return keptServer || null;
+        if (!keptServer) return keptLocal;
+        var localLeft = presenceMeansLeft(keptLocal);
+        var serverLeft = presenceMeansLeft(keptServer);
+        var localTs = presenceStamp(keptLocal);
+        var serverTs = presenceStamp(keptServer);
+        if (!localLeft && serverLeft && localTs >= serverTs) return keptLocal;
+        if (localLeft && !serverLeft && serverTs >= localTs) return keptServer;
+        if (localTs > serverTs) return keptLocal;
+        return keptServer;
+    }
+
+    function mergeFresherVisitorPresence(rows, previous) {
+        var local = {};
+        (previous || []).forEach(function (row) {
+            var id = parseInt(row && row.id, 10) || 0;
+            if (id && row.visitor_presence) local[id] = row.visitor_presence;
+        });
+        return (rows || []).map(function (row) {
+            var id = parseInt(row && row.id, 10) || 0;
+            var kept = preferVisitorPresence(local[id], row && row.visitor_presence);
+            if (!kept) return row;
+            var serverNorm = normalizeVisitorPresence(row && row.visitor_presence);
+            if (serverNorm && presenceStamp(serverNorm) === presenceStamp(kept) && presenceMeansLeft(serverNorm) === presenceMeansLeft(kept) && String(serverNorm.status || '') === String(kept.status || '')) {
+                return row;
+            }
+            var next = Object.assign({}, row, { visitor_presence: kept });
+            if (!presenceMeansLeft(kept)) next.visitor_left_site_at = null;
+            return next;
+        });
+    }
+
+    /** A live non-left status must beat a stored Left, even if its clock is behind. */
+    function liftPresenceOverLeft(presence, conversationId) {
+        presence = normalizeVisitorPresence(presence);
+        if (!presence || presenceMeansLeft(presence)) return presence;
+        var prev = null;
+        var cid = parseInt(conversationId, 10) || 0;
+        for (var i = 0; i < (lastConversations || []).length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) === cid) {
+                prev = normalizeVisitorPresence(lastConversations[i].visitor_presence);
+                break;
+            }
+        }
+        presence.left_site = false;
+        if (presence.status === 'left') {
+            presence.status = 'active';
+            presence.label = 'Active';
+        }
+        var floor = presenceStamp(prev);
+        if (selectedId === cid && livePresenceTs > floor) floor = livePresenceTs;
+        if (presenceStamp(presence) <= floor) presence.presence_ts = floor + 1;
+        return presence;
+    }
+
     function applyVisitorPresenceToInbox(conversationId, presence) {
         conversationId = parseInt(conversationId, 10) || 0;
         presence = normalizeVisitorPresence(presence);
@@ -649,7 +717,21 @@
         var changed = false;
         for (var i = 0; i < lastConversations.length; i++) {
             if ((parseInt(lastConversations[i].id, 10) || 0) === conversationId) {
+                var prevPresence = normalizeVisitorPresence(lastConversations[i].visitor_presence);
+                var incomingLeft = presenceMeansLeft(presence);
+                if (prevPresence && incomingLeft && !presenceMeansLeft(prevPresence) && presenceStamp(presence) <= presenceStamp(prevPresence)) {
+                    return;
+                }
+                if (!incomingLeft && prevPresence && presenceMeansLeft(prevPresence) && presenceStamp(presence) <= presenceStamp(prevPresence)) {
+                    presence.presence_ts = presenceStamp(prevPresence) + 1;
+                    presence.left_site = false;
+                }
+                var clearedLeft = !incomingLeft && !!(lastConversations[i].visitor_left_site_at || (prevPresence && presenceMeansLeft(prevPresence)));
                 lastConversations[i].visitor_presence = presence;
+                if (!incomingLeft) lastConversations[i].visitor_left_site_at = null;
+                if (clearedLeft && selectedId === conversationId) {
+                    setText('lc-details-time-on-site', formatTimeOnSite(lastConversations[i]));
+                }
                 changed = true;
                 if (String(lastConversations[i].status || '') === 'closed' && !visitorIsBrowsing(lastConversations[i]) && !inboxSearch && currentTab === 'all') {
                     lastConversations = lastConversations.filter(function (row) {
@@ -666,6 +748,10 @@
         if (el) {
             var foot = el.querySelector('.lc-chat-item-foot');
             if (foot && el.dataset.status === 'waiting') {
+                if (!presenceMeansLeft(presence)) {
+                    var stalePresence = foot.querySelector('.lc-badge-presence');
+                    if (stalePresence) stalePresence.remove();
+                }
                 var waitingChip = foot.querySelector('.lc-badge-waiting');
                 if (!waitingChip) {
                     var replaced = foot.querySelector('.lc-badge-presence, .lc-badge-active');
@@ -693,6 +779,42 @@
                     foot.insertAdjacentHTML('afterbegin', '<span class="' + badgeCls + '">' + esc(label) + '</span>');
                 }
             }
+        }
+    }
+
+    function noteVisitorMessaging(conversationId, hinted) {
+        conversationId = parseInt(conversationId, 10) || 0;
+        if (!conversationId) return;
+        var hintedNorm = normalizeVisitorPresence(hinted);
+        var presence = (hintedNorm && !presenceMeansLeft(hintedNorm)) ? hintedNorm : {
+            status: 'active',
+            label: 'Active',
+            widget_open: true,
+            page_visible: true,
+            window_focused: true,
+            left_site: false,
+            from_status: '',
+            presence_ts: 0
+        };
+        presence.left_site = false;
+        if (presence.status === 'left') {
+            presence.status = 'active';
+            presence.label = 'Active';
+        }
+        var floor = Date.now() * 1000;
+        if (livePresenceTs > floor) floor = livePresenceTs;
+        for (var i = 0; i < (lastConversations || []).length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) !== conversationId) continue;
+            var prevTs = presenceStamp(lastConversations[i].visitor_presence);
+            if (prevTs > floor) floor = prevTs;
+            break;
+        }
+        if (!presence.presence_ts || presence.presence_ts <= floor) {
+            presence.presence_ts = floor + 1;
+        }
+        applyVisitorPresenceToInbox(conversationId, presence);
+        if (selectedId === conversationId) {
+            setVisitorPresenceBadge(presence, { source: 'ws', force: true });
         }
     }
 
@@ -727,6 +849,12 @@
         }
 
         var incomingTs = presence.presence_ts || 0;
+        // An older or undated Left must not cover a visitor who is already back on site.
+        if (presenceMeansLeft(presence) && lastPresenceStatusKey && lastPresenceStatusKey !== 'left') {
+            if (!(incomingTs > livePresenceTs)) {
+                return;
+            }
+        }
         // HTTP/inbox must NEVER overwrite a newer live WS status (root cause of 3–4s lag + flap)
         if (source !== 'ws' && !opts.force) {
             if (livePresenceSource === 'ws' && livePresenceTs > 0) {
@@ -1492,25 +1620,23 @@
                 html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
             }
             var isOtherAgentActive = status === 'active' && parseInt(c.agent_id || 0, 10) > 0 && parseInt(c.agent_id || 0, 10) !== myAgentId;
+            var eng = status !== 'closed' ? normalizeVisitorPresence(c.visitor_presence) : null;
+            if (eng && status !== 'waiting') {
+                var engLabel = eng.status === 'minimized' ? 'Minimized'
+                    : (eng.status === 'away' ? 'Away'
+                    : (eng.status === 'window' ? 'Window'
+                    : (eng.status === 'left' ? 'Left site'
+                    : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
+                html += '<span class="lc-badge lc-badge-presence is-' + esc(eng.status) + '">' + esc(engLabel) + '</span>';
+            }
             if (status === 'waiting') {
                 html += '<span class="lc-badge lc-badge-waiting">Incoming</span>';
             } else if (isOtherAgentActive && c.is_supervising) {
                 html += '<span class="lc-badge lc-badge-supervising"><i class="ti ti-shield-check"></i> Supervising</span>';
-            } else {
-                // Prefer live visitor engagement over conversation "active" (was misleading)
-                var eng = normalizeVisitorPresence(c.visitor_presence);
-                if (eng && status !== 'closed') {
-                    var engLabel = eng.status === 'minimized' ? 'Minimized'
-                        : (eng.status === 'away' ? 'Away'
-                        : (eng.status === 'window' ? 'Window'
-                        : (eng.status === 'left' ? 'Left site'
-                        : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
-                    html += '<span class="lc-badge lc-badge-presence is-' + esc(eng.status) + '">' + esc(engLabel) + '</span>';
-                } else {
-                    var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-                    var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
-                    html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
-                }
+            } else if (!eng) {
+                var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
+                var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
+                html += '<span class="lc-badge lc-badge-' + badgeCls + '">' + esc(statusLabel) + '</span>';
             }
         }
         if (c.agent_name && status === 'active' && !c.ip_blocked) {
@@ -1824,6 +1950,8 @@
             isReturningVisitor(c) ? '1' : '0',
             isTransferredToMe(c) ? '1' : '0',
             c.ip_blocked ? '1' : '0',
+            (c.visitor_presence && c.visitor_presence.status) || '',
+            (c.visitor_presence && (c.visitor_presence.left_site === true || c.visitor_presence.left_site === 1 || c.visitor_presence.left_site === '1')) ? '1' : '0',
             // Normalized so ISO vs MySQL strings don't thrash the list
             activityStamp(c.last_message_at)
         ].join('\u001f');
@@ -3027,8 +3155,10 @@
                     return;
                 }
                 var rawList = data.conversations || [];
+                var previousRows = lastConversations;
                 // Dedupe + keep sticky positions (no bump-to-top on new messages)
                 lastConversations = collapseInboxConversations(rawList);
+                lastConversations = mergeFresherVisitorPresence(lastConversations, previousRows);
                 // Open chat is being viewed — never keep unread/"N new" on that row
                 if (selectedId) {
                     lastConversations = lastConversations.map(function (row) {
@@ -6620,6 +6750,7 @@
                 var msg = payload && payload.message;
                 if (cid && msg && msg.sender_type === 'visitor') {
                     setVisitorSidebarTyping(cid, false);
+                    noteVisitorMessaging(cid, payload && payload.visitor_presence);
                 }
                 if (handleStaffMessagePayload(payload)) {
                     if (msg && msg.sender_type === 'visitor') {
@@ -6678,6 +6809,9 @@
                         pollMessages();
                     }
                     return;
+                }
+                if (cid && payload && payload.message && payload.message.sender_type === 'visitor') {
+                    noteVisitorMessaging(cid, payload.visitor_presence);
                 }
                 if (selectedId && cid === selectedId) {
                     if (payload && payload.message && payload.message.id) {
@@ -6743,6 +6877,9 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
+                if (presence && !presenceMeansLeft(presence)) {
+                    presence = liftPresenceOverLeft(presence, cid);
+                }
                 if (presence && String(presence.status || '').toLowerCase() === 'left') {
                     if (window.LCNotifyLeft) {
                         window.LCNotifyLeft({

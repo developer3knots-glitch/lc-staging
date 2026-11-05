@@ -189,12 +189,13 @@ try {
         lc_mark_visitor_left_site($visitorId);
         $leftAt = gmdate('Y-m-d H:i:s');
     } elseif ($leftAt && $presenceTs > $prevTs) {
-        $db->prepare('
-            UPDATE visitors
-            SET visit_started_at = UTC_TIMESTAMP(),
-                left_site_at = NULL
-            WHERE id = ? AND left_site_at IS NOT NULL
-        ')->execute([$visitorId]);
+        // Back on site. Keep the visit clock unless they were gone more than 5 minutes.
+        if (function_exists('lc_mark_visitor_on_site')) {
+            lc_mark_visitor_on_site($visitorId);
+        } else {
+            $db->prepare('UPDATE visitors SET left_site_at = NULL WHERE id = ? AND left_site_at IS NOT NULL')
+                ->execute([$visitorId]);
+        }
         $leftAt = null;
     }
 
@@ -264,12 +265,16 @@ try {
     // used to be dropped because widget_open/page_visible did not change).
     if (($statusChanged || $leftSite) && $conversationId > 0 && function_exists('lc_realtime_publish_channels')) {
         if (function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
-            $channels = [
-                lc_realtime_channel_conversation($conversationId),
-                lc_realtime_channel_staff_conversation($conversationId),
-            ];
-            if ($agentId > 0) {
-                $channels[] = lc_realtime_channel_agent($agentId);
+            if (function_exists('lc_realtime_staff_channels')) {
+                $channels = lc_realtime_staff_channels($conversationId);
+            } else {
+                $channels = [
+                    lc_realtime_channel_conversation($conversationId),
+                    lc_realtime_channel_staff_conversation($conversationId),
+                ];
+                if ($agentId > 0) {
+                    $channels[] = lc_realtime_channel_agent($agentId);
+                }
             }
             lc_realtime_publish_channels($channels, 'visitor.presence', [
                 'conversation_id' => $conversationId,

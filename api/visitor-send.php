@@ -80,10 +80,21 @@ try {
     }
 
     $visitorId = (int) $conv['visitor_id'];
+    $brandId = (int) ($conv['brand_id'] ?? 0);
     try {
         $db->prepare('UPDATE visitors SET last_seen = UTC_TIMESTAMP(), user_agent = COALESCE(?, user_agent) WHERE id = ?')
             ->execute([$userAgent !== '' ? $userAgent : null, $visitorId]);
     } catch (Throwable $e) {
+    }
+
+    $backPresence = null;
+    if (function_exists('lc_visitor_returned_by_message')) {
+        $clientPresenceTs = (int) ($input['presence_ts'] ?? $input['client_ts'] ?? 0);
+        try {
+            $backPresence = lc_visitor_returned_by_message($visitorId, $brandId, $clientPresenceTs);
+        } catch (Throwable $eBack) {
+            $backPresence = null;
+        }
     }
 
     $ins = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
@@ -102,10 +113,13 @@ try {
             'message' => $plain,
             'created_at' => gmdate('c'),
             'delivery_status' => 'sent',
-            'is_read' => false,
-            'is_delivered' => false,
+        'is_read' => false,
+        'is_delivered' => false,
         ],
     ];
+    if (is_array($backPresence)) {
+        $msgPayload['visitor_presence'] = $backPresence;
+    }
     if (function_exists('lc_realtime_publish_conversation_event')) {
         try {
             lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [

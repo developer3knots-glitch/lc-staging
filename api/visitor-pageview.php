@@ -153,6 +153,20 @@ try {
 
     // Tab/window closed — mark Left website and push Traffic over WebSocket.
     if ($event === 'unload' || $event === 'site_leave') {
+        $leaveTs = function_exists('lc_client_presence_ms') ? lc_client_presence_ms($input) : 0;
+        if (function_exists('lc_normalize_presence_ts')) {
+            $leaveTs = lc_normalize_presence_ts($leaveTs);
+        }
+        if ($leaveTs > 0 && function_exists('lc_visitor_signal_is_older_than_presence')
+            && lc_visitor_signal_is_older_than_presence($visitorId, $leaveTs)) {
+            lc_json([
+                'success' => true,
+                'event' => 'unload',
+                'visitor_uid' => $visitorUid,
+                'visitor_uid_rotated' => $visitorUidRotated,
+                'ignored_stale' => true,
+            ]);
+        }
         lc_update_last_page_view_duration($visitorId, $brandId, $pageUrl, $durationSeconds);
         $storeIp = $ip;
         if (function_exists('lc_valid_public_ipv4') && !lc_valid_public_ipv4($storeIp) && function_exists('lc_visitor_stored_ipv4')) {
