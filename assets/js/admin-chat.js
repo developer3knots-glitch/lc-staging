@@ -6557,10 +6557,12 @@
         if (listTimer) clearInterval(listTimer);
         if (window.__lcReceiptTimer) clearInterval(window.__lcReceiptTimer);
         if (window.__lcJourneyTimer) clearInterval(window.__lcJourneyTimer);
+        if (window.__lcPresenceTimer) clearInterval(window.__lcPresenceTimer);
         pollTimer = null;
         listTimer = null;
         window.__lcReceiptTimer = null;
         window.__lcJourneyTimer = null;
+        window.__lcPresenceTimer = null;
 
         function syncReceiptsOnly() {
             if (!selectedId) return;
@@ -6582,6 +6584,31 @@
         // Fast tick sync — must update without full page reload
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
+
+        // Dedicated presence poll (~250ms). Full agent-poll is 0.8–1.5s and felt like ~2s
+        // when visitor.presence WS missed. This endpoint is tiny (flags only).
+        if (window.__lcPresenceTimer) clearInterval(window.__lcPresenceTimer);
+        window.__lcPresenceTimer = null;
+        function syncPresenceOnly() {
+            if (!selectedId) return;
+            fetch(base + '/api/agent-presence.php?conversation_id=' + encodeURIComponent(selectedId), {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data || !data.success) return;
+                    if ((parseInt(data.conversation_id, 10) || 0) !== selectedId) return;
+                    applyPolledVisitorPresence({
+                        id: selectedId,
+                        visitor_presence: data.visitor_presence,
+                        visitor_left_site_at: data.visitor_left_site_at || null
+                    });
+                })
+                .catch(function () {});
+        }
+        window.__lcPresenceTimer = setInterval(syncPresenceOnly, 250);
+        if (selectedId) syncPresenceOnly();
 
         // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
         // agent-poll + inbox list. Without listTimer, LEFT SITE stayed after a missed WS frame.

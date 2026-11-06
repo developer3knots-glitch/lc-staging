@@ -206,6 +206,59 @@ try {
     }
     $windowOpenFlag = $windowFocused === null ? (int) ($row['window_focused'] ?? 1) : ($windowFocused ? 1 : 0);
 
+    // Badge FIRST for minimize/maximize — publish before MySQL writes so the
+    // agent 250ms presence poll / WS backup is not waiting on DB + curl after.
+    $earlyClientStatus = strtolower(trim((string) ($input['status'] ?? '')));
+    $earlyPanelClosed = !$leftSite && (int) $widgetOpen === 0;
+    $earlyStatus = $leftSite ? 'left' : ($earlyPanelClosed ? 'minimized' : (
+        in_array($earlyClientStatus, ['active', 'minimized', 'away', 'window'], true) ? $earlyClientStatus : (
+            ((int) $pageVisible === 0) ? 'away' : (((int) $windowOpenFlag === 0) ? 'window' : 'active')
+        )
+    ));
+    $earlyPrev = (string) (lc_visitor_engagement_status([
+        'left_site_at' => $row['left_site_at'] ?? null,
+        'widget_open' => (int) ($row['widget_open'] ?? 0),
+        'page_visible' => (int) ($row['page_visible'] ?? 1),
+        'window_focused' => (int) ($row['window_focused'] ?? 1),
+        'last_seen' => $row['last_seen'] ?? null,
+        'presence_ts' => $prevTs,
+    ])['status'] ?? '');
+    if ($conversationId > 0 && $earlyStatus !== '' && $earlyStatus !== $earlyPrev
+        && function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
+        $earlyPresence = [
+            'status' => $earlyStatus,
+            'label' => $earlyStatus === 'minimized' ? 'Chat minimized'
+                : ($earlyStatus === 'left' ? 'Left website'
+                    : ($earlyStatus === 'away' ? 'Switched tab'
+                        : ($earlyStatus === 'window' ? 'Switched window' : 'Active'))),
+            'widget_open' => !$earlyPanelClosed && !$leftSite,
+            'page_visible' => (int) $pageVisible === 1,
+            'window_focused' => (int) $windowOpenFlag === 1,
+            'left_site' => $leftSite,
+            'presence_ts' => $presenceTs > 0 ? $presenceTs : $prevTs,
+            'from_status' => $earlyPrev,
+        ];
+        $earlyChannels = function_exists('lc_realtime_staff_channels')
+            ? lc_realtime_staff_channels($conversationId)
+            : [
+                lc_realtime_channel_conversation($conversationId),
+                lc_realtime_channel_staff_conversation($conversationId),
+            ];
+        if ($agentId > 0) {
+            $earlyChannels[] = lc_realtime_channel_agent($agentId);
+        }
+        $earlyPayload = [
+            'conversation_id' => $conversationId,
+            'visitor_id' => $visitorId,
+            'visitor_presence' => $earlyPresence,
+        ];
+        if (function_exists('lc_realtime_publish_channels_nowait')) {
+            lc_realtime_publish_channels_nowait($earlyChannels, 'visitor.presence', $earlyPayload);
+        } elseif (function_exists('lc_realtime_publish_channels')) {
+            lc_realtime_publish_channels($earlyChannels, 'visitor.presence', $earlyPayload, 80, false);
+        }
+    }
+
     $applied = lc_set_visitor_engagement_flags(
         $visitorId,
         $chatOpen,
