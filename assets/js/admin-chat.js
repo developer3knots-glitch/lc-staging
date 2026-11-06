@@ -6649,12 +6649,18 @@
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
 
-        // Dedicated presence poll (~250ms). Full agent-poll is 0.8–1.5s and felt like ~2s
-        // when visitor.presence WS missed. This endpoint is tiny (flags only).
+        // Presence: WS visitor.presence is primary. HTTP is a slow safety net only
+        // (was 100ms and dominated server request volume).
         if (window.__lcPresenceTimer) clearInterval(window.__lcPresenceTimer);
         window.__lcPresenceTimer = null;
+        if (window.__lcPresenceVisHandler) {
+            document.removeEventListener('visibilitychange', window.__lcPresenceVisHandler);
+            window.__lcPresenceVisHandler = null;
+        }
         function syncPresenceOnly() {
             if (!selectedId) return;
+            // While WS is live, skip hidden-tab polls entirely
+            if (document.hidden && isRealtimeWsLive()) return;
             fetch(base + '/api/agent-presence.php?conversation_id=' + encodeURIComponent(selectedId), {
                 credentials: 'same-origin',
                 cache: 'no-store'
@@ -6671,8 +6677,13 @@
                 })
                 .catch(function () {});
         }
-        // 100ms backup — WS is primary; this caps worst-case badge lag under ~0.1s
-        window.__lcPresenceTimer = setInterval(syncPresenceOnly, 100);
+        // WS live → 8s safety; WS down → 1s (still far below the old 100ms hammer)
+        var presencePollMs = isRealtimeWsLive() ? 8000 : 1000;
+        window.__lcPresenceTimer = setInterval(syncPresenceOnly, presencePollMs);
+        window.__lcPresenceVisHandler = function () {
+            if (!document.hidden && selectedId) syncPresenceOnly();
+        };
+        document.addEventListener('visibilitychange', window.__lcPresenceVisHandler);
         if (selectedId) syncPresenceOnly();
 
         // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
