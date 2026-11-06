@@ -596,6 +596,61 @@
         return true;
     }
 
+    /**
+     * Transcript already knows minimize/maximize — keep inbox badge in sync even when
+     * visitor.presence WS / DB flags lagged (root cause of ON CHAT + minimize line).
+     */
+    function syncBadgeFromPresenceLog(text, conversationId) {
+        text = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!text || !isPresenceLogText(text)) return;
+        var cid = parseInt(conversationId, 10) || selectedId || 0;
+        if (!cid) return;
+        var status = 'active';
+        var label = 'Active';
+        var widgetOpen = true;
+        if (/minimized the chat/i.test(text)) {
+            status = 'minimized';
+            label = 'Chat minimized';
+            widgetOpen = false;
+        } else if (/left the website/i.test(text)) {
+            status = 'left';
+            label = 'Left website';
+            widgetOpen = false;
+        } else if (/switched tab/i.test(text)) {
+            status = 'away';
+            label = 'Switched tab';
+        } else if (/switched window/i.test(text)) {
+            status = 'window';
+            label = 'Switched window';
+            widgetOpen = true;
+        } else if (/disconnected/i.test(text)) {
+            status = 'disconnected';
+            label = 'Disconnected';
+            widgetOpen = false;
+        } else if (/maximized|returned to the tab|returned to the window|is active in chat/i.test(text)) {
+            status = 'active';
+            label = 'Active';
+            widgetOpen = true;
+        } else {
+            return;
+        }
+        var floor = Date.now();
+        if (livePresenceTs >= floor) floor = livePresenceTs + 1;
+        var presence = {
+            status: status,
+            label: label,
+            widget_open: widgetOpen,
+            page_visible: status !== 'away' && status !== 'left',
+            window_focused: status !== 'window' && status !== 'left',
+            left_site: status === 'left',
+            presence_ts: floor
+        };
+        applyVisitorPresenceToInbox(cid, presence);
+        if (selectedId === cid) {
+            setVisitorPresenceBadge(presence, { source: 'ws', force: true });
+        }
+    }
+
     function keepUnsavedPresenceLogs(incomingIds) {
         if (!messagesEl) return [];
         var saved = [];
@@ -640,6 +695,7 @@
             esc(presence.status) + '" data-presence-at="' + Date.now() + '" role="status"><div class="lc-msg-body">' + esc(line) + '</div></div>';
         messagesEl.insertAdjacentHTML('beforeend', html);
         scrollMessagesToBottom(false);
+        if (selectedId) syncBadgeFromPresenceLog(line, selectedId);
     }
 
     function normalizePresenceTs(ts) {
@@ -4812,6 +4868,7 @@
                         // Paint anything not in DOM — do not require mid > lastMsgId
                         // (a bad cursor bump used to permanently skip agent bubbles).
                         if (m.sender_type === 'system' && absorbPresenceLog(m.message, mid)) {
+                            syncBadgeFromPresenceLog(m.message, conversationId);
                             if (mid > lastMsgId) lastMsgId = mid;
                             return;
                         }
@@ -4825,6 +4882,9 @@
                             messagesEl.insertAdjacentHTML('beforeend', renderMessage(m));
                             if (mid > lastMsgId) lastMsgId = mid;
                             added += 1;
+                            if (m.sender_type === 'system' && isPresenceLogText(m.message)) {
+                                syncBadgeFromPresenceLog(m.message, conversationId);
+                            }
                             if (m.sender_type === 'visitor') {
                                 playSound = true;
                                 // HTTP poll path — WS message.new is not required to clear Left
@@ -6733,6 +6793,7 @@
             }
         }
         if (m.sender_type === 'system' && absorbPresenceLog(m.message, mid)) {
+            syncBadgeFromPresenceLog(m.message, selectedId);
             if (mid > lastMsgId) lastMsgId = mid;
             return;
         }
@@ -6743,6 +6804,9 @@
         // Pin the new line the same way a visitor message is pinned.
         stickToBottom = true;
         scrollMessagesToBottom(true);
+        if (m.sender_type === 'system' && isPresenceLogText(m.message)) {
+            syncBadgeFromPresenceLog(m.message, selectedId);
+        }
         if (m.sender_type === 'visitor') {
             // Poll and staff.message used to paint the bubble and leave LEFT SITE up.
             noteVisitorMessaging(selectedId);
@@ -6834,6 +6898,9 @@
             realtimeClient.on('message.new', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 var msg = payload && payload.message;
+                if (cid && msg && msg.sender_type === 'system' && isPresenceLogText(msg.message)) {
+                    syncBadgeFromPresenceLog(msg.message, cid);
+                }
                 if (cid && msg && msg.sender_type === 'visitor') {
                     setVisitorSidebarTyping(cid, false);
                     noteVisitorMessaging(cid, payload && payload.visitor_presence);

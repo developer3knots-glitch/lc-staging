@@ -118,37 +118,27 @@ try {
         $input['left_site'] === true || $input['left_site'] === 1
         || $input['left_site'] === '1' || $input['left_site'] === 'true'
     );
-    // A slow minimize can arrive after a newer pulse. Still write that one line.
-    // Flags stay on the newer pulse. Left never writes a chat line.
+    // Older presence_ts used to early-return: transcript got "minimized" but widget_open
+    // stayed 1 → agent badge stuck on ON CHAT. Minimize/maximize must always apply flags.
     if ($presenceTs > 0 && $prevTs > 0 && $presenceTs < $prevTs) {
-        $staleMinimize = $conversationId > 0
-            && !$leftEarly
+        $clientWantsMinimize = !$leftEarly
             && $clientStatusEarly !== 'left'
             && ($chatOpenEarly === false || $clientStatusEarly === 'minimized');
-        if ($staleMinimize && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
-            $fromEarly = strtolower(trim((string) ($input['from_status'] ?? '')));
-            if ($fromEarly !== 'minimized' && $fromEarly !== '') {
-                $staleLine = lc_presence_chat_line('minimized', 'active');
-                if ($staleLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $staleLine)) {
-                    try {
-                        lc_add_system_message($conversationId, $staleLine, true);
-                    } catch (Throwable $e) {
-                    }
-                }
-            }
-            // Do not publish this stale frame over WS — an older presence_ts would flap
-            // Active → Minimized on the agent badge. Transcript line above is enough.
+        $clientWantsOpen = !$leftEarly && ($chatOpenEarly === true || $clientStatusEarly === 'active');
+        if ($clientWantsMinimize || $clientWantsOpen) {
+            $presenceTs = $prevTs + 1;
+        } else {
+            $presence = lc_visitor_engagement_status([
+                'left_site_at' => $leftAt,
+                'widget_open' => $widgetOpen,
+                'page_visible' => $pageVisible,
+                'last_seen' => $row['last_seen'] ?? null,
+                'presence_ts' => $prevTs,
+            ]);
+            $presence['presence_ts'] = $prevTs;
+            $presence['ignored_stale'] = true;
+            lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
         }
-        $presence = lc_visitor_engagement_status([
-            'left_site_at' => $leftAt,
-            'widget_open' => $widgetOpen,
-            'page_visible' => $pageVisible,
-            'last_seen' => $row['last_seen'] ?? null,
-            'presence_ts' => $prevTs,
-        ]);
-        $presence['presence_ts'] = $prevTs;
-        $presence['ignored_stale'] = true;
-        lc_json(['success' => true, 'event' => 'presence', 'visitor_presence' => $presence]);
     }
 
     $lastSeen = $row['last_seen'] ?? null;
