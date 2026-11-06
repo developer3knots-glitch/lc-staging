@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 200;
+    var LC_WIDGET_BUILD = 201;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -534,19 +534,42 @@
             return false;
         }
 
+        function kickVisitorRealtimeForPresence() {
+            try {
+                if (typeof loadRealtimeScript === 'function') {
+                    loadRealtimeScript(function () {
+                        if (typeof initVisitorRealtime === 'function') {
+                            initVisitorRealtime();
+                        }
+                    });
+                }
+            } catch (eKick) {}
+        }
+
+        var presenceRetryAttempt = 0;
         function schedulePresenceWsRetry() {
             if (presenceFlushTimer) return;
+            // First misses: retry fast (30ms). Later: back off so we do not spin forever.
+            var wait = presenceRetryAttempt < 8 ? 30 : (presenceRetryAttempt < 20 ? 100 : 250);
             presenceFlushTimer = setTimeout(function () {
                 presenceFlushTimer = null;
-                if (!pendingPresenceFields) return;
+                if (!pendingPresenceFields) {
+                    presenceRetryAttempt = 0;
+                    return;
+                }
+                presenceRetryAttempt += 1;
+                if (presenceRetryAttempt === 1 || presenceRetryAttempt === 4) {
+                    kickVisitorRealtimeForPresence();
+                }
                 var ts = pendingPresenceFields._ts || nextPresenceTs();
                 if (pushPresenceOverWs(pendingPresenceFields, ts, pendingPresenceFields._from || '')) {
                     lastPresenceKey = presenceKey(pendingPresenceFields);
                     pendingPresenceFields = null;
+                    presenceRetryAttempt = 0;
                     return;
                 }
                 schedulePresenceWsRetry();
-            }, 120);
+            }, wait);
         }
 
         function persistPresenceHttp(fields, useBeacon, ts, fromStatus) {
@@ -614,12 +637,15 @@
             var nextStatus = localPresencePayload(fields, ts).status;
             fields._ts = ts;
             fields._from = fromStatus;
-            // Instant WS first (live agent UI). HTTP saves every transition.
+            // Instant WS first (live agent UI). HTTP saves + backup fanout.
             if (pushPresenceOverWs(fields, ts, fromStatus)) {
                 lastPresenceKey = key;
                 pendingPresenceFields = null;
+                presenceRetryAttempt = 0;
             } else {
                 pendingPresenceFields = fields;
+                presenceRetryAttempt = 0;
+                kickVisitorRealtimeForPresence();
                 schedulePresenceWsRetry();
             }
             persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
@@ -4102,9 +4128,13 @@
         });
     }
     function minimizePanel() {
-        // Always report minimized even if UI already closed (isOpen race)
-        var wasOpen = isOpen;
+        // Presence FIRST — agent badge must not wait on panel DOM / confirm cleanup
         isOpen = false;
+        reportEngagementPresence(false, true, {
+            chat_open: 0,
+            force_status: 'minimized',
+            page_visible: document.visibilityState === 'hidden' ? 0 : 1
+        });
         stopAckHeartbeat();
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
@@ -4119,12 +4149,6 @@
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
-        // Force chat_open=0 — do not trust engagementFields alone during races
-        reportEngagementPresence(false, true, { chat_open: 0, force_status: 'minimized', page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
-        if (!wasOpen) {
-            // still push in case prior open never reported
-            reportEngagementPresence(true, true, { chat_open: 0 });
-        }
     }
 
     /**
@@ -4138,9 +4162,20 @@
             var badgeOpen = document.getElementById('lc-bubble-badge');
             if (badgeOpen) badgeOpen.style.display = 'none';
             startAckHeartbeat();
+            // Re-assert Active in case agent still shows Minimized after a missed frame
+            reportEngagementPresence(false, true, {
+                chat_open: 1,
+                page_visible: document.visibilityState === 'hidden' ? 0 : 1
+            });
             return;
         }
         isOpen = true;
+        // Presence FIRST — do not wait on history / realtime script / DOM
+        reportEngagementPresence(false, true, {
+            chat_open: 1,
+            page_visible: document.visibilityState === 'hidden' ? 0 : 1
+        });
+        loadRealtimeScript(function () { initVisitorRealtime(); });
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
@@ -4163,7 +4198,6 @@
                     if (messagesNeedHistoryReload()) {
                         pollMessages(true);
                     }
-                    loadRealtimeScript(function () { initVisitorRealtime(); });
                 } else {
                     beginNewConversationFlow();
                 }
@@ -4182,7 +4216,6 @@
                 showEndedState(lastClosedBy || detectClosedByFromMessages() || 'agent');
             }
             resetVisitorPollTimers();
-            loadRealtimeScript(function () { initVisitorRealtime(); });
         }
         var badge = document.getElementById('lc-bubble-badge');
         if (badge) badge.style.display = 'none';
@@ -4190,8 +4223,6 @@
             focusVisitorCompose({ delay: 180 });
         }
         startAckHeartbeat();
-        // Force open=1 with monotonic ts so a late minimize HTTP cannot win
-        reportEngagementPresence(false, true, { chat_open: 1, page_visible: document.visibilityState === 'hidden' ? 0 : 1 });
     }
 
     function togglePanel() {

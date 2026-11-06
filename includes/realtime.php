@@ -362,20 +362,12 @@ function lc_realtime_with_sender_agent(array $channels, array $data): array
 }
 
 /**
- * One HTTP hop → Node fans out to many WS channels (cuts agent→visitor sequential curl delay).
+ * Build the Node publish JSON body, or '' on failure.
  *
  * @param list<string> $channels
  */
-function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200): void
+function lc_realtime_publish_payload(array $channels, string $event, array $data = []): string
 {
-    if (lc_realtime_mode() !== 'ws') {
-        return;
-    }
-    $url = lc_realtime_publish_url();
-    if ($url === '') {
-        return;
-    }
-
     $clean = [];
     foreach ($channels as $ch) {
         $ch = trim((string) $ch);
@@ -385,7 +377,7 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
     }
     $channelList = array_keys($clean);
     if ($channelList === [] || $event === '') {
-        return;
+        return '';
     }
 
     $payload = json_encode([
@@ -411,7 +403,52 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
             'ts' => time(),
         ], JSON_UNESCAPED_SLASHES | (defined('JSON_INVALID_UTF8_SUBSTITUTE') ? JSON_INVALID_UTF8_SUBSTITUTE : 0));
     }
-    if ($payload === false) {
+    return is_string($payload) ? $payload : '';
+}
+
+/**
+ * Presence / typing-style events: fire-and-forget so PHP does not wait on Node
+ * (minimize/maximize agent badge must not sit behind a 180ms confirmed curl).
+ *
+ * @param list<string> $channels
+ */
+function lc_realtime_publish_channels_nowait(array $channels, string $event, array $data = []): void
+{
+    if (lc_realtime_mode() !== 'ws') {
+        return;
+    }
+    $url = lc_realtime_publish_url();
+    if ($url === '') {
+        return;
+    }
+    $payload = lc_realtime_publish_payload($channels, $event, $data);
+    if ($payload === '') {
+        return;
+    }
+    if (lc_realtime_publish_fire_and_forget($url, $payload)) {
+        return;
+    }
+    // Last resort: tiny confirmed curl (no retry sleep)
+    lc_realtime_publish_channels($channels, $event, $data, 80);
+}
+
+/**
+ * One HTTP hop → Node fans out to many WS channels (cuts agent→visitor sequential curl delay).
+ *
+ * @param list<string> $channels
+ */
+function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200): void
+{
+    if (lc_realtime_mode() !== 'ws') {
+        return;
+    }
+    $url = lc_realtime_publish_url();
+    if ($url === '') {
+        return;
+    }
+
+    $payload = lc_realtime_publish_payload($channels, $event, $data);
+    if ($payload === '') {
         return;
     }
 

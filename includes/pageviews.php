@@ -773,11 +773,16 @@ function lc_realtime_publish_visitor_presence(int $visitorId, array $presence, ?
                 $channels[] = lc_realtime_channel_agent($agentId);
             }
         }
-        // Confirmed publish (typing-style) — fire-and-forget was dropping events → 3–4s poll lag
-        lc_realtime_publish_channels($channels, 'visitor.presence', [
+        $presenceFanout = [
             'conversation_id' => $conversationId,
             'visitor_presence' => $presence,
-        ], 180);
+        ];
+        // nowait: minimize/maximize must not wait on confirmed curl
+        if (function_exists('lc_realtime_publish_channels_nowait')) {
+            lc_realtime_publish_channels_nowait($channels, 'visitor.presence', $presenceFanout);
+        } else {
+            lc_realtime_publish_channels($channels, 'visitor.presence', $presenceFanout, 80);
+        }
     }
 }
 

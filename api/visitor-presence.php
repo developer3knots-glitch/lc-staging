@@ -270,20 +270,10 @@ try {
         && $fromStatus !== ''
         && $fromStatus !== 'minimized'
         && $fromStatus !== 'left';
-    if ($justMinimized && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
-        $presenceLine = lc_presence_chat_line('minimized', 'active');
-        if ($presenceLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $presenceLine)) {
-            try {
-                lc_add_system_message($conversationId, $presenceLine, true);
-            } catch (Throwable $e) {
-            }
-        }
-    }
 
-    // Same confirmed realtime path as typing — not fire-and-forget.
-    // Publish on a real status change even if MySQL rowCount was 0 (window focus
-    // used to be dropped because widget_open/page_visible did not change).
-    if (($statusChanged || $leftSite) && $conversationId > 0 && function_exists('lc_realtime_publish_channels')) {
+    // Publish before the minimize transcript write. Use nowait so the agent badge
+    // is not blocked on a confirmed 180ms curl (+ optional 40ms retry sleep).
+    if (($statusChanged || $leftSite) && $conversationId > 0) {
         if (function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
             if (function_exists('lc_realtime_staff_channels')) {
                 $channels = lc_realtime_staff_channels($conversationId);
@@ -296,14 +286,30 @@ try {
                     $channels[] = lc_realtime_channel_agent($agentId);
                 }
             }
-            lc_realtime_publish_channels($channels, 'visitor.presence', [
+            $presencePayload = [
                 'conversation_id' => $conversationId,
                 'visitor_id' => $visitorId,
                 'visitor_presence' => $presence,
-            ], 180);
+            ];
+            if (function_exists('lc_realtime_publish_channels_nowait')) {
+                lc_realtime_publish_channels_nowait($channels, 'visitor.presence', $presencePayload);
+            } elseif (function_exists('lc_realtime_publish_channels')) {
+                lc_realtime_publish_channels($channels, 'visitor.presence', $presencePayload, 80);
+            }
         }
     } elseif (($statusChanged || $leftSite) && function_exists('lc_realtime_publish_visitor_presence')) {
         lc_realtime_publish_visitor_presence($visitorId, $presence, $brandId > 0 ? $brandId : null);
+    }
+
+    // Transcript line after realtime — badge first, log second
+    if ($justMinimized && function_exists('lc_presence_chat_line') && function_exists('lc_add_system_message')) {
+        $presenceLine = lc_presence_chat_line('minimized', 'active');
+        if ($presenceLine !== '' && function_exists('lc_presence_log_is_repeat') && !lc_presence_log_is_repeat($conversationId, $presenceLine)) {
+            try {
+                lc_add_system_message($conversationId, $presenceLine, true);
+            } catch (Throwable $e) {
+            }
+        }
     }
 
     lc_json([
