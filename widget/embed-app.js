@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 201;
+    var LC_WIDGET_BUILD = 202;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -594,6 +594,10 @@
             }
             var body = JSON.stringify(payload);
             var endpoint = siteUrl + '/api/visitor-presence.php';
+            // Min/max: always dual-send (fetch + beacon) so one path can win under load
+            var isMinMax = !fields.left_site && (
+                local.status === 'minimized' || local.status === 'active' || fields.force_status === 'minimized'
+            );
             try {
                 fetch(endpoint, {
                     method: 'POST',
@@ -602,7 +606,7 @@
                     keepalive: true
                 }).catch(function () {});
             } catch (err) {}
-            if (useBeacon && navigator.sendBeacon) {
+            if ((useBeacon || isMinMax) && navigator.sendBeacon) {
                 try {
                     navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
                 } catch (err2) {}

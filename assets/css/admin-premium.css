@@ -9288,6 +9288,12 @@ body.lc-page-chats .lc-topbar-desk .lc-status-trigger {
     border-bottom-color: #cbd5e1;
 }
 
+.lc-visitor-presence-bar.is-window {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-bottom-color: #bfdbfe;
+}
+
 .lc-visitor-presence-bar.is-left {
     background: #fef2f2;
     color: #b91c1c;

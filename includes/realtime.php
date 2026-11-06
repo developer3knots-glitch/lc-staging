@@ -407,29 +407,14 @@ function lc_realtime_publish_payload(array $channels, string $event, array $data
 }
 
 /**
- * Presence / typing-style events: fire-and-forget so PHP does not wait on Node
- * (minimize/maximize agent badge must not sit behind a 180ms confirmed curl).
+ * Presence minify/maxify path: one short confirmed curl (no 40ms empty-retry sleep).
+ * Fire-and-forget alone was dropping frames → 2–4s poll lag on the agent badge.
  *
  * @param list<string> $channels
  */
 function lc_realtime_publish_channels_nowait(array $channels, string $event, array $data = []): void
 {
-    if (lc_realtime_mode() !== 'ws') {
-        return;
-    }
-    $url = lc_realtime_publish_url();
-    if ($url === '') {
-        return;
-    }
-    $payload = lc_realtime_publish_payload($channels, $event, $data);
-    if ($payload === '') {
-        return;
-    }
-    if (lc_realtime_publish_fire_and_forget($url, $payload)) {
-        return;
-    }
-    // Last resort: tiny confirmed curl (no retry sleep)
-    lc_realtime_publish_channels($channels, $event, $data, 80);
+    lc_realtime_publish_channels($channels, $event, $data, 100, false);
 }
 
 /**
@@ -437,7 +422,7 @@ function lc_realtime_publish_channels_nowait(array $channels, string $event, arr
  *
  * @param list<string> $channels
  */
-function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200): void
+function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200, bool $retryEmpty = true): void
 {
     if (lc_realtime_mode() !== 'ws') {
         return;
@@ -498,7 +483,7 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
     };
 
     $delivered = $doPublish();
-    if ($delivered === 0) {
+    if ($retryEmpty && $delivered === 0) {
         usleep(40000);
         $delivered = $doPublish();
     }

@@ -842,9 +842,13 @@
             var cid = parseInt(conv.id, 10) || selectedId || 0;
             presence = liftPresenceOverLeft(presence, cid);
             if (cid) applyVisitorPresenceToInbox(cid, presence);
+            var st = String(presence.status || '').toLowerCase();
+            var forcePaint = lastPresenceStatusKey === 'left'
+                || (st === 'minimized' && lastPresenceStatusKey !== 'minimized')
+                || (st === 'active' && lastPresenceStatusKey === 'minimized');
             setVisitorPresenceBadge(presence, {
                 source: 'poll',
-                force: lastPresenceStatusKey === 'left'
+                force: forcePaint
             });
             return;
         }
@@ -932,12 +936,18 @@
         }
         agentSawWidgetOpen = panelClosed ? false : !leftNow;
         lastPresenceStatusKey = leftNow ? 'left' : next;
-        // Presence log lives only inside the chat transcript, not the header strip.
+        // Live header strip — inbox badge alone felt "stuck" while this stayed hidden.
+        var barLabel = presence.label
+            || (leftNow ? 'Left website'
+                : (next === 'minimized' ? 'Chat minimized'
+                    : (next === 'away' ? 'Switched tab'
+                        : (next === 'window' ? 'Switched window'
+                            : (next === 'disconnected' ? 'Disconnected' : 'On chat')))));
         if (bar) {
-            bar.hidden = true;
-            bar.className = 'lc-visitor-presence-bar';
+            bar.hidden = false;
+            bar.className = 'lc-visitor-presence-bar is-' + (leftNow ? 'left' : next);
         }
-        if (textEl) textEl.textContent = '';
+        if (textEl) textEl.textContent = barLabel;
         if (selectedId) {
             applyVisitorPresenceToInbox(selectedId, presence);
         }
@@ -6942,8 +6952,13 @@
                     }
                 }
                 applyVisitorPresenceToInbox(cid, presence);
+                // Always paint open-chat header for min/max — force beats a stuck livePresenceTs
                 if (selectedId && cid === selectedId) {
-                    setVisitorPresenceBadge(presence, { source: 'ws' });
+                    var st = String((presence && presence.status) || '').toLowerCase();
+                    var isMinMax = st === 'minimized' || st === 'active' || st === 'away' || st === 'window'
+                        || (presence && presence.widget_open === false)
+                        || (presence && presence.widget_open === true);
+                    setVisitorPresenceBadge(presence, { source: 'ws', force: !!isMinMax });
                     if (conversationRowStatus(cid) === 'closed') {
                         setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
                         if (replyInput) {
