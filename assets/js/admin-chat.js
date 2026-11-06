@@ -827,6 +827,27 @@
     }
 
     /**
+     * agent-poll carries engagement status. A live non-Left must clear LEFT SITE
+     * even when an older WS leave still owns livePresenceTs.
+     */
+    function applyPolledVisitorPresence(conv) {
+        if (!conv) return;
+        var presence = normalizeVisitorPresence(conv.visitor_presence);
+        if (!presence && !conv.visitor_left_site_at) {
+            setVisitorPresenceBadge(conv, { source: 'poll' });
+            return;
+        }
+        var leftCol = !!(conv.visitor_left_site_at && String(conv.visitor_left_site_at).trim());
+        if (presence && !presenceMeansLeft(presence) && !leftCol) {
+            presence = liftPresenceOverLeft(presence, selectedId);
+            applyVisitorPresenceToInbox(selectedId, presence);
+            setVisitorPresenceBadge(presence, { source: 'poll', force: lastPresenceStatusKey === 'left' });
+            return;
+        }
+        setVisitorPresenceBadge(conv, { source: 'poll' });
+    }
+
+    /**
      * @param {object} presenceOrConv
      * @param {{source?:string,force?:boolean}} opts source: ws|poll|inbox
      */
@@ -1308,7 +1329,7 @@
         }
         setVisitorKindBadge(c);
         setTransferBadge(c);
-        setVisitorPresenceBadge(c, { source: 'poll' });
+        applyPolledVisitorPresence(c);
 
         var geo = c.visitor_geo || {};
         var location = (geo.label || (c.visitor_country || '').trim() || '-');
@@ -4786,6 +4807,8 @@
                             added += 1;
                             if (m.sender_type === 'visitor') {
                                 playSound = true;
+                                // HTTP poll path — WS message.new is not required to clear Left
+                                noteVisitorMessaging(conversationId);
                             }
                         }
                         if (mid > lastMsgId) lastMsgId = mid;
@@ -4843,7 +4866,7 @@
                     closeMoreMenu();
                     visitorNameEl.textContent = c.visitor_name || 'Visitor';
                     updateHeaderAvatar(c.visitor_name || 'Visitor');
-                    setVisitorPresenceBadge(c, { source: 'poll' });
+                    applyPolledVisitorPresence(c);
                     renderVisitorDetails(c, !!c.ip_blocked);
                     renderDetailsRail(c, 'Chat closed');
                     if (c.reference) {
@@ -4861,7 +4884,7 @@
                 }
                 visitorNameEl.textContent = c.visitor_name || 'Visitor';
                 updateHeaderAvatar(c.visitor_name || 'Visitor');
-                setVisitorPresenceBadge(c, { source: 'poll' });
+                applyPolledVisitorPresence(c);
                 currentConversationMeta = {
                     brand_name: c.brand_name,
                     visitor_ip: c.visitor_ip,
@@ -6540,9 +6563,10 @@
         window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
         if (selectedId) syncReceiptsOnly();
 
-        // Visitor presence: WebSocket only (visitor.presence) — no HTTP presence poll
+        // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
+        // agent-poll + inbox list. Without listTimer, LEFT SITE stayed after a missed WS frame.
 
-        // Manual: Settings → Disable HTTP polling — still gap-fill open chat (WS is primary)
+        // Manual: Settings → Disable HTTP polling — still gap-fill open chat + inbox presence
         if (pollDisabled) {
             if (selectedId) {
                 pollTimer = setInterval(function () {
@@ -6551,6 +6575,9 @@
                     pollMessages({ skipJourney: true });
                 }, isSupervising ? 800 : 1500);
             }
+            listTimer = setInterval(function () {
+                loadConversations();
+            }, isSupervising ? 2500 : 4000);
             window.__lcJourneyTimer = setInterval(function () {
                 if (selectedId) loadPageJourney(false);
             }, 60000);
@@ -6669,13 +6696,14 @@
         // Pin the new line the same way a visitor message is pinned.
         stickToBottom = true;
         scrollMessagesToBottom(true);
-        if (m.sender_type === 'visitor' && !recentContinue(selectedId)) {
-            playIncomingSound('message_here', 'msg:' + mid);
+        if (m.sender_type === 'visitor') {
+            // Poll and staff.message used to paint the bubble and leave LEFT SITE up.
+            noteVisitorMessaging(selectedId);
             setPeerTypingVisible(false);
             markPriorAgentTicksRead(mid);
-        } else if (m.sender_type === 'visitor') {
-            setPeerTypingVisible(false);
-            markPriorAgentTicksRead(mid);
+            if (!recentContinue(selectedId)) {
+                playIncomingSound('message_here', 'msg:' + mid);
+            }
         }
     }
 
@@ -6729,6 +6757,9 @@
                 var msg = payload && payload.message;
                 if (!selectedId || cid !== selectedId) return false;
                 if (msg && msg.id) {
+                    if (msg.sender_type === 'visitor') {
+                        noteVisitorMessaging(cid, payload && payload.visitor_presence);
+                    }
                     appendLiveMessage(msg);
                     if (msg.sender_type === 'visitor') {
                         markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
