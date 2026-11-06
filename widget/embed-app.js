@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 199;
+    var LC_WIDGET_BUILD = 200;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -231,12 +231,18 @@
             window.navigation.addEventListener('navigate', function (e) {
                 if (e.navigationType === 'reload' || e.navigationType === 'back_forward_cache') return;
                 try {
+                    // Includes back/forward within the same site (no link click).
                     if (e.destination && isSameSiteUrl(e.destination.url)) {
                         markSiteNavigation();
                     }
                 } catch (err) {}
             });
         }
+        // Full-page back/forward without Navigation API: history length alone is unreliable,
+        // but popstate covers same-document SPA transitions before unload.
+        window.addEventListener('popstate', function () {
+            markSiteNavigation();
+        });
     }
 
     function isSameSiteUrl(href) {
@@ -264,14 +270,15 @@
         } catch (err) {
             return;
         }
-        // A click that never navigates must not block a later real tab close.
+        // Slow pages (rev.php + host scripts) can take well over 4s from click → unload.
+        // Keep the flag long enough for that, but clear so a dead click cannot block a real close forever.
         setTimeout(function () {
             try {
                 if (sessionStorage.getItem(SITE_NAV_FLAG_KEY) === token) {
                     sessionStorage.removeItem(SITE_NAV_FLAG_KEY);
                 }
             } catch (err2) {}
-        }, 4000);
+        }, 30000);
     }
 
     function isSiteNavigation() {
@@ -279,7 +286,7 @@
             var raw = sessionStorage.getItem(SITE_NAV_FLAG_KEY);
             if (!raw) return false;
             var at = parseInt(raw, 10) || 0;
-            if (!at || (Date.now() - at) > 10000) {
+            if (!at || (Date.now() - at) > 35000) {
                 sessionStorage.removeItem(SITE_NAV_FLAG_KEY);
                 return false;
             }
@@ -634,6 +641,17 @@
 
         // Expose flush for realtime connected handlers outside this closure
         window.__lcFlushVisitorPresence = function () {
+            // Visible tab = visitor is here. Never re-fire a queued Left after pageshow.
+            if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+                siteLeaveSent = false;
+                pendingPresenceFields = null;
+                reportEngagementPresence(false, true);
+                return;
+            }
+            if (siteLeaveSent) {
+                reportEngagementPresence(true, true, { chat_open: 0, page_visible: 0, left_site: 1 });
+                return;
+            }
             var fields = pendingPresenceFields || engagementFields();
             reportEngagementPresence(false, true, fields.left_site ? { left_site: 1 } : null);
         };

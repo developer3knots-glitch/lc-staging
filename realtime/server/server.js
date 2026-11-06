@@ -287,6 +287,7 @@ function wireWebSocket(server) {
         }
         const convCh = 'conv:' + cid;
         const staffCh = 'staff:conv:' + cid;
+        const brandId = parseInt(claims.brand_id, 10) || parseInt(data.brand_id, 10) || 0;
         // Auto-join authorized conv room so early presence isn't dropped pre-subscribe
         if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
           if (claimCid === cid || claimCid === 0) {
@@ -294,8 +295,13 @@ function wireWebSocket(server) {
           }
         }
         const presence = data.visitor_presence || data || {};
+        // brand inbox so agents who have not opened this chat still get Left/Away live
+        const channels = [convCh, staffCh];
+        if (brandId > 0) {
+          channels.push('brand:' + brandId + ':inbox');
+        }
         publishMany(
-          [convCh, staffCh],
+          channels,
           'visitor.presence',
           {
             conversation_id: cid,

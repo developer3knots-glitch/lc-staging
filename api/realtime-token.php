@@ -20,20 +20,25 @@ try {
         lc_cors_headers();
         if ($conversationId > 0) {
             $stmt = lc_db()->prepare('
-                SELECT c.id
+                SELECT c.id, c.brand_id
                 FROM conversations c
                 JOIN visitors v ON v.id = c.visitor_id
                 WHERE c.id = ? AND v.visitor_uid = ?
                 LIMIT 1
             ');
             $stmt->execute([$conversationId, $visitorUid]);
-            if (!$stmt->fetch()) {
+            $tokenRow = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$tokenRow) {
                 // HTTP 200 so nginx custom 404 pages do not replace JSON (breaks widget token refresh).
                 lc_json(['success' => false, 'error' => 'Not found', 'realtime' => lc_realtime_client_config()]);
             }
             lc_json([
                 'success' => true,
-                'token' => lc_realtime_visitor_token($visitorUid, $conversationId),
+                'token' => lc_realtime_visitor_token(
+                    $visitorUid,
+                    $conversationId,
+                    (int) ($tokenRow['brand_id'] ?? 0)
+                ),
                 'realtime' => lc_realtime_client_config(),
             ]);
         }

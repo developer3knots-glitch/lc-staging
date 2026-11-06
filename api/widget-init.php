@@ -681,7 +681,7 @@ try {
         'ticket_resume_enabled' => lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null),
         'realtime' => lc_realtime_client_config($brandId),
         'realtime_token' => lc_realtime_mode() === 'ws'
-            ? lc_realtime_visitor_token($visitorUid, $convId)
+            ? lc_realtime_visitor_token($visitorUid, $convId, $brandId)
             : '',
     ]);
 } catch (Throwable $e) {

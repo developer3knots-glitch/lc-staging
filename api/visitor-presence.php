@@ -136,30 +136,8 @@ try {
                     }
                 }
             }
-            if (function_exists('lc_realtime_publish_channels') && function_exists('lc_realtime_mode') && lc_realtime_mode() === 'ws') {
-                $stalePresence = [
-                    'status' => 'minimized',
-                    'label' => 'Chat minimized',
-                    'widget_open' => false,
-                    'page_visible' => true,
-                    'window_focused' => true,
-                    'left_site' => false,
-                    'presence_ts' => $presenceTs,
-                    'from_status' => 'active',
-                ];
-                $staleChannels = [
-                    lc_realtime_channel_conversation($conversationId),
-                    lc_realtime_channel_staff_conversation($conversationId),
-                ];
-                if ($agentId > 0) {
-                    $staleChannels[] = lc_realtime_channel_agent($agentId);
-                }
-                lc_realtime_publish_channels($staleChannels, 'visitor.presence', [
-                    'conversation_id' => $conversationId,
-                    'visitor_id' => $visitorId,
-                    'visitor_presence' => $stalePresence,
-                ], 180);
-            }
+            // Do not publish this stale frame over WS — an older presence_ts would flap
+            // Active → Minimized on the agent badge. Transcript line above is enough.
         }
         $presence = lc_visitor_engagement_status([
             'left_site_at' => $leftAt,

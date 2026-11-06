@@ -669,8 +669,9 @@
         var serverLeft = presenceMeansLeft(keptServer);
         var localTs = presenceStamp(keptLocal);
         var serverTs = presenceStamp(keptServer);
+        // DB engagement says on-site — never keep a sticky local Left from a missed leave.
+        if (localLeft && !serverLeft) return keptServer;
         if (!localLeft && serverLeft && localTs >= serverTs) return keptLocal;
-        if (localLeft && !serverLeft && serverTs >= localTs) return keptServer;
         if (localTs > serverTs) return keptLocal;
         return keptServer;
     }
@@ -827,21 +828,24 @@
     }
 
     /**
-     * agent-poll carries engagement status. A live non-Left must clear LEFT SITE
-     * even when an older WS leave still owns livePresenceTs.
+     * agent-poll / inbox engagement. Trust status over a stale left_site_at column —
+     * last_seen > left clears left_site in engagement while the column may still be set.
      */
     function applyPolledVisitorPresence(conv) {
         if (!conv) return;
         var presence = normalizeVisitorPresence(conv.visitor_presence);
-        if (!presence && !conv.visitor_left_site_at) {
+        if (!presence) {
             setVisitorPresenceBadge(conv, { source: 'poll' });
             return;
         }
-        var leftCol = !!(conv.visitor_left_site_at && String(conv.visitor_left_site_at).trim());
-        if (presence && !presenceMeansLeft(presence) && !leftCol) {
-            presence = liftPresenceOverLeft(presence, selectedId);
-            applyVisitorPresenceToInbox(selectedId, presence);
-            setVisitorPresenceBadge(presence, { source: 'poll', force: lastPresenceStatusKey === 'left' });
+        if (!presenceMeansLeft(presence)) {
+            var cid = parseInt(conv.id, 10) || selectedId || 0;
+            presence = liftPresenceOverLeft(presence, cid);
+            if (cid) applyVisitorPresenceToInbox(cid, presence);
+            setVisitorPresenceBadge(presence, {
+                source: 'poll',
+                force: lastPresenceStatusKey === 'left'
+            });
             return;
         }
         setVisitorPresenceBadge(conv, { source: 'poll' });
@@ -884,6 +888,15 @@
                 return;
             }
         }
+        // Stale WS frames (slow minimize after a newer Active) used to flap the badge.
+        if (source === 'ws' && !opts.force && livePresenceTs > 0) {
+            if (incomingTs > 0 && incomingTs < livePresenceTs) {
+                return;
+            }
+            if (!incomingTs) {
+                return;
+            }
+        }
         // HTTP/inbox must NEVER overwrite a newer live WS status (root cause of 3–4s lag + flap)
         if (source !== 'ws' && !opts.force) {
             if (livePresenceSource === 'ws' && livePresenceTs > 0) {
@@ -898,13 +911,10 @@
 
         if (incomingTs > livePresenceTs) {
             livePresenceTs = incomingTs;
-        } else if (source === 'ws' && !incomingTs) {
-            livePresenceTs = Date.now();
-            presence.presence_ts = livePresenceTs;
         }
         if (source === 'ws') {
             livePresenceSource = 'ws';
-        } else if (!livePresenceSource) {
+        } else if (!livePresenceSource || opts.force) {
             livePresenceSource = source;
         }
 
@@ -3206,12 +3216,12 @@
                 });
                 paintConversationList(filterConversations(lastConversations));
 
-                // Inbox is backup only — never stomp fresher WS presence
+                // Inbox backup — force-clear Left when engagement says visitor is back
                 if (selectedId) {
                     for (var pi = 0; pi < lastConversations.length; pi++) {
                         if ((parseInt(lastConversations[pi].id, 10) || 0) === selectedId) {
                             if (lastConversations[pi].visitor_presence) {
-                                setVisitorPresenceBadge(lastConversations[pi], { source: 'inbox' });
+                                applyPolledVisitorPresence(lastConversations[pi]);
                             }
                             break;
                         }
