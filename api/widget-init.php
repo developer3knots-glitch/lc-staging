@@ -552,8 +552,9 @@ try {
     if (function_exists('lc_ensure_agent_tagline_schema')) {
         lc_ensure_agent_tagline_schema();
     }
+    $assignedAgentId = 0;
     $agentStmt = $db->prepare('
-        SELECT a.name, a.avatar, a.tagline
+        SELECT c.agent_id, a.name, a.avatar, a.tagline
         FROM conversations c
         LEFT JOIN agents a ON a.id = c.agent_id
         WHERE c.id = ?
@@ -561,6 +562,7 @@ try {
     ');
     $agentStmt->execute([$convId]);
     $agentRow = $agentStmt->fetch();
+    $assignedAgentId = (int) ($agentRow['agent_id'] ?? 0);
     if ($agentRow && !empty($agentRow['name'])) {
         $agentInfo = lc_agent_public($agentRow['name'], $agentRow['avatar'] ?? null, $agentRow['tagline'] ?? null);
     }
@@ -681,7 +683,7 @@ try {
         'ticket_resume_enabled' => lc_ticket_resume_enabled($brandAccountId > 0 ? $brandAccountId : null),
         'realtime' => lc_realtime_client_config($brandId),
         'realtime_token' => lc_realtime_mode() === 'ws'
-            ? lc_realtime_visitor_token($visitorUid, $convId, $brandId)
+            ? lc_realtime_visitor_token($visitorUid, $convId, $brandId, $assignedAgentId)
             : '',
     ]);
 } catch (Throwable $e) {

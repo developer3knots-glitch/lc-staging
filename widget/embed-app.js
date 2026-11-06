@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 204;
+    var LC_WIDGET_BUILD = 205;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -512,6 +512,12 @@
             if (cid < 1) return false;
             var payload = localPresencePayload(fields, ts);
             payload.from_status = fromStatus || '';
+            var eventData = {
+                conversation_id: cid,
+                visitor_presence: payload
+            };
+            var brandId = parseInt((settings && settings.brand_id) || 0, 10) || 0;
+            if (brandId > 0) eventData.brand_id = brandId;
             var clients = [realtimeClient, presenceClient];
             for (var i = 0; i < clients.length; i++) {
                 var client = clients[i];
@@ -523,10 +529,7 @@
                     }
                 } catch (eSub) {}
                 try {
-                    if (client.publishClientEvent('visitor.presence', {
-                        conversation_id: cid,
-                        visitor_presence: payload
-                    })) {
+                    if (client.publishClientEvent('visitor.presence', eventData)) {
                         return true;
                     }
                 } catch (ePub) {}
@@ -594,10 +597,6 @@
             }
             var body = JSON.stringify(payload);
             var endpoint = siteUrl + '/api/visitor-presence.php';
-            // Min/max: always dual-send (fetch + beacon) so one path can win under load
-            var isMinMax = !fields.left_site && (
-                local.status === 'minimized' || local.status === 'active' || fields.force_status === 'minimized'
-            );
             try {
                 fetch(endpoint, {
                     method: 'POST',
@@ -606,7 +605,8 @@
                     keepalive: true
                 }).catch(function () {});
             } catch (err) {}
-            if ((useBeacon || isMinMax) && navigator.sendBeacon) {
+            // Beacon only on unload — dual beacon+fetch was racing min/max and delaying agents
+            if (useBeacon && navigator.sendBeacon) {
                 try {
                     navigator.sendBeacon(endpoint, new Blob([body], { type: 'text/plain' }));
                 } catch (err2) {}

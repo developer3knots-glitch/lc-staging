@@ -234,6 +234,10 @@
         if (key && recentNotifyAt[key] && (now - recentNotifyAt[key]) < 2500) {
             return false;
         }
+        // Cross-tab: 4 admin tabs must not play 4 sounds / 4 desktop pushes
+        if (key && window.LCNotifyClaim && !window.LCNotifyClaim('chat:' + key, 4000)) {
+            return false;
+        }
         if (key) recentNotifyAt[key] = now;
         if (window.LCNotifySound && typeof window.LCNotifySound.play === 'function') {
             window.LCNotifySound.play({ force: true, event: eventName || 'message_here' });
@@ -6667,7 +6671,8 @@
                 })
                 .catch(function () {});
         }
-        window.__lcPresenceTimer = setInterval(syncPresenceOnly, 250);
+        // 100ms backup — WS is primary; this caps worst-case badge lag under ~0.1s
+        window.__lcPresenceTimer = setInterval(syncPresenceOnly, 100);
         if (selectedId) syncPresenceOnly();
 
         // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
@@ -7045,14 +7050,10 @@
                         playNotifyEvent('visitor_left', 'left:' + cid);
                     }
                 }
+                // Realtime: always force — never let a stuck livePresenceTs keep ON CHAT
                 applyVisitorPresenceToInbox(cid, presence);
-                // Always paint open-chat header for min/max — force beats a stuck livePresenceTs
                 if (selectedId && cid === selectedId) {
-                    var st = String((presence && presence.status) || '').toLowerCase();
-                    var isMinMax = st === 'minimized' || st === 'active' || st === 'away' || st === 'window'
-                        || (presence && presence.widget_open === false)
-                        || (presence && presence.widget_open === true);
-                    setVisitorPresenceBadge(presence, { source: 'ws', force: !!isMinMax });
+                    setVisitorPresenceBadge(presence, { source: 'ws', force: true });
                     if (conversationRowStatus(cid) === 'closed') {
                         setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
                         if (replyInput) {

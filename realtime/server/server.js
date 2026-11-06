@@ -280,26 +280,23 @@ function wireWebSocket(server) {
         if (String(claims.role || '') !== 'visitor') return;
         const claimCid = parseInt(claims.conversation_id, 10) || 0;
         const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
-        const cid = parseInt(data.conversation_id, 10) || claimCid || 0;
-        // Only reject when token is bound to a *different* open chat
-        if (cid < 1 || (claimCid > 0 && claimCid !== cid)) {
-          return;
-        }
+        // Prefer live payload cid — token can lag after reopen / continue
+        let cid = parseInt(data.conversation_id, 10) || 0;
+        if (cid < 1) cid = claimCid;
+        if (cid < 1) return;
         const convCh = 'conv:' + cid;
         const staffCh = 'staff:conv:' + cid;
         const brandId = parseInt(claims.brand_id, 10) || parseInt(data.brand_id, 10) || 0;
-        // Auto-join authorized conv room so early presence isn't dropped pre-subscribe
+        const agentId = parseInt(claims.agent_id, 10) || parseInt(data.agent_id, 10) || 0;
+        // Auto-join so early presence isn't dropped pre-subscribe
         if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
-          if (claimCid === cid || claimCid === 0) {
-            subscribe(ws, convCh);
-          }
+          subscribe(ws, convCh);
         }
         const presence = data.visitor_presence || data || {};
-        // brand inbox so agents who have not opened this chat still get Left/Away live
+        // Fan to every staff surface that can paint the badge without waiting on poll
         const channels = [convCh, staffCh];
-        if (brandId > 0) {
-          channels.push('brand:' + brandId + ':inbox');
-        }
+        if (brandId > 0) channels.push('brand:' + brandId + ':inbox');
+        if (agentId > 0) channels.push('agent:' + agentId);
         publishMany(
           channels,
           'visitor.presence',

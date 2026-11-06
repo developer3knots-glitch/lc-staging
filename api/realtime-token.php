@@ -20,7 +20,7 @@ try {
         lc_cors_headers();
         if ($conversationId > 0) {
             $stmt = lc_db()->prepare('
-                SELECT c.id, c.brand_id
+                SELECT c.id, c.brand_id, c.agent_id
                 FROM conversations c
                 JOIN visitors v ON v.id = c.visitor_id
                 WHERE c.id = ? AND v.visitor_uid = ?
@@ -37,7 +37,8 @@ try {
                 'token' => lc_realtime_visitor_token(
                     $visitorUid,
                     $conversationId,
-                    (int) ($tokenRow['brand_id'] ?? 0)
+                    (int) ($tokenRow['brand_id'] ?? 0),
+                    (int) ($tokenRow['agent_id'] ?? 0)
                 ),
                 'realtime' => lc_realtime_client_config(),
             ]);

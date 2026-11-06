@@ -245,15 +245,20 @@ function lc_realtime_channel_visitor(string $visitorUid): string
     return 'visitor:' . substr(preg_replace('/[^a-zA-Z0-9_-]/', '', $visitorUid), 0, 64);
 }
 
-function lc_realtime_visitor_token(string $visitorUid, int $conversationId, int $brandId = 0): string
+function lc_realtime_visitor_token(string $visitorUid, int $conversationId, int $brandId = 0, int $agentId = 0): string
 {
     $channels = [lc_realtime_channel_conversation($conversationId)];
     if ($visitorUid !== '') {
         $channels[] = lc_realtime_channel_visitor($visitorUid);
     }
-    if ($brandId < 1 && $conversationId > 0 && function_exists('lc_get_conversation')) {
-        $conv = lc_get_conversation($conversationId);
-        $brandId = (int) ($conv['brand_id'] ?? 0);
+    if (($brandId < 1 || $agentId < 1) && $conversationId > 0 && function_exists('lc_get_conversation')) {
+        $conv = lc_get_conversation($conversationId) ?: [];
+        if ($brandId < 1) {
+            $brandId = (int) ($conv['brand_id'] ?? 0);
+        }
+        if ($agentId < 1) {
+            $agentId = (int) ($conv['agent_id'] ?? 0);
+        }
     }
 
     return lc_realtime_issue_token([
@@ -261,6 +266,8 @@ function lc_realtime_visitor_token(string $visitorUid, int $conversationId, int 
         'visitor_uid' => $visitorUid,
         'conversation_id' => $conversationId,
         'brand_id' => max(0, $brandId),
+        // Assigned agent room — Node fans presence here so open-chat UI is instant
+        'agent_id' => max(0, $agentId),
         'channels' => array_values(array_unique($channels)),
     ], 7200);
 }

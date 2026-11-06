@@ -234,6 +234,7 @@ function lc_brand_settings(array $brand): array
         : (int) lc_setting('poll_interval_ms', '1500');
     return [
         'site_name' => $brand['name'],
+        'brand_id' => (int) ($brand['id'] ?? 0),
         'widget_color' => $brand['widget_color'] ?? '#6FD943',
         'widget_theme' => in_array(strtolower((string) ($brand['widget_theme'] ?? 'dark')), ['light', 'dark'], true)
             ? strtolower((string) $brand['widget_theme'])

@@ -185,6 +185,32 @@
         var DEDUPE_MS = 45000;
         var POLL_MS = 4000;
         var trafficUrl = notifyBase + '/admin/traffic.php';
+        // sessionStorage is per-tab — 4 admin tabs = 4 notifications. localStorage is shared.
+        var TAB_ID = '';
+        try {
+            TAB_ID = sessionStorage.getItem('lc_notify_tab_id') || '';
+            if (!TAB_ID) {
+                TAB_ID = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+                sessionStorage.setItem('lc_notify_tab_id', TAB_ID);
+            }
+        } catch (eTab) {
+            TAB_ID = String(Date.now()) + '-x';
+        }
+        var notifyBus = null;
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                notifyBus = new BroadcastChannel('lc-admin-notify');
+                notifyBus.onmessage = function (ev) {
+                    var msg = ev && ev.data;
+                    if (!msg || msg.type !== 'claimed' || !msg.id) return;
+                    var at = parseInt(msg.at, 10) || Date.now();
+                    seenAt[String(msg.id)] = at;
+                    saveSeenMap();
+                };
+            }
+        } catch (eBus) {
+            notifyBus = null;
+        }
 
         function esc(s) {
             return String(s == null ? '' : s)
@@ -194,9 +220,18 @@
                 .replace(/"/g, '&quot;');
         }
 
+        function seenStoreKey() {
+            var agentId = parseInt(window.LC_AGENT_ID, 10) || 0;
+            return 'lc_land_seen_v2:' + agentId;
+        }
+
         function loadSeenMap() {
             try {
-                var raw = sessionStorage.getItem('lc_land_seen_v1');
+                var raw = localStorage.getItem(seenStoreKey());
+                if (!raw) {
+                    // One-time migrate from old per-tab session map
+                    raw = sessionStorage.getItem('lc_land_seen_v1');
+                }
                 if (!raw) return;
                 var parsed = JSON.parse(raw);
                 if (parsed && typeof parsed === 'object') seenAt = parsed;
@@ -208,22 +243,64 @@
                 var now = Date.now();
                 var trimmed = {};
                 Object.keys(seenAt).forEach(function (k) {
-                    if (now - (seenAt[k] || 0) < 3600000) trimmed[k] = seenAt[k];
+                    if (k.slice(-4) === '#tab') {
+                        var base = k.slice(0, -4);
+                        if (trimmed[base]) trimmed[k] = seenAt[k];
+                        return;
+                    }
+                    var at = parseInt(seenAt[k], 10) || 0;
+                    if (at && (now - at) < 3600000) trimmed[k] = at;
                 });
                 seenAt = trimmed;
-                sessionStorage.setItem('lc_land_seen_v1', JSON.stringify(seenAt));
+                localStorage.setItem(seenStoreKey(), JSON.stringify(seenAt));
             } catch (e) { /* ignore */ }
         }
 
+        /**
+         * Cross-tab claim: only ONE admin tab may fire sound/desktop push for this key.
+         * Uses localStorage (shared across tabs). sessionStorage was per-tab → 4 sounds.
+         * @return {boolean}
+         */
         function canNotifyVisitor(id) {
             id = String(id || '');
             if (!id) return false;
             var now = Date.now();
-            if (seenAt[id] && (now - seenAt[id]) < DEDUPE_MS) return false;
+            var tabKey = id + '#tab';
+            loadSeenMap();
+            var prevAt = parseInt(seenAt[id], 10) || 0;
+            if (prevAt && (now - prevAt) < DEDUPE_MS) {
+                return false;
+            }
             seenAt[id] = now;
-            saveSeenMap();
+            seenAt[tabKey] = TAB_ID;
+            try {
+                localStorage.setItem(seenStoreKey(), JSON.stringify(seenAt));
+                var winner = JSON.parse(localStorage.getItem(seenStoreKey()) || '{}');
+                // Last writer of #tab wins — other tabs skip sound/push
+                if (String(winner[tabKey] || '') !== TAB_ID) {
+                    seenAt = winner;
+                    return false;
+                }
+                seenAt = winner;
+            } catch (eSet) {
+                saveSeenMap();
+            }
+            try {
+                if (notifyBus) {
+                    notifyBus.postMessage({ type: 'claimed', id: id, at: now, tab: TAB_ID });
+                }
+            } catch (ePost) { /* ignore */ }
             return true;
         }
+
+        // Shared helper for chats page (playNotifyEvent) and other modules
+        window.LCNotifyClaim = function (dedupeKey, ttlMs) {
+            var prevTtl = DEDUPE_MS;
+            if (ttlMs > 0) DEDUPE_MS = Math.max(500, parseInt(ttlMs, 10) || prevTtl);
+            var ok = canNotifyVisitor(dedupeKey);
+            DEDUPE_MS = prevTtl;
+            return ok;
+        };
 
         function markKnown(id, row) {
             id = String(id || '');
@@ -486,12 +563,13 @@
             }
             var title = options.title || 'Visitor on site';
             var body = options.body || ((name || 'Visitor') + (detail ? ' — ' + detail : ' is browsing your website'));
-            var tag = (options.tag || ('lc-visitor-land-' + String(visitorKey || name || 'alert'))) + '-' + Date.now();
+            // Stable tag (no Date.now) so OS/browser coalesces if two tabs race
+            var tag = String(options.tag || ('lc-visitor-land-' + String(visitorKey || name || 'alert'))).slice(0, 120);
             var targetUrl = options.url || trafficUrl;
             var opts = {
                 body: body,
                 tag: tag,
-                renotify: true,
+                renotify: false,
                 requireInteraction: false,
                 data: { url: targetUrl }
             };
