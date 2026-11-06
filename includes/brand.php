@@ -34,9 +34,24 @@ function lc_ensure_brand_widget_columns(): void
         lc_db()->exec("ALTER TABLE brands ADD COLUMN start_chat_greeting_message VARCHAR(1000) NOT NULL DEFAULT 'Hello How are you doing?'");
     } catch (Throwable $e) {
     }
+    try {
+        // 1 = show “Keep chatting?” sheet before minimize; 0 = minimize immediately
+        lc_db()->exec('ALTER TABLE brands ADD COLUMN minimize_confirm_enabled TINYINT(1) NOT NULL DEFAULT 1');
+    } catch (Throwable $e) {
+    }
     if (function_exists('lc_ensure_brand_prechat_columns')) {
         lc_ensure_brand_prechat_columns();
     }
+}
+
+function lc_brand_minimize_confirm_enabled(array $brand): bool
+{
+    lc_ensure_brand_widget_columns();
+    if (!array_key_exists('minimize_confirm_enabled', $brand)) {
+        return true;
+    }
+
+    return (int) $brand['minimize_confirm_enabled'] === 1;
 }
 
 function lc_brand_start_chat_greeting_enabled(array $brand): bool
@@ -235,5 +250,8 @@ function lc_brand_settings(array $brand): array
         'prechat_form' => function_exists('lc_brand_prechat_config')
             ? lc_brand_prechat_config($brand)
             : null,
+        'minimize_confirm_enabled' => function_exists('lc_brand_minimize_confirm_enabled')
+            ? lc_brand_minimize_confirm_enabled($brand)
+            : true,
     ];
 }

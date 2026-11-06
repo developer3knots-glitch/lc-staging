@@ -32,14 +32,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $startGreetingMessage = function_exists('mb_substr')
             ? mb_substr($startGreetingMessage, 0, 1000)
             : substr($startGreetingMessage, 0, 1000);
+        $minimizeConfirm = isset($_POST['minimize_confirm_enabled']) ? 1 : 0;
 
         if ($name === '') {
             $error = 'Brand name is required.';
         } else {
             $key = $key !== '' ? lc_slug_key($key) : lc_slug_key($name);
             $key = lc_unique_brand_key($key);
-            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config, start_chat_greeting, start_chat_greeting_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson, $startGreeting, $startGreetingMessage]);
+            $stmt = $db->prepare('INSERT INTO brands (account_id, name, brand_key, widget_color, widget_theme, welcome_message, offline_message, prechat_form_enabled, prechat_form_config, start_chat_greeting, start_chat_greeting_message, minimize_confirm_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$accountId > 0 ? $accountId : null, $name, $key, $color, $theme, $welcome, $offline, $prechatOn, $prechatJson, $startGreeting, $startGreetingMessage, $minimizeConfirm]);
             $message = 'Brand created. Copy its install code and add it to the website.';
             $openEditId = (int) $db->lastInsertId();
         }
@@ -70,7 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $startGreetingMessage = function_exists('mb_substr')
                 ? mb_substr($startGreetingMessage, 0, 1000)
                 : substr($startGreetingMessage, 0, 1000);
-            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ?, start_chat_greeting = ?, start_chat_greeting_message = ? WHERE id = ?';
+            $minimizeConfirm = isset($_POST['minimize_confirm_enabled']) ? 1 : 0;
+            $sql = 'UPDATE brands SET name = ?, brand_key = ?, widget_color = ?, widget_theme = ?, welcome_message = ?, offline_message = ?, is_active = ?, prechat_form_enabled = ?, prechat_form_config = ?, start_chat_greeting = ?, start_chat_greeting_message = ?, minimize_confirm_enabled = ? WHERE id = ?';
             $params = [
                 $name,
                 $key,
@@ -83,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $prechatJson,
                 $startGreeting,
                 $startGreetingMessage,
+                $minimizeConfirm,
                 $id,
             ];
             if ($accountId > 0) {
@@ -249,6 +252,14 @@ require __DIR__ . '/includes/header.php';
                             </label>
                             <label>Start chat message</label>
                             <textarea name="start_chat_greeting_message" rows="2" maxlength="1000">Hello How are you doing?</textarea>
+                            <label class="lc-settings-toggle">
+                                <input type="checkbox" name="minimize_confirm_enabled" checked>
+                                <span class="lc-settings-toggle-ui"></span>
+                                <span class="lc-settings-toggle-text">
+                                    <strong>Ask before minimizing the chat</strong>
+                                    <small>On: visitor sees “Keep chatting in this window?” before the widget hides. Off: minimize happens immediately.</small>
+                                </span>
+                            </label>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Turn this on only for this brand. Other brands keep their own forms.</p>
@@ -347,6 +358,14 @@ require __DIR__ . '/includes/header.php';
                             </label>
                             <label>Start chat message</label>
                             <textarea name="start_chat_greeting_message" rows="2" maxlength="1000"><?= lc_sanitize((string) ($b['start_chat_greeting_message'] ?? 'Hello How are you doing?')) ?></textarea>
+                            <label class="lc-settings-toggle">
+                                <input type="checkbox" name="minimize_confirm_enabled" <?= !isset($b['minimize_confirm_enabled']) || (int) $b['minimize_confirm_enabled'] === 1 ? 'checked' : '' ?>>
+                                <span class="lc-settings-toggle-ui"></span>
+                                <span class="lc-settings-toggle-text">
+                                    <strong>Ask before minimizing the chat</strong>
+                                    <small>On: visitor sees “Keep chatting in this window?” before the widget hides. Off: minimize happens immediately.</small>
+                                </span>
+                            </label>
                         </section>
                         <section class="lc-brand-pane" data-brand-pane="prechat">
                             <p class="lc-brand-pane-lead">Ask for details before a new chat. This form is not shared with other brands.</p>

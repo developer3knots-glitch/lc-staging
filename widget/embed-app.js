@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 203;
+    var LC_WIDGET_BUILD = 204;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -1221,13 +1221,8 @@
         }, { passive: false, capture: true });
 
         document.getElementById('lc-bubble').addEventListener('click', togglePanel);
-        // Immediate minimize — confirm sheet added ~2s of "delay" before presence even fired
-        document.getElementById('lc-toolbar-minimize').addEventListener('click', function () {
-            minimizePanel();
-        });
-        document.getElementById('lc-minimize-chat').addEventListener('click', function () {
-            minimizePanel();
-        });
+        document.getElementById('lc-toolbar-minimize').addEventListener('click', requestMinimize);
+        document.getElementById('lc-minimize-chat').addEventListener('click', requestMinimize);
         document.getElementById('lc-close-chat').addEventListener('click', showCloseConfirm);
         bindConfirmSheets();
         bindHeadMenu();
@@ -1346,7 +1341,7 @@
                     hideMinimizeConfirm();
                     return;
                 }
-                minimizePanel();
+                requestMinimize();
             }
         });
 
@@ -4072,6 +4067,25 @@
         if (el) {
             el.hidden = false;
         }
+    }
+
+    function minimizeConfirmEnabled() {
+        // Brand setting: default ON so the keep-chatting sheet stays available.
+        if (!settings || settings.minimize_confirm_enabled === undefined || settings.minimize_confirm_enabled === null) {
+            return true;
+        }
+        var v = settings.minimize_confirm_enabled;
+        return !(v === 0 || v === '0' || v === false || v === 'false');
+    }
+
+    /** Toolbar / Escape minimize — respects brand toggle for the confirm sheet. */
+    function requestMinimize() {
+        if (!isOpen) return;
+        if (minimizeConfirmEnabled() && conversationId && !chatClosed) {
+            showMinimizeConfirm();
+            return;
+        }
+        minimizePanel();
     }
 
     function showMinimizeConfirm() {
