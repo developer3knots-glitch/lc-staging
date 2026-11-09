@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 213;
+    var LC_WIDGET_BUILD = 214;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2353,14 +2353,23 @@
         }
         var cid = parseInt(conversationId, 10) || 0;
         if (cid < 1) return true;
-        // Must be server-acked on conv: OR visitor: — otherwise keep HTTP catch-up
+        // Must be server-acked on conv: OR visitor:
         if (typeof realtimeClient.hasChannel === 'function') {
             var onConv = realtimeClient.hasChannel('conv:' + cid);
             var vCh = visitorUid
                 ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64))
                 : '';
             var onVisitor = vCh ? realtimeClient.hasChannel(vCh) : false;
-            return !!(onConv || onVisitor);
+            if (!(onConv || onVisitor)) return false;
+        }
+        // Socket must be receiving frames (ping/event). Dead TCP still looks "connected"
+        // and previously blocked poll forever while message.new never arrived.
+        var lastFrame = parseInt(window.__lcWsLastFrameAt, 10)
+            || parseInt(realtimeClient._lastFrameAt, 10)
+            || parseInt(realtimeClient._lastPongAt, 10)
+            || 0;
+        if (lastFrame > 0 && (Date.now() - lastFrame) > 45000) {
+            return false;
         }
         return true;
     }
@@ -2522,8 +2531,8 @@
     }
 
     /**
-     * While chat WS is up: zero visitor-poll.
-     * Interval only re-subscribes channels; falls back to HTTP if socket drops.
+     * While chat WS is up: re-subscribe + rare HTTP safety (20s).
+     * Direct visitor-socket delivery on Node is primary; this only covers ghosts.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2533,7 +2542,7 @@
             document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
             window.__lcWsCatchupVisHandler = null;
         }
-        // No HTTP on tab focus while WS live — socket must carry messages
+        var safetyTick = 0;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2545,7 +2554,19 @@
                 return;
             }
             ensureVisitorConvChannel();
-        }, 15000);
+            safetyTick += 1;
+            // Every 20s (4×5s) one HTTP safety net — not the live path
+            if (safetyTick % 4 === 0 && !document.hidden) {
+                // Temporarily allow pollMessages while WS "live"
+                var prev = window.__lcForcePollOnce;
+                window.__lcForcePollOnce = true;
+                try {
+                    pollMessages(false);
+                } finally {
+                    window.__lcForcePollOnce = prev;
+                }
+            }
+        }, 5000);
     }
 
     /** Extra catch-up only while WS is down */
@@ -2881,15 +2902,23 @@
             if (painted && payload && payload.message && payload.message.sender_type === 'agent') {
                 window.__lcWsAgentPainted = true;
             }
-            if (!painted && !isVisitorWsLive()) {
-                // Only HTTP gap-fill when socket is down
-                scheduleGapFill();
-                forceMessageCatchup();
+            if (!painted) {
+                // WS frame arrived but paint failed (id-only / DOM miss) — one forced poll
+                window.__lcForcePollOnce = true;
+                try {
+                    scheduleGapFill();
+                    pollMessages(false);
+                } finally {
+                    window.__lcForcePollOnce = false;
+                }
             }
         } catch (e) {
-            if (!isVisitorWsLive()) {
+            window.__lcForcePollOnce = true;
+            try {
                 scheduleGapFill();
-                forceMessageCatchup();
+                pollMessages(false);
+            } finally {
+                window.__lcForcePollOnce = false;
             }
         }
     }
@@ -3379,7 +3408,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=15';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=16';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -6937,8 +6966,8 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS live → block visitor-poll entirely (except one history seed if transcript empty)
-        if (isVisitorWsLive()) {
+        // WS live → block visitor-poll (except empty-transcript history, or forced safety tick)
+        if (isVisitorWsLive() && !window.__lcForcePollOnce) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;

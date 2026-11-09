@@ -42,6 +42,8 @@ if (!SECRET) {
 const channelSubs = new Map();
 /** @type {Set<import('ws').WebSocket>} */
 const allSockets = new Set();
+/** @type {Map<string, import('ws').WebSocket>} visitor_uid → newest live socket */
+const visitorSockets = new Map();
 
 function verifyToken(token) {
   if (!token || !token.includes('.')) return null;
@@ -89,7 +91,45 @@ function subscribe(ws, channel) {
   ws._lcChannels.add(channel);
 }
 
+function registerVisitorSocket(ws) {
+  const role = String((ws._lcClaims && ws._lcClaims.role) || '');
+  const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
+  if (role !== 'visitor' || !uid) return;
+  const prev = visitorSockets.get(uid);
+  if (prev && prev !== ws && prev.readyState === 1) {
+    try { prev.close(); } catch (eClose) { /* ignore */ }
+  }
+  visitorSockets.set(uid, ws);
+}
+
+function unregisterVisitorSocket(ws) {
+  const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
+  if (!uid) return;
+  if (visitorSockets.get(uid) === ws) {
+    visitorSockets.delete(uid);
+  }
+}
+
+function deliverToVisitorUid(uid, event, data) {
+  uid = String(uid || '');
+  if (!uid) return 0;
+  const client = visitorSockets.get(uid);
+  if (!client || client.readyState !== 1) return 0;
+  try {
+    client.send(JSON.stringify({
+      type: 'event',
+      event: event,
+      data: data || {},
+    }));
+    return 1;
+  } catch (e) {
+    unregisterVisitorSocket(client);
+    return 0;
+  }
+}
+
 function unsubscribeAll(ws) {
+  unregisterVisitorSocket(ws);
   if (!ws._lcChannels) return;
   ws._lcChannels.forEach(function (ch) {
     const set = channelSubs.get(ch);
@@ -185,12 +225,31 @@ function publishMany(channels, event, data) {
       try {
         client.send(payload);
         n += 1;
-        // Staff on conv:/agent: used to count as "delivered" even when visitor got 0
         const role = String((client._lcClaims && client._lcClaims.role) || '');
         if (role === 'visitor') visitorDelivered += 1;
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        try { set.delete(client); } catch (eDel) { /* ignore */ }
+      }
     });
   });
+  // Direct map delivery — bypasses stale channel membership / ghost sockets
+  if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
+    (channels || []).forEach(function (ch) {
+      const name = String(ch || '');
+      if (name.indexOf('visitor:') !== 0) return;
+      const uid = name.slice('visitor:'.length);
+      const client = visitorSockets.get(uid);
+      if (!client || client.readyState !== 1 || seenClients.has(client)) return;
+      seenClients.add(client);
+      try {
+        client.send(payload);
+        n += 1;
+        visitorDelivered += 1;
+      } catch (e2) {
+        unregisterVisitorSocket(client);
+      }
+    });
+  }
   return { delivered: n, visitorDelivered: visitorDelivered };
 }
 
@@ -243,10 +302,11 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 6,
+        build: 7,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
+        visitorSockets: visitorSockets.size,
         channels: channels.length,
       }));
     } catch (e) {
@@ -267,8 +327,9 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 6,
+      build: 7,
       pid: process.pid,
+      visitorSockets: visitorSockets.size,
       channels: channels.length,
       detail: channels,
     });
@@ -314,6 +375,7 @@ function wireWebSocket(server) {
         }
         ws._lcAuthed = true;
         ws._lcClaims = claims;
+        registerVisitorSocket(ws);
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
         ws.send(JSON.stringify({ type: 'auth.ok', channels: Array.from(ws._lcChannels || []) }));
