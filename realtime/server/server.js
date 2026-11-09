@@ -47,6 +47,25 @@ const visitorSockets = new Map();
 /** @type {Map<string, string[]>} visitor_uid → pending raw event frames */
 const visitorPending = new Map();
 const VISITOR_PENDING_MAX = 40;
+/** Last message.new publish — exposed on /health for live debugging */
+let lastMessageNew = null;
+
+/** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
+function slimEventData(event, data) {
+  if (!data || typeof data !== 'object') return data || {};
+  if (event !== 'message.new' && event !== 'staff.message') return data;
+  const out = Object.assign({}, data);
+  if (out.message && typeof out.message === 'object') {
+    const m = Object.assign({}, out.message);
+    delete m.agent_avatar;
+    delete m.avatar;
+    delete m.agentAvatar;
+    out.message = m;
+  }
+  delete out.agent_avatar;
+  delete out.avatar;
+  return out;
+}
 
 function verifyToken(token) {
   if (!token || !token.includes('.')) return null;
@@ -182,10 +201,11 @@ function socketsForVisitorUid(uid) {
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
+  data = slimEventData(event, data || {});
   const raw = JSON.stringify({
     type: 'event',
     event: event,
-    data: data || {},
+    data: data,
   });
   // Keep message.new queued even after send() — TCP can accept bytes on a
   // half-open socket (visitorDelivered:1) while the browser never gets the frame.
@@ -326,11 +346,12 @@ function replayMessageNew(ws, channel) {
 }
 
 function publishMany(channels, event, data) {
+  data = slimEventData(event, data || {});
   const payload = JSON.stringify({
     type: 'event',
     channel: String((channels && channels[0]) || ''),
     event: event,
-    data: data || {},
+    data: data,
   });
   const seenClients = new Set();
   let n = 0;
@@ -358,8 +379,22 @@ function publishMany(channels, event, data) {
     const uids = visitorUidsFromChannels(channels);
     const dataUid = String((data && data.visitor_uid) || '');
     if (dataUid && uids.indexOf(dataUid) === -1) uids.push(dataUid);
+    // Also any visitor sitting on conv:ID (even if visitor: channel missing from publish list)
+    (channels || []).forEach(function (ch) {
+      const name = String(ch || '');
+      const m = /^conv:(\d+)$/.exec(name);
+      if (!m) return;
+      const set = channelSubs.get(name);
+      if (!set) return;
+      set.forEach(function (client) {
+        const claims = client._lcClaims || {};
+        if (String(claims.role || '') !== 'visitor') return;
+        const uid = String(claims.visitor_uid || '');
+        if (uid && uids.indexOf(uid) === -1) uids.push(uid);
+      });
+    });
     uids.forEach(function (uid) {
-      const extra = deliverToVisitorUid(uid, event, data || {});
+      const extra = deliverToVisitorUid(uid, event, data);
       if (extra > 0) {
         n += extra;
         visitorDelivered += extra;
@@ -404,7 +439,8 @@ const requestHandler = async function (req, res) {
         res.end(JSON.stringify({ ok: false, error: 'Invalid payload' }));
         return;
       }
-      const result = publishMany(channels, event, body.data || {});
+      const slimData = slimEventData(event, body.data || {});
+      const result = publishMany(channels, event, slimData);
       // Backward compatible if an old publishMany returned a bare number
       const delivered = (result && typeof result === 'object')
         ? (result.delivered | 0)
@@ -413,12 +449,23 @@ const requestHandler = async function (req, res) {
         ? (result.visitorDelivered | 0)
         : -1;
       if (event === 'message.new') {
-        rememberMessageNew(channels, body.data || {});
+        rememberMessageNew(channels, slimData);
+        lastMessageNew = {
+          at: Date.now(),
+          conversation_id: parseInt(slimData.conversation_id, 10) || 0,
+          message_id: parseInt(slimData.message_id, 10)
+            || parseInt(slimData.message && slimData.message.id, 10)
+            || 0,
+          delivered: delivered,
+          visitorDelivered: visitorDelivered,
+          channels: channels.slice(0, 8),
+          bytes: Buffer.byteLength(JSON.stringify(slimData)),
+        };
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 13,
+        build: 14,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -444,11 +491,12 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 13,
+      build: 14,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
       channels: channels.length,
+      lastMessageNew: lastMessageNew,
       detail: channels,
     });
     res.writeHead(200, {

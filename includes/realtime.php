@@ -451,9 +451,8 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
 
     // Confirmed curl — wait for Node delivered count; retry if nobody got it
     // (or message.new with 0 visitors — staff alone used to fake success).
-    $timeoutMs = max(80, min(500, $timeoutMs));
-    $connectMs = max(40, min(200, (int) floor($timeoutMs * 0.5)));
-    // Only when this hop actually targets a visitor:* room (not inbox-only staff fanout)
+    // Visitor hops need more headroom — fat payloads / busy event-loop used to
+    // time out at 200–400ms and never reach the widget (receipts still arrived).
     $expectsVisitor = false;
     foreach ($channels as $chName) {
         if (strpos((string) $chName, 'visitor:') === 0) {
@@ -461,6 +460,12 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
             break;
         }
     }
+    if ($expectsVisitor || $event === 'message.new') {
+        $timeoutMs = max(300, min(2000, max($timeoutMs, 1200)));
+    } else {
+        $timeoutMs = max(80, min(500, $timeoutMs));
+    }
+    $connectMs = max(40, min(400, (int) floor($timeoutMs * 0.4)));
 
     $doPublish = static function () use ($url, $payload, $headers, $timeoutMs, $connectMs): array {
         if (!function_exists('curl_init')) {
