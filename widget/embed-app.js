@@ -8,8 +8,12 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 230;
+    var LC_WIDGET_BUILD = 232;
+    // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack / gap-fill HTTP.
+    // History seed (empty transcript once) still allowed so open-chat can load past msgs.
+    var LC_WS_ONLY = true;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
+    window.__LC_WS_ONLY = LC_WS_ONLY;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
         var vCh = visitorUid
@@ -18,6 +22,7 @@
         var rt = realtimeClient;
         return {
             build: LC_WIDGET_BUILD,
+            wsOnly: !!LC_WS_ONLY,
             conversationId: cid,
             wsConnected: !!(rt && rt.isConnected && rt.isConnected()),
             handlersBound: !!(rt && rt._lcVisitorHandlersBound),
@@ -52,6 +57,12 @@
                 : null
         };
     };
+
+    /** True when message HTTP paths must stay silent (WS owns live delivery). */
+    function blockHttpMessageSync() {
+        if (!LC_WS_ONLY) return false;
+        return !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
+    }
 
     /** True only after this tab has actually received a chat/probe event over WS. */
     function isVisitorWsDeliveryProven() {
@@ -771,7 +782,7 @@
                 reportEngagementPresence(false, true);
                 sendStay(false);
                 if (conversationId && !chatClosed) {
-                    scheduleCatchupSync();
+                    if (!blockHttpMessageSync()) scheduleCatchupSync();
                     if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
                         loadRealtimeScript(function () { initVisitorRealtime(); });
                     }
@@ -1488,7 +1499,7 @@
 
     function runGapFill() {
         if (!conversationId || gapFillInFlight) return;
-        // WS live + delivery proven → no HTTP gap-fill
+        if (blockHttpMessageSync()) return;
         if (isVisitorWsLive() && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce) {
             return;
         }
@@ -2478,9 +2489,10 @@
     var liveSyncTimer = null;
     var wsCatchupTimer = null;
 
-    /** HTTP catch-up — only when WS is down or delivery not proven. */
+    /** HTTP catch-up — blocked entirely while WS is up (WS-only test). */
     function forceMessageCatchup() {
         if (!conversationId) return;
+        if (blockHttpMessageSync()) return;
         if (isVisitorWsLive() && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce) return;
         catchupDirty = true;
         if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
@@ -2491,6 +2503,7 @@
     }
 
     function scheduleCatchupSync() {
+        if (blockHttpMessageSync()) return;
         if (isVisitorWsLive() && isVisitorWsDeliveryProven()) return;
         if (!conversationId) return;
         catchupDirty = true;
@@ -2502,6 +2515,7 @@
     }
 
     function runCatchupSync() {
+        if (blockHttpMessageSync()) return;
         if (isVisitorWsLive() && isVisitorWsDeliveryProven()) return;
         if (!conversationId) return;
         if (catchupInFlight) {
@@ -2523,33 +2537,36 @@
         });
     }
 
-    /** HTTP poll ONLY when WebSocket is down. */
+    /** HTTP poll ONLY when WebSocket is down. WS-only test: no long-poll either. */
     function startLiveMessageSync() {
         stopLiveMessageSync();
         if (!conversationId) return;
-        if (isVisitorWsLive()) {
+        if (isVisitorWsLive() || blockHttpMessageSync()) {
             stopVisitorLongPoll();
             stopSafetySync();
             startWsSafetyCatchup();
             return;
         }
         stopWsSafetyCatchup();
-        // WS down → long-poll + light catch-up (not continuous 400ms spam)
-        startVisitorLongPoll();
+        if (!LC_WS_ONLY) {
+            startVisitorLongPoll();
+        }
         var liveSyncTick = 0;
         liveSyncTimer = setInterval(function () {
             if (!conversationId) {
                 stopLiveMessageSync();
                 return;
             }
-            if (isVisitorWsLive()) {
+            if (isVisitorWsLive() || blockHttpMessageSync()) {
                 stopLiveMessageSync();
                 stopVisitorLongPoll();
                 startWsSafetyCatchup();
                 return;
             }
             liveSyncTick += 1;
-            if (!visitorWaitActive && !window.__lcLongPollDisabled) startVisitorLongPoll();
+            if (!LC_WS_ONLY && !visitorWaitActive && !window.__lcLongPollDisabled) {
+                startVisitorLongPoll();
+            }
             if (messagesNeedHistoryReload()) {
                 lastMsgId = 0;
                 pollMessages(true);
@@ -2561,7 +2578,7 @@
                 scheduleCatchupSync();
             }
         }, 1000);
-        scheduleGapFill();
+        if (!LC_WS_ONLY) scheduleGapFill();
     }
 
     function stopLiveMessageSync() {
@@ -2772,6 +2789,11 @@
      * Works even when WS/SSE report delivered but the browser never paints.
      */
     function startVisitorLongPoll() {
+        // WS-only test: never long-poll
+        if (LC_WS_ONLY || blockHttpMessageSync()) {
+            stopVisitorLongPoll();
+            return;
+        }
         var cid = parseInt(conversationId, 10) || 0;
         if (window.__lcLongPollDisabled) return;
         if (cid < 1 || !visitorUid) {
@@ -2943,17 +2965,21 @@
         stopAckHeartbeat();
         bindAckVisibility();
         if (!conversationId || !isOpen || chatClosed) return;
-        // WS live: ticks also arrive via message.receipts — slow HTTP backup.
-        // WS down: keep 1.5s so agent ticks still update.
-        var ackMs = isVisitorWsLive() ? 8000 : 1500;
+        // WS-only test: no visitor-ack interval at all while socket is up.
+        if (blockHttpMessageSync() || isVisitorWsLive()) {
+            return;
+        }
         ackHeartbeatTimer = setInterval(function () {
             if (!isOpen || chatClosed || !conversationId) {
                 stopAckHeartbeat();
                 return;
             }
-            // Hidden tab → delivered only (no blue ticks)
+            if (blockHttpMessageSync() || isVisitorWsLive()) {
+                stopAckHeartbeat();
+                return;
+            }
             ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
-        }, ackMs);
+        }, 15000);
         ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
     }
 
@@ -2963,14 +2989,19 @@
      */
     function ackAgentMessagesSeen(deliveredOnly) {
         if (!conversationId || chatClosed) return;
+        // WS-only test: skip HTTP visitor-ack entirely (ticks later via WS path)
+        if (blockHttpMessageSync()) return;
         var viewing = 0;
         if (!deliveredOnly && isVisitorActivelyViewingChat()) {
             viewing = 1;
         } else if (!deliveredOnly && !isOpen) {
-            // Panel closed: message may still have arrived → delivered only
             viewing = 0;
         }
-        // Always allow delivered ack (panel open or closed). Read only when viewing=1.
+        var ackSig = String(conversationId) + ':' + viewing;
+        var nowAck = Date.now();
+        if (window.__lcLastAckSig === ackSig && (nowAck - (window.__lcLastAckAt || 0)) < 2000) {
+            return;
+        }
         if (ackReceiptInFlight) {
             ackReceiptQueued = true;
             ackReceiptQueuedDeliveredOnly = !!deliveredOnly || viewing !== 1;
@@ -2981,17 +3012,19 @@
         ackReceiptTimer = setTimeout(function () {
             ackReceiptTimer = null;
             if (!conversationId || chatClosed) return;
+            if (blockHttpMessageSync()) return;
             if (ackReceiptInFlight) {
                 ackReceiptQueued = true;
                 ackReceiptQueuedDeliveredOnly = viewingToSend !== 1;
                 return;
             }
-            // Re-check at send time — tab may have been hidden during debounce
             if (viewingToSend === 1 && !isVisitorActivelyViewingChat()) {
                 viewingToSend = 0;
             }
             ackReceiptInFlight = true;
             ackReceiptQueued = false;
+            window.__lcLastAckSig = String(conversationId) + ':' + viewingToSend;
+            window.__lcLastAckAt = Date.now();
             fetch(siteUrl + '/api/visitor-ack.php', {
                 method: 'POST',
                 headers: Object.assign({ 'Content-Type': 'application/json' }, apiHeaders()),
@@ -3019,7 +3052,7 @@
                         ackAgentMessagesSeen(againDeliveredOnly);
                     }
                 });
-        }, 40);
+        }, 120);
     }
 
     function applyRealtimeMessage(payload) {
@@ -3221,8 +3254,8 @@
                 // Tell Node the browser actually got + painted this frame
                 ackVisitorMessagePainted(mid);
                 stopVisitorLongPoll();
-            } else {
-                // One-shot emergency only — not continuous poll
+            } else if (!blockHttpMessageSync()) {
+                // Emergency HTTP only when WS-only test is off
                 window.__lcForcePollOnce = true;
                 try {
                     pollMessages(true);
@@ -3231,8 +3264,10 @@
                 }
             }
         } catch (e) {
-            window.__lcForcePollOnce = true;
-            try { pollMessages(true); } finally { window.__lcForcePollOnce = false; }
+            if (!blockHttpMessageSync()) {
+                window.__lcForcePollOnce = true;
+                try { pollMessages(true); } finally { window.__lcForcePollOnce = false; }
+            }
         }
     }
 
@@ -7316,15 +7351,13 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS connected + delivery proven → no visitor-poll (socket owns live msgs).
-        // Connected-but-unproven still allows history seed / emergency force only.
-        if (isVisitorWsLive() && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce) {
+        // WS-only: while socket connected, block ALL visitor-poll except empty-transcript seed.
+        if (blockHttpMessageSync()) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
             }
         } else if (isVisitorWsLive() && !window.__lcForcePollOnce) {
-            // Socket up but no proven receive yet — don't hammer poll; wait for WS/ACK path
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
