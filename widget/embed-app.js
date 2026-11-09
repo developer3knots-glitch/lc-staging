@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 222;
+    var LC_WIDGET_BUILD = 223;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -30,7 +30,19 @@
             wsAgentPainted: !!window.__lcWsAgentPainted,
             wsFrameCount: window.__lcWsFrameCount || 0,
             wsLastFrameAt: window.__lcWsLastFrameAt || 0,
-            wsLastFrameType: window.__lcWsLastFrameType || ''
+            wsLastFrameType: window.__lcWsLastFrameType || '',
+            wsInbox: (window.__lcWsInbox || []).slice(-5),
+            lastPayload: window.__lcLastWsMessagePayload
+                ? {
+                    cid: window.__lcLastWsMessagePayload.conversation_id,
+                    mid: (window.__lcLastWsMessagePayload.message
+                        && window.__lcLastWsMessagePayload.message.id)
+                        || window.__lcLastWsMessagePayload.message_id || 0,
+                    text: window.__lcLastWsMessagePayload.message
+                        ? String(window.__lcLastWsMessagePayload.message.message || '').slice(0, 60)
+                        : ''
+                }
+                : null
         };
     };
 
@@ -1459,12 +1471,15 @@
 
     function runGapFill() {
         if (!conversationId || gapFillInFlight) return;
-        // While WS is live, gap-fill is socket's job — don't HTTP loop
-        if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()) {
+        // WS live: skip automatic gap-fill, but honor emergency __lcForcePollOnce
+        if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()
+            && !window.__lcForcePollOnce) {
             return;
         }
         gapFillInFlight = true;
+        window.__lcForcePollOnce = true;
         pollMessages(true, function () {
+            window.__lcForcePollOnce = false;
             gapFillInFlight = false;
         });
     }
@@ -2447,10 +2462,10 @@
     var liveSyncTimer = null;
     var wsCatchupTimer = null;
 
-    /** HTTP catch-up — blocked while visitor WS is live (socket is the live path). */
+    /** HTTP catch-up — blocked while visitor WS is live (unless emergency force). */
     function forceMessageCatchup() {
         if (!conversationId) return;
-        if (isVisitorWsLive()) return;
+        if (isVisitorWsLive() && !window.__lcForcePollOnce) return;
         catchupDirty = true;
         if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
         catchupSyncTimer = setTimeout(function () {
@@ -2785,13 +2800,22 @@
     function applyRealtimeMessage(payload) {
         if (!payload) return false;
         var myCid = parseInt(conversationId, 10) || 0;
-        if (myCid < 1) return false;
         var cid = parseInt(payload.conversation_id, 10) || 0;
+        // Adopt conversation from live frame if widget lost it after close/reopen
+        if (myCid < 1 && cid > 0) {
+            conversationId = cid;
+            myCid = cid;
+            try { persistConversationId(cid); } catch (eCid) {}
+        }
+        if (myCid < 1) return false;
         if (cid > 0 && cid !== myCid) return false;
 
         // Full message object (normal WS publish)
-        if (payload.message && payload.message.id) {
+        if (payload.message && (payload.message.id || payload.message_id)) {
             var m = payload.message;
+            if (!m.id && payload.message_id) {
+                m = Object.assign({}, m, { id: payload.message_id });
+            }
             var mid = parseInt(m.id, 10) || 0;
             if (mid < 1 || mid >= 100000000) {
                 return false;
@@ -2799,6 +2823,11 @@
             if (payload.hidden_from_visitor || isAdminOnlySystemMessage(m)) {
                 advanceLastMsgId(mid);
                 return true;
+            }
+            // Ensure transcript container is visible before paint
+            var msgBox = document.getElementById('lc-panel-messages');
+            if (msgBox && (msgBox.style.display === 'none' || msgBox.hidden)) {
+                try { showChatView(); } catch (eShow) {}
             }
             var exists = !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             if (!exists) {
@@ -2850,12 +2879,14 @@
             return true;
         }
 
-        // message_id only (encode fallback) — trigger history gap-fill
+        // message_id only — must NOT claim success (that blocked emergency poll while WS up)
         var onlyId = parseInt(payload.message_id, 10) || 0;
         if (onlyId > 0 && onlyId < 100000000) {
-            scheduleGapFill();
-            forceMessageCatchup();
-            return true;
+            if (document.querySelector('#lc-panel-messages [data-msg-id="' + onlyId + '"]')) {
+                advanceLastMsgId(onlyId);
+                return true;
+            }
+            return false;
         }
         return false;
     }
@@ -2883,30 +2914,66 @@
         try {
             window.__lcLastWsMessageAt = Date.now();
             window.__lcLastWsMessagePayload = payload || null;
+            try {
+                window.__lcWsInbox = window.__lcWsInbox || [];
+                window.__lcWsInbox.push({
+                    at: window.__lcLastWsMessageAt,
+                    cid: payload && payload.conversation_id,
+                    mid: (payload && payload.message && payload.message.id) || (payload && payload.message_id) || 0,
+                    text: payload && payload.message ? String(payload.message.message || '').slice(0, 80) : ''
+                });
+                if (window.__lcWsInbox.length > 30) window.__lcWsInbox = window.__lcWsInbox.slice(-30);
+            } catch (eLog) {}
+
+            var payloadCid = parseInt(payload && payload.conversation_id, 10) || 0;
+            if (payloadCid > 0 && !(parseInt(conversationId, 10) > 0)) {
+                conversationId = payloadCid;
+                try { persistConversationId(payloadCid); } catch (eP) {}
+            }
+
             var msg = payload && payload.message;
             var isAgent = !!(msg && msg.sender_type === 'agent');
             // Agent follow-up must reopen UI even after visitor self-close
             // (otherwise bubbles paint into display:none ended panel).
-            if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
-                markChatContinuedFromClosed({
-                    status: 'active',
-                    agent: (msg && msg.agent_name)
-                        ? { name: msg.agent_name, avatar: msg.agent_avatar }
-                        : null
-                });
+            if (isAgent || (chatClosed && lastClosedBy !== 'visitor')) {
+                if (chatClosed) {
+                    markChatContinuedFromClosed({
+                        status: 'active',
+                        agent: (msg && msg.agent_name)
+                            ? { name: msg.agent_name, avatar: msg.agent_avatar }
+                            : null
+                    });
+                } else {
+                    try { showChatView(); } catch (eSv) {}
+                }
             }
             var painted = applyRealtimeMessage(payload);
-            if (painted && isAgent) {
+            var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
+            var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
+            if (painted && isAgent && inDom) {
                 window.__lcWsAgentPainted = true;
             }
-            // Only if THIS frame could not paint — one emergency HTTP (not a loop)
-            if (!painted) {
+            // Frame arrived but bubble missing — one emergency history merge
+            if (mid > 0 && !inDom) {
+                if (msg && msg.id) {
+                    try {
+                        showChatView();
+                        appendMessage(msg);
+                    } catch (eAp) {}
+                    inDom = !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
+                }
+            }
+            if (!inDom) {
                 window.__lcForcePollOnce = true;
-                try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
+                try {
+                    pollMessages(true);
+                } finally {
+                    window.__lcForcePollOnce = false;
+                }
             }
         } catch (e) {
             window.__lcForcePollOnce = true;
-            try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
+            try { pollMessages(true); } finally { window.__lcForcePollOnce = false; }
         }
     }
 
