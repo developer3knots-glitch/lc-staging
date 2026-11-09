@@ -6708,17 +6708,19 @@
         }
 
         if (isRealtimeWsLive()) {
-            // Supervising: faster catch-up so agent↔supervisor stay in sync
-            var chatPollMs = isSupervising ? 400 : 800;
+            // WS message.new / staff.message are primary. HTTP is a slow safety net
+            // only (was 400–800ms and hammered agent-poll.php). Missed frames still
+            // recover via reconnect poll, inbox.changed, and scheduleMessageGapFill.
+            var chatPollMs = isSupervising ? 15000 : 20000;
             pollTimer = setInterval(function () {
-                if (selectedId) {
-                    // Never let lastMsgId drift past painted bubbles
-                    var painted = maxPaintedMessageId();
-                    if (painted > 0 && lastMsgId > painted) {
-                        lastMsgId = painted;
-                    }
-                    pollMessages({ skipJourney: true });
+                if (!selectedId) return;
+                if (document.hidden) return;
+                // Never let lastMsgId drift past painted bubbles
+                var painted = maxPaintedMessageId();
+                if (painted > 0 && lastMsgId > painted) {
+                    lastMsgId = painted;
                 }
+                pollMessages({ skipJourney: true });
             }, chatPollMs);
             listTimer = setInterval(function () {
                 loadConversations();
