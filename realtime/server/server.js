@@ -229,7 +229,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 4,
+        build: 5,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -253,7 +253,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 4,
+      build: 5,
       pid: process.pid,
       channels: channels.length,
       detail: channels,
@@ -355,12 +355,32 @@ function wireWebSocket(server) {
         return;
       }
 
-      // Visitor → agent presence (instant; no PHP hop)
+      // Visitor → server events (presence fanout + receive self-test)
       if (msg.type === 'client_event') {
         const claims = ws._lcClaims || {};
         const event = String(msg.event || '');
-        if (event !== 'visitor.presence') return;
         if (String(claims.role || '') !== 'visitor') return;
+
+        // Echo proves browser can RECEIVE frames on this socket (no PHP hop)
+        if (event === 'visitor.ws_probe') {
+          if (ws.readyState === 1) {
+            try {
+              ws.send(JSON.stringify({
+                type: 'event',
+                event: 'ws.probe',
+                data: {
+                  ok: true,
+                  ts: Date.now(),
+                  channels: Array.from(ws._lcChannels || []),
+                  pid: process.pid,
+                },
+              }));
+            } catch (eProbe) { /* ignore */ }
+          }
+          return;
+        }
+
+        if (event !== 'visitor.presence') return;
         const claimCid = parseInt(claims.conversation_id, 10) || 0;
         const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
         // Prefer live payload cid — token can lag after reopen / continue

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 210;
+    var LC_WIDGET_BUILD = 211;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -25,6 +25,7 @@
             hasVisitor: !!(rt && rt.hasChannel && vCh && rt.hasChannel(vCh)),
             authedChannels: rt && rt._authedChannels ? Object.keys(rt._authedChannels) : [],
             lastWsMessageAt: window.__lcLastWsMessageAt || 0,
+            lastWsProbeAt: window.__lcLastWsProbeAt || 0,
             wsAgentPainted: !!window.__lcWsAgentPainted
         };
     };
@@ -2928,6 +2929,12 @@
         } else {
             reportEngagementPresence(false, true);
         }
+        // Self-test: can this browser RECEIVE frames? (does not need PHP publish)
+        try {
+            if (client && typeof client.publishClientEvent === 'function') {
+                client.publishClientEvent('visitor.ws_probe', { conversation_id: cid || 0 });
+            }
+        } catch (eProbe) {}
     }
 
     function bindVisitorRealtimeHandlers(client) {
@@ -2960,9 +2967,19 @@
             paintWidgetReactions(payload && payload.message_id, payload && payload.reactions);
         });
         client.on('message.new', handleVisitorMessageNew);
+        client.on('ws.probe', function (payload) {
+            window.__lcLastWsProbeAt = Date.now();
+            window.__lcLastWsProbe = payload || null;
+        });
         // Backup path — some frames only surface on the generic 'event' emitter
         client.on('event', function (msg) {
-            if (!msg || msg.event !== 'message.new') return;
+            if (!msg || !msg.event) return;
+            if (msg.event === 'ws.probe') {
+                window.__lcLastWsProbeAt = Date.now();
+                window.__lcLastWsProbe = msg.data || null;
+                return;
+            }
+            if (msg.event !== 'message.new') return;
             handleVisitorMessageNew(msg.data || {});
         });
         client.on('typing', function (payload) {

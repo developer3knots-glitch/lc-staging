@@ -93,11 +93,17 @@ try {
         }
     }
 
+    $rt = $GLOBALS['lc_last_realtime_publish'] ?? null;
+    if (!is_array($rt)) {
+        $rt = [];
+    }
+    $rt['mode'] = function_exists('lc_realtime_mode') ? lc_realtime_mode() : '';
+    $rt['publishConfigured'] = function_exists('lc_realtime_publish_url') && lc_realtime_publish_url() !== '';
     lc_json([
         'success' => true,
         'message_id' => $messageId,
-        // Debug: confirms whether Node handed the frame to a visitor socket
-        'realtime' => $GLOBALS['lc_last_realtime_publish'] ?? null,
+        // Debug: visitorDelivered>=1 means Node handed the frame to a visitor socket
+        'realtime' => $rt,
     ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);

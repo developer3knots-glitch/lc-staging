@@ -514,13 +514,22 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         $delivered = (int) ($result['delivered'] ?? -1);
         $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
     }
+    $prev = (isset($GLOBALS['lc_last_realtime_publish']) && is_array($GLOBALS['lc_last_realtime_publish']))
+        ? $GLOBALS['lc_last_realtime_publish']
+        : null;
+    $mergedVisitor = $visitorDelivered;
+    if ($prev && isset($prev['visitorDelivered'])) {
+        $mergedVisitor = max((int) $prev['visitorDelivered'], $visitorDelivered);
+    }
     $GLOBALS['lc_last_realtime_publish'] = [
         'event' => $event,
         'delivered' => $delivered,
-        'visitorDelivered' => $visitorDelivered,
-        'expectsVisitor' => $expectsVisitor,
+        'visitorDelivered' => $mergedVisitor,
+        'expectsVisitor' => $expectsVisitor || !empty($prev['expectsVisitor']),
         'channelCount' => count($channels),
         'channels' => array_values(array_map('strval', $channels)),
+        'publishConfigured' => true,
+        'publishHost' => (string) (parse_url($url, PHP_URL_HOST) ?: ''),
     ];
     if ($delivered >= 0) {
         return;
