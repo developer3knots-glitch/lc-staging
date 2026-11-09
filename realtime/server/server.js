@@ -270,12 +270,21 @@ function sseDeliverToVisitorUid(uid, event, data) {
   if (!uid) return 0;
   const set = visitorSse.get(uid);
   if (!set || !set.size) return 0;
-  const frame = 'event: ' + String(event || 'message') + '\n'
+  // Default `message` event (most compatible). Also named event for listeners.
+  const payload = JSON.stringify({
+    event: String(event || 'message'),
+    data: data || {},
+  });
+  const frame = 'data: ' + payload + '\n\n'
+    + 'event: ' + String(event || 'message') + '\n'
     + 'data: ' + JSON.stringify(data || {}) + '\n\n';
   let n = 0;
   set.forEach(function (res) {
     try {
       res.write(frame);
+      if (typeof res.flush === 'function') {
+        try { res.flush(); } catch (eF) { /* ignore */ }
+      }
       n += 1;
     } catch (e) {
       try { set.delete(res); } catch (eDel) { /* ignore */ }
@@ -565,7 +574,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 18,
+        build: 19,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -615,7 +624,7 @@ const requestHandler = async function (req, res) {
     res.write('event: hello\ndata: ' + JSON.stringify({
       ok: true,
       uid: uid,
-      build: 18,
+      build: 19,
       conversation_id: parseInt(claims.conversation_id, 10) || 0,
     }) + '\n\n');
     registerVisitorSse(uid, res);
@@ -669,7 +678,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 18,
+      build: 19,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorSse: visitorSse.size,

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 225;
+    var LC_WIDGET_BUILD = 226;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -34,6 +34,8 @@
             wsInbox: (window.__lcWsInbox || []).slice(-5),
             sseConnected: !!(visitorSse && visitorSse.readyState === 1),
             sseUrl: visitorSseUrl || '',
+            lastSseAt: window.__lcLastSseMessageAt || 0,
+            lastSseEvent: window.__lcLastSseEvent || '',
             lastPayload: window.__lcLastWsMessagePayload
                 ? {
                     cid: window.__lcLastWsMessagePayload.conversation_id,
@@ -2685,26 +2687,45 @@
         visitorSse.addEventListener('hello', function () {
             window.__lcSseConnectedAt = Date.now();
         });
-        visitorSse.addEventListener('message.new', function (ev) {
+        function onSsePayload(eventName, rawData) {
             var data = null;
-            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
+            try { data = JSON.parse(rawData || '{}'); } catch (eP) { return; }
+            // Envelope form: { event, data }
+            if (data && data.event && data.data !== undefined) {
+                eventName = String(data.event);
+                data = data.data;
+            }
             window.__lcLastSseMessageAt = Date.now();
-            handleVisitorMessageNew(data || {});
+            window.__lcLastSseEvent = eventName;
+            if (eventName === 'message.new') {
+                handleVisitorMessageNew(data || {});
+                return;
+            }
+            if (eventName === 'typing') {
+                if (!sameConversation(data && data.conversation_id)) return;
+                if ((data.role || '') === 'agent') {
+                    setPeerTypingVisible(!!data.typing, data.name || '');
+                }
+                return;
+            }
+            if (eventName === 'message.receipts') {
+                if (!sameConversation(data && data.conversation_id)) return;
+                if (data && data.for && data.for !== 'visitor') return;
+                if (data && data.receipts) applyReceipts(data.receipts);
+            }
+        }
+        // Default message event (most reliable through proxies)
+        visitorSse.onmessage = function (ev) {
+            onSsePayload('message', ev.data);
+        };
+        visitorSse.addEventListener('message.new', function (ev) {
+            onSsePayload('message.new', ev.data);
         });
         visitorSse.addEventListener('typing', function (ev) {
-            var data = null;
-            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
-            if (!sameConversation(data && data.conversation_id)) return;
-            if ((data.role || '') === 'agent') {
-                setPeerTypingVisible(!!data.typing, data.name || '');
-            }
+            onSsePayload('typing', ev.data);
         });
         visitorSse.addEventListener('message.receipts', function (ev) {
-            var data = null;
-            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
-            if (!sameConversation(data && data.conversation_id)) return;
-            if (data && data.for && data.for !== 'visitor') return;
-            if (data && data.receipts) applyReceipts(data.receipts);
+            onSsePayload('message.receipts', ev.data);
         });
         visitorSse.onerror = function () {
             // EventSource reconnects automatically; schedule token refresh if closed hard
