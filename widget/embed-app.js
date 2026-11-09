@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 217;
+    var LC_WIDGET_BUILD = 218;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2869,20 +2869,33 @@
     function handleVisitorMessageNew(payload) {
         try {
             window.__lcLastWsMessageAt = Date.now();
-            if (chatClosed && lastClosedBy !== 'visitor') {
+            window.__lcLastWsMessagePayload = payload || null;
+            var msg = payload && payload.message;
+            var isAgent = !!(msg && msg.sender_type === 'agent');
+            // Agent follow-up must reopen UI even after visitor self-close
+            // (otherwise bubbles paint into display:none ended panel).
+            if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
                 markChatContinuedFromClosed({
                     status: 'active',
-                    agent: (payload && payload.message && payload.message.agent_name)
-                        ? { name: payload.message.agent_name, avatar: payload.message.agent_avatar }
+                    agent: (msg && msg.agent_name)
+                        ? { name: msg.agent_name, avatar: msg.agent_avatar }
                         : null
                 });
             }
             var painted = applyRealtimeMessage(payload);
-            if (painted && payload && payload.message && payload.message.sender_type === 'agent') {
+            if (painted && isAgent) {
                 window.__lcWsAgentPainted = true;
             }
-            // Paint fail while WS live: do NOT fall back to visitor-poll (socket must work)
-            if (!painted && !isVisitorWsLive()) {
+            // message_id-only frame while WS live — still need body once
+            if (!painted && payload && (parseInt(payload.message_id, 10) || 0) > 0) {
+                window.__lcForcePollOnce = true;
+                try {
+                    scheduleGapFill();
+                    pollMessages(false);
+                } finally {
+                    window.__lcForcePollOnce = false;
+                }
+            } else if (!painted && !isVisitorWsLive()) {
                 scheduleGapFill();
                 forceMessageCatchup();
             }

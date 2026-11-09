@@ -121,7 +121,32 @@ function queueVisitorPending(uid, rawPayload) {
   visitorPending.set(uid, list);
 }
 
-/** Send to EVERY live visitor socket with this uid (all tabs), not only the map tip. */
+/** Collect every live socket that should get visitor traffic for this uid. */
+function socketsForVisitorUid(uid) {
+  uid = String(uid || '');
+  const out = [];
+  const seen = new Set();
+  function add(client) {
+    if (!client || client.readyState !== 1 || seen.has(client)) return;
+    seen.add(client);
+    out.push(client);
+  }
+  // 1) Anyone subscribed to visitor:uid (do NOT require claims match — that left pending stuck)
+  const vSet = channelSubs.get('visitor:' + uid);
+  if (vSet) vSet.forEach(add);
+  // 2) Claim-matched sockets
+  allSockets.forEach(function (client) {
+    const claims = client._lcClaims || {};
+    if (String(claims.role || '') !== 'visitor') return;
+    if (String(claims.visitor_uid || '') !== uid) return;
+    add(client);
+  });
+  // 3) Map tip
+  add(visitorSockets.get(uid));
+  return out;
+}
+
+/** Send to every live visitor socket for this uid (channel + claims + map). */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -134,20 +159,16 @@ function deliverToVisitorUid(uid, event, data) {
     queueVisitorPending(uid, raw);
   }
   let n = 0;
-  allSockets.forEach(function (client) {
-    if (!client || client.readyState !== 1) return;
-    const claims = client._lcClaims || {};
-    if (String(claims.role || '') !== 'visitor') return;
-    if (String(claims.visitor_uid || '') !== uid) return;
+  socketsForVisitorUid(uid).forEach(function (client) {
     try {
       client.send(raw);
       n += 1;
     } catch (e) { /* ignore */ }
   });
   if (n > 0 && event === 'message.new') {
-    // Delivered to at least one live tab — clear pending for this exact raw
     const list = visitorPending.get(uid) || [];
     visitorPending.set(uid, list.filter(function (item) { return item !== raw; }));
+    if (!(visitorPending.get(uid) || []).length) visitorPending.delete(uid);
   }
   return n;
 }
@@ -157,15 +178,13 @@ function flushVisitorPending(uid) {
   if (!uid) return 0;
   const list = visitorPending.get(uid) || [];
   if (!list.length) return 0;
+  const targets = socketsForVisitorUid(uid);
+  if (!targets.length) return 0;
   let n = 0;
   const remain = [];
   list.forEach(function (raw) {
     let sent = 0;
-    allSockets.forEach(function (client) {
-      if (!client || client.readyState !== 1) return;
-      const claims = client._lcClaims || {};
-      if (String(claims.role || '') !== 'visitor') return;
-      if (String(claims.visitor_uid || '') !== uid) return;
+    targets.forEach(function (client) {
       try {
         client.send(raw);
         sent += 1;
@@ -363,7 +382,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 9,
+        build: 10,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -389,7 +408,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 9,
+      build: 10,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
@@ -588,6 +607,10 @@ setInterval(function () {
   allSockets.forEach(function (ws) {
     if (!ws._lcAuthed || ws.readyState !== 1) return;
     try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) { /* ignore */ }
+  });
+  // Retransmit any stuck agent→visitor frames (health showed visitorPending>0)
+  visitorPending.forEach(function (_list, uid) {
+    flushVisitorPending(uid);
   });
 }, 20000);
 
