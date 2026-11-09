@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 233;
+    var LC_WIDGET_BUILD = 234;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -3170,10 +3170,9 @@
                     }
                 }
             } else {
+                // Retransmit / duplicate frame — already painted; skip receipt HTTP
+                // (ackVisitorMessagePainted still clears Node retransmit).
                 advanceLastMsgId(mid);
-                if (m.sender_type === 'agent') {
-                    ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
-                }
             }
             return true;
         }
@@ -3205,6 +3204,7 @@
         // socket and eating message.new frames.
     }
 
+    var lastReceiptAckPaintMid = 0;
     function ackVisitorMessagePainted(messageId) {
         var mid = parseInt(messageId, 10) || 0;
         if (mid < 1) return;
@@ -3218,7 +3218,9 @@
                 });
             }
         } catch (eAck) {}
-        // Also mark delivered/read in DB (WS bridge or HTTP) — paint is the source of truth.
+        // One receipt hop per message id — retransmit frames must not spam visitor-ack.
+        if (mid <= lastReceiptAckPaintMid) return;
+        lastReceiptAckPaintMid = mid;
         try {
             ackAgentMessagesSeen(!viewing);
         } catch (eRec) {}
