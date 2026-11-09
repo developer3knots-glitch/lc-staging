@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 207;
+    var LC_WIDGET_BUILD = 208;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -2499,17 +2499,14 @@
     }
 
     /**
-     * While chat WS is up: modest HTTP safety net.
-     * 15s was too slow when a publish frame is missed (agent→visitor felt delayed).
-     * ~3s keeps load far below the old 1s hammer without a long visible lag.
+     * While chat WS is up: NO periodic visitor-poll.
+     * Messages ride message.new; HTTP only on connect / tab focus / paint miss.
+     * Interval only re-subscribes channels (no HTTP) and falls back if WS drops.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 3000;
-        if (ms < 2500) ms = 2500;
-        if (ms > 5000) ms = 5000;
         if (window.__lcWsCatchupVisHandler) {
             document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
             window.__lcWsCatchupVisHandler = null;
@@ -2525,17 +2522,15 @@
                 stopWsSafetyCatchup();
                 return;
             }
-            // Open chat must use chat WS — presence socket alone must NOT block fast poll
             if (!isVisitorWsLive()) {
                 stopWsSafetyCatchup();
                 startLiveMessageSync();
                 return;
             }
-            if (document.hidden) return;
+            // Keep conv:/visitor: joined — do NOT HTTP poll while socket is live
             ensureVisitorConvChannel();
-            forceMessageCatchup();
-        }, ms);
-        // One immediate catch-up on (re)connect — then modest interval
+        }, 15000);
+        // One catch-up on (re)connect only
         forceMessageCatchup();
     }
 
@@ -2681,7 +2676,9 @@
         stopAckHeartbeat();
         bindAckVisibility();
         if (!conversationId || !isOpen || chatClosed) return;
-        // Only while panel is open; viewing flag still checks tab visibility
+        // WS live: ticks also arrive via message.receipts — slow HTTP backup.
+        // WS down: keep 1.5s so agent ticks still update.
+        var ackMs = isVisitorWsLive() ? 8000 : 1500;
         ackHeartbeatTimer = setInterval(function () {
             if (!isOpen || chatClosed || !conversationId) {
                 stopAckHeartbeat();
@@ -2689,7 +2686,7 @@
             }
             // Hidden tab → delivered only (no blue ticks)
             ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
-        }, 1500);
+        }, ackMs);
         ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
     }
 

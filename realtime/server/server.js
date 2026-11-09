@@ -114,6 +114,7 @@ function publishMany(channels, event, data) {
   });
   const seenClients = new Set();
   let n = 0;
+  let visitorDelivered = 0;
   (channels || []).forEach(function (ch) {
     const name = String(ch || '');
     if (!name) return;
@@ -125,10 +126,13 @@ function publishMany(channels, event, data) {
       try {
         client.send(payload);
         n += 1;
+        // Staff on conv:/agent: used to count as "delivered" even when visitor got 0
+        const role = String((client._lcClaims && client._lcClaims.role) || '');
+        if (role === 'visitor') visitorDelivered += 1;
       } catch (e) { /* ignore */ }
     });
   });
-  return n;
+  return { delivered: n, visitorDelivered: visitorDelivered };
 }
 
 function readJson(req) {
@@ -166,9 +170,14 @@ const requestHandler = async function (req, res) {
         res.end(JSON.stringify({ ok: false, error: 'Invalid payload' }));
         return;
       }
-      const delivered = publishMany(channels, event, body.data || {});
+      const result = publishMany(channels, event, body.data || {});
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, delivered, channels: channels.length }));
+      res.end(JSON.stringify({
+        ok: true,
+        delivered: result.delivered,
+        visitorDelivered: result.visitorDelivered,
+        channels: channels.length,
+      }));
     } catch (e) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Bad JSON' }));

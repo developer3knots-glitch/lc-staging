@@ -449,17 +449,26 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         'X-LC-Secret: ' . lc_realtime_secret(),
     ];
 
-    // Confirmed curl — wait for Node delivered count; retry once if 0 subscribers
+    // Confirmed curl — wait for Node delivered count; retry if nobody got it
+    // (or message.new with 0 visitors — staff alone used to fake success).
     $timeoutMs = max(80, min(500, $timeoutMs));
     $connectMs = max(40, min(200, (int) floor($timeoutMs * 0.5)));
+    // Only when this hop actually targets a visitor:* room (not inbox-only staff fanout)
+    $expectsVisitor = false;
+    foreach ($channels as $chName) {
+        if (strpos((string) $chName, 'visitor:') === 0) {
+            $expectsVisitor = true;
+            break;
+        }
+    }
 
-    $doPublish = static function () use ($url, $payload, $headers, $timeoutMs, $connectMs): int {
+    $doPublish = static function () use ($url, $payload, $headers, $timeoutMs, $connectMs): array {
         if (!function_exists('curl_init')) {
-            return -1;
+            return ['delivered' => -1, 'visitorDelivered' => -1];
         }
         $ch = curl_init($url);
         if ($ch === false) {
-            return -1;
+            return ['delivered' => -1, 'visitorDelivered' => -1];
         }
         $curlOpts = [
             CURLOPT_POST => true,
@@ -480,19 +489,30 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         if ($code < 200 || $code >= 300 || !is_string($body) || $body === '') {
-            return -1;
+            return ['delivered' => -1, 'visitorDelivered' => -1];
         }
         $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
-            return -1;
+            return ['delivered' => -1, 'visitorDelivered' => -1];
         }
-        return (int) ($decoded['delivered'] ?? -1);
+        return [
+            'delivered' => (int) ($decoded['delivered'] ?? -1),
+            'visitorDelivered' => (int) ($decoded['visitorDelivered'] ?? -1),
+        ];
     };
 
-    $delivered = $doPublish();
-    if ($retryEmpty && $delivered === 0) {
-        usleep(40000);
-        $delivered = $doPublish();
+    $result = $doPublish();
+    $delivered = (int) ($result['delivered'] ?? -1);
+    $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+    $shouldRetry = $retryEmpty && (
+        $delivered === 0
+        || ($expectsVisitor && $delivered >= 0 && $visitorDelivered === 0)
+    );
+    if ($shouldRetry) {
+        usleep(50000);
+        $result = $doPublish();
+        $delivered = (int) ($result['delivered'] ?? -1);
+        $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
     }
     if ($delivered >= 0) {
         return;
