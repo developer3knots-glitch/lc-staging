@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 215;
+    var LC_WIDGET_BUILD = 216;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2353,23 +2353,15 @@
         }
         var cid = parseInt(conversationId, 10) || 0;
         if (cid < 1) return true;
-        // Must be server-acked on conv: OR visitor:
+        // Server-acked conv: OR visitor: — enough to treat socket as live path
+        // (45s frame check was flipping false → 1s visitor-poll while WS still 101)
         if (typeof realtimeClient.hasChannel === 'function') {
             var onConv = realtimeClient.hasChannel('conv:' + cid);
             var vCh = visitorUid
                 ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64))
                 : '';
             var onVisitor = vCh ? realtimeClient.hasChannel(vCh) : false;
-            if (!(onConv || onVisitor)) return false;
-        }
-        // Socket must be receiving frames (ping/event). Dead TCP still looks "connected"
-        // and previously blocked poll forever while message.new never arrived.
-        var lastFrame = parseInt(window.__lcWsLastFrameAt, 10)
-            || parseInt(realtimeClient._lastFrameAt, 10)
-            || parseInt(realtimeClient._lastPongAt, 10)
-            || 0;
-        if (lastFrame > 0 && (Date.now() - lastFrame) > 45000) {
-            return false;
+            return !!(onConv || onVisitor);
         }
         return true;
     }
@@ -2939,6 +2931,15 @@
                 client.publishClientEvent('visitor.ws_probe', { conversation_id: cid || 0 });
             }
         } catch (eProbe) {}
+        // ONE catch-up after (re)connect only — covers Node restart gap; not a live poll loop
+        if (conversationId) {
+            window.__lcForcePollOnce = true;
+            try {
+                pollMessages(false);
+            } finally {
+                window.__lcForcePollOnce = false;
+            }
+        }
     }
 
     function bindVisitorRealtimeHandlers(client) {

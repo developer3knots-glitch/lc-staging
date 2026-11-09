@@ -513,6 +513,13 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         $result = $doPublish();
         $delivered = (int) ($result['delivered'] ?? -1);
         $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+        // Second short retry — common after pm2 restart while visitor re-auths
+        if ($expectsVisitor && $visitorDelivered < 1 && $delivered >= 0) {
+            usleep(100000);
+            $result = $doPublish();
+            $delivered = (int) ($result['delivered'] ?? -1);
+            $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+        }
     }
     $prev = (isset($GLOBALS['lc_last_realtime_publish']) && is_array($GLOBALS['lc_last_realtime_publish']))
         ? $GLOBALS['lc_last_realtime_publish']
@@ -742,17 +749,15 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
             }
         }
     }
+    $visitorChannels = [];
+    $visitorPayload = null;
     if ($visitorUid !== '' && (string) ($row['sender_type'] ?? '') !== 'visitor') {
+        $visitorChannels = [
+            lc_realtime_channel_visitor($visitorUid),
+            lc_realtime_channel_conversation($conversationId),
+        ];
         $visitorPayload = array_merge(['conversation_id' => $conversationId], $msgPayload);
-        lc_realtime_publish_channels(
-            [
-                lc_realtime_channel_visitor($visitorUid),
-                lc_realtime_channel_conversation($conversationId),
-            ],
-            'message.new',
-            $visitorPayload,
-            350
-        );
+        lc_realtime_publish_channels($visitorChannels, 'message.new', $visitorPayload, 400);
     }
 
     // 1) Peers (visitor + staff) — customer + agents
@@ -761,6 +766,17 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
     // 2) Same path notes use (proven for supervisor↔agent) — agent bubbles must land here
     if (function_exists('lc_realtime_publish_staff_event')) {
         lc_realtime_publish_staff_event($conversationId, 'staff.message', $msgPayload, 300);
+    }
+
+    // 3) If visitor socket missed the first hops (reconnect race after pm2 restart),
+    //    fire one deferred visitor-only republish.
+    $vd = (int) (($GLOBALS['lc_last_realtime_publish']['visitorDelivered'] ?? -1));
+    if ($visitorPayload !== null && $vd < 1 && function_exists('lc_realtime_defer')) {
+        $deferredChannels = $visitorChannels;
+        $deferredPayload = $visitorPayload;
+        lc_realtime_defer(static function () use ($deferredChannels, $deferredPayload): void {
+            lc_realtime_publish_channels($deferredChannels, 'message.new', $deferredPayload, 400);
+        });
     }
 
     // Inbox list / badges a tick later (no duplicate peer events).
