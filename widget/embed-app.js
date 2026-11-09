@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 211;
+    var LC_WIDGET_BUILD = 212;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -26,7 +26,10 @@
             authedChannels: rt && rt._authedChannels ? Object.keys(rt._authedChannels) : [],
             lastWsMessageAt: window.__lcLastWsMessageAt || 0,
             lastWsProbeAt: window.__lcLastWsProbeAt || 0,
-            wsAgentPainted: !!window.__lcWsAgentPainted
+            wsAgentPainted: !!window.__lcWsAgentPainted,
+            wsFrameCount: window.__lcWsFrameCount || 0,
+            wsLastFrameAt: window.__lcWsLastFrameAt || 0,
+            wsLastFrameType: window.__lcWsLastFrameType || ''
         };
     };
 
@@ -3383,7 +3386,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=14';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=15';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

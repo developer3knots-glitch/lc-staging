@@ -70,7 +70,21 @@ function verifyToken(token) {
 
 function subscribe(ws, channel) {
   if (!channelSubs.has(channel)) channelSubs.set(channel, new Set());
-  channelSubs.get(channel).add(ws);
+  const set = channelSubs.get(channel);
+  // One live socket per visitor uid on visitor:/conv: — drop older duplicates
+  // that still look "open" but no longer receive (caused visitorDelivered:1 to a ghost).
+  const role = String((ws._lcClaims && ws._lcClaims.role) || '');
+  const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
+  if (role === 'visitor' && uid && (/^visitor:/.test(channel) || /^conv:/.test(channel))) {
+    set.forEach(function (other) {
+      if (other === ws) return;
+      const oUid = String((other._lcClaims && other._lcClaims.visitor_uid) || '');
+      if (oUid !== uid) return;
+      set.delete(other);
+      if (other._lcChannels) other._lcChannels.delete(channel);
+    });
+  }
+  set.add(ws);
   if (!ws._lcChannels) ws._lcChannels = new Set();
   ws._lcChannels.add(channel);
 }
@@ -229,7 +243,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 5,
+        build: 6,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -253,7 +267,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 5,
+      build: 6,
       pid: process.pid,
       channels: channels.length,
       detail: channels,

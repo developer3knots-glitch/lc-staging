@@ -282,6 +282,15 @@
                     var msg;
                     try { msg = JSON.parse(ev.data); } catch (e) { return; }
                     if (!msg || !msg.type) return;
+                    // Raw counter — proves frames reached THIS browser socket
+                    self._frameCount = (self._frameCount || 0) + 1;
+                    self._lastFrameAt = Date.now();
+                    self._lastFrameType = String(msg.type || '') + (msg.event ? (':' + msg.event) : '');
+                    try {
+                        global.__lcWsFrameCount = (global.__lcWsFrameCount || 0) + 1;
+                        global.__lcWsLastFrameAt = self._lastFrameAt;
+                        global.__lcWsLastFrameType = self._lastFrameType;
+                    } catch (eDbg) {}
 
                     if (msg.type === 'auth.ok') {
                         self.connected = true;
