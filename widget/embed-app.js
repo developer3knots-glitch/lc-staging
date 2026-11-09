@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 214;
+    var LC_WIDGET_BUILD = 215;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2531,8 +2531,8 @@
     }
 
     /**
-     * While chat WS is up: re-subscribe + rare HTTP safety (20s).
-     * Direct visitor-socket delivery on Node is primary; this only covers ghosts.
+     * While chat WS is up: ZERO visitor-poll (socket test mode).
+     * Only re-subscribe channels; HTTP resumes automatically if socket drops.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2542,7 +2542,6 @@
             document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
             window.__lcWsCatchupVisHandler = null;
         }
-        var safetyTick = 0;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2554,19 +2553,7 @@
                 return;
             }
             ensureVisitorConvChannel();
-            safetyTick += 1;
-            // Every 20s (4×5s) one HTTP safety net — not the live path
-            if (safetyTick % 4 === 0 && !document.hidden) {
-                // Temporarily allow pollMessages while WS "live"
-                var prev = window.__lcForcePollOnce;
-                window.__lcForcePollOnce = true;
-                try {
-                    pollMessages(false);
-                } finally {
-                    window.__lcForcePollOnce = prev;
-                }
-            }
-        }, 5000);
+        }, 15000);
     }
 
     /** Extra catch-up only while WS is down */
@@ -2902,23 +2889,15 @@
             if (painted && payload && payload.message && payload.message.sender_type === 'agent') {
                 window.__lcWsAgentPainted = true;
             }
-            if (!painted) {
-                // WS frame arrived but paint failed (id-only / DOM miss) — one forced poll
-                window.__lcForcePollOnce = true;
-                try {
-                    scheduleGapFill();
-                    pollMessages(false);
-                } finally {
-                    window.__lcForcePollOnce = false;
-                }
+            // Paint fail while WS live: do NOT fall back to visitor-poll (socket must work)
+            if (!painted && !isVisitorWsLive()) {
+                scheduleGapFill();
+                forceMessageCatchup();
             }
         } catch (e) {
-            window.__lcForcePollOnce = true;
-            try {
+            if (!isVisitorWsLive()) {
                 scheduleGapFill();
-                pollMessages(false);
-            } finally {
-                window.__lcForcePollOnce = false;
+                forceMessageCatchup();
             }
         }
     }
