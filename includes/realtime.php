@@ -97,12 +97,54 @@ function lc_realtime_ws_url(): string
 
 function lc_realtime_publish_url(): string
 {
+    $urls = lc_realtime_publish_urls();
+
+    return $urls[0] ?? '';
+}
+
+/**
+ * Ordered publish endpoints (loopback first, then public nginx path).
+ *
+ * @return list<string>
+ */
+function lc_realtime_publish_urls(): array
+{
+    $out = [];
     $local = lc_realtime_local_config();
+    if (!empty($local['publish_urls']) && is_array($local['publish_urls'])) {
+        foreach ($local['publish_urls'] as $u) {
+            $u = rtrim((string) $u, '/');
+            if ($u !== '' && !in_array($u, $out, true)) {
+                $out[] = $u;
+            }
+        }
+    }
     if (!empty($local['publish_url'])) {
-        return rtrim((string) $local['publish_url'], '/');
+        $u = rtrim((string) $local['publish_url'], '/');
+        if ($u !== '' && !in_array($u, $out, true)) {
+            array_unshift($out, $u);
+        }
+    }
+    if (defined('LC_REALTIME_PUBLISH_URL') && LC_REALTIME_PUBLISH_URL !== '') {
+        $u = rtrim((string) LC_REALTIME_PUBLISH_URL, '/');
+        if ($u !== '' && !in_array($u, $out, true)) {
+            $out[] = $u;
+        }
+    }
+    // Last-resort: same host via nginx (works even when PHP cannot hit 127.0.0.1:6001)
+    $ws = lc_realtime_ws_url();
+    if ($ws !== '') {
+        $parts = parse_url(str_replace(['wss://', 'ws://'], ['https://', 'http://'], $ws));
+        if (!empty($parts['host'])) {
+            $scheme = (!empty($parts['scheme']) && $parts['scheme'] === 'http') ? 'http' : 'https';
+            $fallback = $scheme . '://' . $parts['host'] . '/lc-realtime/publish';
+            if (!in_array($fallback, $out, true)) {
+                $out[] = $fallback;
+            }
+        }
     }
 
-    return defined('LC_REALTIME_PUBLISH_URL') ? rtrim((string) LC_REALTIME_PUBLISH_URL, '/') : '';
+    return $out;
 }
 
 /** Client-safe config (no secrets). */
@@ -434,8 +476,8 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
     if (lc_realtime_mode() !== 'ws') {
         return;
     }
-    $url = lc_realtime_publish_url();
-    if ($url === '') {
+    $urls = lc_realtime_publish_urls();
+    if ($urls === []) {
         return;
     }
 
@@ -467,13 +509,13 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
     }
     $connectMs = max(40, min(400, (int) floor($timeoutMs * 0.4)));
 
-    $doPublish = static function () use ($url, $payload, $headers, $timeoutMs, $connectMs): array {
+    $doPublish = static function (string $url) use ($payload, $headers, $timeoutMs, $connectMs): array {
         if (!function_exists('curl_init')) {
-            return ['delivered' => -1, 'visitorDelivered' => -1];
+            return ['delivered' => -1, 'visitorDelivered' => -1, 'url' => $url];
         }
         $ch = curl_init($url);
         if ($ch === false) {
-            return ['delivered' => -1, 'visitorDelivered' => -1];
+            return ['delivered' => -1, 'visitorDelivered' => -1, 'url' => $url];
         }
         $curlOpts = [
             CURLOPT_POST => true,
@@ -482,6 +524,11 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_NOSIGNAL => 1,
         ];
+        // Public https fallback may use a self-hosted cert on some panels
+        if (stripos($url, 'https://') === 0) {
+            $curlOpts[CURLOPT_SSL_VERIFYPEER] = false;
+            $curlOpts[CURLOPT_SSL_VERIFYHOST] = 0;
+        }
         if (defined('CURLOPT_TIMEOUT_MS')) {
             $curlOpts[CURLOPT_TIMEOUT_MS] = $timeoutMs;
             $curlOpts[CURLOPT_CONNECTTIMEOUT_MS] = $connectMs;
@@ -494,36 +541,61 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         if ($code < 200 || $code >= 300 || !is_string($body) || $body === '') {
-            return ['delivered' => -1, 'visitorDelivered' => -1];
+            return ['delivered' => -1, 'visitorDelivered' => -1, 'url' => $url];
         }
         $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
-            return ['delivered' => -1, 'visitorDelivered' => -1];
+            return ['delivered' => -1, 'visitorDelivered' => -1, 'url' => $url];
         }
         return [
             'delivered' => (int) ($decoded['delivered'] ?? -1),
             'visitorDelivered' => (int) ($decoded['visitorDelivered'] ?? -1),
+            'url' => $url,
         ];
     };
 
-    $result = $doPublish();
+    $result = ['delivered' => -1, 'visitorDelivered' => -1, 'url' => $urls[0]];
+    foreach ($urls as $tryUrl) {
+        $result = $doPublish($tryUrl);
+        $deliveredTry = (int) ($result['delivered'] ?? -1);
+        if ($deliveredTry >= 0) {
+            break;
+        }
+    }
     $delivered = (int) ($result['delivered'] ?? -1);
     $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+    $url = (string) ($result['url'] ?? $urls[0]);
     $shouldRetry = $retryEmpty && (
         $delivered === 0
         || ($expectsVisitor && $delivered >= 0 && $visitorDelivered === 0)
     );
     if ($shouldRetry) {
         usleep(50000);
-        $result = $doPublish();
+        $result = $doPublish($url);
         $delivered = (int) ($result['delivered'] ?? -1);
         $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
         // Second short retry — common after pm2 restart while visitor re-auths
         if ($expectsVisitor && $visitorDelivered < 1 && $delivered >= 0) {
             usleep(100000);
-            $result = $doPublish();
+            $result = $doPublish($url);
             $delivered = (int) ($result['delivered'] ?? -1);
             $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+        }
+        // If loopback still yields 0 visitors, try next URL once
+        if ($expectsVisitor && $visitorDelivered < 1) {
+            foreach ($urls as $tryUrl) {
+                if ($tryUrl === $url) {
+                    continue;
+                }
+                $alt = $doPublish($tryUrl);
+                if ((int) ($alt['visitorDelivered'] ?? -1) > $visitorDelivered) {
+                    $result = $alt;
+                    $delivered = (int) ($alt['delivered'] ?? -1);
+                    $visitorDelivered = (int) ($alt['visitorDelivered'] ?? -1);
+                    $url = (string) ($alt['url'] ?? $tryUrl);
+                    break;
+                }
+            }
         }
     }
     $prev = (isset($GLOBALS['lc_last_realtime_publish']) && is_array($GLOBALS['lc_last_realtime_publish']))
@@ -542,6 +614,7 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         'channels' => array_values(array_map('strval', $channels)),
         'publishConfigured' => true,
         'publishHost' => (string) (parse_url($url, PHP_URL_HOST) ?: ''),
+        'publishUrl' => $url,
     ];
     if ($delivered >= 0) {
         return;
