@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 205;
+    var LC_WIDGET_BUILD = 206;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -2498,14 +2498,15 @@
         }
     }
 
-    /** While WS is up: ~1s HTTP safety (WS should be instant; this only covers drops). */
+    /** While WS is up: slow HTTP safety only (was capped ~1–2s and hammered PHP). */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 1000;
-        if (ms < 800) ms = 800;
-        if (ms > 2000) ms = 2000;
+        // Config default 15s; keep WS catchup in 15–30s. Poll mode still uses 1s liveSync.
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 15000;
+        if (ms < 15000) ms = 15000;
+        if (ms > 30000) ms = 30000;
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2516,9 +2517,11 @@
                 startLiveMessageSync();
                 return;
             }
+            if (document.hidden) return;
             ensureVisitorConvChannel();
             forceMessageCatchup();
         }, ms);
+        // One immediate catch-up on (re)connect — then rare interval
         forceMessageCatchup();
     }
 
@@ -3327,9 +3330,9 @@
             var nextUrl = data.realtime.wsUrl || '';
             realtimeChanged = (realtimeConfig.mode !== nextMode) || (realtimeConfig.wsUrl !== nextUrl);
             realtimeConfig = data.realtime;
-            // Do not clamp backup down — WS should carry live traffic
+            // Slow backup while WS carries live traffic (poll mode uses liveSync 1s)
             if (!realtimeConfig.backupPollMs) {
-                realtimeConfig.backupPollMs = 1500;
+                realtimeConfig.backupPollMs = 15000;
             }
         }
         // Only reconnect when mode/URL actually changed — never flap on settings sync

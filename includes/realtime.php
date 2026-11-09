@@ -132,8 +132,8 @@ function lc_realtime_client_config(?int $brandId = null): array
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
         'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
-        // Match admin ~3s safety net so agent→visitor does not wait 8–15s on a missed WS frame
-        'backupPollMs' => 1000,
+        // WS-first: HTTP catch-up is a rare safety net (widget clamps 15–30s)
+        'backupPollMs' => 15000,
     ];
 }
 

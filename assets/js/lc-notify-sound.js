@@ -485,8 +485,8 @@
         if (VOICE_PRESETS[soundId]) {
             var spoken = !document.hidden && speak(soundId, opts.event ? String(opts.event) : '');
             if (!spoken) startChime('default');
-            return;
-        }
+                return;
+            }
 
         startChime(soundId);
     }
