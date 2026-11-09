@@ -123,7 +123,22 @@
         }
     };
 
+    /** App-level ping — server treats visitor ping as map-tip refresh + message replay */
+    WebSocketDriver.prototype.ping = function () {
+        if (!this.isConnected() || !this.ws) return false;
+        try {
+            this.ws.send(JSON.stringify({ type: 'ping' }));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
+
     PollDriver.prototype.publishClientEvent = function () {
+        return false;
+    };
+
+    PollDriver.prototype.ping = function () {
         return false;
     };
 

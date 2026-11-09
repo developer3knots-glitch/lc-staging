@@ -139,16 +139,12 @@ function registerVisitorSocket(ws) {
   const prev = visitorSockets.get(uid);
   touchVisitorSocket(ws);
   visitorSockets.set(uid, ws);
-  // Ghost sockets still looked OPEN and ate visitorDelivered while the live
-  // tab got nothing. Detach immediately; terminate after new socket stays tip.
+  // Kill ghost immediately — delayed terminate left half-open sockets eating
+  // message.new while the live tab (DevTools 101) never saw event:message.new.
   if (prev && prev !== ws) {
     detachVisitorSocket(prev);
-    setTimeout(function () {
-      if (visitorSockets.get(uid) !== ws) return;
-      if (prev.readyState === 1 || prev.readyState === 0) {
-        try { prev.terminate(); } catch (eTerm) { /* ignore */ }
-      }
-    }, 400);
+    try { allSockets.delete(prev); } catch (eDel) { /* ignore */ }
+    try { prev.terminate(); } catch (eTerm) { /* ignore */ }
   }
   flushVisitorPending(uid);
 }
@@ -197,7 +193,7 @@ function socketsForVisitorUid(uid) {
   return out;
 }
 
-/** Send to every live visitor socket for this uid (channel + map tip). */
+/** Deliver to the live visitor tab for this uid. */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -222,14 +218,38 @@ function deliverToVisitorUid(uid, event, data) {
       else visitorPending.delete(uid);
     }, 2500);
   }
+  // message.new → ONLY the map-tip socket (newest authed tab). Channel fanout
+  // to ghosts was the false visitorDelivered>=1 while browser saw no frame.
+  let targets;
+  if (event === 'message.new') {
+    const tip = visitorSockets.get(uid);
+    targets = (tip && tip.readyState === 1) ? [tip] : socketsForVisitorUid(uid);
+  } else {
+    targets = socketsForVisitorUid(uid);
+  }
   let n = 0;
-  socketsForVisitorUid(uid).forEach(function (client) {
+  targets.forEach(function (client) {
     try {
       client.send(raw);
       n += 1;
     } catch (e) { /* ignore */ }
   });
   return n;
+}
+
+/** Replay recent chat frames + pending to a live visitor socket. */
+function refreshVisitorSocket(ws) {
+  if (!ws || ws.readyState !== 1) return;
+  const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
+  if (uid) flushVisitorPending(uid);
+  if (ws._lcChannels) {
+    ws._lcChannels.forEach(function (ch) {
+      const name = String(ch || '');
+      if (/^(conv|visitor):/.test(name)) {
+        replayMessageNew(ws, name);
+      }
+    });
+  }
 }
 
 function flushVisitorPending(uid) {
@@ -363,18 +383,21 @@ function publishMany(channels, event, data) {
     if (!set || !set.size) return;
     set.forEach(function (client) {
       if (client.readyState !== 1 || seenClients.has(client)) return;
+      const role = String((client._lcClaims && client._lcClaims.role) || '');
+      // Visitors get message.new ONLY via deliverToVisitorUid (map tip) —
+      // channel fanout hit ghosts and inflated visitorDelivered.
+      if (event === 'message.new' && role === 'visitor') return;
       seenClients.add(client);
       try {
         client.send(payload);
         n += 1;
-        const role = String((client._lcClaims && client._lcClaims.role) || '');
         if (role === 'visitor') visitorDelivered += 1;
       } catch (e) {
         try { set.delete(client); } catch (eDel) { /* ignore */ }
       }
     });
   });
-  // Deliver to every live socket for each visitor:* uid (all tabs) + pending queue
+  // Deliver to live visitor map-tip for each visitor:* uid + pending queue
   if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
     const uids = visitorUidsFromChannels(channels);
     const dataUid = String((data && data.visitor_uid) || '');
@@ -393,6 +416,18 @@ function publishMany(channels, event, data) {
         if (uid && uids.indexOf(uid) === -1) uids.push(uid);
       });
     });
+    // Fallback: every currently mapped visitor socket when publishing conv traffic
+    if (event === 'message.new') {
+      (channels || []).forEach(function (ch) {
+        if (!/^conv:\d+$/.test(String(ch || ''))) return;
+        visitorSockets.forEach(function (sock, uid) {
+          if (!sock || sock.readyState !== 1) return;
+          if (sock._lcChannels && sock._lcChannels.has(String(ch)) && uids.indexOf(uid) === -1) {
+            uids.push(uid);
+          }
+        });
+      });
+    }
     uids.forEach(function (uid) {
       const extra = deliverToVisitorUid(uid, event, data);
       if (extra > 0) {
@@ -474,7 +509,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 15,
+        build: 16,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -500,7 +535,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 15,
+      build: 16,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
@@ -540,7 +575,9 @@ function wireWebSocket(server) {
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }));
         if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
           touchVisitorSocket(ws);
-          flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
+          // Re-register as tip + replay missed message.new (ghost delivery recovery)
+          registerVisitorSocket(ws);
+          refreshVisitorSocket(ws);
         }
         return;
       }
@@ -548,7 +585,8 @@ function wireWebSocket(server) {
       if (msg.type === 'pong') {
         if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
           touchVisitorSocket(ws);
-          flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
+          registerVisitorSocket(ws);
+          refreshVisitorSocket(ws);
         }
         return;
       }

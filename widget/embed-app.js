@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 223;
+    var LC_WIDGET_BUILD = 224;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -3014,6 +3014,15 @@
                 client.publishClientEvent('visitor.ws_probe', { conversation_id: cid || 0 });
             }
         } catch (eProbe) {}
+        // Immediate ping → Node re-registers this socket as map tip + replays missed message.new
+        try {
+            if (client && typeof client.ping === 'function') client.ping();
+        } catch (ePing) {}
+        setTimeout(function () {
+            try {
+                if (client && typeof client.ping === 'function') client.ping();
+            } catch (ePing2) {}
+        }, 800);
         // No visitor-poll on connect — pending queue + WS replay carry missed frames
     }
 
@@ -3470,7 +3479,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=18';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=19';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
