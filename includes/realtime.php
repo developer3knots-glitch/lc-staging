@@ -722,10 +722,27 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
     }
 
     $liveMessage = lc_format_message_row($row);
+    // Slim WS body — full avatar blobs are unnecessary for live paint and have
+    // caused encode/proxy edge cases; widget already has header agent avatar.
+    $wsMessage = [
+        'id' => (int) ($liveMessage['id'] ?? $messageId),
+        'sender_type' => (string) ($liveMessage['sender_type'] ?? ''),
+        'message' => (string) ($liveMessage['message'] ?? ''),
+        'created_at' => $liveMessage['created_at'] ?? null,
+    ];
+    if (!empty($liveMessage['agent_name'])) {
+        $wsMessage['agent_name'] = (string) $liveMessage['agent_name'];
+    }
+    if (!empty($liveMessage['sender_id'])) {
+        $wsMessage['sender_id'] = (int) $liveMessage['sender_id'];
+    }
+    if (!empty($liveMessage['attachment'])) {
+        $wsMessage['attachment'] = $liveMessage['attachment'];
+    }
 
     $msgPayload = [
         'message_id' => $messageId,
-        'message' => $liveMessage,
+        'message' => $wsMessage,
         'hidden_from_visitor' => (
             ($row['sender_type'] ?? '') === 'system'
             && function_exists('lc_message_hidden_from_visitor')

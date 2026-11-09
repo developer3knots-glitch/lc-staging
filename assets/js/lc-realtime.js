@@ -351,6 +351,11 @@
 
                     if (msg.type === 'event' && msg.event) {
                         self._lastPongAt = Date.now();
+                        if (typeof self.opts.onRawEvent === 'function') {
+                            try {
+                                self.opts.onRawEvent(String(msg.event), msg.data || {});
+                            } catch (eRaw) { /* ignore */ }
+                        }
                         emitAll(self.handlers, msg.event, msg.data || {});
                         emitAll(self.handlers, 'event', msg);
                     }

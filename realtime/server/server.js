@@ -382,7 +382,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 10,
+        build: 11,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -408,7 +408,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 10,
+      build: 11,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,

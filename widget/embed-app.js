@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 218;
+    var LC_WIDGET_BUILD = 219;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -3092,6 +3092,12 @@
             wsUrl: url,
             token: token || '',
             getToken: fetchVisitorRealtimeToken,
+            // Raw tap — guarantees message.new paint even if named handlers race
+            onRawEvent: function (eventName, data) {
+                if (eventName === 'message.new') {
+                    handleVisitorMessageNew(data || {});
+                }
+            },
             fallbackPoll: function () {
                 scheduleCatchupSync();
                 startSafetySyncWhileDisconnected();
@@ -3393,7 +3399,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=16';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=17';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -6951,8 +6957,10 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS live → block visitor-poll (except empty-transcript history, or forced safety tick)
-        if (isVisitorWsLive() && !window.__lcForcePollOnce) {
+        // ANY open visitor WS → block visitor-poll (messages must ride message.new).
+        // Only empty-transcript history seed, or explicit __lcForcePollOnce, may HTTP.
+        var wsUp = !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
+        if (wsUp && !window.__lcForcePollOnce) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
