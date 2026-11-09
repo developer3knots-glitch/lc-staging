@@ -558,9 +558,16 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
     foreach ($urls as $tryUrl) {
         $result = $doPublish($tryUrl);
         $deliveredTry = (int) ($result['delivered'] ?? -1);
-        if ($deliveredTry >= 0) {
-            break;
+        $visitorTry = (int) ($result['visitorDelivered'] ?? -1);
+        // Staff-only success (delivered>0, visitorDelivered=0) is NOT done when
+        // this hop targets a visitor — keep trying the next publish URL.
+        if ($deliveredTry < 0) {
+            continue;
         }
+        if ($expectsVisitor && $visitorTry < 1) {
+            continue;
+        }
+        break;
     }
     $delivered = (int) ($result['delivered'] ?? -1);
     $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);

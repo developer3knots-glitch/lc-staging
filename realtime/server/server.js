@@ -450,7 +450,7 @@ const requestHandler = async function (req, res) {
         : -1;
       if (event === 'message.new') {
         rememberMessageNew(channels, slimData);
-        lastMessageNew = {
+        const next = {
           at: Date.now(),
           conversation_id: parseInt(slimData.conversation_id, 10) || 0,
           message_id: parseInt(slimData.message_id, 10)
@@ -461,11 +461,20 @@ const requestHandler = async function (req, res) {
           channels: channels.slice(0, 8),
           bytes: Buffer.byteLength(JSON.stringify(slimData)),
         };
+        // Same message: keep best visitorDelivered (inbox hop must not wipe visitor: success).
+        // New message / stale: always replace.
+        if (!lastMessageNew
+          || next.message_id !== lastMessageNew.message_id
+          || (next.at - (lastMessageNew.at || 0)) > 8000) {
+          lastMessageNew = next;
+        } else if (next.visitorDelivered >= (lastMessageNew.visitorDelivered || 0)) {
+          lastMessageNew = next;
+        }
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 14,
+        build: 15,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -491,7 +500,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 14,
+      build: 15,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
