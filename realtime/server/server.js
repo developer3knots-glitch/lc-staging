@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 21;
+const REALTIME_BUILD = 22;
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
@@ -610,13 +610,22 @@ const requestHandler = async function (req, res) {
       const visitorDelivered = (result && typeof result === 'object')
         ? (result.visitorDelivered | 0)
         : -1;
+      // Diagnose cid / uid / channel mismatch for live debugging
+      const visitorTargets = [];
       if (event === 'message.new') {
-        // Same recovery path as pm2 restart: push recent buffer to live visitor tabs now
         const tipUids = visitorUidsFromChannels(channels);
         const dataUid = String((slimData && slimData.visitor_uid) || '');
         if (dataUid && tipUids.indexOf(dataUid) === -1) tipUids.push(dataUid);
         tipUids.forEach(function (uid) {
           socketsForVisitorUid(uid).forEach(function (sock) {
+            const claims = sock._lcClaims || {};
+            visitorTargets.push({
+              uid: uid,
+              claimCid: parseInt(claims.conversation_id, 10) || 0,
+              channels: Array.from(sock._lcChannels || []).slice(0, 6),
+              fresh: isVisitorSocketFresh(sock),
+              buffered: typeof sock.bufferedAmount === 'number' ? sock.bufferedAmount : -1,
+            });
             try { refreshVisitorSocket(sock); } catch (eR) { /* ignore */ }
           });
         });
@@ -629,6 +638,7 @@ const requestHandler = async function (req, res) {
           delivered: delivered,
           visitorDelivered: visitorDelivered,
           channels: channels.slice(0, 8),
+          visitorTargets: visitorTargets.slice(0, 8),
           bytes: Buffer.byteLength(JSON.stringify(slimData)),
         };
         // Same message: keep best visitorDelivered (inbox hop must not wipe visitor: success).
@@ -652,6 +662,8 @@ const requestHandler = async function (req, res) {
         visitorSse: visitorSse.size,
         visitorPending: visitorPending.size,
         channels: channels.length,
+        visitorTargets: typeof visitorTargets !== 'undefined' ? visitorTargets.slice(0, 8) : [],
+        publishCid: parseInt(slimData.conversation_id, 10) || 0,
       }));
     } catch (e) {
       res.writeHead(400, { 'Content-Type': 'application/json' });

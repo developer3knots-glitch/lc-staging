@@ -69,29 +69,9 @@ try {
         }
     }
 
-    if (function_exists('lc_realtime_defer')) {
-        lc_realtime_defer(static function () use ($conversationId): void {
-            if (function_exists('lc_mark_messages_delivered')) {
-                lc_mark_messages_delivered($conversationId, 'visitor');
-            }
-            if (function_exists('lc_mark_messages_read')) {
-                lc_mark_messages_read($conversationId, 'visitor');
-            }
-            if (function_exists('lc_realtime_publish_message_receipts')) {
-                lc_realtime_publish_message_receipts($conversationId, 'visitor');
-            }
-        });
-    } else {
-        if (function_exists('lc_mark_messages_delivered')) {
-            lc_mark_messages_delivered($conversationId, 'visitor');
-        }
-        if (function_exists('lc_mark_messages_read')) {
-            lc_mark_messages_read($conversationId, 'visitor');
-        }
-        if (function_exists('lc_realtime_publish_message_receipts')) {
-            lc_realtime_publish_message_receipts($conversationId, 'visitor');
-        }
-    }
+    // Do NOT mark agent msgs delivered/read here — that painted false blue ticks
+    // while the visitor never received the WS frame. Receipts come from
+    // visitor-ack / visitor-poll after the widget actually paints.
 
     $rt = $GLOBALS['lc_last_realtime_publish'] ?? null;
     if (!is_array($rt)) {

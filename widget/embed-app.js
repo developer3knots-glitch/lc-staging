@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 229;
+    var LC_WIDGET_BUILD = 230;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -3026,14 +3026,31 @@
         if (!payload) return false;
         var myCid = parseInt(conversationId, 10) || 0;
         var cid = parseInt(payload.conversation_id, 10) || 0;
-        // Adopt conversation from live frame if widget lost it after close/reopen
-        if (myCid < 1 && cid > 0) {
+        var payloadVisitor = payload && payload.visitor_uid
+            ? String(payload.visitor_uid)
+            : '';
+        var myVisitor = visitorUid ? String(visitorUid) : '';
+        var msgPeek = payload && payload.message;
+        var isAgentPeek = !!(msgPeek && msgPeek.sender_type === 'agent');
+        // Adopt conversation from live frame if widget lost it OR admin/thread
+        // id drifted (resume/merge). Dropping here = silent miss while Node
+        // still reports visitorDelivered>0.
+        if (cid > 0 && cid !== myCid) {
+            var sameVisitor = payloadVisitor !== '' && myVisitor !== '' && payloadVisitor === myVisitor;
+            if (myCid < 1 || isAgentPeek || sameVisitor) {
+                conversationId = cid;
+                myCid = cid;
+                try { persistConversationId(cid); } catch (eCid) {}
+                try { ensureVisitorConvChannel(); } catch (eSub) {}
+            } else {
+                return false;
+            }
+        } else if (myCid < 1 && cid > 0) {
             conversationId = cid;
             myCid = cid;
-            try { persistConversationId(cid); } catch (eCid) {}
+            try { persistConversationId(cid); } catch (eCid2) {}
         }
         if (myCid < 1) return false;
-        if (cid > 0 && cid !== myCid) return false;
 
         // Full message object (normal WS publish)
         if (payload.message && (payload.message.id || payload.message_id)) {
@@ -3042,7 +3059,8 @@
                 m = Object.assign({}, m, { id: payload.message_id });
             }
             var mid = parseInt(m.id, 10) || 0;
-            if (mid < 1 || mid >= 100000000) {
+            // Reject only true non-ids. Do NOT use 1e8 cap — some installs have high ids.
+            if (mid < 1) {
                 return false;
             }
             if (payload.hidden_from_visitor || isAdminOnlySystemMessage(m)) {
@@ -3106,7 +3124,7 @@
 
         // message_id only — must NOT claim success (that blocked emergency poll while WS up)
         var onlyId = parseInt(payload.message_id, 10) || 0;
-        if (onlyId > 0 && onlyId < 100000000) {
+        if (onlyId > 0) {
             if (document.querySelector('#lc-panel-messages [data-msg-id="' + onlyId + '"]')) {
                 advanceLastMsgId(onlyId);
                 return true;
@@ -3160,13 +3178,15 @@
             } catch (eLog) {}
 
             var payloadCid = parseInt(payload && payload.conversation_id, 10) || 0;
-            if (payloadCid > 0 && !(parseInt(conversationId, 10) > 0)) {
-                conversationId = payloadCid;
-                try { persistConversationId(payloadCid); } catch (eP) {}
-            }
-
+            var myCidNow = parseInt(conversationId, 10) || 0;
             var msg = payload && payload.message;
             var isAgent = !!(msg && msg.sender_type === 'agent');
+            // Always align widget thread to agent live frames (cid drift was dropping bubbles)
+            if (payloadCid > 0 && (myCidNow < 1 || (isAgent && payloadCid !== myCidNow))) {
+                conversationId = payloadCid;
+                try { persistConversationId(payloadCid); } catch (eP) {}
+                try { ensureVisitorConvChannel(); } catch (eSub2) {}
+            }
             // Agent follow-up must reopen UI even after visitor self-close
             // (otherwise bubbles paint into display:none ended panel).
             if (isAgent || (chatClosed && lastClosedBy !== 'visitor')) {
