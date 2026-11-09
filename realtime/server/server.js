@@ -166,34 +166,40 @@ function queueVisitorPending(uid, rawPayload) {
   visitorPending.set(uid, list);
 }
 
+function isVisitorSocketFresh(client) {
+  if (!client || client.readyState !== 1) return false;
+  const last = client._lcLastClientAt || 0;
+  // No traffic yet (just authed) — allow. Stale half-open ghosts — skip.
+  if (!last) return true;
+  return (Date.now() - last) <= 60000;
+}
+
 /** Collect live sockets that should get visitor traffic for this uid. */
 function socketsForVisitorUid(uid) {
   uid = String(uid || '');
   const out = [];
   const seen = new Set();
-  const now = Date.now();
-  const STALE_MS = 90000;
-  function add(client, requireFresh) {
-    if (!client || client.readyState !== 1 || seen.has(client)) return;
-    if (requireFresh) {
-      const last = client._lcLastClientAt || 0;
-      // Unknown freshness: allow once (just authed). Stale ghosts: skip.
-      if (last > 0 && (now - last) > STALE_MS) return;
-    }
+  function add(client) {
+    if (!client || seen.has(client) || !isVisitorSocketFresh(client)) return;
     seen.add(client);
     out.push(client);
   }
-  // 1) Map tip first — newest authed visitor tab
-  add(visitorSockets.get(uid), false);
-  // 2) Channel subscribers (already de-duped per uid on subscribe)
+  // 1) Map tip
+  add(visitorSockets.get(uid));
+  // 2) Fresh channel subscribers (live tab may not be map tip yet)
   const vSet = channelSubs.get('visitor:' + uid);
-  if (vSet) vSet.forEach(function (c) { add(c, true); });
-  // Do NOT sweep allSockets by claims — that re-added half-open ghosts and
-  // made visitorDelivered:1 while the live browser socket got nothing.
+  if (vSet) vSet.forEach(add);
+  // 3) Fresh sockets claiming this uid on any conv: room
+  allSockets.forEach(function (client) {
+    const claims = client._lcClaims || {};
+    if (String(claims.role || '') !== 'visitor') return;
+    if (String(claims.visitor_uid || '') !== uid) return;
+    add(client);
+  });
   return out;
 }
 
-/** Deliver to the live visitor tab for this uid. */
+/** Deliver to every FRESH visitor socket for this uid. */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -204,7 +210,7 @@ function deliverToVisitorUid(uid, event, data) {
     data: data,
   });
   // Keep message.new queued even after send() — TCP can accept bytes on a
-  // half-open socket (visitorDelivered:1) while the browser never gets the frame.
+  // half-open socket while the browser never gets the frame.
   // Client dedupes by message id; clear after short retransmit window.
   if (event === 'message.new') {
     queueVisitorPending(uid, raw);
@@ -218,17 +224,8 @@ function deliverToVisitorUid(uid, event, data) {
       else visitorPending.delete(uid);
     }, 2500);
   }
-  // message.new → ONLY the map-tip socket (newest authed tab). Channel fanout
-  // to ghosts was the false visitorDelivered>=1 while browser saw no frame.
-  let targets;
-  if (event === 'message.new') {
-    const tip = visitorSockets.get(uid);
-    targets = (tip && tip.readyState === 1) ? [tip] : socketsForVisitorUid(uid);
-  } else {
-    targets = socketsForVisitorUid(uid);
-  }
   let n = 0;
-  targets.forEach(function (client) {
+  socketsForVisitorUid(uid).forEach(function (client) {
     try {
       client.send(raw);
       n += 1;
@@ -384,9 +381,12 @@ function publishMany(channels, event, data) {
     set.forEach(function (client) {
       if (client.readyState !== 1 || seenClients.has(client)) return;
       const role = String((client._lcClaims && client._lcClaims.role) || '');
-      // Visitors get message.new ONLY via deliverToVisitorUid (map tip) —
-      // channel fanout hit ghosts and inflated visitorDelivered.
-      if (event === 'message.new' && role === 'visitor') return;
+      // Stale visitor ghosts: skip. Fresh visitor tabs: allow channel fanout
+      // (map-tip-only missed the live tab when tip pointed at a dead socket —
+      // messages then only appeared after pm2 restart replay / page reload).
+      if (event === 'message.new' && role === 'visitor' && !isVisitorSocketFresh(client)) {
+        return;
+      }
       seenClients.add(client);
       try {
         client.send(payload);
@@ -397,7 +397,7 @@ function publishMany(channels, event, data) {
       }
     });
   });
-  // Deliver to live visitor map-tip for each visitor:* uid + pending queue
+  // Also deliver via uid map (fresh sockets + pending retransmit)
   if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
     const uids = visitorUidsFromChannels(channels);
     const dataUid = String((data && data.visitor_uid) || '');
@@ -475,6 +475,10 @@ const requestHandler = async function (req, res) {
         return;
       }
       const slimData = slimEventData(event, body.data || {});
+      // Remember BEFORE fanout so an immediate refresh/replay includes this frame
+      if (event === 'message.new') {
+        rememberMessageNew(channels, slimData);
+      }
       const result = publishMany(channels, event, slimData);
       // Backward compatible if an old publishMany returned a bare number
       const delivered = (result && typeof result === 'object')
@@ -484,7 +488,15 @@ const requestHandler = async function (req, res) {
         ? (result.visitorDelivered | 0)
         : -1;
       if (event === 'message.new') {
-        rememberMessageNew(channels, slimData);
+        // Same recovery path as pm2 restart: push recent buffer to live visitor tabs now
+        const tipUids = visitorUidsFromChannels(channels);
+        const dataUid = String((slimData && slimData.visitor_uid) || '');
+        if (dataUid && tipUids.indexOf(dataUid) === -1) tipUids.push(dataUid);
+        tipUids.forEach(function (uid) {
+          socketsForVisitorUid(uid).forEach(function (sock) {
+            try { refreshVisitorSocket(sock); } catch (eR) { /* ignore */ }
+          });
+        });
         const next = {
           at: Date.now(),
           conversation_id: parseInt(slimData.conversation_id, 10) || 0,
@@ -509,7 +521,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 16,
+        build: 17,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -535,7 +547,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 16,
+      build: 17,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
@@ -738,16 +750,20 @@ function wireWebSocket(server) {
 
 // Server-side ping keeps the proxy from closing an idle socket when a
 // background tab stops sending its own pings.
+// Also replay recent message.new to visitors — same path that makes
+// `pm2 restart` suddenly show missed bubbles (auth/subscribe replay).
 setInterval(function () {
   allSockets.forEach(function (ws) {
     if (!ws._lcAuthed || ws.readyState !== 1) return;
     try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) { /* ignore */ }
+    if (String((ws._lcClaims && ws._lcClaims.role) || '') === 'visitor') {
+      try { refreshVisitorSocket(ws); } catch (eRef) { /* ignore */ }
+    }
   });
-  // Retransmit any stuck agent→visitor frames (health showed visitorPending>0)
   visitorPending.forEach(function (_list, uid) {
     flushVisitorPending(uid);
   });
-}, 20000);
+}, 8000);
 
 const httpServer = http.createServer(requestHandler);
 wireWebSocket(httpServer);
