@@ -44,6 +44,9 @@ const channelSubs = new Map();
 const allSockets = new Set();
 /** @type {Map<string, import('ws').WebSocket>} visitor_uid → newest live socket */
 const visitorSockets = new Map();
+/** @type {Map<string, string[]>} visitor_uid → pending raw event frames */
+const visitorPending = new Map();
+const VISITOR_PENDING_MAX = 40;
 
 function verifyToken(token) {
   if (!token || !token.includes('.')) return null;
@@ -95,11 +98,10 @@ function registerVisitorSocket(ws) {
   const role = String((ws._lcClaims && ws._lcClaims.role) || '');
   const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
   if (role !== 'visitor' || !uid) return;
-  const prev = visitorSockets.get(uid);
-  if (prev && prev !== ws && prev.readyState === 1) {
-    try { prev.close(); } catch (eClose) { /* ignore */ }
-  }
+  // NEVER close the previous socket — that killed the open chat tab's WS while
+  // DevTools still showed a newer 101 connection with no message handlers.
   visitorSockets.set(uid, ws);
+  flushVisitorPending(uid);
 }
 
 function unregisterVisitorSocket(ws) {
@@ -110,22 +112,83 @@ function unregisterVisitorSocket(ws) {
   }
 }
 
+function queueVisitorPending(uid, rawPayload) {
+  uid = String(uid || '');
+  if (!uid || !rawPayload) return;
+  let list = visitorPending.get(uid) || [];
+  list.push(rawPayload);
+  if (list.length > VISITOR_PENDING_MAX) list = list.slice(-VISITOR_PENDING_MAX);
+  visitorPending.set(uid, list);
+}
+
+/** Send to EVERY live visitor socket with this uid (all tabs), not only the map tip. */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
-  const client = visitorSockets.get(uid);
-  if (!client || client.readyState !== 1) return 0;
-  try {
-    client.send(JSON.stringify({
-      type: 'event',
-      event: event,
-      data: data || {},
-    }));
-    return 1;
-  } catch (e) {
-    unregisterVisitorSocket(client);
-    return 0;
+  const raw = JSON.stringify({
+    type: 'event',
+    event: event,
+    data: data || {},
+  });
+  if (event === 'message.new') {
+    queueVisitorPending(uid, raw);
   }
+  let n = 0;
+  allSockets.forEach(function (client) {
+    if (!client || client.readyState !== 1) return;
+    const claims = client._lcClaims || {};
+    if (String(claims.role || '') !== 'visitor') return;
+    if (String(claims.visitor_uid || '') !== uid) return;
+    try {
+      client.send(raw);
+      n += 1;
+    } catch (e) { /* ignore */ }
+  });
+  if (n > 0 && event === 'message.new') {
+    // Delivered to at least one live tab — clear pending for this exact raw
+    const list = visitorPending.get(uid) || [];
+    visitorPending.set(uid, list.filter(function (item) { return item !== raw; }));
+  }
+  return n;
+}
+
+function flushVisitorPending(uid) {
+  uid = String(uid || '');
+  if (!uid) return 0;
+  const list = visitorPending.get(uid) || [];
+  if (!list.length) return 0;
+  let n = 0;
+  const remain = [];
+  list.forEach(function (raw) {
+    let sent = 0;
+    allSockets.forEach(function (client) {
+      if (!client || client.readyState !== 1) return;
+      const claims = client._lcClaims || {};
+      if (String(claims.role || '') !== 'visitor') return;
+      if (String(claims.visitor_uid || '') !== uid) return;
+      try {
+        client.send(raw);
+        sent += 1;
+        n += 1;
+      } catch (e) { /* ignore */ }
+    });
+    if (!sent) remain.push(raw);
+  });
+  if (remain.length) visitorPending.set(uid, remain);
+  else visitorPending.delete(uid);
+  return n;
+}
+
+function visitorUidsFromChannels(channels) {
+  const uids = [];
+  (channels || []).forEach(function (ch) {
+    const name = String(ch || '');
+    if (name.indexOf('visitor:') === 0) {
+      const uid = name.slice('visitor:'.length);
+      if (uid && uids.indexOf(uid) === -1) uids.push(uid);
+    }
+  });
+  return uids;
 }
 
 function unsubscribeAll(ws) {
@@ -232,21 +295,19 @@ function publishMany(channels, event, data) {
       }
     });
   });
-  // Direct map delivery — bypasses stale channel membership / ghost sockets
+  // Deliver to every live socket for each visitor:* uid (all tabs) + pending queue
   if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
-    (channels || []).forEach(function (ch) {
-      const name = String(ch || '');
-      if (name.indexOf('visitor:') !== 0) return;
-      const uid = name.slice('visitor:'.length);
-      const client = visitorSockets.get(uid);
-      if (!client || client.readyState !== 1 || seenClients.has(client)) return;
-      seenClients.add(client);
-      try {
-        client.send(payload);
-        n += 1;
-        visitorDelivered += 1;
-      } catch (e2) {
-        unregisterVisitorSocket(client);
+    visitorUidsFromChannels(channels).forEach(function (uid) {
+      const extra = deliverToVisitorUid(uid, event, data || {});
+      if (extra > 0) {
+        n += extra;
+        visitorDelivered += extra;
+      }
+      // Retransmit shortly — covers auth/subscribe races after pm2 restart
+      if (event === 'message.new') {
+        [120, 500, 1500].forEach(function (ms) {
+          setTimeout(function () { flushVisitorPending(uid); }, ms);
+        });
       }
     });
   }
@@ -302,11 +363,12 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 8,
+        build: 9,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
         visitorSockets: visitorSockets.size,
+        visitorPending: visitorPending.size,
         channels: channels.length,
       }));
     } catch (e) {
@@ -327,9 +389,10 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 8,
+      build: 9,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
+      visitorPending: visitorPending.size,
       channels: channels.length,
       detail: channels,
     });
@@ -363,6 +426,16 @@ function wireWebSocket(server) {
 
       if (msg.type === 'ping') {
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }));
+        if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+          flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
+        }
+        return;
+      }
+
+      if (msg.type === 'pong') {
+        if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+          flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
+        }
         return;
       }
 
@@ -386,12 +459,18 @@ function wireWebSocket(server) {
             replayMessageNew(ws, name);
           }
         });
+        flushVisitorPending(String(claims.visitor_uid || ''));
         return;
       }
 
       if (!ws._lcAuthed) {
         ws.close();
         return;
+      }
+
+      // Any authenticated visitor traffic flushes queued agent messages
+      if (ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+        flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
       }
 
       // Dynamic channel join (open chat → conv:ID / staff:conv:ID)

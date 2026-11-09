@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 216;
+    var LC_WIDGET_BUILD = 217;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2925,21 +2925,13 @@
         } else {
             reportEngagementPresence(false, true);
         }
-        // Self-test: can this browser RECEIVE frames? (does not need PHP publish)
+        // Self-test + keepalive: server flushes pending message.new on visitor traffic
         try {
             if (client && typeof client.publishClientEvent === 'function') {
                 client.publishClientEvent('visitor.ws_probe', { conversation_id: cid || 0 });
             }
         } catch (eProbe) {}
-        // ONE catch-up after (re)connect only — covers Node restart gap; not a live poll loop
-        if (conversationId) {
-            window.__lcForcePollOnce = true;
-            try {
-                pollMessages(false);
-            } finally {
-                window.__lcForcePollOnce = false;
-            }
-        }
+        // No visitor-poll on connect — pending queue + WS replay carry missed frames
     }
 
     function bindVisitorRealtimeHandlers(client) {
