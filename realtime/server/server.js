@@ -49,8 +49,11 @@ const visitorPending = new Map();
 const VISITOR_PENDING_MAX = 40;
 /** @type {Map<string, Set<import('http').ServerResponse>>} visitor_uid → SSE responses */
 const visitorSse = new Map();
+/** @type {Map<string, {uid:string, raw:string, tries:number, timer:NodeJS.Timeout|null}>} */
+const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
+const REALTIME_BUILD = 20;
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
@@ -97,19 +100,9 @@ function verifyToken(token) {
 function subscribe(ws, channel) {
   if (!channelSubs.has(channel)) channelSubs.set(channel, new Set());
   const set = channelSubs.get(channel);
-  // One live socket per visitor uid on visitor:/conv: — drop older duplicates
-  // that still look "open" but no longer receive (caused visitorDelivered:1 to a ghost).
-  const role = String((ws._lcClaims && ws._lcClaims.role) || '');
-  const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
-  if (role === 'visitor' && uid && (/^visitor:/.test(channel) || /^conv:/.test(channel))) {
-    set.forEach(function (other) {
-      if (other === ws) return;
-      const oUid = String((other._lcClaims && other._lcClaims.visitor_uid) || '');
-      if (oUid !== uid) return;
-      set.delete(other);
-      if (other._lcChannels) other._lcChannels.delete(channel);
-    });
-  }
+  // Keep every live visitor socket on the channel. Removing "duplicates" used to
+  // drop the real chat tab when a second connection briefly subscribed.
+  // Dead sockets are pruned on send failure / close.
   set.add(ws);
   if (!ws._lcChannels) ws._lcChannels = new Set();
   ws._lcChannels.add(channel);
@@ -138,15 +131,19 @@ function registerVisitorSocket(ws) {
   const role = String((ws._lcClaims && ws._lcClaims.role) || '');
   const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
   if (role !== 'visitor' || !uid) return;
-  const prev = visitorSockets.get(uid);
   touchVisitorSocket(ws);
-  visitorSockets.set(uid, ws);
-  // Kill ghost immediately — delayed terminate left half-open sockets eating
-  // message.new while the live tab (DevTools 101) never saw event:message.new.
-  if (prev && prev !== ws) {
-    detachVisitorSocket(prev);
-    try { allSockets.delete(prev); } catch (eDel) { /* ignore */ }
-    try { prev.terminate(); } catch (eTerm) { /* ignore */ }
+  // Prefer chat sockets (conversation_id > 0) as map tip. NEVER terminate the
+  // previous socket — killing the live chat tab while presence/reconnect races
+  // was the main reason visitorDelivered>0 but the browser never painted.
+  const convId = parseInt((ws._lcClaims && ws._lcClaims.conversation_id) || 0, 10) || 0;
+  const prev = visitorSockets.get(uid);
+  if (!prev || prev === ws || prev.readyState !== 1) {
+    visitorSockets.set(uid, ws);
+  } else {
+    const prevConv = parseInt((prev._lcClaims && prev._lcClaims.conversation_id) || 0, 10) || 0;
+    if (convId > 0 || prevConv < 1) {
+      visitorSockets.set(uid, ws);
+    }
   }
   flushVisitorPending(uid);
 }
@@ -201,6 +198,50 @@ function socketsForVisitorUid(uid) {
   return out;
 }
 
+function ackKey(uid, messageId) {
+  return String(uid || '') + '#' + String(messageId || '');
+}
+
+function clearVisitorMsgAck(uid, messageId) {
+  const key = ackKey(uid, messageId);
+  const entry = visitorMsgAcks.get(key);
+  if (!entry) return;
+  if (entry.timer) {
+    try { clearTimeout(entry.timer); } catch (eT) { /* ignore */ }
+  }
+  visitorMsgAcks.delete(key);
+}
+
+/** If browser never ACKs message.new, retransmit — do NOT trust WS send() alone. */
+function armVisitorMsgAck(uid, messageId, raw) {
+  uid = String(uid || '');
+  messageId = String(messageId || '');
+  if (!uid || !messageId || !raw) return;
+  const key = ackKey(uid, messageId);
+  const existing = visitorMsgAcks.get(key);
+  if (existing) {
+    existing.raw = raw;
+    return;
+  }
+  const entry = { uid: uid, raw: raw, tries: 0, timer: null };
+  function tick() {
+    if (!visitorMsgAcks.has(key)) return;
+    entry.tries += 1;
+    // Retransmit to every fresh socket + SSE not needed (pending flush covers WS)
+    flushVisitorPending(uid);
+    socketsForVisitorUid(uid).forEach(function (client) {
+      try { client.send(entry.raw); } catch (eS) { /* ignore */ }
+    });
+    if (entry.tries >= 4) {
+      visitorMsgAcks.delete(key);
+      return;
+    }
+    entry.timer = setTimeout(tick, entry.tries === 1 ? 400 : (entry.tries === 2 ? 900 : 1600));
+  }
+  visitorMsgAcks.set(key, entry);
+  entry.timer = setTimeout(tick, 500);
+}
+
 /** Deliver to every FRESH visitor socket for this uid. */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
@@ -219,12 +260,14 @@ function deliverToVisitorUid(uid, event, data) {
     [40, 200, 600, 1500].forEach(function (ms) {
       setTimeout(function () { flushVisitorPending(uid); }, ms);
     });
+    const mid = (data && data.message && data.message.id) || (data && data.message_id) || 0;
+    if (mid) armVisitorMsgAck(uid, mid, raw);
     setTimeout(function () {
       const list = visitorPending.get(uid) || [];
       const remain = list.filter(function (item) { return item !== raw; });
       if (remain.length) visitorPending.set(uid, remain);
       else visitorPending.delete(uid);
-    }, 2500);
+    }, 5000);
   }
   let n = 0;
   socketsForVisitorUid(uid).forEach(function (client) {
@@ -574,7 +617,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 19,
+        build: REALTIME_BUILD,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -624,7 +667,7 @@ const requestHandler = async function (req, res) {
     res.write('event: hello\ndata: ' + JSON.stringify({
       ok: true,
       uid: uid,
-      build: 19,
+      build: REALTIME_BUILD,
       conversation_id: parseInt(claims.conversation_id, 10) || 0,
     }) + '\n\n');
     registerVisitorSse(uid, res);
@@ -678,7 +721,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 19,
+      build: REALTIME_BUILD,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorSse: visitorSse.size,
@@ -830,6 +873,17 @@ function wireWebSocket(server) {
               }));
             } catch (eProbe) { /* ignore */ }
           }
+          return;
+        }
+
+        // Browser painted message.new — stop retransmit storm for this id
+        if (event === 'message.ack') {
+          const ackData = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          const mid = parseInt(ackData.message_id, 10) || 0;
+          const uidAck = String(claims.visitor_uid || '');
+          if (uidAck && mid > 0) clearVisitorMsgAck(uidAck, mid);
+          touchVisitorSocket(ws);
+          registerVisitorSocket(ws);
           return;
         }
 
