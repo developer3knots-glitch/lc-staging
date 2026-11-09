@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 212;
+    var LC_WIDGET_BUILD = 213;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2433,14 +2433,15 @@
     var liveSyncTimer = null;
     var wsCatchupTimer = null;
 
-    /** Catch-up that may run even while WS is connected (missed events / race with history). */
+    /** HTTP catch-up — blocked while visitor WS is live (socket is the live path). */
     function forceMessageCatchup() {
         if (!conversationId) return;
+        if (isVisitorWsLive()) return;
         catchupDirty = true;
         if (catchupSyncTimer) clearTimeout(catchupSyncTimer);
         catchupSyncTimer = setTimeout(function () {
             catchupSyncTimer = null;
-            runCatchupSync(true);
+            runCatchupSync(false);
         }, 40);
     }
 
@@ -2455,8 +2456,8 @@
         }, 50);
     }
 
-    function runCatchupSync(forceWhileWs) {
-        if (!forceWhileWs && isVisitorWsLive()) return;
+    function runCatchupSync() {
+        if (isVisitorWsLive()) return;
         if (!conversationId) return;
         if (catchupInFlight) {
             catchupDirty = true;
@@ -2467,13 +2468,12 @@
         syncCursorFromDom();
         pollMessages(false, function () {
             catchupInFlight = false;
-            // After incremental, if server is still ahead of painted DOM, history-merge once
             var domMax = maxDomMessageId();
             if (domMax > 0 && lastMsgId > domMax + 2) {
                 syncCursorFromDom();
             }
             if (catchupDirty) {
-                runCatchupSync(forceWhileWs);
+                runCatchupSync();
             }
         });
     }
@@ -2522,9 +2522,8 @@
     }
 
     /**
-     * While chat WS is up: NO periodic visitor-poll.
-     * Messages ride message.new; HTTP only on connect / tab focus / paint miss.
-     * Interval only re-subscribes channels (no HTTP) and falls back if WS drops.
+     * While chat WS is up: zero visitor-poll.
+     * Interval only re-subscribes channels; falls back to HTTP if socket drops.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2534,12 +2533,7 @@
             document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
             window.__lcWsCatchupVisHandler = null;
         }
-        window.__lcWsCatchupVisHandler = function () {
-            if (document.hidden || !conversationId) return;
-            if (!isVisitorWsLive()) return;
-            forceMessageCatchup();
-        };
-        document.addEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
+        // No HTTP on tab focus while WS live — socket must carry messages
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
@@ -2550,11 +2544,8 @@
                 startLiveMessageSync();
                 return;
             }
-            // Keep conv:/visitor: joined — do NOT HTTP poll while socket is live
             ensureVisitorConvChannel();
         }, 15000);
-        // One catch-up on (re)connect only
-        forceMessageCatchup();
     }
 
     /** Extra catch-up only while WS is down */
@@ -2890,14 +2881,16 @@
             if (painted && payload && payload.message && payload.message.sender_type === 'agent') {
                 window.__lcWsAgentPainted = true;
             }
-            if (!painted) {
-                // WS event without full body / paint fail → one-shot HTTP gap-fill
+            if (!painted && !isVisitorWsLive()) {
+                // Only HTTP gap-fill when socket is down
                 scheduleGapFill();
                 forceMessageCatchup();
             }
         } catch (e) {
-            scheduleGapFill();
-            forceMessageCatchup();
+            if (!isVisitorWsLive()) {
+                scheduleGapFill();
+                forceMessageCatchup();
+            }
         }
     }
 
@@ -6943,6 +6936,14 @@
         var convAtStart = parseInt(conversationId, 10) || 0;
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
+
+        // WS live → block visitor-poll entirely (except one history seed if transcript empty)
+        if (isVisitorWsLive()) {
+            if (!(isHistoryLoad && !hasBubbles)) {
+                if (typeof done === 'function') done();
+                return;
+            }
+        }
 
         // If transcript is empty, always do a floor history load.
         // IMPORTANT: do NOT convert history→incremental when bubbles exist — that
