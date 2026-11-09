@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 220;
+    var LC_WIDGET_BUILD = 221;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -1460,8 +1460,11 @@
     function runGapFill() {
         if (!conversationId || gapFillInFlight) return;
         gapFillInFlight = true;
-        // History fetch from floor, merge into DOM (never wipe painted bubbles)
+        // History fetch from floor, merge into DOM (never wipe painted bubbles).
+        // Must bypass WS "proven" throttle — that gate was swallowing post-close bursts.
+        window.__lcForcePollOnce = true;
         pollMessages(true, function () {
+            window.__lcForcePollOnce = false;
             gapFillInFlight = false;
         });
     }
@@ -2533,9 +2536,8 @@
     }
 
     /**
-     * While chat WS is up: keep channels warm.
-     * Until this tab has proven it can RECEIVE message.new/ws.probe, run a slow
-     * HTTP backup (WS 101 alone was a false green light → silent message loss).
+     * While chat WS is up: keep channels warm + slow HTTP gap-fill.
+     * WS remains the instant path; 5s merge catches bursts the socket drops.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2556,11 +2558,8 @@
                 return;
             }
             ensureVisitorConvChannel();
-            if (!isVisitorWsDeliveryProven()) {
-                window.__lcForcePollOnce = true;
-                try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
-            }
-        }, 8000);
+            scheduleGapFill();
+        }, 5000);
     }
 
     /** Extra catch-up only while WS is down */
@@ -2900,25 +2899,20 @@
             var painted = applyRealtimeMessage(payload);
             if (painted && isAgent) {
                 window.__lcWsAgentPainted = true;
+                // Burst siblings often miss the socket — always merge from HTTP shortly after
+                setTimeout(function () { scheduleGapFill(); }, 250);
+                setTimeout(function () { scheduleGapFill(); }, 1200);
             }
-            // Any unpainted WS notify → one forced HTTP body fetch (even while WS up)
+            // Any unpainted WS notify → forced history merge (even while WS up)
             if (!painted) {
+                scheduleGapFill();
                 window.__lcForcePollOnce = true;
-                try {
-                    scheduleGapFill();
-                    pollMessages(false);
-                } finally {
-                    window.__lcForcePollOnce = false;
-                }
+                try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
             }
         } catch (e) {
+            scheduleGapFill();
             window.__lcForcePollOnce = true;
-            try {
-                scheduleGapFill();
-                pollMessages(false);
-            } finally {
-                window.__lcForcePollOnce = false;
-            }
+            try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
         }
     }
 
@@ -4765,6 +4759,8 @@
         lastClosedBy = '';
         leaveCloseSent = false;
         pendingHistoryWipe = false;
+        // In-flight polls may still say status=closed — don't flip back to ended UI
+        resumeGraceUntil = Date.now() + 20000;
         showChatView();
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
@@ -4783,10 +4779,11 @@
                 }
             }
         }
-        // Keep painted transcript — only catch up new rows (never wipe on continue)
-        pollMessages(false);
+        // Keep painted transcript — force merge of post-close agent burst
+        window.__lcForcePollOnce = true;
+        try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
         scheduleGapFill();
-        forceMessageCatchup();
+        startWsSafetyCatchup();
         loadRealtimeScript(function () { initVisitorRealtime(); });
     }
 
@@ -6973,15 +6970,18 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // Block visitor-poll only after THIS tab has proven WS delivery.
-        // Connected-but-deaf sockets must not silence HTTP forever.
+        // WS proven → throttle automatic incremental polls (not silence them).
+        // History/gap-fill and __lcForcePollOnce always run — post-close bursts
+        // were dying when the first message.new flipped proven and blocked HTTP.
         var wsUp = !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
-        if (wsUp && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce) {
-            if (!(isHistoryLoad && !hasBubbles)) {
+        if (wsUp && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce && !isHistoryLoad) {
+            var sincePoll = Date.now() - (window.__lcLastVisitorPollAt || 0);
+            if (sincePoll < 5000) {
                 if (typeof done === 'function') done();
                 return;
             }
         }
+        window.__lcLastVisitorPollAt = Date.now();
 
         // If transcript is empty, always do a floor history load.
         // IMPORTANT: do NOT convert history→incremental when bubbles exist — that
