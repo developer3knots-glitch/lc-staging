@@ -6630,6 +6630,8 @@
 
         function syncReceiptsOnly() {
             if (!selectedId) return;
+            // WS message.receipts is primary; skip hidden-tab HTTP while socket is live
+            if (document.hidden && isRealtimeWsLive()) return;
             fetch(base + '/api/agent-receipts.php?conversation_id=' + encodeURIComponent(selectedId), {
                 credentials: 'same-origin',
                 cache: 'no-store'
@@ -6645,8 +6647,17 @@
         }
         window.__lcSyncReceiptsNow = syncReceiptsOnly;
 
-        // Fast tick sync — must update without full page reload
-        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 1000);
+        // WS-first ticks; HTTP is slow safety (was 1s hard poll)
+        var receiptPollMs = isRealtimeWsLive() ? 8000 : 2000;
+        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, receiptPollMs);
+        if (window.__lcReceiptVisHandler) {
+            document.removeEventListener('visibilitychange', window.__lcReceiptVisHandler);
+            window.__lcReceiptVisHandler = null;
+        }
+        window.__lcReceiptVisHandler = function () {
+            if (!document.hidden && selectedId) syncReceiptsOnly();
+        };
+        document.addEventListener('visibilitychange', window.__lcReceiptVisHandler);
         if (selectedId) syncReceiptsOnly();
 
         // Presence: WS visitor.presence is primary. HTTP is a slow safety net only
