@@ -171,11 +171,19 @@ const requestHandler = async function (req, res) {
         return;
       }
       const result = publishMany(channels, event, body.data || {});
+      // Backward compatible if an old publishMany returned a bare number
+      const delivered = (result && typeof result === 'object')
+        ? (result.delivered | 0)
+        : (parseInt(result, 10) || 0);
+      const visitorDelivered = (result && typeof result === 'object')
+        ? (result.visitorDelivered | 0)
+        : -1;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        delivered: result.delivered,
-        visitorDelivered: result.visitorDelivered,
+        build: 3,
+        delivered: delivered,
+        visitorDelivered: visitorDelivered,
         channels: channels.length,
       }));
     } catch (e) {
@@ -194,7 +202,7 @@ const requestHandler = async function (req, res) {
       });
       channels.push({ channel: name, subscribers: set.size, live: live });
     });
-    const body = JSON.stringify({ ok: true, channels: channels.length, detail: channels });
+    const body = JSON.stringify({ ok: true, build: 3, channels: channels.length, detail: channels });
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body),

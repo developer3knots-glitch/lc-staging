@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 208;
+    var LC_WIDGET_BUILD = 209;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -2852,22 +2852,84 @@
         }
     }
 
-    function bindVisitorRealtimeHandlers(client) {
-        client.on('connected', function () {
-            realtimeBoundConvId = parseInt(conversationId, 10) || 0;
-            ensureVisitorConvChannel();
-            resetVisitorPollTimers();
-            stopSafetySync();
-            stopLiveMessageSync();
-            // WS is live — keep a rare safety catch-up only (not the live path)
-            startWsSafetyCatchup();
-            // Flush queued / current presence the moment WS is live
-            if (typeof window.__lcFlushVisitorPresence === 'function') {
-                window.__lcFlushVisitorPresence();
-            } else {
-                reportEngagementPresence(false, true);
+    function handleVisitorMessageNew(payload) {
+        try {
+            window.__lcLastWsMessageAt = Date.now();
+            if (chatClosed && lastClosedBy !== 'visitor') {
+                markChatContinuedFromClosed({
+                    status: 'active',
+                    agent: (payload && payload.message && payload.message.agent_name)
+                        ? { name: payload.message.agent_name, avatar: payload.message.agent_avatar }
+                        : null
+                });
             }
+            var painted = applyRealtimeMessage(payload);
+            if (painted && payload && payload.message && payload.message.sender_type === 'agent') {
+                window.__lcWsAgentPainted = true;
+            }
+            if (!painted) {
+                // WS event without full body / paint fail → one-shot HTTP gap-fill
+                scheduleGapFill();
+                forceMessageCatchup();
+            }
+        } catch (e) {
+            scheduleGapFill();
+            forceMessageCatchup();
+        }
+    }
+
+    function onVisitorRealtimeConnected(client) {
+        realtimeBoundConvId = parseInt(conversationId, 10) || 0;
+        ensureVisitorConvChannel();
+        resetVisitorPollTimers();
+        stopSafetySync();
+        stopLiveMessageSync();
+        startWsSafetyCatchup();
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid > 0 && client && typeof client.hasChannel === 'function') {
+            setTimeout(function () {
+                if (!client.isConnected || !client.isConnected()) return;
+                if (client.hasChannel('conv:' + cid)) return;
+                ensureVisitorConvChannel();
+                fetchVisitorRealtimeToken().then(function (token) {
+                    if (!token || !client.opts) return;
+                    if (client.hasChannel && client.hasChannel('conv:' + cid)) return;
+                    client.opts.token = token;
+                    try {
+                        if (typeof client.disconnect === 'function') client.disconnect();
+                    } catch (eD) {}
+                    try {
+                        if (typeof client.connect === 'function') client.connect();
+                    } catch (eC) {}
+                });
+            }, 600);
+        }
+        if (typeof window.__lcFlushVisitorPresence === 'function') {
+            window.__lcFlushVisitorPresence();
+        } else {
+            reportEngagementPresence(false, true);
+        }
+    }
+
+    function bindVisitorRealtimeHandlers(client) {
+        if (!client) return;
+        // Idempotent — early-return reconnect paths used to skip bind and leave a
+        // live socket with zero message.new listeners (poll became the only path).
+        if (client._lcVisitorHandlersBound) {
+            if (client.isConnected && client.isConnected()) {
+                ensureVisitorConvChannel();
+            }
+            return;
+        }
+        client._lcVisitorHandlersBound = true;
+
+        client.on('connected', function () {
+            onVisitorRealtimeConnected(client);
         });
+        // Already online when we bind late — connected event will not re-fire
+        if (client.isConnected && client.isConnected()) {
+            onVisitorRealtimeConnected(client);
+        }
         client.on('disconnected', function () {
             resetVisitorPollTimers();
             stopWsSafetyCatchup();
@@ -2878,26 +2940,11 @@
             if (!sameConversation(payload && payload.conversation_id)) return;
             paintWidgetReactions(payload && payload.message_id, payload && payload.reactions);
         });
-        client.on('message.new', function (payload) {
-            try {
-                if (chatClosed && lastClosedBy !== 'visitor') {
-                    markChatContinuedFromClosed({
-                        status: 'active',
-                        agent: (payload && payload.message && payload.message.agent_name)
-                            ? { name: payload.message.agent_name, avatar: payload.message.agent_avatar }
-                            : null
-                    });
-                }
-                var painted = applyRealtimeMessage(payload);
-                if (!painted) {
-                    // WS event without full body / paint fail → gap-fill once
-                    scheduleGapFill();
-                    forceMessageCatchup();
-                }
-            } catch (e) {
-                scheduleGapFill();
-                forceMessageCatchup();
-            }
+        client.on('message.new', handleVisitorMessageNew);
+        // Backup path — some frames only surface on the generic 'event' emitter
+        client.on('event', function (msg) {
+            if (!msg || msg.event !== 'message.new') return;
+            handleVisitorMessageNew(msg.data || {});
         });
         client.on('typing', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
@@ -2915,14 +2962,13 @@
         client.on('conversation.updated', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if (payload && payload.status === 'closed') {
-                // Soft-close still keeps listening — agent may rejoin / message
                 if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
                     stopLiveMessageSync();
                     stopSafetySync();
                     showEndedState('visitor');
                 } else {
                     showEndedState(payload.closed_by || 'remote');
-                    startLiveMessageSync(); // no-op if WS live; poll only if WS down
+                    startLiveMessageSync();
                 }
                 return;
             }
@@ -2963,6 +3009,7 @@
         if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()
             && realtimeClient.opts && realtimeClient.opts.wsUrl === url
             && realtimeBoundConvId === bindForConv) {
+            bindVisitorRealtimeHandlers(realtimeClient);
             stopSafetySync();
             ensureVisitorConvChannel();
             startLiveMessageSync();
@@ -2975,6 +3022,7 @@
         if (realtimeClient && realtimeClient.opts && realtimeClient.opts.wsUrl === url
             && realtimeBoundConvId === bindForConv
             && realtimeClient.shouldRun) {
+            bindVisitorRealtimeHandlers(realtimeClient);
             if (!token && realtimeClient.opts.token) {
                 // keep existing token
             } else if (token) {
@@ -2986,6 +3034,7 @@
         // Avoid disconnect mid-handshake — reuse driver if same URL
         if (realtimeClient && realtimeClient.opts && realtimeClient.opts.wsUrl === url
             && realtimeClient.shouldRun && realtimeClient._opening) {
+            bindVisitorRealtimeHandlers(realtimeClient);
             realtimeBoundConvId = bindForConv;
             if (token) realtimeClient.opts.token = token;
             return true;

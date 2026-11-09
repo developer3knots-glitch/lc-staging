@@ -709,6 +709,35 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
         ),
     ];
 
+    // 0) Visitor-first hop — staff "delivered" on the big fanout used to mask visitor misses.
+    // Keep this small (visitor: + conv:) and slightly longer timeout so the widget paints
+    // without waiting for visitor-poll.php.
+    $visitorUid = '';
+    if ($conv = (function_exists('lc_get_conversation') ? lc_get_conversation($conversationId) : null)) {
+        $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
+        if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0) {
+            try {
+                $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                $vStmt->execute([(int) $conv['visitor_id']]);
+                $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+            } catch (Throwable $e) {
+                $visitorUid = '';
+            }
+        }
+    }
+    if ($visitorUid !== '' && (string) ($row['sender_type'] ?? '') !== 'visitor') {
+        $visitorPayload = array_merge(['conversation_id' => $conversationId], $msgPayload);
+        lc_realtime_publish_channels(
+            [
+                lc_realtime_channel_visitor($visitorUid),
+                lc_realtime_channel_conversation($conversationId),
+            ],
+            'message.new',
+            $visitorPayload,
+            350
+        );
+    }
+
     // 1) Peers (visitor + staff) — customer + agents
     lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['peers_only' => true]);
 
