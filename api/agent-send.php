@@ -54,10 +54,22 @@ try {
 
     $ins = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'agent', $agentId, $message]);
+    // MUST read insert id before any other query — clear_typing/touch reset lastInsertId to 0
+    // which skipped realtime publish (visitor never got message.new; only reload showed it).
+    $messageId = (int) lc_db()->lastInsertId();
+    if ($messageId < 1) {
+        // Fallback if driver still returns 0
+        $messageId = (int) lc_db()->query(
+            'SELECT id FROM messages WHERE conversation_id = ' . (int) $conversationId
+            . ' AND sender_type = \'agent\' ORDER BY id DESC LIMIT 1'
+        )->fetchColumn();
+    }
     lc_clear_typing($conversationId, 'agent');
     lc_touch_conversation($conversationId);
 
-    $messageId = (int) lc_db()->lastInsertId();
+    if ($messageId < 1) {
+        lc_json(['success' => false, 'error' => 'Message insert failed'], 500);
+    }
     $pendingPublishIds[] = $messageId;
     $publishIds = $pendingPublishIds;
 
@@ -65,7 +77,9 @@ try {
     // Keep this fast: confirmed curl to localhost; receipts stay deferred.
     if (function_exists('lc_realtime_publish_message')) {
         foreach ($publishIds as $mid) {
-            lc_realtime_publish_message($conversationId, (int) $mid);
+            if ((int) $mid > 0) {
+                lc_realtime_publish_message($conversationId, (int) $mid);
+            }
         }
     }
 
