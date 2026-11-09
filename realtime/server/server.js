@@ -53,7 +53,10 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 22;
+const REALTIME_BUILD = 23;
+/** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
+const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
+const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
@@ -269,8 +272,10 @@ function armVisitorMsgAck(uid, messageId, raw) {
   entry.timer = setTimeout(tick, 400);
 }
 
-/** Deliver to every FRESH visitor socket for this uid. */
-function deliverToVisitorUid(uid, event, data) {
+/** Deliver to every FRESH visitor socket for this uid.
+ * @param {Set<import('ws').WebSocket>|null} [skipClients] already got channel fanout this hop
+ */
+function deliverToVisitorUid(uid, event, data, skipClients) {
   uid = String(uid || '');
   if (!uid) return 0;
   data = slimEventData(event, data || {});
@@ -298,12 +303,55 @@ function deliverToVisitorUid(uid, event, data) {
   }
   let n = 0;
   socketsForVisitorUid(uid).forEach(function (client) {
+    // Skip sockets that already received this frame via channel fanout
+    if (skipClients && skipClients.has(client)) return;
     try {
       client.send(raw);
       n += 1;
+      if (skipClients) skipClients.add(client);
     } catch (e) { /* ignore */ }
   });
   return n;
+}
+
+/** Bridge visitor receipt ack → PHP (marks delivered/read + publishes message.receipts). */
+function forwardVisitorReceiptAck(claims, data) {
+  if (!VISITOR_ACK_URL) return;
+  const uid = String((claims && claims.visitor_uid) || (data && data.visitor_uid) || '');
+  const cid = parseInt((data && data.conversation_id) || (claims && claims.conversation_id) || 0, 10) || 0;
+  if (!uid || cid < 1) return;
+  const viewing = (data && (data.viewing === 1 || data.viewing === '1' || data.viewing === true)) ? '1' : '0';
+  const body = JSON.stringify({
+    conversation_id: cid,
+    visitor_uid: uid,
+    chat_token: String((data && data.chat_token) || (claims && claims.chat_token) || ''),
+    viewing: viewing,
+  });
+  try {
+    const u = new URL(VISITOR_ACK_URL);
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        ...(VISITOR_ACK_HOST ? { Host: VISITOR_ACK_HOST } : {}),
+      },
+      timeout: 2500,
+    }, function (res) {
+      res.resume();
+    });
+    req.on('error', function () { /* ignore */ });
+    req.on('timeout', function () {
+      try { req.destroy(); } catch (eT) { /* ignore */ }
+    });
+    req.write(body);
+    req.end();
+  } catch (eFwd) { /* ignore */ }
 }
 
 /** Replay recent chat frames + pending to a live visitor socket. */
@@ -543,7 +591,8 @@ function publishMany(channels, event, data) {
       });
     }
     uids.forEach(function (uid) {
-      const extra = deliverToVisitorUid(uid, event, data);
+      // Pass seenClients so uid path does not re-send the same socket this hop.
+      const extra = deliverToVisitorUid(uid, event, data, seenClients);
       if (extra > 0) {
         n += extra;
         visitorDelivered += extra;
@@ -924,6 +973,19 @@ function wireWebSocket(server) {
           if (uidAck && mid > 0) clearVisitorMsgAck(uidAck, mid);
           touchVisitorSocket(ws);
           registerVisitorSocket(ws);
+          // Paint ack can also carry viewing → PHP delivered/read + staff ticks
+          if (ackData.viewing !== undefined || ackData.conversation_id) {
+            forwardVisitorReceiptAck(claims, ackData);
+          }
+          return;
+        }
+
+        // Explicit receipt ack (WS-only path — no HTTP visitor-ack from widget)
+        if (event === 'visitor.receipt_ack') {
+          const ackData = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          touchVisitorSocket(ws);
+          registerVisitorSocket(ws);
+          forwardVisitorReceiptAck(claims, ackData);
           return;
         }
 

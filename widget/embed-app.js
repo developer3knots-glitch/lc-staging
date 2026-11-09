@@ -8,8 +8,9 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 232;
-    // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack / gap-fill HTTP.
+    var LC_WIDGET_BUILD = 233;
+    // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
+    // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
     var LC_WS_ONLY = true;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
@@ -2965,8 +2966,9 @@
         stopAckHeartbeat();
         bindAckVisibility();
         if (!conversationId || !isOpen || chatClosed) return;
-        // WS-only test: no visitor-ack interval at all while socket is up.
+        // WS-only: no 15s ack poll. Receipts fire event-driven on paint / visibility.
         if (blockHttpMessageSync() || isVisitorWsLive()) {
+            ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
             return;
         }
         ackHeartbeatTimer = setInterval(function () {
@@ -2983,14 +2985,32 @@
         ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
     }
 
+    /** Prefer WS client_event so Node can bridge to PHP without poll spam. */
+    function publishVisitorReceiptAck(viewing) {
+        if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') {
+            return false;
+        }
+        if (!realtimeClient.isConnected || !realtimeClient.isConnected()) {
+            return false;
+        }
+        try {
+            return !!realtimeClient.publishClientEvent('visitor.receipt_ack', {
+                conversation_id: parseInt(conversationId, 10) || 0,
+                visitor_uid: visitorUid || '',
+                chat_token: chatToken || getStoredChatToken() || '',
+                viewing: viewing ? 1 : 0
+            });
+        } catch (ePub) {
+            return false;
+        }
+    }
+
     /**
      * Tell server visitor got / saw agent messages.
      * @param {boolean} [deliveredOnly] - true = double grey ticks only (not blue read)
      */
     function ackAgentMessagesSeen(deliveredOnly) {
         if (!conversationId || chatClosed) return;
-        // WS-only test: skip HTTP visitor-ack entirely (ticks later via WS path)
-        if (blockHttpMessageSync()) return;
         var viewing = 0;
         if (!deliveredOnly && isVisitorActivelyViewingChat()) {
             viewing = 1;
@@ -3002,6 +3022,8 @@
         if (window.__lcLastAckSig === ackSig && (nowAck - (window.__lcLastAckAt || 0)) < 2000) {
             return;
         }
+        // Prefer WS bridge (Node→PHP when LC_VISITOR_ACK_URL is set).
+        try { publishVisitorReceiptAck(viewing); } catch (eWsAck) {}
         if (ackReceiptInFlight) {
             ackReceiptQueued = true;
             ackReceiptQueuedDeliveredOnly = !!deliveredOnly || viewing !== 1;
@@ -3012,7 +3034,8 @@
         ackReceiptTimer = setTimeout(function () {
             ackReceiptTimer = null;
             if (!conversationId || chatClosed) return;
-            if (blockHttpMessageSync()) return;
+            // Event-driven HTTP ack (paint / focus) — NOT the 15s heartbeat.
+            // Keeps Seen ticks working even before Node receipt bridge is configured.
             if (ackReceiptInFlight) {
                 ackReceiptQueued = true;
                 ackReceiptQueuedDeliveredOnly = viewingToSend !== 1;
@@ -3185,14 +3208,20 @@
     function ackVisitorMessagePainted(messageId) {
         var mid = parseInt(messageId, 10) || 0;
         if (mid < 1) return;
+        var viewing = isVisitorActivelyViewingChat() ? 1 : 0;
         try {
             if (realtimeClient && typeof realtimeClient.publishClientEvent === 'function') {
                 realtimeClient.publishClientEvent('message.ack', {
                     message_id: mid,
-                    conversation_id: parseInt(conversationId, 10) || 0
+                    conversation_id: parseInt(conversationId, 10) || 0,
+                    viewing: viewing
                 });
             }
         } catch (eAck) {}
+        // Also mark delivered/read in DB (WS bridge or HTTP) — paint is the source of truth.
+        try {
+            ackAgentMessagesSeen(!viewing);
+        } catch (eRec) {}
     }
 
     function handleVisitorMessageNew(payload) {
