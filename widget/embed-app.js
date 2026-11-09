@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 224;
+    var LC_WIDGET_BUILD = 225;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -32,6 +32,8 @@
             wsLastFrameAt: window.__lcWsLastFrameAt || 0,
             wsLastFrameType: window.__lcWsLastFrameType || '',
             wsInbox: (window.__lcWsInbox || []).slice(-5),
+            sseConnected: !!(visitorSse && visitorSse.readyState === 1),
+            sseUrl: visitorSseUrl || '',
             lastPayload: window.__lcLastWsMessagePayload
                 ? {
                     cid: window.__lcLastWsMessagePayload.conversation_id,
@@ -169,6 +171,11 @@
     var pollTimer = null;
     var visitorReopenTimer = null;
     var realtimeClient = null;
+    /** @type {EventSource|null} */
+    var visitorSse = null;
+    var visitorSseUrl = '';
+    var visitorSseBoundConv = 0;
+    var visitorSseRetryTimer = null;
     var presenceClient = null;
     var realtimeBoundConvId = 0;
     var realtimeConfig = { mode: 'poll', wsUrl: '', backupPollMs: 15000 };
@@ -2631,6 +2638,89 @@
             .catch(function () { return ''; });
     }
 
+    function visitorSseEndpoint() {
+        var wsUrl = (realtimeConfig && realtimeConfig.wsUrl) || '';
+        if (!wsUrl) return '';
+        return wsUrl
+            .replace(/^wss:/i, 'https:')
+            .replace(/^ws:/i, 'http:')
+            .replace(/\/$/, '') + '/sse';
+    }
+
+    function stopVisitorSse() {
+        if (visitorSseRetryTimer) {
+            clearTimeout(visitorSseRetryTimer);
+            visitorSseRetryTimer = null;
+        }
+        if (visitorSse) {
+            try { visitorSse.close(); } catch (eC) {}
+            visitorSse = null;
+        }
+        visitorSseUrl = '';
+        visitorSseBoundConv = 0;
+    }
+
+    /**
+     * SSE is the reliable agent→visitor pipe (WS ghosts were swallowing message.new).
+     * Browser EventSource auto-reconnects; nginx needs proxy_buffering off.
+     */
+    function startVisitorSse(token) {
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1 || !token || typeof EventSource === 'undefined') return false;
+        var base = visitorSseEndpoint();
+        if (!base) return false;
+        var url = base + '?token=' + encodeURIComponent(token);
+        if (visitorSse && visitorSseBoundConv === cid && visitorSse.readyState !== 2) {
+            return true;
+        }
+        stopVisitorSse();
+        visitorSseUrl = url;
+        visitorSseBoundConv = cid;
+        try {
+            visitorSse = new EventSource(url);
+        } catch (eEs) {
+            visitorSse = null;
+            return false;
+        }
+        visitorSse.addEventListener('hello', function () {
+            window.__lcSseConnectedAt = Date.now();
+        });
+        visitorSse.addEventListener('message.new', function (ev) {
+            var data = null;
+            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
+            window.__lcLastSseMessageAt = Date.now();
+            handleVisitorMessageNew(data || {});
+        });
+        visitorSse.addEventListener('typing', function (ev) {
+            var data = null;
+            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
+            if (!sameConversation(data && data.conversation_id)) return;
+            if ((data.role || '') === 'agent') {
+                setPeerTypingVisible(!!data.typing, data.name || '');
+            }
+        });
+        visitorSse.addEventListener('message.receipts', function (ev) {
+            var data = null;
+            try { data = JSON.parse(ev.data || '{}'); } catch (eP) { return; }
+            if (!sameConversation(data && data.conversation_id)) return;
+            if (data && data.for && data.for !== 'visitor') return;
+            if (data && data.receipts) applyReceipts(data.receipts);
+        });
+        visitorSse.onerror = function () {
+            // EventSource reconnects automatically; schedule token refresh if closed hard
+            if (visitorSse && visitorSse.readyState === 2) {
+                if (visitorSseRetryTimer) clearTimeout(visitorSseRetryTimer);
+                visitorSseRetryTimer = setTimeout(function () {
+                    visitorSseRetryTimer = null;
+                    fetchVisitorRealtimeToken().then(function (t) {
+                        if (t) startVisitorSse(t);
+                    });
+                }, 2000);
+            }
+        };
+        return true;
+    }
+
     function sameConversation(cid) {
         return (parseInt(cid, 10) || 0) === (parseInt(conversationId, 10) || 0);
     }
@@ -3431,6 +3521,10 @@
         tearDownPresenceClient();
         ensureVisitorConvChannel();
 
+        function bootSse(token) {
+            if (token) startVisitorSse(token);
+        }
+
         if (realtimeConfig.mode === 'ws' && realtimeConfig.wsUrl
             && realtimeClient
             && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
@@ -3445,11 +3539,15 @@
                     window.__lcFlushVisitorPresence();
                 }
             }
+            // SSE is primary for message bubbles (WS kept for presence/typing)
+            if (seedToken) bootSse(seedToken);
+            else fetchVisitorRealtimeToken().then(bootSse);
             return;
         }
 
         if (seedToken && realtimeConfig.wsUrl) {
             connectVisitorRealtimeWithToken(seedToken, realtimeConfig.wsUrl);
+            bootSse(seedToken);
             return;
         }
 
@@ -3461,6 +3559,7 @@
                 return;
             }
             connectVisitorRealtimeWithToken(token, realtimeConfig.wsUrl);
+            bootSse(token);
         });
     }
 
@@ -4849,11 +4948,14 @@
                 }
             }
         }
-        // One catch-up on reopen only — then WS owns live messages
+        // One catch-up on reopen only — then SSE/WS own live messages
         window.__lcForcePollOnce = true;
         try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
         startWsSafetyCatchup();
         loadRealtimeScript(function () { initVisitorRealtime(); });
+        fetchVisitorRealtimeToken().then(function (t) {
+            if (t) startVisitorSse(t);
+        });
     }
 
     function loadVisitorSoundPref() {

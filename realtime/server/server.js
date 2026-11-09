@@ -47,6 +47,8 @@ const visitorSockets = new Map();
 /** @type {Map<string, string[]>} visitor_uid → pending raw event frames */
 const visitorPending = new Map();
 const VISITOR_PENDING_MAX = 40;
+/** @type {Map<string, Set<import('http').ServerResponse>>} visitor_uid → SSE responses */
+const visitorSse = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
 
@@ -249,6 +251,39 @@ function refreshVisitorSocket(ws) {
   }
 }
 
+function registerVisitorSse(uid, res) {
+  uid = String(uid || '');
+  if (!uid || !res) return;
+  if (!visitorSse.has(uid)) visitorSse.set(uid, new Set());
+  visitorSse.get(uid).add(res);
+  res.on('close', function () {
+    const set = visitorSse.get(uid);
+    if (!set) return;
+    set.delete(res);
+    if (!set.size) visitorSse.delete(uid);
+  });
+}
+
+/** Push event to all SSE clients for a visitor uid. Returns how many got it. */
+function sseDeliverToVisitorUid(uid, event, data) {
+  uid = String(uid || '');
+  if (!uid) return 0;
+  const set = visitorSse.get(uid);
+  if (!set || !set.size) return 0;
+  const frame = 'event: ' + String(event || 'message') + '\n'
+    + 'data: ' + JSON.stringify(data || {}) + '\n\n';
+  let n = 0;
+  set.forEach(function (res) {
+    try {
+      res.write(frame);
+      n += 1;
+    } catch (e) {
+      try { set.delete(res); } catch (eDel) { /* ignore */ }
+    }
+  });
+  return n;
+}
+
 function flushVisitorPending(uid) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -434,6 +469,15 @@ function publishMany(channels, event, data) {
         n += extra;
         visitorDelivered += extra;
       }
+      // SSE path — independent of WS ghosts (EventSource is the reliable visitor pipe)
+      if (event === 'message.new' || event === 'typing' || event === 'message.receipts'
+        || event === 'conversation.updated') {
+        const sseN = sseDeliverToVisitorUid(uid, event, data);
+        if (sseN > 0) {
+          n += sseN;
+          visitorDelivered += sseN;
+        }
+      }
     });
   }
   return { delivered: n, visitorDelivered: visitorDelivered };
@@ -521,11 +565,12 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 17,
+        build: 18,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
         visitorSockets: visitorSockets.size,
+        visitorSse: visitorSse.size,
         visitorPending: visitorPending.size,
         channels: channels.length,
       }));
@@ -533,6 +578,83 @@ const requestHandler = async function (req, res) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Bad JSON' }));
     }
+    return;
+  }
+
+  // Visitor SSE — reliable agent→visitor delivery (avoids WS ghost sockets).
+  // Browser: new EventSource(wssHost.replace('wss','https') + '/sse?token=...')
+  if (req.method === 'GET' && (urlPath === '/sse' || urlPath === '/sse/')) {
+    const q = String(req.url || '').split('?')[1] || '';
+    const params = new URLSearchParams(q);
+    const claims = verifyToken(String(params.get('token') || ''));
+    if (!claims || String(claims.role || '') !== 'visitor') {
+      res.writeHead(401, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized' }));
+      return;
+    }
+    const uid = String(claims.visitor_uid || '');
+    if (!uid) {
+      res.writeHead(400, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(JSON.stringify({ ok: false, error: 'No visitor_uid' }));
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write(': connected\n\n');
+    res.write('event: hello\ndata: ' + JSON.stringify({
+      ok: true,
+      uid: uid,
+      build: 18,
+      conversation_id: parseInt(claims.conversation_id, 10) || 0,
+    }) + '\n\n');
+    registerVisitorSse(uid, res);
+    // Replay recent message.new for this visitor / conv
+    const convId = parseInt(claims.conversation_id, 10) || 0;
+    const replayKeys = ['visitor:' + uid];
+    if (convId > 0) replayKeys.push('conv:' + convId);
+    replayKeys.forEach(function (key) {
+      const list = recentMessageNew.get(key) || [];
+      const now = Date.now();
+      list.forEach(function (item) {
+        if (!item || (now - (item.ts || 0)) > RECENT_TTL_MS) return;
+        try {
+          const parsed = JSON.parse(item.raw);
+          if (parsed && parsed.event && parsed.data) {
+            res.write('event: ' + parsed.event + '\ndata: ' + JSON.stringify(parsed.data) + '\n\n');
+          }
+        } catch (eR) { /* ignore */ }
+      });
+    });
+    const keepAlive = setInterval(function () {
+      try { res.write(': ping\n\n'); } catch (eP) {
+        clearInterval(keepAlive);
+      }
+    }, 15000);
+    req.on('close', function () {
+      clearInterval(keepAlive);
+    });
+    return;
+  }
+
+  if (req.method === 'OPTIONS' && (urlPath === '/sse' || urlPath === '/sse/')) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+    });
+    res.end();
     return;
   }
 
@@ -547,9 +669,10 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 17,
+      build: 18,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
+      visitorSse: visitorSse.size,
       visitorPending: visitorPending.size,
       channels: channels.length,
       lastMessageNew: lastMessageNew,
