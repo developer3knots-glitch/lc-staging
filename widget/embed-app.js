@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 206;
+    var LC_WIDGET_BUILD = 207;
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -2498,21 +2498,35 @@
         }
     }
 
-    /** While WS is up: slow HTTP safety only (was capped ~1–2s and hammered PHP). */
+    /**
+     * While chat WS is up: modest HTTP safety net.
+     * 15s was too slow when a publish frame is missed (agent→visitor felt delayed).
+     * ~3s keeps load far below the old 1s hammer without a long visible lag.
+     */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        // Config default 15s; keep WS catchup in 15–30s. Poll mode still uses 1s liveSync.
-        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 15000;
-        if (ms < 15000) ms = 15000;
-        if (ms > 30000) ms = 30000;
+        var ms = parseInt(realtimeConfig.backupPollMs, 10) || 3000;
+        if (ms < 2500) ms = 2500;
+        if (ms > 5000) ms = 5000;
+        if (window.__lcWsCatchupVisHandler) {
+            document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
+            window.__lcWsCatchupVisHandler = null;
+        }
+        window.__lcWsCatchupVisHandler = function () {
+            if (document.hidden || !conversationId) return;
+            if (!isVisitorWsLive()) return;
+            forceMessageCatchup();
+        };
+        document.addEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
         wsCatchupTimer = setInterval(function () {
             if (!conversationId) {
                 stopWsSafetyCatchup();
                 return;
             }
-            if (!isVisitorWsLive() && !(presenceClient && presenceClient.isConnected && presenceClient.isConnected())) {
+            // Open chat must use chat WS — presence socket alone must NOT block fast poll
+            if (!isVisitorWsLive()) {
                 stopWsSafetyCatchup();
                 startLiveMessageSync();
                 return;
@@ -2521,7 +2535,7 @@
             ensureVisitorConvChannel();
             forceMessageCatchup();
         }, ms);
-        // One immediate catch-up on (re)connect — then rare interval
+        // One immediate catch-up on (re)connect — then modest interval
         forceMessageCatchup();
     }
 
@@ -2546,6 +2560,10 @@
         if (wsCatchupTimer) {
             clearInterval(wsCatchupTimer);
             wsCatchupTimer = null;
+        }
+        if (window.__lcWsCatchupVisHandler) {
+            document.removeEventListener('visibilitychange', window.__lcWsCatchupVisHandler);
+            window.__lcWsCatchupVisHandler = null;
         }
     }
 
@@ -3330,9 +3348,9 @@
             var nextUrl = data.realtime.wsUrl || '';
             realtimeChanged = (realtimeConfig.mode !== nextMode) || (realtimeConfig.wsUrl !== nextUrl);
             realtimeConfig = data.realtime;
-            // Slow backup while WS carries live traffic (poll mode uses liveSync 1s)
+            // Modest backup while WS carries live traffic (poll mode uses liveSync 1s)
             if (!realtimeConfig.backupPollMs) {
-                realtimeConfig.backupPollMs = 15000;
+                realtimeConfig.backupPollMs = 3000;
             }
         }
         // Only reconnect when mode/URL actually changed — never flap on settings sync
