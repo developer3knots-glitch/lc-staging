@@ -329,15 +329,18 @@
                                 try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
                                 return;
                             }
-                            // Dead socket watchdog: no pong for 45s → force reconnect
-                            if (self._lastPongAt && (now - self._lastPongAt) > 45000) {
+                            // Dead / half-open watchdog: no inbound frame for 12s → reconnect.
+                            // Half-open pipes still accept client→server pings while server→client
+                            // is dead (messages only appear after pm2 restart otherwise).
+                            var lastIn = self._lastFrameAt || self._lastPongAt || 0;
+                            if (lastIn && (now - lastIn) > 12000) {
                                 self.connected = false;
                                 self._clearSocket(true);
                                 self.scheduleReconnect();
                                 return;
                             }
                             try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
-                        }, 15000);
+                        }, 5000);
                         finish();
                         return;
                     }

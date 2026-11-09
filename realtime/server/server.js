@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 20;
+const REALTIME_BUILD = 21;
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
@@ -212,7 +212,30 @@ function clearVisitorMsgAck(uid, messageId) {
   visitorMsgAcks.delete(key);
 }
 
-/** If browser never ACKs message.new, retransmit — do NOT trust WS send() alone. */
+/** Kill half-open visitor pipes so the browser opens a fresh WS (same effect as pm2 restart, scoped). */
+function forceVisitorReconnect(uid) {
+  uid = String(uid || '');
+  if (!uid) return;
+  const victims = [];
+  const tip = visitorSockets.get(uid);
+  if (tip) victims.push(tip);
+  allSockets.forEach(function (client) {
+    const claims = client._lcClaims || {};
+    if (String(claims.role || '') !== 'visitor') return;
+    if (String(claims.visitor_uid || '') !== uid) return;
+    if (victims.indexOf(client) === -1) victims.push(client);
+  });
+  victims.forEach(function (client) {
+    try { detachVisitorSocket(client); } catch (eD) { /* ignore */ }
+    try { allSockets.delete(client); } catch (eA) { /* ignore */ }
+    try { client.terminate(); } catch (eT) { /* ignore */ }
+  });
+  if (visitorSockets.get(uid) && victims.indexOf(visitorSockets.get(uid)) !== -1) {
+    visitorSockets.delete(uid);
+  }
+}
+
+/** If browser never ACKs message.new, retransmit then force reconnect (half-open recovery). */
 function armVisitorMsgAck(uid, messageId, raw) {
   uid = String(uid || '');
   messageId = String(messageId || '');
@@ -227,19 +250,23 @@ function armVisitorMsgAck(uid, messageId, raw) {
   function tick() {
     if (!visitorMsgAcks.has(key)) return;
     entry.tries += 1;
-    // Retransmit to every fresh socket + SSE not needed (pending flush covers WS)
     flushVisitorPending(uid);
     socketsForVisitorUid(uid).forEach(function (client) {
       try { client.send(entry.raw); } catch (eS) { /* ignore */ }
     });
+    // After 2 misses: pipe is half-open (client→server ok, server→client dead).
+    // Terminate so browser reconnects — same recovery as pm2 restart, one visitor only.
+    if (entry.tries === 2) {
+      forceVisitorReconnect(uid);
+    }
     if (entry.tries >= 4) {
       visitorMsgAcks.delete(key);
       return;
     }
-    entry.timer = setTimeout(tick, entry.tries === 1 ? 400 : (entry.tries === 2 ? 900 : 1600));
+    entry.timer = setTimeout(tick, entry.tries === 1 ? 350 : (entry.tries === 2 ? 700 : 1200));
   }
   visitorMsgAcks.set(key, entry);
-  entry.timer = setTimeout(tick, 500);
+  entry.timer = setTimeout(tick, 400);
 }
 
 /** Deliver to every FRESH visitor socket for this uid. */
@@ -656,10 +683,11 @@ const requestHandler = async function (req, res) {
       res.end(JSON.stringify({ ok: false, error: 'No visitor_uid' }));
       return;
     }
+    // Do NOT set Connection — forbidden on HTTP/2 and causes
+    // net::ERR_HTTP2_PROTOCOL_ERROR in Chrome EventSource.
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
       'X-Accel-Buffering': 'no',
     });

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 228;
+    var LC_WIDGET_BUILD = 229;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -2681,83 +2681,14 @@
     }
 
     /**
-     * SSE is the reliable agent→visitor pipe (WS ghosts were swallowing message.new).
-     * Browser EventSource auto-reconnects; nginx needs proxy_buffering off.
+     * SSE disabled on this stack — Chrome hits net::ERR_HTTP2_PROTOCOL_ERROR on
+     * /lc-realtime/sse (HTTP/2 forbids Connection headers; nginx upgrade location
+     * also breaks EventSource). WebSocket is the only live pipe.
      */
     function startVisitorSse(token) {
-        var cid = parseInt(conversationId, 10) || 0;
-        if (cid < 1 || !token || typeof EventSource === 'undefined') return false;
-        var base = visitorSseEndpoint();
-        if (!base) return false;
-        var url = base + '?token=' + encodeURIComponent(token);
-        if (visitorSse && visitorSseBoundConv === cid && visitorSse.readyState !== 2) {
-            return true;
-        }
         stopVisitorSse();
-        visitorSseUrl = url;
-        visitorSseBoundConv = cid;
-        try {
-            visitorSse = new EventSource(url);
-        } catch (eEs) {
-            visitorSse = null;
-            return false;
-        }
-        visitorSse.addEventListener('hello', function () {
-            window.__lcSseConnectedAt = Date.now();
-        });
-        function onSsePayload(eventName, rawData) {
-            var data = null;
-            try { data = JSON.parse(rawData || '{}'); } catch (eP) { return; }
-            // Envelope form: { event, data }
-            if (data && data.event && data.data !== undefined) {
-                eventName = String(data.event);
-                data = data.data;
-            }
-            window.__lcLastSseMessageAt = Date.now();
-            window.__lcLastSseEvent = eventName;
-            if (eventName === 'message.new') {
-                handleVisitorMessageNew(data || {});
-                return;
-            }
-            if (eventName === 'typing') {
-                if (!sameConversation(data && data.conversation_id)) return;
-                if ((data.role || '') === 'agent') {
-                    setPeerTypingVisible(!!data.typing, data.name || '');
-                }
-                return;
-            }
-            if (eventName === 'message.receipts') {
-                if (!sameConversation(data && data.conversation_id)) return;
-                if (data && data.for && data.for !== 'visitor') return;
-                if (data && data.receipts) applyReceipts(data.receipts);
-            }
-        }
-        // Default message event (most reliable through proxies)
-        visitorSse.onmessage = function (ev) {
-            onSsePayload('message', ev.data);
-        };
-        visitorSse.addEventListener('message.new', function (ev) {
-            onSsePayload('message.new', ev.data);
-        });
-        visitorSse.addEventListener('typing', function (ev) {
-            onSsePayload('typing', ev.data);
-        });
-        visitorSse.addEventListener('message.receipts', function (ev) {
-            onSsePayload('message.receipts', ev.data);
-        });
-        visitorSse.onerror = function () {
-            // EventSource reconnects automatically; schedule token refresh if closed hard
-            if (visitorSse && visitorSse.readyState === 2) {
-                if (visitorSseRetryTimer) clearTimeout(visitorSseRetryTimer);
-                visitorSseRetryTimer = setTimeout(function () {
-                    visitorSseRetryTimer = null;
-                    fetchVisitorRealtimeToken().then(function (t) {
-                        if (t) startVisitorSse(t);
-                    });
-                }, 2000);
-            }
-        };
-        return true;
+        window.__lcSseDisabled = true;
+        return false;
     }
 
     function stopVisitorLongPoll() {
@@ -3796,7 +3727,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=20';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=21';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
