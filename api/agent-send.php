@@ -93,7 +93,12 @@ try {
         }
     }
 
-    lc_json(['success' => true, 'message_id' => $messageId]);
+    lc_json([
+        'success' => true,
+        'message_id' => $messageId,
+        // Debug: confirms whether Node handed the frame to a visitor socket
+        'realtime' => $GLOBALS['lc_last_realtime_publish'] ?? null,
+    ]);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }

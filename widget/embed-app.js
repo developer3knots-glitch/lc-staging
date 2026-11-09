@@ -8,7 +8,26 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 209;
+    var LC_WIDGET_BUILD = 210;
+    window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
+    window.__lcRtDebug = function () {
+        var cid = parseInt(conversationId, 10) || 0;
+        var vCh = visitorUid
+            ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64))
+            : '';
+        var rt = realtimeClient;
+        return {
+            build: LC_WIDGET_BUILD,
+            conversationId: cid,
+            wsConnected: !!(rt && rt.isConnected && rt.isConnected()),
+            handlersBound: !!(rt && rt._lcVisitorHandlersBound),
+            hasConv: !!(rt && rt.hasChannel && cid && rt.hasChannel('conv:' + cid)),
+            hasVisitor: !!(rt && rt.hasChannel && vCh && rt.hasChannel(vCh)),
+            authedChannels: rt && rt._authedChannels ? Object.keys(rt._authedChannels) : [],
+            lastWsMessageAt: window.__lcLastWsMessageAt || 0,
+            wsAgentPainted: !!window.__lcWsAgentPainted
+        };
+    };
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -3347,7 +3366,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=13';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=14';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

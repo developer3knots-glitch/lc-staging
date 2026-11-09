@@ -105,6 +105,51 @@ function publish(channel, event, data) {
  * Fan out once per WebSocket client (agents often sit on brand + agent + conv + staff).
  * Prevents duplicate handler races and guarantees every subscriber gets the event.
  */
+/** Recent message.new frames — replay on late subscribe (missed live publish). */
+const recentMessageNew = new Map(); // key: conv:ID | visitor:UID → [{payload, ts}]
+const RECENT_MAX = 25;
+const RECENT_TTL_MS = 120000;
+
+function rememberMessageNew(channels, data) {
+  const payload = {
+    type: 'event',
+    event: 'message.new',
+    data: data || {},
+  };
+  const raw = JSON.stringify(payload);
+  const ts = Date.now();
+  const keys = [];
+  const cid = parseInt(data && data.conversation_id, 10) || 0;
+  if (cid > 0) keys.push('conv:' + cid);
+  (channels || []).forEach(function (ch) {
+    const name = String(ch || '');
+    if (name.indexOf('visitor:') === 0 || name.indexOf('conv:') === 0) {
+      if (keys.indexOf(name) === -1) keys.push(name);
+    }
+  });
+  keys.forEach(function (key) {
+    let list = recentMessageNew.get(key) || [];
+    list.push({ raw: raw, ts: ts });
+    if (list.length > RECENT_MAX) list = list.slice(-RECENT_MAX);
+    recentMessageNew.set(key, list);
+  });
+}
+
+function replayMessageNew(ws, channel) {
+  const list = recentMessageNew.get(String(channel || '')) || [];
+  if (!list.length || !ws || ws.readyState !== 1) return 0;
+  const now = Date.now();
+  let n = 0;
+  list.forEach(function (item) {
+    if (!item || (now - (item.ts || 0)) > RECENT_TTL_MS) return;
+    try {
+      ws.send(item.raw);
+      n += 1;
+    } catch (e) { /* ignore */ }
+  });
+  return n;
+}
+
 function publishMany(channels, event, data) {
   const payload = JSON.stringify({
     type: 'event',
@@ -178,10 +223,14 @@ const requestHandler = async function (req, res) {
       const visitorDelivered = (result && typeof result === 'object')
         ? (result.visitorDelivered | 0)
         : -1;
+      if (event === 'message.new') {
+        rememberMessageNew(channels, body.data || {});
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 3,
+        build: 4,
+        pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
         channels: channels.length,
@@ -202,7 +251,13 @@ const requestHandler = async function (req, res) {
       });
       channels.push({ channel: name, subscribers: set.size, live: live });
     });
-    const body = JSON.stringify({ ok: true, build: 3, channels: channels.length, detail: channels });
+    const body = JSON.stringify({
+      ok: true,
+      build: 4,
+      pid: process.pid,
+      channels: channels.length,
+      detail: channels,
+    });
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body),
@@ -248,6 +303,13 @@ function wireWebSocket(server) {
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
         ws.send(JSON.stringify({ type: 'auth.ok', channels: Array.from(ws._lcChannels || []) }));
+        // Replay recent chat frames for rooms in this token (covers publish-before-join)
+        channels.forEach(function (ch) {
+          const name = String(ch || '');
+          if (/^(conv|visitor):/.test(name)) {
+            replayMessageNew(ws, name);
+          }
+        });
         return;
       }
 
@@ -269,6 +331,10 @@ function wireWebSocket(server) {
         subscribe(ws, ch);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
+          // Catch frames published before this socket joined
+          if (/^(conv|visitor):/.test(ch)) {
+            replayMessageNew(ws, ch);
+          }
         }
         return;
       }
@@ -308,6 +374,12 @@ function wireWebSocket(server) {
         // Auto-join so early presence isn't dropped pre-subscribe
         if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
           subscribe(ws, convCh);
+          if (ws.readyState === 1) {
+            try {
+              ws.send(JSON.stringify({ type: 'subscribed', channel: convCh }));
+            } catch (eSubAck) { /* ignore */ }
+            replayMessageNew(ws, convCh);
+          }
         }
         const presence = data.visitor_presence || data || {};
         // Fan to every staff surface that can paint the badge without waiting on poll

@@ -82,6 +82,10 @@
         if (!this.isConnected()) return false;
         try {
             this.ws.send(JSON.stringify({ type: 'subscribe', channel: channel }));
+            // Optimistic ack — server also sends 'subscribed'; avoids false "not live"
+            // while waiting, which used to force 1s visitor-poll.
+            if (!this._authedChannels) this._authedChannels = {};
+            this._authedChannels[channel] = true;
             return true;
         } catch (e) {
             return false;

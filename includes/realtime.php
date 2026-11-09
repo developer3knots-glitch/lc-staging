@@ -514,6 +514,14 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
         $delivered = (int) ($result['delivered'] ?? -1);
         $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
     }
+    $GLOBALS['lc_last_realtime_publish'] = [
+        'event' => $event,
+        'delivered' => $delivered,
+        'visitorDelivered' => $visitorDelivered,
+        'expectsVisitor' => $expectsVisitor,
+        'channelCount' => count($channels),
+        'channels' => array_values(array_map('strval', $channels)),
+    ];
     if ($delivered >= 0) {
         return;
     }
