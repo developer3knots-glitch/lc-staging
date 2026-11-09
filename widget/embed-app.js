@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 221;
+    var LC_WIDGET_BUILD = 222;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -1459,12 +1459,12 @@
 
     function runGapFill() {
         if (!conversationId || gapFillInFlight) return;
+        // While WS is live, gap-fill is socket's job — don't HTTP loop
+        if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()) {
+            return;
+        }
         gapFillInFlight = true;
-        // History fetch from floor, merge into DOM (never wipe painted bubbles).
-        // Must bypass WS "proven" throttle — that gate was swallowing post-close bursts.
-        window.__lcForcePollOnce = true;
         pollMessages(true, function () {
-            window.__lcForcePollOnce = false;
             gapFillInFlight = false;
         });
     }
@@ -2536,8 +2536,8 @@
     }
 
     /**
-     * While chat WS is up: keep channels warm + slow HTTP gap-fill.
-     * WS remains the instant path; 5s merge catches bursts the socket drops.
+     * While chat WS is up: ZERO visitor-poll. Only keep channel subscriptions warm.
+     * HTTP resumes automatically if the socket drops.
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2558,8 +2558,7 @@
                 return;
             }
             ensureVisitorConvChannel();
-            scheduleGapFill();
-        }, 5000);
+        }, 15000);
     }
 
     /** Extra catch-up only while WS is down */
@@ -2899,18 +2898,13 @@
             var painted = applyRealtimeMessage(payload);
             if (painted && isAgent) {
                 window.__lcWsAgentPainted = true;
-                // Burst siblings often miss the socket — always merge from HTTP shortly after
-                setTimeout(function () { scheduleGapFill(); }, 250);
-                setTimeout(function () { scheduleGapFill(); }, 1200);
             }
-            // Any unpainted WS notify → forced history merge (even while WS up)
+            // Only if THIS frame could not paint — one emergency HTTP (not a loop)
             if (!painted) {
-                scheduleGapFill();
                 window.__lcForcePollOnce = true;
                 try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
             }
         } catch (e) {
-            scheduleGapFill();
             window.__lcForcePollOnce = true;
             try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
         }
@@ -4779,10 +4773,9 @@
                 }
             }
         }
-        // Keep painted transcript — force merge of post-close agent burst
+        // One catch-up on reopen only — then WS owns live messages
         window.__lcForcePollOnce = true;
         try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
-        scheduleGapFill();
         startWsSafetyCatchup();
         loadRealtimeScript(function () { initVisitorRealtime(); });
     }
@@ -6970,18 +6963,15 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS proven → throttle automatic incremental polls (not silence them).
-        // History/gap-fill and __lcForcePollOnce always run — post-close bursts
-        // were dying when the first message.new flipped proven and blocked HTTP.
+        // WS connected → no visitor-poll (realtime is the socket).
+        // Exceptions: empty transcript history seed, or explicit __lcForcePollOnce.
         var wsUp = !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
-        if (wsUp && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce && !isHistoryLoad) {
-            var sincePoll = Date.now() - (window.__lcLastVisitorPollAt || 0);
-            if (sincePoll < 5000) {
+        if (wsUp && !window.__lcForcePollOnce) {
+            if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
             }
         }
-        window.__lcLastVisitorPollAt = Date.now();
 
         // If transcript is empty, always do a floor history load.
         // IMPORTANT: do NOT convert history→incremental when bubbles exist — that

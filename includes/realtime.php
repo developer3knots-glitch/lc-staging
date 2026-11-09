@@ -773,7 +773,10 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
             lc_realtime_channel_visitor($visitorUid),
             lc_realtime_channel_conversation($conversationId),
         ];
-        $visitorPayload = array_merge(['conversation_id' => $conversationId], $msgPayload);
+        $visitorPayload = array_merge([
+            'conversation_id' => $conversationId,
+            'visitor_uid' => $visitorUid,
+        ], $msgPayload);
         lc_realtime_publish_channels($visitorChannels, 'message.new', $visitorPayload, 400);
     }
 

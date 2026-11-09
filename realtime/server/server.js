@@ -178,7 +178,7 @@ function socketsForVisitorUid(uid) {
   return out;
 }
 
-/** Send to every live visitor socket for this uid (channel + claims + map). */
+/** Send to every live visitor socket for this uid (channel + map tip). */
 function deliverToVisitorUid(uid, event, data) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -187,8 +187,20 @@ function deliverToVisitorUid(uid, event, data) {
     event: event,
     data: data || {},
   });
+  // Keep message.new queued even after send() — TCP can accept bytes on a
+  // half-open socket (visitorDelivered:1) while the browser never gets the frame.
+  // Client dedupes by message id; clear after short retransmit window.
   if (event === 'message.new') {
     queueVisitorPending(uid, raw);
+    [40, 200, 600, 1500].forEach(function (ms) {
+      setTimeout(function () { flushVisitorPending(uid); }, ms);
+    });
+    setTimeout(function () {
+      const list = visitorPending.get(uid) || [];
+      const remain = list.filter(function (item) { return item !== raw; });
+      if (remain.length) visitorPending.set(uid, remain);
+      else visitorPending.delete(uid);
+    }, 2500);
   }
   let n = 0;
   socketsForVisitorUid(uid).forEach(function (client) {
@@ -197,11 +209,6 @@ function deliverToVisitorUid(uid, event, data) {
       n += 1;
     } catch (e) { /* ignore */ }
   });
-  if (n > 0 && event === 'message.new') {
-    const list = visitorPending.get(uid) || [];
-    visitorPending.set(uid, list.filter(function (item) { return item !== raw; }));
-    if (!(visitorPending.get(uid) || []).length) visitorPending.delete(uid);
-  }
   return n;
 }
 
@@ -348,17 +355,14 @@ function publishMany(channels, event, data) {
   });
   // Deliver to every live socket for each visitor:* uid (all tabs) + pending queue
   if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
-    visitorUidsFromChannels(channels).forEach(function (uid) {
+    const uids = visitorUidsFromChannels(channels);
+    const dataUid = String((data && data.visitor_uid) || '');
+    if (dataUid && uids.indexOf(dataUid) === -1) uids.push(dataUid);
+    uids.forEach(function (uid) {
       const extra = deliverToVisitorUid(uid, event, data || {});
       if (extra > 0) {
         n += extra;
         visitorDelivered += extra;
-      }
-      // Retransmit shortly — covers auth/subscribe races after pm2 restart
-      if (event === 'message.new') {
-        [120, 500, 1500].forEach(function (ms) {
-          setTimeout(function () { flushVisitorPending(uid); }, ms);
-        });
       }
     });
   }
@@ -414,7 +418,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 12,
+        build: 13,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -440,7 +444,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 12,
+      build: 13,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
