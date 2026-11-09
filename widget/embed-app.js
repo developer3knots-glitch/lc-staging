@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 219;
+    var LC_WIDGET_BUILD = 220;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__lcRtDebug = function () {
         var cid = parseInt(conversationId, 10) || 0;
@@ -24,6 +24,7 @@
             hasConv: !!(rt && rt.hasChannel && cid && rt.hasChannel('conv:' + cid)),
             hasVisitor: !!(rt && rt.hasChannel && vCh && rt.hasChannel(vCh)),
             authedChannels: rt && rt._authedChannels ? Object.keys(rt._authedChannels) : [],
+            wsDeliveryProven: isVisitorWsDeliveryProven(),
             lastWsMessageAt: window.__lcLastWsMessageAt || 0,
             lastWsProbeAt: window.__lcLastWsProbeAt || 0,
             wsAgentPainted: !!window.__lcWsAgentPainted,
@@ -32,6 +33,15 @@
             wsLastFrameType: window.__lcWsLastFrameType || ''
         };
     };
+
+    /** True only after this tab has actually received a chat/probe event over WS. */
+    function isVisitorWsDeliveryProven() {
+        if (window.__lcWsAgentPainted) return true;
+        if ((window.__lcLastWsMessageAt || 0) > 0) return true;
+        if ((window.__lcLastWsProbeAt || 0) > 0) return true;
+        var t = String(window.__lcWsLastFrameType || '');
+        return t.indexOf('event:message.new') === 0 || t.indexOf('event:ws.probe') === 0;
+    }
 
     // Host themes (Elementor and similar) capture <a> clicks and cancel them.
     // Open chat links ourselves before that handler runs.
@@ -2523,8 +2533,9 @@
     }
 
     /**
-     * While chat WS is up: ZERO visitor-poll (socket test mode).
-     * Only re-subscribe channels; HTTP resumes automatically if socket drops.
+     * While chat WS is up: keep channels warm.
+     * Until this tab has proven it can RECEIVE message.new/ws.probe, run a slow
+     * HTTP backup (WS 101 alone was a false green light → silent message loss).
      */
     function startWsSafetyCatchup() {
         stopWsSafetyCatchup();
@@ -2545,7 +2556,11 @@
                 return;
             }
             ensureVisitorConvChannel();
-        }, 15000);
+            if (!isVisitorWsDeliveryProven()) {
+                window.__lcForcePollOnce = true;
+                try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
+            }
+        }, 8000);
     }
 
     /** Extra catch-up only while WS is down */
@@ -2886,8 +2901,8 @@
             if (painted && isAgent) {
                 window.__lcWsAgentPainted = true;
             }
-            // message_id-only frame while WS live — still need body once
-            if (!painted && payload && (parseInt(payload.message_id, 10) || 0) > 0) {
+            // Any unpainted WS notify → one forced HTTP body fetch (even while WS up)
+            if (!painted) {
                 window.__lcForcePollOnce = true;
                 try {
                     scheduleGapFill();
@@ -2895,14 +2910,14 @@
                 } finally {
                     window.__lcForcePollOnce = false;
                 }
-            } else if (!painted && !isVisitorWsLive()) {
-                scheduleGapFill();
-                forceMessageCatchup();
             }
         } catch (e) {
-            if (!isVisitorWsLive()) {
+            window.__lcForcePollOnce = true;
+            try {
                 scheduleGapFill();
-                forceMessageCatchup();
+                pollMessages(false);
+            } finally {
+                window.__lcForcePollOnce = false;
             }
         }
     }
@@ -3357,6 +3372,7 @@
             && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
             && realtimeBoundConvId === bindForConv
             && (realtimeClient.isConnected && realtimeClient.isConnected() || realtimeClient.shouldRun)) {
+            bindVisitorRealtimeHandlers(realtimeClient);
             if (realtimeClient.isConnected && realtimeClient.isConnected()) {
                 stopSafetySync();
                 ensureVisitorConvChannel();
@@ -3399,7 +3415,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=17';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=18';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };
@@ -6957,10 +6973,10 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // ANY open visitor WS → block visitor-poll (messages must ride message.new).
-        // Only empty-transcript history seed, or explicit __lcForcePollOnce, may HTTP.
+        // Block visitor-poll only after THIS tab has proven WS delivery.
+        // Connected-but-deaf sockets must not silence HTTP forever.
         var wsUp = !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
-        if (wsUp && !window.__lcForcePollOnce) {
+        if (wsUp && isVisitorWsDeliveryProven() && !window.__lcForcePollOnce) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;

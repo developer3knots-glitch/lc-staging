@@ -94,13 +94,43 @@ function subscribe(ws, channel) {
   ws._lcChannels.add(channel);
 }
 
+function touchVisitorSocket(ws) {
+  if (!ws) return;
+  ws._lcLastClientAt = Date.now();
+}
+
+function detachVisitorSocket(ws) {
+  if (!ws) return;
+  if (ws._lcChannels) {
+    ws._lcChannels.forEach(function (ch) {
+      const set = channelSubs.get(ch);
+      if (set) {
+        set.delete(ws);
+        if (!set.size) channelSubs.delete(ch);
+      }
+    });
+    ws._lcChannels.clear();
+  }
+}
+
 function registerVisitorSocket(ws) {
   const role = String((ws._lcClaims && ws._lcClaims.role) || '');
   const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
   if (role !== 'visitor' || !uid) return;
-  // NEVER close the previous socket — that killed the open chat tab's WS while
-  // DevTools still showed a newer 101 connection with no message handlers.
+  const prev = visitorSockets.get(uid);
+  touchVisitorSocket(ws);
   visitorSockets.set(uid, ws);
+  // Ghost sockets still looked OPEN and ate visitorDelivered while the live
+  // tab got nothing. Detach immediately; terminate after new socket stays tip.
+  if (prev && prev !== ws) {
+    detachVisitorSocket(prev);
+    setTimeout(function () {
+      if (visitorSockets.get(uid) !== ws) return;
+      if (prev.readyState === 1 || prev.readyState === 0) {
+        try { prev.terminate(); } catch (eTerm) { /* ignore */ }
+      }
+    }, 400);
+  }
   flushVisitorPending(uid);
 }
 
@@ -121,28 +151,30 @@ function queueVisitorPending(uid, rawPayload) {
   visitorPending.set(uid, list);
 }
 
-/** Collect every live socket that should get visitor traffic for this uid. */
+/** Collect live sockets that should get visitor traffic for this uid. */
 function socketsForVisitorUid(uid) {
   uid = String(uid || '');
   const out = [];
   const seen = new Set();
-  function add(client) {
+  const now = Date.now();
+  const STALE_MS = 90000;
+  function add(client, requireFresh) {
     if (!client || client.readyState !== 1 || seen.has(client)) return;
+    if (requireFresh) {
+      const last = client._lcLastClientAt || 0;
+      // Unknown freshness: allow once (just authed). Stale ghosts: skip.
+      if (last > 0 && (now - last) > STALE_MS) return;
+    }
     seen.add(client);
     out.push(client);
   }
-  // 1) Anyone subscribed to visitor:uid (do NOT require claims match — that left pending stuck)
+  // 1) Map tip first — newest authed visitor tab
+  add(visitorSockets.get(uid), false);
+  // 2) Channel subscribers (already de-duped per uid on subscribe)
   const vSet = channelSubs.get('visitor:' + uid);
-  if (vSet) vSet.forEach(add);
-  // 2) Claim-matched sockets
-  allSockets.forEach(function (client) {
-    const claims = client._lcClaims || {};
-    if (String(claims.role || '') !== 'visitor') return;
-    if (String(claims.visitor_uid || '') !== uid) return;
-    add(client);
-  });
-  // 3) Map tip
-  add(visitorSockets.get(uid));
+  if (vSet) vSet.forEach(function (c) { add(c, true); });
+  // Do NOT sweep allSockets by claims — that re-added half-open ghosts and
+  // made visitorDelivered:1 while the live browser socket got nothing.
   return out;
 }
 
@@ -382,7 +414,7 @@ const requestHandler = async function (req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ok: true,
-        build: 11,
+        build: 12,
         pid: process.pid,
         delivered: delivered,
         visitorDelivered: visitorDelivered,
@@ -408,7 +440,7 @@ const requestHandler = async function (req, res) {
     });
     const body = JSON.stringify({
       ok: true,
-      build: 11,
+      build: 12,
       pid: process.pid,
       visitorSockets: visitorSockets.size,
       visitorPending: visitorPending.size,
@@ -446,6 +478,7 @@ function wireWebSocket(server) {
       if (msg.type === 'ping') {
         if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }));
         if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+          touchVisitorSocket(ws);
           flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
         }
         return;
@@ -453,6 +486,7 @@ function wireWebSocket(server) {
 
       if (msg.type === 'pong') {
         if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+          touchVisitorSocket(ws);
           flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
         }
         return;
@@ -467,6 +501,7 @@ function wireWebSocket(server) {
         }
         ws._lcAuthed = true;
         ws._lcClaims = claims;
+        touchVisitorSocket(ws);
         registerVisitorSocket(ws);
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
@@ -489,6 +524,7 @@ function wireWebSocket(server) {
 
       // Any authenticated visitor traffic flushes queued agent messages
       if (ws._lcClaims && String(ws._lcClaims.role || '') === 'visitor') {
+        touchVisitorSocket(ws);
         flushVisitorPending(String(ws._lcClaims.visitor_uid || ''));
       }
 
