@@ -2339,12 +2339,31 @@
         return /chat closed/i.test(ph);
     }
 
+    function conversationRowAgentId(cid) {
+        cid = parseInt(cid, 10) || 0;
+        for (var i = 0; i < (lastConversations || []).length; i++) {
+            if ((parseInt(lastConversations[i].id, 10) || 0) === cid) {
+                return parseInt(lastConversations[i].agent_id, 10) || 0;
+            }
+        }
+        return 0;
+    }
+
     function applyConversationWaitingLocally(cid, opts) {
         cid = parseInt(cid, 10) || 0;
         if (!cid) return;
         opts = opts || {};
         var prev = conversationRowStatus(cid);
         var force = !!opts.force;
+        var rowAgent = conversationRowAgentId(cid);
+        // After Assign succeeded, late waiting/reopened WS frames must NOT flip
+        // the composer back to "Assign to me" (agent already replied).
+        if (prev === 'active' && (rowAgent > 0 || currentAssignedAgentId > 0)) {
+            return;
+        }
+        if (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0 && !uiLooksClosedForSelected()) {
+            return;
+        }
         // Only promote closed → waiting (don't steal active assigned chats)
         if (!force) {
             if (prev === 'active' || prev === 'waiting') {
@@ -7129,6 +7148,14 @@
                     return;
                 }
                 if (payload && (payload.status === 'waiting' || payload.reopened_by === 'visitor') && cid) {
+                    var prevWait = conversationRowStatus(cid);
+                    // Stale reopen/waiting after Assign — keep active assignee UI
+                    if (prevWait === 'active' || (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0)) {
+                        if (payload.reopened_by === 'visitor' && prevWait !== 'active') {
+                            playNotifyEvent('chat_continued', 'cont:' + cid);
+                        }
+                        return;
+                    }
                     if (payload.reopened_by === 'visitor') {
                         playNotifyEvent('chat_continued', 'cont:' + cid);
                     }
@@ -7141,23 +7168,21 @@
                         var taker = (payload.agent && payload.agent.name) || 'Another agent';
                         alert(taker + ' took over this chat. You are now in Supervise Mode.');
                     }
-                    if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
-                        syncConversationListStatus({
-                            id: cid,
-                            status: payload.status,
-                            agent_id: newAgent
-                        });
-                        if (payload.status === 'waiting' || newAgent === 0) {
+                    if (payload && payload.status === 'active' && newAgent === myAgentId) {
+                        syncConversationListStatus({ id: cid, status: 'active', agent_id: newAgent });
+                        currentAssignedAgentId = newAgent;
+                        setUnassignedMode(false);
+                        setReopenBarVisible(false);
+                        if (replyInput) {
+                            replyInput.disabled = false;
+                            replyInput.placeholder = 'Type a message...';
+                        }
+                        var sendActiveBtn = document.getElementById('lc-send-reply');
+                        if (sendActiveBtn) sendActiveBtn.disabled = false;
+                    } else if (payload && payload.status === 'waiting' && newAgent === 0) {
+                        // Only show Assign again if we are not already the active assignee
+                        if (currentAssignedAgentId !== myAgentId || conversationRowStatus(cid) !== 'active') {
                             applyConversationWaitingLocally(cid, { force: true });
-                        } else if (payload.status === 'active' && newAgent === myAgentId) {
-                            setUnassignedMode(false);
-                            setReopenBarVisible(false);
-                            if (replyInput) {
-                                replyInput.disabled = false;
-                                replyInput.placeholder = 'Type a message...';
-                            }
-                            var sendActiveBtn = document.getElementById('lc-send-reply');
-                            if (sendActiveBtn) sendActiveBtn.disabled = false;
                         }
                     }
                 } else if (!(payload && (payload.transferred || payload.taken_over))) {
