@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 244;
+    var LC_WIDGET_BUILD = 245;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -5138,7 +5138,8 @@
             if (/chat closed by agent/i.test(txt)) return 'agent';
             if (/closed automatically due to inactivity/i.test(txt)) return 'inactivity';
             if (/left the page/i.test(txt)) return 'leave';
-            if (/visitor closed the live chat/i.test(txt)) return 'visitor';
+            // "{Name} closed the live chat." OR "Visitor closed the live chat."
+            if (/closed the live chat/i.test(txt)) return 'visitor';
         }
         return lastClosedBy || '';
     }
@@ -5150,12 +5151,23 @@
      */
     function showEndedState(reason) {
         hideChatLoading();
+        var explicit = String(reason || '').toLowerCase();
+        // Visitor already on Resume / Email / New chat — don't flip back to soft-close compose
+        // when a later poll/WS frame says agent/remote.
+        var endedPanel = document.getElementById('lc-panel-ended');
+        var endedVisible = !!(endedPanel && endedPanel.style.display === 'flex');
+        if (chatClosed && lastClosedBy === 'visitor' && endedVisible && explicit && !isVisitorSelfCloseReason(explicit)) {
+            return;
+        }
         var detected = detectClosedByFromMessages();
         reason = reason || detected || 'remote';
-        // Prefer explicit close text in transcript over vague "remote"
-        if (!isVisitorSelfCloseReason(reason) && detected === 'visitor') {
+        // Explicit visitor close must NEVER be overridden by an older "Chat closed by agent"
+        // line still sitting in the transcript (that was painting soft-close compose).
+        if (isVisitorSelfCloseReason(explicit)) {
             reason = 'visitor';
-        } else if (detected === 'agent' || detected === 'inactivity') {
+        } else if (!isVisitorSelfCloseReason(reason) && detected === 'visitor') {
+            reason = 'visitor';
+        } else if (!isVisitorSelfCloseReason(explicit) && (detected === 'agent' || detected === 'inactivity')) {
             reason = detected;
         }
         if (isVisitorSelfCloseReason(reason)) {
@@ -5788,7 +5800,7 @@
     }
 
     function endChat() {
-        if (chatClosed) {
+        if (chatClosed && lastClosedBy === 'visitor') {
             // Already closed by visitor — keep ended actions visible
             showEndedState('visitor');
             return;
@@ -5801,30 +5813,32 @@
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn) closeBtn.disabled = true;
 
+        // Optimistic: show Resume / Email / New chat immediately so close never
+        // looks broken while the API runs (and never soft-close compose).
+        lastClosedBy = 'visitor';
+        showEndedState('visitor');
+
         fetch(siteUrl + '/api/visitor-close.php', {
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 conversation_id: conversationId,
                 visitor_uid: visitorUid,
+                chat_token: chatToken || getStoredChatToken() || '',
                 closed_by: 'visitor'
             })
         })
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (data) {
-            // After confirm: always show Resume / Email / New chat
-            if (data && (data.success || data.already_closed)) {
-                lastClosedBy = 'visitor';
-                showEndedState('visitor');
-                return;
-            }
-            if (closeBtn) {
-                closeBtn.disabled = false;
-                setCloseChatVisible(true);
+            lastClosedBy = 'visitor';
+            showEndedState('visitor');
+            if (data && data.success === false && !(data.already_closed)) {
+                if (closeBtn) {
+                    closeBtn.disabled = false;
+                }
             }
         })
         .catch(function () {
-            // Still show ended actions so visitor isn't stuck without options
             lastClosedBy = 'visitor';
             showEndedState('visitor');
         });

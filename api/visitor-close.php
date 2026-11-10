@@ -1,24 +1,43 @@
 <?php
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $conversationId = (int) ($input['conversation_id'] ?? 0);
-$visitorUid = trim($input['visitor_uid'] ?? '');
+$visitorUid = trim((string) ($input['visitor_uid'] ?? ''));
+$chatToken = trim((string) ($input['chat_token'] ?? ''));
 
-if ($conversationId < 1 || $visitorUid === '') {
+if ($conversationId < 1 || ($visitorUid === '' && $chatToken === '')) {
     lc_json(['success' => false, 'error' => 'Invalid request'], 400);
 }
 
 try {
     $db = lc_db();
-    $stmt = $db->prepare('
-        SELECT c.id, c.status FROM conversations c
-        JOIN visitors v ON v.id = c.visitor_id
-        WHERE c.id = ? AND v.visitor_uid = ?
-    ');
-    $stmt->execute([$conversationId, $visitorUid]);
-    $conv = $stmt->fetch();
+    $conv = null;
+
+    if ($visitorUid !== '') {
+        $stmt = $db->prepare('
+            SELECT c.id, c.status, c.visitor_id FROM conversations c
+            JOIN visitors v ON v.id = c.visitor_id
+            WHERE c.id = ? AND v.visitor_uid = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$conversationId, $visitorUid]);
+        $conv = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    // Reload / visitor-id rebind: accept chat_token ownership
+    if (!$conv && $chatToken !== '' && function_exists('lc_visitor_access_conversation')) {
+        $access = lc_visitor_access_conversation($conversationId, $visitorUid, $chatToken);
+        if ($access) {
+            $conv = [
+                'id' => (int) ($access['id'] ?? $conversationId),
+                'status' => (string) ($access['status'] ?? ''),
+                'visitor_id' => (int) ($access['visitor_id'] ?? 0),
+            ];
+        }
+    }
 
     if (!$conv) {
         lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
@@ -26,12 +45,12 @@ try {
 
     $autoClose = !empty($input['auto_close']);
 
-    if ($conv['status'] === 'closed') {
+    if (($conv['status'] ?? '') === 'closed') {
         if ($autoClose) {
             http_response_code(204);
             exit;
         }
-        lc_json(['success' => true, 'already_closed' => true]);
+        lc_json(['success' => true, 'already_closed' => true, 'closed_by' => 'visitor']);
     }
 
     if ($autoClose) {
@@ -91,7 +110,7 @@ try {
         http_response_code(204);
         exit;
     }
-    lc_json(['success' => true]);
+    lc_json(['success' => true, 'closed_by' => 'visitor']);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error'], 500);
 }
