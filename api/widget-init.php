@@ -418,9 +418,9 @@ try {
     }
     }
 
-    // "Start a new chat" must not reopen a closed ticket, but an already-open
-    // chat on this IP is the only chat — every widget joins it.
-    if (!$conv && function_exists('lc_find_conversation_by_ip') && function_exists('lc_claim_ip_conversation')) {
+    // "Start a new chat" must not reopen a closed ticket. Joining another live IP
+    // thread is only for normal resume — never during force_new.
+    if (!$forceNew && !$conv && function_exists('lc_find_conversation_by_ip') && function_exists('lc_claim_ip_conversation')) {
         $liveByIp = lc_find_conversation_by_ip($ip, $brandId);
         if ($liveByIp && in_array($liveByIp['status'] ?? '', ['waiting', 'active'], true)) {
             $claimedLive = lc_claim_ip_conversation($ip, $brandId, $visitorId, $visitorUid);

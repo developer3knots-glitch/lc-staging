@@ -28,9 +28,52 @@ try {
     $agentId = (int) $agent['id'];
     $status = (string) ($conv['status'] ?? '');
     $assignedId = (int) ($conv['agent_id'] ?? 0);
+    $visitorId = (int) ($conv['visitor_id'] ?? 0);
+    $db = lc_db();
 
+    // Visitor closed then continued / started messaging again — UI may already show
+    // Incoming while DB is still closed. Re-open then assign instead of blocking.
     if ($status === 'closed') {
-        lc_json(['success' => false, 'error' => 'Chat is closed — wait for the visitor to continue'], 400);
+        $reopened = false;
+        if ($visitorId > 0 && function_exists('lc_reopen_closed_for_visitor_continue')) {
+            $reopened = lc_reopen_closed_for_visitor_continue($conversationId, $visitorId);
+        }
+        if (!$reopened) {
+            // Recent visitor message = they continued — force waiting so Assign works
+            try {
+                $recent = $db->prepare("
+                    SELECT id FROM messages
+                    WHERE conversation_id = ? AND sender_type = 'visitor'
+                      AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+                    ORDER BY id DESC LIMIT 1
+                ");
+                $recent->execute([$conversationId]);
+                if ($recent->fetchColumn()) {
+                    $db->prepare("
+                        UPDATE conversations
+                        SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = UTC_TIMESTAMP()
+                        WHERE id = ? AND status = 'closed'
+                    ")->execute([$conversationId]);
+                    $reopened = true;
+                }
+            } catch (Throwable $eRecent) {
+            }
+        }
+        if (!$reopened) {
+            lc_json(['success' => false, 'error' => 'Chat is closed — wait for the visitor to continue'], 400);
+        }
+        $conv = lc_get_conversation($conversationId) ?: $conv;
+        $status = (string) ($conv['status'] ?? 'waiting');
+        $assignedId = (int) ($conv['agent_id'] ?? 0);
+        if ($status === 'closed') {
+            $db->prepare("
+                UPDATE conversations
+                SET status = 'waiting', agent_id = NULL, closed_at = NULL
+                WHERE id = ?
+            ")->execute([$conversationId]);
+            $status = 'waiting';
+            $assignedId = 0;
+        }
     }
 
     // Already mine and active

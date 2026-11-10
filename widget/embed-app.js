@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 246;
+    var LC_WIDGET_BUILD = 247;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -3977,13 +3977,19 @@
         if (serverIdentityComplete || visitorHasKnownIdentity()) {
             serverIdentityComplete = true;
         }
-        serverLiveConversationId = (data.conversation_id)
-            ? (parseInt(data.conversation_id, 10) || 0)
-            : 0;
-        serverLiveConversationStatus = String(data.conversation_status || '').toLowerCase();
-        // has_active_chat means waiting|active — keep id even for closed same-day ticket
-        if (!serverLiveConversationId && data.has_active_chat && data.conversation_id) {
-            serverLiveConversationId = parseInt(data.conversation_id, 10) || 0;
+        if (forceNewChat) {
+            // Explicit "Start a new chat" — ignore server closed/live ids until new thread starts
+            serverLiveConversationId = 0;
+            serverLiveConversationStatus = '';
+        } else {
+            serverLiveConversationId = (data.conversation_id)
+                ? (parseInt(data.conversation_id, 10) || 0)
+                : 0;
+            serverLiveConversationStatus = String(data.conversation_status || '').toLowerCase();
+            // has_active_chat means waiting|active — keep id even for closed same-day ticket
+            if (!serverLiveConversationId && data.has_active_chat && data.conversation_id) {
+                serverLiveConversationId = parseInt(data.conversation_id, 10) || 0;
+            }
         }
         if (settings.prechat_form_enabled !== undefined) {
             var pf = settings.prechat_form_enabled;
@@ -4538,6 +4544,8 @@
         }
         if (forceNewChat) {
             payload.force_new = 1;
+            // Never resume a closed ticket when visitor explicitly started a new chat
+            delete payload.resume_conversation_id;
         } else if (options.resumeConversationId) {
             payload.resume_conversation_id = options.resumeConversationId;
         }
@@ -4569,7 +4577,7 @@
             forceNewChat = false;
             // Keep optimistic bubble; Connecting stays until agent joins
             handleChatStarted(data, { keepMessages: !!firstMsg });
-            if (tempId && data.status === 'waiting') {
+            if (tempId && (data.status === 'waiting' || !data.agent)) {
                 setWaitingState(true);
                 updateStatus('Connecting to live agent...', agentsOnline > 0);
             }
@@ -5938,12 +5946,19 @@
         if (visitorHasKnownIdentity()) {
             serverIdentityComplete = true;
             entryRouted = true;
+            forceNewChat = true;
             paintFreshChatEntry();
             // Soft settings sync only — do not re-route (that caused form → idle blink).
             fetchWidgetSettings(function (data) {
                 if (!data || !data.success) return;
                 var rotated = !!data.visitor_uid_rotated;
                 applyWidgetSettings(data);
+                // New-chat flow: never adopt today's closed/live id from settings.
+                if (forceNewChat) {
+                    serverLiveConversationId = 0;
+                    serverLiveConversationStatus = '';
+                    pendingResumeConvId = null;
+                }
                 // Form only if IP actually rotated to a visitor with no profile.
                 if (rotated && prechatFormEnabled && !visitorHasKnownIdentity()) {
                     showPrechatForm(true);
