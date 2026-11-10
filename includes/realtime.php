@@ -614,6 +614,20 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
             }
         }
     }
+    // Fast/nowait path used to treat delivered:0 as success and skip retry.
+    // Agent reconnect / staff:conv subscribe races then left the bubble only in DB
+    // until a later poll — and Pure-WS mode no longer polls. One short retry.
+    if ($fast && $delivered === 0 && $event === 'message.new') {
+        usleep(40000);
+        $result = $doPublish($url);
+        $delivered = (int) ($result['delivered'] ?? -1);
+        $visitorDelivered = (int) ($result['visitorDelivered'] ?? -1);
+        if ($delivered < 1) {
+            // Still nobody on the rooms — push once more without waiting; client dedupes.
+            lc_realtime_publish_fire_and_forget($url, $payload);
+        }
+    }
+
     $prev = (isset($GLOBALS['lc_last_realtime_publish']) && is_array($GLOBALS['lc_last_realtime_publish']))
         ? $GLOBALS['lc_last_realtime_publish']
         : null;

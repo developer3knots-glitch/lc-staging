@@ -6892,7 +6892,8 @@
                 resetPollTimers();
                 // Re-join open conversation after reconnect
                 if (selectedId) syncRealtimeConversationChannel(selectedId);
-                // No agent-poll catch-up while WS is live — Network stays clean.
+                // Pure WS — no agent-poll catch-up. Missed frames are avoided by
+                // publish retry on delivered:0 + staff channel re-subscribe here.
                 if (Date.now() - inboxLoadedAt > 1500) loadConversations();
             });
             realtimeClient.on('disconnected', function () {

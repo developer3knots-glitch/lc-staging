@@ -494,10 +494,20 @@ function rememberMessageNew(channels, data) {
   const ts = Date.now();
   const keys = [];
   const cid = parseInt(data && data.conversation_id, 10) || 0;
-  if (cid > 0) keys.push('conv:' + cid);
+  if (cid > 0) {
+    keys.push('conv:' + cid);
+    keys.push('staff:conv:' + cid);
+  }
   (channels || []).forEach(function (ch) {
     const name = String(ch || '');
-    if (name.indexOf('visitor:') === 0 || name.indexOf('conv:') === 0) {
+    // Remember on every room that may join late (agent reconnect / open chat).
+    // Staff replay replaces HTTP catch-up poll.
+    if (
+      name.indexOf('visitor:') === 0 ||
+      name.indexOf('conv:') === 0 ||
+      name.indexOf('staff:conv:') === 0 ||
+      name.indexOf('agent:') === 0
+    ) {
       if (keys.indexOf(name) === -1) keys.push(name);
     }
   });
@@ -854,6 +864,13 @@ function wireWebSocket(server) {
           // Re-register as tip + replay missed message.new (ghost delivery recovery)
           registerVisitorSocket(ws);
           refreshVisitorSocket(ws);
+        } else if (ws._lcAuthed && ws._lcChannels) {
+          // Agent tab wake / keepalive: replay recent bubbles on joined rooms (no HTTP poll)
+          ws._lcChannels.forEach(function (name) {
+            if (/^(conv|staff:conv|agent):/.test(String(name || ''))) {
+              replayMessageNew(ws, name);
+            }
+          });
         }
         return;
       }
@@ -881,10 +898,11 @@ function wireWebSocket(server) {
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
         ws.send(JSON.stringify({ type: 'auth.ok', channels: Array.from(ws._lcChannels || []) }));
-        // Replay recent chat frames for rooms in this token (covers publish-before-join)
+        // Replay recent chat frames for rooms in this token (covers publish-before-join).
+        // Agents get agent:/staff:conv: replay too — no HTTP poll catch-up.
         channels.forEach(function (ch) {
           const name = String(ch || '');
-          if (/^(conv|visitor):/.test(name)) {
+          if (/^(conv|visitor|staff:conv|agent):/.test(name)) {
             replayMessageNew(ws, name);
           }
         });
@@ -916,8 +934,8 @@ function wireWebSocket(server) {
         subscribe(ws, ch);
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
-          // Catch frames published before this socket joined
-          if (/^(conv|visitor):/.test(ch)) {
+          // Catch frames published before this socket joined (agent open-chat / reconnect)
+          if (/^(conv|visitor|staff:conv|agent):/.test(ch)) {
             replayMessageNew(ws, ch);
           }
         }

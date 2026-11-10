@@ -1,0 +1,63 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Agent + Visitor side by side</title>
+<style>
+  html, body { margin:0; height:100%; background:#0f1419; color:#e7ecf1; font-family:Segoe UI,sans-serif; }
+  .box { max-width:560px; margin:12vh auto; padding:28px; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  p { color:#9aa7b5; line-height:1.5; }
+  button {
+    margin-top:16px; padding:12px 18px; border:0; border-radius:8px;
+    background:#2f6fed; color:#fff; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  button:hover { background:#2558c7; }
+  .links { margin-top:18px; display:flex; gap:14px; flex-wrap:wrap; }
+  a { color:#8ab4f8; }
+  code { background:#1b2430; padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>Open agent + visitor together</h1>
+    <p>Iframes are blocked by login/X-Frame. Use the button to open two real windows (left = agent, right = visitor).</p>
+    <button id="openBoth" type="button">Open both side by side</button>
+    <div class="links">
+      <a id="agentOnly" href="https://livechat.3knotsdigital.com/admin/chats.php?tab=active&id=799" target="_blank" rel="noopener">Agent only</a>
+      <a id="visitorOnly" href="https://3knotsdigital.com/?wstest=sidebyside" target="_blank" rel="noopener">Visitor only</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var AGENT = 'https://livechat.3knotsdigital.com/admin/chats.php?tab=active&id=799';
+      var VISITOR = 'https://3knotsdigital.com/?wstest=sidebyside';
+      function place(win, left, top, w, h) {
+        if (!win || win.closed) return;
+        try {
+          win.moveTo(left, top);
+          win.resizeTo(w, h);
+        } catch (e) {}
+      }
+      function openBoth() {
+        var sw = window.screen.availWidth || 1920;
+        var sh = window.screen.availHeight || 1040;
+        var half = Math.floor(sw / 2);
+        var agent = window.open(AGENT, 'lc_agent_side', 'noopener,noreferrer');
+        var visitor = window.open(VISITOR, 'lc_visitor_side', 'noopener,noreferrer');
+        setTimeout(function () {
+          place(agent, 0, 0, half, sh);
+          place(visitor, half, 0, sw - half, sh);
+          if (agent) try { agent.focus(); } catch (e) {}
+          if (visitor) try { visitor.focus(); } catch (e) {}
+        }, 600);
+      }
+      document.getElementById('openBoth').addEventListener('click', openBoth);
+      // Auto-open once per load (popup may need a click if browser blocks)
+      setTimeout(function () {
+        try { openBoth(); } catch (e) {}
+      }, 300);
+    })();
+  </script>
+</body>
+</html>
