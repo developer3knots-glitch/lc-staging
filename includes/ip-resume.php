@@ -218,7 +218,9 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
     $ip = trim($ip);
     $userAgent = trim($userAgent);
     $exceptUid = trim($exceptUid);
-    if ($ip === '' || $ip === '154.57.197.92' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
+    // Never special-case a public office/test IP here — that left N Traffic
+    // "Browsing" clones for the same person (one row per localStorage uid).
+    if ($ip === '' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
         return null;
     }
     try {
@@ -285,7 +287,9 @@ function lc_traffic_collapse_browser_twins(array $rows, array $pageBrandByVisito
             $vid = (int) ($row['visitor_id'] ?? 0);
             $brand = (int) ($pageBrandByVisitor[$vid]['id'] ?? 0);
         }
-        if ($ip === '' || $ip === '154.57.197.92' || $ua === '' || $brand < 1) {
+        // Empty IP/UA/brand cannot safely merge. Do NOT exclude a specific public IP —
+        // that was a leftover e2e hack and caused duplicate Browsing rows for 154.57.197.92.
+        if ($ip === '' || $ua === '' || $brand < 1) {
             $loose[] = $row;
             continue;
         }
