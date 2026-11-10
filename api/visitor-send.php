@@ -108,8 +108,13 @@ try {
     ];
     if (function_exists('lc_realtime_publish_conversation_event')) {
         try {
+            // Fast staff paint: nowait + staff_only so burst sends are not serialized
+            // behind a 1.2s confirmed curl / visitorDelivered retry. Widget already
+            // painted the visitor bubble optimistically.
             lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
                 'peers_only' => true,
+                'nowait' => true,
+                'staff_only' => true,
             ]);
         } catch (Throwable $ePub) {
         }

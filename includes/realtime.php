@@ -463,15 +463,18 @@ function lc_realtime_publish_payload(array $channels, string $event, array $data
  */
 function lc_realtime_publish_channels_nowait(array $channels, string $event, array $data = []): void
 {
-    lc_realtime_publish_channels($channels, $event, $data, 100, false);
+    // Fast hop: never inflate to the 1.2s message.new confirm window.
+    lc_realtime_publish_channels($channels, $event, $data, 100, false, true);
 }
 
 /**
  * One HTTP hop → Node fans out to many WS channels (cuts agent→visitor sequential curl delay).
  *
  * @param list<string> $channels
+ * @param bool $fast Short confirm (or fail-open). Used for visitor→agent burst so
+ *                   PHP does not serialize every send behind a 1.2s curl wait.
  */
-function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200, bool $retryEmpty = true): void
+function lc_realtime_publish_channels(array $channels, string $event, array $data = [], int $timeoutMs = 200, bool $retryEmpty = true, bool $fast = false): void
 {
     if (lc_realtime_mode() !== 'ws') {
         return;
@@ -502,8 +505,14 @@ function lc_realtime_publish_channels(array $channels, string $event, array $dat
             break;
         }
     }
-    if ($expectsVisitor || $event === 'message.new') {
-        $timeoutMs = max(300, min(2000, max($timeoutMs, 1200)));
+    if ($fast) {
+        // Burst / presence path: brief confirm, then fire-and-forget on timeout.
+        $timeoutMs = max(60, min(180, $timeoutMs > 0 ? $timeoutMs : 100));
+        $retryEmpty = false;
+    } elseif ($expectsVisitor || $event === 'message.new') {
+        // Keep a confirm window, but do not always force 1.2s — that serialized
+        // every visitor/agent send behind Node even when the frame already left.
+        $timeoutMs = max(250, min(1200, max($timeoutMs, 350)));
     } else {
         $timeoutMs = max(80, min(500, $timeoutMs));
     }
@@ -696,7 +705,7 @@ function lc_realtime_publish_fire_and_forget(string $url, string $payload): bool
 }
 
 /**
- * @param array{peers_only?:bool,inbox_only?:bool} $opts
+ * @param array{peers_only?:bool,inbox_only?:bool,nowait?:bool,staff_only?:bool} $opts
  */
 function lc_realtime_publish_conversation_event(int $conversationId, string $event, array $data = [], array $opts = []): void
 {
@@ -705,6 +714,8 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
     }
     $peersOnly = !empty($opts['peers_only']);
     $inboxOnly = !empty($opts['inbox_only']);
+    $nowait = !empty($opts['nowait']);
+    $staffOnly = !empty($opts['staff_only']);
     $payload = array_merge(['conversation_id' => $conversationId], $data);
     $conv = lc_get_conversation($conversationId);
 
@@ -719,7 +730,7 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
         $peerChannels = function_exists('lc_realtime_staff_channels')
             ? lc_realtime_staff_channels($conversationId, $conv ?: [])
             : [lc_realtime_channel_conversation($conversationId)];
-        if ($conv && $isFanout) {
+        if ($conv && $isFanout && !$staffOnly) {
             $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
             if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0 && $event !== 'message.receipts') {
                 try {
@@ -736,11 +747,24 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
             if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
                 $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
             }
+        } elseif ($conv && $isFanout && $staffOnly && $previousAgentId > 0 && $previousAgentId !== $agentId) {
+            $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
         }
         $peerChannels = lc_realtime_with_sender_agent($peerChannels, $data);
+        if ($staffOnly) {
+            // Drop visitor: rooms — visitor already painted optimistically; waiting
+            // on visitorDelivered was the burst delay on agent inbox.
+            $peerChannels = array_values(array_filter($peerChannels, static function ($ch) {
+                return strpos((string) $ch, 'visitor:') !== 0;
+            }));
+        }
         $peerChannels = array_values(array_unique(array_filter($peerChannels)));
-        // Generous timeout — multi-supervisor fanout must not get truncated
-        lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 200 : 220);
+        if ($nowait) {
+            lc_realtime_publish_channels_nowait($peerChannels, $event, $payload);
+        } else {
+            // Generous timeout — multi-supervisor fanout must not get truncated
+            lc_realtime_publish_channels($peerChannels, $event, $payload, $peersOnly ? 200 : 220);
+        }
 
         if ($peersOnly) {
             return;
@@ -865,12 +889,17 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
         lc_realtime_publish_channels($visitorChannels, 'message.new', $visitorPayload, 400);
     }
 
-    // 1) Peers (visitor + staff) — customer + agents
-    lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, ['peers_only' => true]);
+    // 1) Staff peers — nowait so agent-send HTTP is not stuck behind a second
+    //    confirmed fanout after the visitor hop already ran.
+    lc_realtime_publish_conversation_event($conversationId, 'message.new', $msgPayload, [
+        'peers_only' => true,
+        'nowait' => true,
+        'staff_only' => true,
+    ]);
 
     // 2) Same path notes use (proven for supervisor↔agent) — agent bubbles must land here
     if (function_exists('lc_realtime_publish_staff_event')) {
-        lc_realtime_publish_staff_event($conversationId, 'staff.message', $msgPayload, 300);
+        lc_realtime_publish_staff_event($conversationId, 'staff.message', $msgPayload, 120);
     }
 
     // 3) If visitor socket missed the first hops (reconnect race after pm2 restart),

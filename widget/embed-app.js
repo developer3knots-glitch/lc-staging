@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 237;
+    var LC_WIDGET_BUILD = 238;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -213,6 +213,8 @@
     var chatToken = '';
     var widgetLoadedAt = 0;
     var sendCooldownUntil = 0;
+    var visitorTextInFlight = 0;
+    var visitorSendSeq = 0;
     var lastTransientErrorAt = 0;
     var lastTransientErrorText = '';
     var CONV_STORAGE_KEY = 'lc_active_conv_' + brandKey;
@@ -8036,7 +8038,8 @@
             return data;
         })
         .catch(function () {
-            if (sendBtn) sendBtn.classList.remove('is-sending');
+            visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
+            if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
             markVisitorSendFailed(tempId);
         });
     }
@@ -8076,7 +8079,8 @@
     }
 
     function finishVisitorSend(data, tempId, wasClosed, sendBtn) {
-        if (sendBtn) sendBtn.classList.remove('is-sending');
+        visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
+        if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
         var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
         if (data && data.success) {
             if (wasClosed || data.reopened) {
@@ -8182,6 +8186,11 @@
             showTransientSendError('Too many requests. Please wait a moment.', msg);
             return;
         }
+        // Soft cap — allow overlap so agent sees bursts without waiting each HTTP.
+        if (visitorTextInFlight >= 6) {
+            showTransientSendError('Sending…', msg);
+            return;
+        }
 
         if (!conversationId) {
             if (prechatFormEnabled && !visitorHasKnownIdentity()) {
@@ -8199,7 +8208,8 @@
         input.value = '';
         autoResizeTextarea(input);
 
-        var tempId = 'temp_' + Date.now();
+        visitorSendSeq += 1;
+        var tempId = 'temp_' + Date.now() + '_' + visitorSendSeq;
         // Optimistic: show ticks as sent immediately — no clock while HTTP is in flight.
         appendMessage({
             _tempId: tempId,
@@ -8210,7 +8220,8 @@
         }, { forceScroll: true });
 
         var sendBtn = document.getElementById('lc-send');
-        sendBtn.classList.add('is-sending');
+        visitorTextInFlight += 1;
+        if (sendBtn) sendBtn.classList.add('is-sending');
         var wasClosed = chatClosed;
         if (typeof window.__lcNoteVisitorStillHere === 'function') {
             window.__lcNoteVisitorStillHere();
