@@ -381,8 +381,18 @@ function lc_realtime_publish_staff_event(int $conversationId, string $event, arr
         return;
     }
     $payload = array_merge(['conversation_id' => $conversationId], $data);
+    $channels = lc_realtime_with_sender_agent(lc_realtime_staff_channels($conversationId, $conv), $data);
+    // After agent-close nulls agent_id, still hit the agent who just closed / was assigned
+    $previousAgentId = (int) ($data['previous_agent_id'] ?? 0);
+    if ($previousAgentId > 0) {
+        $channels[] = lc_realtime_channel_agent($previousAgentId);
+    }
+    $hintAgentId = (int) ($data['agent_id'] ?? 0);
+    if ($hintAgentId > 0) {
+        $channels[] = lc_realtime_channel_agent($hintAgentId);
+    }
     lc_realtime_publish_channels(
-        lc_realtime_with_sender_agent(lc_realtime_staff_channels($conversationId, $conv), $data),
+        array_values(array_unique(array_filter($channels))),
         $event,
         $payload,
         $timeoutMs

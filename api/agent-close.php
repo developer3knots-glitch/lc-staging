@@ -60,6 +60,8 @@ try {
         }
     }
 
+    $previousAgentId = $assignedAgentId > 0 ? $assignedAgentId : (int) ($conv['agent_id'] ?? 0);
+
     $upd = lc_db()->prepare("
         UPDATE conversations
         SET status = 'closed',
@@ -73,12 +75,33 @@ try {
         ? 'IP blocked — chat moved to history.'
         : 'Chat closed by agent.';
     if ($upd->rowCount() > 0) {
-        lc_add_system_message($conversationId, $closeNote);
-        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+        $closeMsgId = lc_add_system_message($conversationId, $closeNote);
+        $closePayload = [
             'status' => 'closed',
-            'closed_by' => 'agent',
+            'closed_by' => !empty($input['blocked_leave']) ? 'agent' : 'agent',
             'agent_id' => 0,
-        ]);
+            'previous_agent_id' => $previousAgentId,
+        ];
+        if ($closeMsgId > 0) {
+            $closePayload['message_id'] = $closeMsgId;
+            $closePayload['message'] = [
+                'id' => $closeMsgId,
+                'sender_type' => 'system',
+                'message' => $closeNote,
+                'created_at' => gmdate('c'),
+            ];
+        }
+        // previous_agent_id keeps agent:{id} in the fanout after agent_id was nulled
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $closePayload);
+        if (function_exists('lc_realtime_publish_staff_event')) {
+            lc_realtime_publish_staff_event($conversationId, 'conversation.updated', $closePayload, 250);
+            if (!empty($closePayload['message'])) {
+                lc_realtime_publish_staff_event($conversationId, 'staff.message', [
+                    'message_id' => (int) ($closePayload['message_id'] ?? 0),
+                    'message' => $closePayload['message'],
+                ], 200);
+            }
+        }
     }
 
     lc_json([

@@ -832,6 +832,17 @@
         var el = listEl ? listEl.querySelector('.lc-chat-item[data-id="' + conversationId + '"]') : null;
         if (el) {
             var foot = el.querySelector('.lc-chat-item-foot');
+            if (foot && el.dataset.status === 'closed') {
+                // Closed rows show CLOSED only — never let presence eat/replace that chip
+                // (was the ON CHAT + CLOSED double-badge bug).
+                foot.querySelectorAll('.lc-badge-presence, .lc-badge-active, .lc-badge-waiting').forEach(function (b) {
+                    b.remove();
+                });
+                if (!foot.querySelector('.lc-badge-closed')) {
+                    foot.insertAdjacentHTML('beforeend', '<span class="lc-badge lc-badge-closed">closed</span>');
+                }
+                return;
+            }
             if (foot && el.dataset.status === 'waiting') {
                 if (!presenceMeansLeft(presence)) {
                     var stalePresence = foot.querySelector('.lc-badge-presence');
@@ -1019,6 +1030,10 @@
                     : (next === 'away' ? 'Switched tab'
                         : (next === 'window' ? 'Switched window'
                             : (next === 'disconnected' ? 'Disconnected' : 'On chat')))));
+        // Closed thread + visitor still on site: don't flash "Active" like the chat is live
+        if (selectedId && conversationRowStatus(selectedId) === 'closed' && !leftNow && next === 'active') {
+            barLabel = 'Browsing site';
+        }
         if (bar) {
             bar.hidden = false;
             bar.className = 'lc-visitor-presence-bar is-' + (leftNow ? 'left' : next);
@@ -2219,30 +2234,43 @@
         }
         el.classList.toggle('is-typing', visitorIsTypingInList(c.id));
 
-        // Keep status badge in sync (ACTIVE → closed on auto-close)
-        var chip = null;
-        el.querySelectorAll('.lc-badge').forEach(function (b) {
-            if (b.classList.contains('lc-badge-active')
-                || b.classList.contains('lc-badge-waiting')
-                || b.classList.contains('lc-badge-closed')) {
-                chip = b;
+        // Keep status badge in sync (ACTIVE / ON CHAT → closed on visitor/agent close)
+        var foot = el.querySelector('.lc-chat-item-foot');
+        if (status === 'closed') {
+            var closeBtn = el.querySelector('.lc-chat-item-close');
+            if (closeBtn) closeBtn.remove();
+            if (foot) {
+                foot.querySelectorAll('.lc-badge-presence, .lc-badge-active, .lc-badge-waiting').forEach(function (b) {
+                    b.remove();
+                });
+                var closedChip = foot.querySelector('.lc-badge-closed');
+                if (closedChip) {
+                    closedChip.className = 'lc-badge lc-badge-closed';
+                    closedChip.textContent = 'closed';
+                } else {
+                    foot.insertAdjacentHTML('beforeend', '<span class="lc-badge lc-badge-closed">closed</span>');
+                }
             }
-        });
-        if (chip && status) {
-            var badgeCls = status === 'waiting' ? 'waiting' : (status === 'closed' ? 'closed' : 'active');
-            var statusLabel = status === 'waiting' ? 'Incoming chat' : status;
-            chip.className = 'lc-badge lc-badge-' + badgeCls;
-            chip.textContent = statusLabel;
-        } else if (!chip && status === 'closed') {
-            var foot = el.querySelector('.lc-chat-item-foot');
-            var activeChip = el.querySelector('.lc-badge-active');
-            var inject = document.createElement('span');
-            inject.className = 'lc-badge lc-badge-closed';
-            inject.textContent = 'closed';
-            if (activeChip && activeChip.parentNode) {
-                activeChip.parentNode.replaceChild(inject, activeChip);
-            } else if (foot) {
-                foot.appendChild(inject);
+        } else {
+            var chip = null;
+            el.querySelectorAll('.lc-badge').forEach(function (b) {
+                if (b.classList.contains('lc-badge-active')
+                    || b.classList.contains('lc-badge-waiting')
+                    || b.classList.contains('lc-badge-closed')
+                    || b.classList.contains('lc-badge-presence')) {
+                    chip = b;
+                }
+            });
+            if (chip && status) {
+                if (status === 'waiting') {
+                    chip.className = 'lc-badge lc-badge-waiting';
+                    chip.textContent = 'Incoming chat';
+                } else if (chip.classList.contains('lc-badge-presence')) {
+                    // Keep live presence chip for active chats (matches renderConversationItem)
+                } else {
+                    chip.className = 'lc-badge lc-badge-active';
+                    chip.textContent = status;
+                }
             }
         }
 
@@ -2300,11 +2328,72 @@
             || /resumed this conversation/i.test(t);
     }
 
+    function applyCloseFromRealtimeMessage(cid, msg) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid || !msg || !isCloseSystemMessage(msg)) return false;
+        var reason = closeReasonFromSystemMessage(msg);
+        if (reason === 'visitor') {
+            playNotifyEvent('chat_closed', 'close:' + cid);
+        } else if (reason === 'leave') {
+            if (window.LCNotifyLeft) {
+                window.LCNotifyLeft({
+                    conversation_id: cid,
+                    presence: 'left'
+                });
+            } else {
+                playNotifyEvent('visitor_left', 'left:' + cid);
+            }
+        }
+        applyConversationClosedLocally(cid, reason);
+        return true;
+    }
+
+    var lastCloseReconcileAt = 0;
+    function reconcileSelectedClosedStatus() {
+        var cid = parseInt(selectedId, 10) || 0;
+        if (!cid) return;
+        var now = Date.now();
+        if (now - lastCloseReconcileAt < 6000) return;
+        lastCloseReconcileAt = now;
+        var afterId = lastMsgId || 0;
+        fetch(base + '/api/agent-poll.php?conversation_id=' + encodeURIComponent(cid) + '&last_id=' + encodeURIComponent(afterId), {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (r) {
+            return r.json().catch(function () { return null; });
+        }).then(function (data) {
+            if (!data || data.success === false) return;
+            if ((parseInt(selectedId, 10) || 0) !== cid) return;
+            var conv = data.conversation || {};
+            var st = String(conv.status || data.status || '').toLowerCase();
+            if (st !== 'closed') return;
+            (data.messages || []).forEach(function (m) {
+                if (m && m.id) appendLiveMessage(m);
+            });
+            var reason = 'agent';
+            var msgs = data.messages || [];
+            for (var i = msgs.length - 1; i >= 0; i--) {
+                if (isCloseSystemMessage(msgs[i])) {
+                    reason = closeReasonFromSystemMessage(msgs[i]);
+                    break;
+                }
+            }
+            applyConversationClosedLocally(cid, reason);
+        }).catch(function () {});
+    }
+
     function applyConversationClosedLocally(cid, closedBy) {
         cid = parseInt(cid, 10) || 0;
         if (!cid) return;
+        // Capture before list sync — closed rows drop off Active/Waiting tabs
+        var browsing = selectedVisitorIsBrowsing(cid);
+        if (!browsing && selectedId === cid && lastPresenceStatusKey
+            && lastPresenceStatusKey !== 'left' && lastPresenceStatusKey !== 'disconnected') {
+            browsing = true;
+        }
         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
         if (selectedId !== cid) return;
+        setText('lc-details-status', formatDetailStatus('closed'));
         if (replyInput) {
             replyInput.disabled = true;
             replyInput.value = '';
@@ -2315,9 +2404,11 @@
                     ? 'Chat closed by agent'
                     : (closedBy === 'leave'
                         ? 'Chat closed - visitor left'
-                        : (closedBy === 'visitor'
-                            ? 'Chat closed - visitor ended this conversation'
-                            : 'Chat closed')));
+                        : (browsing
+                            ? 'Visitor is browsing — open this chat'
+                            : (closedBy === 'visitor'
+                                ? 'Chat closed - visitor ended this conversation'
+                                : 'Chat closed'))));
         }
         var sendBtn = document.getElementById('lc-send-reply');
         if (sendBtn) sendBtn.disabled = true;
@@ -2331,7 +2422,16 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         closeMoreMenu();
-        setReopenBarVisible(selectedVisitorIsBrowsing(cid) && !currentIpBlocked);
+        if (superviseBar) superviseBar.hidden = true;
+        isSupervising = false;
+        setReopenBarVisible(browsing && !currentIpBlocked);
+        // Header strip: don't leave "Active" looking like the chat is still live
+        var presenceText = document.getElementById('lc-visitor-presence-text');
+        if (presenceText && browsing && (lastPresenceStatusKey === 'active' || lastPresenceStatusKey === '')) {
+            presenceText.textContent = 'Browsing site';
+        } else if (presenceText && !browsing && (closedBy === 'leave' || lastPresenceStatusKey === 'left')) {
+            presenceText.textContent = 'Left website';
+        }
     }
 
     /** Visitor continued after close → Incoming (waiting) so agent can Assign again */
@@ -5384,6 +5484,14 @@
         });
         currentAssignedAgentId = aid;
         setUnassignedMode(false);
+        // Assign pulls the row out of Waiting — leave that empty tab so the chat stays visible
+        if (currentTab === 'waiting') {
+            currentTab = 'active';
+            document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
+                t.classList.toggle('active', t.dataset.tab === 'active');
+            });
+            syncBrowserState(selectedId || convId, currentTab);
+        }
         if (replyInput) {
             replyInput.disabled = false;
             replyInput.placeholder = 'Type a message...';
@@ -6790,6 +6898,17 @@
             if (!document.hidden && selectedId && !isRealtimeWsLive()) syncPresenceOnly();
         };
         document.addEventListener('visibilitychange', window.__lcPresenceVisHandler);
+
+        // Safety net: Pure WS can miss a close frame — on tab focus, confirm selected status
+        if (window.__lcCloseReconcileVisHandler) {
+            document.removeEventListener('visibilitychange', window.__lcCloseReconcileVisHandler);
+        }
+        window.__lcCloseReconcileVisHandler = function () {
+            if (document.hidden || !selectedId) return;
+            if (uiLooksClosedForSelected() || conversationRowStatus(selectedId) === 'closed') return;
+            reconcileSelectedClosedStatus();
+        };
+        document.addEventListener('visibilitychange', window.__lcCloseReconcileVisHandler);
         if (selectedId && !isRealtimeWsLive()) syncPresenceOnly();
 
         // Pure WS forever — never start agent-poll / inbox list / journey timers,
@@ -6870,6 +6989,10 @@
         scrollMessagesToBottom(true);
         if (m.sender_type === 'system' && isPresenceLogText(m.message)) {
             syncBadgeFromPresenceLog(m.message, selectedId);
+        }
+        // Any path that paints a close system line must lock the composer immediately
+        if (selectedId && isCloseSystemMessage(m)) {
+            applyConversationClosedLocally(selectedId, closeReasonFromSystemMessage(m));
         }
         if (m.sender_type === 'visitor') {
             // Poll and staff.message used to paint the bubble and leave LEFT SITE up.
@@ -6981,8 +7104,8 @@
                         }
                     } else if (msg && isContinueSystemMessage(msg)) {
                         applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
-                    } else if (msg && isCloseSystemMessage(msg)) {
-                        applyConversationClosedLocally(cid, closeReasonFromSystemMessage(msg));
+                    } else {
+                        applyCloseFromRealtimeMessage(cid, msg);
                     }
                     return;
                 }
@@ -6994,8 +7117,8 @@
                         last_message: msg.message || undefined,
                         last_message_at: msg.created_at || undefined
                     });
-                } else if (cid && msg && isCloseSystemMessage(msg)) {
-                    applyConversationClosedLocally(cid, closeReasonFromSystemMessage(msg));
+                } else {
+                    applyCloseFromRealtimeMessage(cid, msg);
                 }
                 if (cid && patchInboxRowActivity(cid, msg)) {
                     if (msg && (isPresenceLogText(msg.message) || isInactivityNotice(msg))) {
@@ -7018,28 +7141,65 @@
             });
             // Proven staff-room path (same as notes) — supervisors get agent replies here
             realtimeClient.on('staff.message', function (payload) {
+                var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                var msg = payload && payload.message;
                 handleStaffMessagePayload(payload);
+                // Close system lines often arrive only on staff.message (peers_only / nowait
+                // races). Apply closed UI even when message.new already painted the bubble.
+                if (applyCloseFromRealtimeMessage(cid, msg)) return;
+                if (msg && isContinueSystemMessage(msg) && cid) {
+                    applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
+                }
             });
             realtimeClient.on('inbox.changed', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
+                var msg = payload && payload.message;
                 if (payload && (payload.transferred || payload.taken_over)) {
                     loadConversations();
                     return;
                 }
-                if (cid && payload && payload.message && payload.message.sender_type === 'visitor') {
+                // conversation.updated close is mirrored as inbox.changed — often with
+                // status=closed and no message body. Must lock UI even without a bubble.
+                if (cid && payload && String(payload.status || '') === 'closed') {
+                    if (msg && msg.id && selectedId === cid) {
+                        appendLiveMessage(msg);
+                    }
+                    if (String(payload.closed_by || '') === 'visitor') {
+                        playNotifyEvent('chat_closed', 'close:' + cid);
+                    }
+                    applyConversationClosedLocally(cid, payload.closed_by || 'agent');
+                    if (!(selectedId && cid === selectedId)) {
+                        loadConversations();
+                    }
+                    return;
+                }
+                if (cid && msg && msg.sender_type === 'visitor') {
                     noteVisitorMessaging(cid, payload.visitor_presence);
                 }
                 if (selectedId && cid === selectedId) {
-                    if (payload && payload.message && payload.message.id) {
-                        appendLiveMessage(payload.message);
-                        if (payload.message.sender_type === 'visitor') {
-                            markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
+                    if (msg && msg.id) {
+                        appendLiveMessage(msg);
+                        if (msg.sender_type === 'visitor') {
+                            markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
                         }
                     }
                     clearLocalUnread(cid);
+                    if (applyCloseFromRealtimeMessage(cid, msg)) return;
+                    if (msg && isContinueSystemMessage(msg)) {
+                        applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
+                    } else if (msg && msg.sender_type === 'visitor'
+                        && (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed')) {
+                        applyConversationWaitingLocally(cid, {
+                            force: true,
+                            fromVisitorMessage: true,
+                            last_message: msg.message || '',
+                            last_message_at: msg.created_at || undefined
+                        });
+                    }
                     return;
                 }
-                if (cid && patchInboxRowActivity(cid, payload && payload.message)) {
+                if (applyCloseFromRealtimeMessage(cid, msg)) return;
+                if (cid && patchInboxRowActivity(cid, msg)) {
                     return;
                 }
                 loadConversations();
@@ -7113,6 +7273,9 @@
                                 ? 'Visitor is browsing — open this chat'
                                 : 'Chat closed - visitor ended this conversation';
                         }
+                    } else if (!uiLooksClosedForSelected()) {
+                        // Missed close WS frame while presence still flows — catch via HTTP
+                        reconcileSelectedClosedStatus();
                     }
                 }
             });
@@ -7157,6 +7320,10 @@
                     loadConversations();
                 }
                 if (payload && payload.status === 'closed' && cid) {
+                    // Paint close system line when bundled on the status frame
+                    if (selectedId && cid === selectedId && payload.message && payload.message.id) {
+                        appendLiveMessage(payload.message);
+                    }
                     // Only lock the thread that actually closed — never the newly selected/current chat
                     if (selectedId && cid !== selectedId) {
                         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
@@ -7168,9 +7335,6 @@
                     var closedBy = String(payload.closed_by || '');
                     if (closedBy === 'inactivity') {
                         applyConversationClosedLocally(cid, 'inactivity');
-                        if (!(selectedId && cid === selectedId) && !(payload && (payload.transferred || payload.taken_over))) {
-                            loadConversations();
-                        }
                         return;
                     }
                     if (closedBy === 'visitor') {
@@ -7188,9 +7352,6 @@
                         }
                     }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
-                    if (!(selectedId && cid === selectedId) && !(payload && (payload.transferred || payload.taken_over))) {
-                        loadConversations();
-                    }
                     return;
                 }
                 if (payload && (payload.status === 'waiting' || payload.reopened_by === 'visitor') && cid) {

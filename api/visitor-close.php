@@ -68,18 +68,58 @@ try {
         }
     }
 
+    // Keep assigned agent channel in the close fanout (do not null agent_id here).
+    $assignedAgentId = (int) ($conv['agent_id'] ?? 0);
+
     $upd = $db->prepare("UPDATE conversations SET status = 'closed', closed_at = NOW() WHERE id = ?");
     $upd->execute([$conversationId]);
     $closeMsg = $autoClose
         ? lc_system_note_for_visitor($conversationId, 'left the page — chat closed automatically.')
         : lc_system_note_for_visitor($conversationId, 'closed the live chat.');
-    lc_add_system_message($conversationId, $closeMsg);
+    $closeMsgId = lc_add_system_message($conversationId, $closeMsg);
+    $closedBy = $autoClose ? 'leave' : 'visitor';
+    $closePayload = [
+        'status' => 'closed',
+        'closed_by' => $closedBy,
+        'agent_id' => $assignedAgentId,
+        'previous_agent_id' => $assignedAgentId,
+    ];
+    if ($closeMsgId > 0) {
+        $closePayload['message_id'] = $closeMsgId;
+        $closePayload['message'] = [
+            'id' => $closeMsgId,
+            'sender_type' => 'system',
+            'message' => $closeMsg,
+            'created_at' => gmdate('c'),
+        ];
+    }
 
+    // Primary fanout (conv + staff:conv + agent + visitor)
     if (function_exists('lc_realtime_publish_conversation_event')) {
-        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-            'status' => 'closed',
-            'closed_by' => $autoClose ? 'leave' : 'visitor',
-        ]);
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $closePayload);
+    }
+    // Proven staff-room mirror — same path notes use (covers nowait/peers races)
+    if (function_exists('lc_realtime_publish_staff_event')) {
+        lc_realtime_publish_staff_event($conversationId, 'conversation.updated', $closePayload, 250);
+        if (!empty($closePayload['message'])) {
+            lc_realtime_publish_staff_event($conversationId, 'staff.message', [
+                'message_id' => (int) ($closePayload['message_id'] ?? 0),
+                'message' => $closePayload['message'],
+            ], 200);
+        }
+    }
+    // One deferred retry if the agent socket was mid-reconnect
+    if (function_exists('lc_realtime_defer') && function_exists('lc_realtime_publish_conversation_event')) {
+        $retryPayload = $closePayload;
+        lc_realtime_defer(static function () use ($conversationId, $retryPayload): void {
+            try {
+                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $retryPayload);
+                if (function_exists('lc_realtime_publish_staff_event')) {
+                    lc_realtime_publish_staff_event($conversationId, 'conversation.updated', $retryPayload, 200);
+                }
+            } catch (Throwable $eRetry) {
+            }
+        });
     }
 
     if (!$autoClose && function_exists('lc_realtime_defer')) {
