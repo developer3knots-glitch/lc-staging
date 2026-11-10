@@ -310,7 +310,10 @@ try {
     if (!$forceNew) {
     // Same-tab / proactive resume: attach to this conversation even when Traffic
     // visitor_id differs from the browser uid (IP claim / multi-tab).
-    if ($resumeConvId > 0 && !$visitorUidRotated) {
+    // Reload / hard-refresh must resume today's chat. Prefer resume id + token even
+    // when visitor_uid briefly rotated (IP dual-stack race) — never start blank idle.
+    if ($resumeConvId > 0) {
+        $chatTokenIn = trim((string) ($input['chat_token'] ?? ''));
         $stmt = $db->prepare("
             SELECT id, status, visitor_id FROM conversations
             WHERE id = ? AND brand_id = ?
@@ -322,19 +325,30 @@ try {
         $resumeRow = $stmt->fetch() ?: null;
         if ($resumeRow) {
             $ownerVid = (int) ($resumeRow['visitor_id'] ?? 0);
-            if ($ownerVid === $visitorId || $ownerVid < 1) {
-                $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
-            } else {
-                // Rebind Traffic-started chat onto this browser visitor
-                try {
-                    $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ? AND DATE(started_at) = CURDATE()')
-                        ->execute([$visitorId, $resumeConvId]);
-                    if (function_exists('lc_record_visitor_ip') && lc_ip_usable_for_identity($ip)) {
-                        lc_record_visitor_ip($visitorId, $ip);
-                    }
-                } catch (Throwable $e) {
+            $tokenOk = false;
+            if ($visitorUidRotated && function_exists('lc_visitor_access_conversation')) {
+                $accessProbe = lc_visitor_access_conversation($resumeConvId, $visitorUid, $chatTokenIn);
+                // Also accept the pre-rotation uid from the browser token if present
+                if (!$accessProbe && $chatTokenIn !== '') {
+                    $accessProbe = lc_visitor_access_conversation($resumeConvId, (string) ($input['visitor_uid'] ?? ''), $chatTokenIn);
                 }
-                $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
+                $tokenOk = !empty($accessProbe);
+            }
+            if (!$visitorUidRotated || $tokenOk || $ownerVid === $visitorId || $ownerVid < 1) {
+                if ($ownerVid === $visitorId || $ownerVid < 1) {
+                    $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
+                } else {
+                    // Rebind Traffic-started chat onto this browser visitor
+                    try {
+                        $db->prepare('UPDATE conversations SET visitor_id = ? WHERE id = ? AND DATE(started_at) = CURDATE()')
+                            ->execute([$visitorId, $resumeConvId]);
+                        if (function_exists('lc_record_visitor_ip') && lc_ip_usable_for_identity($ip)) {
+                            lc_record_visitor_ip($visitorId, $ip);
+                        }
+                    } catch (Throwable $e) {
+                    }
+                    $conv = ['id' => (int) $resumeRow['id'], 'status' => (string) $resumeRow['status']];
+                }
             }
         }
         if (!$conv) {
@@ -342,7 +356,9 @@ try {
             $dayChk->execute([$resumeConvId, $brandId]);
             $dayRow = $dayChk->fetch();
             if ($dayRow && ($dayRow['status'] ?? '') === 'closed') {
-                $reopened = lc_reopen_recent_visitor_close($resumeConvId, $visitorId);
+                $reopened = function_exists('lc_reopen_recent_visitor_close')
+                    ? lc_reopen_recent_visitor_close($resumeConvId, $visitorId)
+                    : null;
                 if ($reopened) {
                     $conv = $reopened;
                 } else {
@@ -352,9 +368,11 @@ try {
             }
         }
         if (!$conv && function_exists('lc_visitor_access_conversation')) {
-            $chatTokenIn = trim((string) ($input['chat_token'] ?? ''));
             $access = lc_visitor_access_conversation($resumeConvId, $visitorUid, $chatTokenIn);
-            if ($access && in_array($access['status'] ?? '', ['waiting', 'active'], true)
+            if (!$access && $chatTokenIn !== '') {
+                $access = lc_visitor_access_conversation($resumeConvId, (string) ($input['visitor_uid'] ?? ''), $chatTokenIn);
+            }
+            if ($access && in_array($access['status'] ?? '', ['waiting', 'active', 'closed'], true)
                 && (int) ($access['brand_id'] ?? 0) === $brandId
                 && date('Y-m-d', strtotime((string) ($access['started_at'] ?? 'now'))) === date('Y-m-d')) {
                 $conv = ['id' => (int) $access['id'], 'status' => $access['status']];

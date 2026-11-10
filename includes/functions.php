@@ -1318,64 +1318,15 @@ function lc_conversation_closed_by(int $conversationId): string
 }
 
 /**
- * First message id the visitor should see for the *current* chat round.
+ * First message id the visitor should see for this conversation.
  *
- * Soft-closed (latest close, nothing after): keep that round's full transcript
- * including the close line — never return an empty floor (blank black panel).
- * After a close, new visitor/agent messages start the next round after that close.
+ * Resumed same-day chats must keep the full transcript (including earlier
+ * soft-close rounds) until the visitor explicitly starts a *new* chat
+ * (new conversation id). Floor 0 = show everything in this thread.
  */
 function lc_visitor_visible_message_floor(int $conversationId, string $reference = ''): int
 {
-    if ($conversationId < 1) {
-        return 0;
-    }
-    try {
-        $db = lc_db();
-        $stmt = $db->prepare("
-            SELECT id, message
-            FROM messages
-            WHERE conversation_id = ?
-              AND sender_type = 'system'
-            ORDER BY id DESC
-            LIMIT 80
-        ");
-        $stmt->execute([$conversationId]);
-        $lastCloseId = 0;
-        $prevCloseId = 0;
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $text = (string) ($row['message'] ?? '');
-            if (!lc_is_visitor_session_close_message($text)) {
-                continue;
-            }
-            $id = (int) ($row['id'] ?? 0);
-            if ($id < 1) {
-                continue;
-            }
-            if ($lastCloseId < 1) {
-                $lastCloseId = $id;
-                continue;
-            }
-            $prevCloseId = $id;
-            break;
-        }
-        if ($lastCloseId < 1) {
-            return 0;
-        }
-
-        $next = $db->prepare('SELECT id FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 1');
-        $next->execute([$conversationId, $lastCloseId]);
-        $nextId = (int) ($next->fetchColumn() ?: 0);
-
-        if ($nextId > 0) {
-            // New activity after last close → current round starts there
-            return $nextId;
-        }
-
-        // Soft-closed on lastClose — show this full round (after previous close)
-        return $prevCloseId > 0 ? ($prevCloseId + 1) : 0;
-    } catch (Throwable $e) {
-        return 0;
-    }
+    return 0;
 }
 
 function lc_message_hidden_from_visitor(string $message): bool

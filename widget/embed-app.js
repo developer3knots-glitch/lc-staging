@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 242;
+    var LC_WIDGET_BUILD = 243;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -1436,9 +1436,23 @@
         setTimeout(function () {
             widgetStylesReady = true;
             widgetEntryReady = true;
-            bootHistorySettled = true;
-            revealWidgetNow();
+            // Never force-settle while a resumed chat is still loading — that flashed idle/empty.
+            if (!(chatResumePending() && !transcriptHasBubbles())) {
+                bootHistorySettled = true;
+            }
+            tryRevealWidget();
         }, 3000);
+        // Safety: if resume hangs, still show the chat view (not idle) after 8s.
+        setTimeout(function () {
+            if (widgetRevealed) return;
+            if (chatResumePending()) {
+                bootHistorySettled = true;
+                hideIdleIntro();
+                showChatView();
+            }
+            tryRevealWidget();
+            if (!widgetRevealed) revealWidgetNow();
+        }, 8000);
         scheduleWelcomeEngagement();
         loadWidgetSettings();
         startSettingsSync();
@@ -4069,6 +4083,12 @@
             markWidgetViewReady();
             return;
         }
+        // Reload resume already running — never paint idle over it.
+        if (bootHoldForChat || chatInitInFlight || pendingResumeConvId) {
+            entryRouted = true;
+            markWidgetViewReady();
+            return;
+        }
         entryRouted = true;
 
         // "Start a new chat" — never auto-resume the closed session into a half-built panel.
@@ -4085,20 +4105,32 @@
 
         // sessionStorage already clears when the tab closes — always resume if present.
         // Do NOT wipe on "non-reload" navigations; that was dropping chats on refresh.
-        var resumeId = getStoredConversationId() || pendingResumeConvId || null;
-        pendingResumeConvId = resumeId || null;
-        if (resumeId) {
-            try {
-                if (!getStoredChatToken()) {
-                    /* ok - server issues a fresh token on resume */
-                }
-            } catch (eTok) {}
+        var resumeId = parseInt(getStoredConversationId() || pendingResumeConvId || 0, 10) || 0;
+        if (resumeId > 0) {
+            pendingResumeConvId = resumeId;
         }
 
         var liveId = serverLiveConversationId || resumeId || 0;
         var liveStatus = serverLiveConversationStatus;
 
-        // New IP / rotated identity → never reopen someone else's (or previous IP) closed screen
+        // Prefer server-owned live id; sessionStorage alone must not force a closed "Thanks" screen
+        var serverId = serverLiveConversationId || 0;
+
+        // Same-tab resume id always wins over a rotated-uid idle paint. Token/IP
+        // checks on widget-init decide ownership — do not clear the thread here.
+        if (resumeId > 0 && !options.forceNew) {
+            pendingResumeConvId = resumeId;
+            bootHoldForChat = true;
+            hideIdleIntro();
+            showChatView();
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
+            initChat({ resumeConversationId: resumeId });
+            scheduleAutoOpenOnLoad();
+            markWidgetViewReady();
+            return;
+        }
+
+        // New IP / rotated identity with no stored chat → fresh entry only
         if (data.visitor_uid_rotated) {
             bootHoldForChat = false;
             pendingResumeConvId = null;
@@ -4110,9 +4142,6 @@
             scheduleAutoOpenOnLoad();
             return;
         }
-
-        // Prefer server-owned live id; sessionStorage alone must not force a closed "Thanks" screen
-        var serverId = serverLiveConversationId || 0;
 
         var thanksId = readAwayThanksId();
         if ((parseInt(agentsOnline, 10) || 0) > 0 && thanksId) {
@@ -4130,39 +4159,14 @@
         }
 
         // Already-started chat (waiting queue OR active with agent) → open thread now.
-        if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting')) {
+        if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting' || liveStatus === 'closed')) {
             pendingResumeConvId = serverId;
             bootHoldForChat = true;
+            hideIdleIntro();
+            showChatView();
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
             initChat({ resumeConversationId: serverId });
             return;
-        }
-
-        // Soft-closed: ONLY when server confirms THIS visitor's closed ticket today
-        if (serverId > 0 && liveStatus === 'closed') {
-            pendingResumeConvId = serverId;
-            bootHoldForChat = true;
-            initChat({ resumeConversationId: serverId });
-            return;
-        }
-
-        // Stored id without server confirmation: resume only if server echoed same waiting/active
-        if (resumeId && serverId === resumeId && (liveStatus === 'active' || liveStatus === 'waiting')) {
-            pendingResumeConvId = resumeId;
-            bootHoldForChat = true;
-            initChat({ resumeConversationId: resumeId });
-            return;
-        }
-
-        // A resume is already loading behind the boot shield. Do not paint idle over it.
-        if (bootHoldForChat || chatInitInFlight) {
-            return;
-        }
-
-        // Stale sessionStorage from another IP / old closed chat — drop it
-        if (resumeId && !(serverId > 0 && serverId === resumeId)) {
-            persistConversationId(null);
-            persistChatToken('');
-            pendingResumeConvId = null;
         }
 
         if (serverId > 0) {
@@ -4882,12 +4886,19 @@
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
         didAutoOpenOnLoad = true;
         if (storedChat > 0) {
+            // Reload with an active chat: jump straight into the thread — never idle first.
             pendingResumeConvId = storedChat;
             bootHoldForChat = true;
+            hideIdleIntro();
+            showChatView();
+            showChatLoading('Loading chat...', 'Waiting for chat to load');
+            openPanel({ silenceFlow: true });
+            persistPanelOpen(true);
+            initChat({ resumeConversationId: storedChat });
+            return;
         }
         openPanel({ silenceFlow: true });
         persistPanelOpen(true);
-        if (storedChat > 0) initChat({ resumeConversationId: storedChat });
     }
 
     function welcomeSeenKey() {
@@ -5940,8 +5951,11 @@
         if (inputEl) inputEl.placeholder = 'Write a message...';
         updatePrechatStatus(data.agents_online || 0);
         if (options.resumedByTicket || data.resumed_by_ticket || data.resumed) {
-            fullHistoryMode = false;
             ticketResumeAwaitingAgent = data.status !== 'active';
+        }
+        // Resumed same-day thread: load the full transcript (not a post-close "round").
+        if (options.resumeConversationId || options.resumedByTicket || data.resumed_by_ticket || data.resumed) {
+            fullHistoryMode = true;
         }
         if (!options.keepMessages) {
             lastMsgId = 0;
@@ -6021,6 +6035,11 @@
         requestBrowserGeo();
         capturePublicIpv4();
         // Refresh resume of active chat: auto-maximize into the thread
+        bootHoldForChat = false;
+        if (transcriptHasBubbles()) {
+            bootHistorySettled = true;
+        }
+        tryRevealWidget();
         if (isResume) {
             scheduleAutoOpenOnLoad();
             return;
