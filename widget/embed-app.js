@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 251;
+    var LC_WIDGET_BUILD = 252;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -1004,6 +1004,13 @@
         if (panel) panel.style.animation = 'none';
         if (teaser) teaser.style.animation = 'none';
         root.classList.remove('lcw-booting');
+        // Product rule: site open/reload always shows the panel maximized.
+        // Never leave only the launcher bubble after the boot shield lifts.
+        try {
+            forceOpenChatPopup();
+        } catch (eMax) {
+            if (panel) panel.style.setProperty('display', 'flex', 'important');
+        }
         if (!isOpen && panel) panel.style.animation = '';
     }
 
@@ -4171,17 +4178,20 @@
         // First successful route wins — later settings fetches must not blink form ↔ idle.
         // Also: user already clicked Let's chat / started compose — never reset.
         if (entryRouted) {
+            scheduleAutoOpenOnLoad();
             markWidgetViewReady();
             return;
         }
         if (!isIdleLandingVisible() && (conversationId || chatInitInFlight || chatComposerActive())) {
             entryRouted = true;
+            scheduleAutoOpenOnLoad();
             markWidgetViewReady();
             return;
         }
         // Reload resume already running — never paint idle over it.
         if (bootHoldForChat || chatInitInFlight || pendingResumeConvId) {
             entryRouted = true;
+            scheduleAutoOpenOnLoad();
             markWidgetViewReady();
             return;
         }
@@ -4262,6 +4272,8 @@
             showChatView();
             showChatLoading('Loading chat...', 'Waiting for chat to load');
             initChat({ resumeConversationId: serverId });
+            scheduleAutoOpenOnLoad();
+            markWidgetViewReady();
             return;
         }
 
@@ -5006,8 +5018,10 @@
             initChat({ resumeConversationId: storedChat });
             return;
         }
-        // Fresh visitor: do NOT open a blank white panel here — routeVisitorEntry
-        // paints idle/prechat then scheduleAutoOpenOnLoad maximizes.
+        // Fresh / returning visitor with no stored thread: still maximize immediately
+        // (idle or prechat paints underneath). Never boot as launcher-only bubble.
+        try { showIdleIntro(); } catch (eIdleBoot) {}
+        scheduleAutoOpenOnLoad();
     }
 
     function welcomeSeenKey() {
