@@ -89,10 +89,11 @@ try {
     $ins = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'visitor', $visitorId, $message]);
     $messageId = (int) $db->lastInsertId();
-    lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
 
-    // Publish bubble to agents NOW
+    // Publish bubble to agents FIRST — never block behind clear_typing's WS confirm.
+    // Live test: clear_typing-before-publish made visitor-send 600–800ms and agent
+    // paint ~900ms. Message must leave PHP before typing:false fanout.
     $plain = function_exists('lc_plain_text') ? lc_plain_text($message) : $message;
     $msgPayload = [
         'message_id' => $messageId,
@@ -119,6 +120,8 @@ try {
         } catch (Throwable $ePub) {
         }
     }
+    // Clear typing after bubble publish (nowait inside publish_typing).
+    lc_clear_typing($conversationId, 'visitor');
 
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;

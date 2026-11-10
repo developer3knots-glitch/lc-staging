@@ -964,10 +964,20 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
 
 function lc_realtime_publish_typing(int $conversationId, string $role, bool $typing, array $extra = []): void
 {
+    // Typing must never wait on visitorDelivered confirm — that serialized
+    // visitor-send (clear_typing) and typing.php behind 350–1200ms curls.
+    // Visitor typing → staff rooms only. Agent typing → include visitor peer.
+    $opts = [
+        'peers_only' => true,
+        'nowait' => true,
+    ];
+    if ($role === 'visitor') {
+        $opts['staff_only'] = true;
+    }
     lc_realtime_publish_conversation_event($conversationId, 'typing', array_merge([
         'role' => $role,
         'typing' => $typing,
-    ], $extra));
+    ], $extra), $opts);
 }
 
 /**

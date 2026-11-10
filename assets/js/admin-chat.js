@@ -297,6 +297,7 @@
             typingEl.hidden = true;
             if (typingLabelEl) {
                 typingLabelEl.classList.remove('has-preview');
+                typingLabelEl.textContent = '';
                 typingLabelEl.removeAttribute('title');
             }
         }
@@ -7033,10 +7034,10 @@
                 }
                 if (typingOn) {
                     setVisitorSidebarTyping(cid, true);
-                    if (selectedId && cid === selectedId && draftLeft) {
-                        setPeerTypingVisible(true, payload.name || 'Visitor', draftText);
-                    } else if (selectedId && cid === selectedId && !(typingLabelEl && typingLabelEl.classList.contains('has-preview'))) {
-                        setPeerTypingVisible(true, payload.name || 'Visitor');
+                    if (selectedId && cid === selectedId) {
+                        // Always show while typingOn — old has-preview short-circuit
+                        // left the bar hidden with a stale draft label.
+                        setPeerTypingVisible(true, payload.name || 'Visitor', draftLeft ? draftText : '');
                     }
                     return;
                 }
