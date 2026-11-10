@@ -6,7 +6,9 @@
 
     var base = window.LC_BASE_URL;
     var pollMs = window.LC_POLL_INTERVAL || 1500;
-    var pollDisabled = !!window.LC_POLL_DISABLED;
+    // Hard kill: no recurring agent-poll / inbox list poll. Open-chat history is one-shot only.
+    var pollDisabled = true;
+    window.LC_POLL_DISABLED = true;
     var myAgentId = parseInt(app.dataset.agentId, 10) || 0;
     var iAmChatAssignee = false;
     var isAdmin = app.dataset.agentRole === 'admin';
@@ -4774,11 +4776,10 @@
     function pollMessages(opts) {
         opts = opts || {};
         if (!selectedId) return;
-        // Pure WS: never hit agent-poll while socket is live — except opening a chat
-        // (needsFullHistory) or an explicit force. Stops Network spam from reconnect /
-        // inbox.changed / receipt / gap-fill catch-up callers.
+        // Agent poll is dead. Only one-shot open-chat / forced history may hit HTTP.
+        // No catch-up, gap-fill, reconnect, or timer path.
         var allowHttp = !!(opts.force || opts._forceHttp || needsFullHistory);
-        if (isRealtimeWsLive() && !allowHttp) {
+        if (!allowHttp) {
             return;
         }
         var conversationId = selectedId;
@@ -6724,50 +6725,11 @@
         document.addEventListener('visibilitychange', window.__lcPresenceVisHandler);
         if (selectedId && !isRealtimeWsLive()) syncPresenceOnly();
 
-        // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
-        // agent-poll + inbox list. Without listTimer, LEFT SITE stayed after a missed WS frame.
-
-        // Manual: Settings → Disable HTTP polling.
-        // While WS is live: still zero message/inbox HTTP. Fallback only if WS is down.
-        if (pollDisabled) {
-            if (isRealtimeWsLive()) {
-                pollTimer = null;
-                listTimer = null;
-                window.__lcJourneyTimer = null;
-                return;
-            }
-            if (selectedId) {
-                pollTimer = setInterval(function () {
-                    var painted = maxPaintedMessageId();
-                    if (painted > 0 && lastMsgId > painted) lastMsgId = painted;
-                    pollMessages({ skipJourney: true });
-                }, isSupervising ? 800 : 1500);
-            }
-            listTimer = setInterval(function () {
-                loadConversations();
-            }, isSupervising ? 2500 : 4000);
-            window.__lcJourneyTimer = setInterval(function () {
-                if (selectedId) loadPageJourney(false);
-            }, 60000);
-            return;
-        }
-
-        if (isRealtimeWsLive()) {
-            // Pure WS — no agent-poll, no inbox list poll, no journey poll.
-            // Inbox/presence updates arrive via inbox.changed / visitor.presence / message.new.
-            pollTimer = null;
-            listTimer = null;
-            window.__lcJourneyTimer = null;
-            return;
-        }
-
-        // Fallback when WS is down or mode=poll
-        pollTimer = setInterval(function () {
-            if (selectedId) pollMessages();
-        }, Math.max(1500, pollMs || 1500));
-        listTimer = setInterval(function () {
-            loadConversations();
-        }, 8000);
+        // Pure WS forever — never start agent-poll / inbox list / journey timers,
+        // even when the socket is down. Live updates come from WS only.
+        pollTimer = null;
+        listTimer = null;
+        window.__lcJourneyTimer = null;
     }
 
     function maxPaintedMessageId() {
@@ -6782,24 +6744,8 @@
     }
 
     function scheduleMessageGapFill(cursor, pollOpts) {
-        cursor = parseInt(cursor, 10) || 0;
-        if (cursor < 1 || !selectedId || pollDisabled) return;
-        if (pollOpts && pollOpts._gapFill) return;
-        // WS live → no HTTP gap-fill; message.new / staff.message already painted.
-        if (isRealtimeWsLive()) return;
-        var painted = maxPaintedMessageId();
-        if (cursor <= painted) return;
-        // Server has messages we never painted — rewind cursor and catch up once
-        lastMsgId = painted;
-        if (messageGapFillTimer) clearTimeout(messageGapFillTimer);
-        messageGapFillTimer = setTimeout(function () {
-            messageGapFillTimer = null;
-            if (!selectedId || messageGapFillBusy) return;
-            if (isRealtimeWsLive()) return;
-            messageGapFillBusy = true;
-            pollMessages({ skipJourney: true, _gapFill: true });
-            setTimeout(function () { messageGapFillBusy = false; }, 1500);
-        }, 120);
+        // Agent poll removed — never HTTP gap-fill.
+        return;
     }
 
     function appendLiveMessage(m) {
@@ -6895,12 +6841,8 @@
                 mode: 'ws',
                 wsUrl: cfg.wsUrl || window.LC_REALTIME.wsUrl,
                 token: token,
-                getToken: fetchAgentToken,
-                fallbackPoll: function () {
-                    if (pollDisabled) return;
-                    if (selectedId) pollMessages();
-                    loadConversations();
-                }
+                getToken: fetchAgentToken
+                // no fallbackPoll — agent-poll is fully removed
             });
             realtimeClient.on('connected', function () {
                 resetPollTimers();
@@ -6911,8 +6853,8 @@
                 if (Date.now() - inboxLoadedAt > 1500) loadConversations();
             });
             realtimeClient.on('disconnected', function () {
-                resetPollTimers(); // switches to poll fallback
-                if (selectedId) pollMessages();
+                resetPollTimers();
+                // Wait for WS reconnect — do not start agent-poll
             });
             function handleStaffMessagePayload(payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
