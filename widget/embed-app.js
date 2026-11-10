@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 249;
+    var LC_WIDGET_BUILD = 250;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -2290,7 +2290,17 @@
         }
     }
 
+    function isVisitorEndedScreen() {
+        // Classic "Thanks for chatting" — Resume / Email / New chat owns the panel.
+        return !!(chatClosed && lastClosedBy === 'visitor');
+    }
+
     function showChatView() {
+        // Late WS/poll frames must not wipe the ended screen (causes a one-frame flash).
+        // Resume / New chat / reopen clear lastClosedBy before calling this.
+        if (isVisitorEndedScreen()) {
+            return;
+        }
         document.getElementById('lc-panel').classList.add('lcw-chat-active');
         document.getElementById('lc-panel').classList.remove('lcw-mode-prechat', 'lcw-mode-idle');
         document.getElementById('lc-panel-prechat').style.display = 'none';
@@ -3254,9 +3264,12 @@
                 advanceLastMsgId(mid);
                 return true;
             }
-            // Ensure transcript container is visible before paint
+            // Ensure transcript container is visible before paint — never over visitor ended screen
             var msgBox = document.getElementById('lc-panel-messages');
             if (msgBox && (msgBox.style.display === 'none' || msgBox.hidden)) {
+                if (isVisitorEndedScreen()) {
+                    return false;
+                }
                 try { showChatView(); } catch (eShow) {}
             }
             var exists = !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
@@ -3389,10 +3402,12 @@
             // Visitor self-close: stay on Resume / New chat — never reopen from
             // late/replay agent bubbles (that left agent locked + visitor still chatting).
             // Skip already-painted replays so minimize doesn't pop open on WS refresh.
+            if (isVisitorEndedScreen()) {
+                // Keep ended screen — late close/system/agent frames must not paint or flash chat.
+                return;
+            }
             if (!alreadyPainted) {
-                if (chatClosed && lastClosedBy === 'visitor') {
-                    // Keep ended screen; do not paint/reopen for agent frames.
-                } else if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
+                if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
                     markChatContinuedFromClosed({
                         status: 'active',
                         agent: (msg && msg.agent_name)
@@ -3404,8 +3419,7 @@
                 }
             }
             // Minimized widget: only NEW agent messages maximize (not ack/replay dupes).
-            // Never pop open after visitor self-close — ended screen owns the session.
-            if (isAgent && !isOpen && !alreadyPainted && !(chatClosed && lastClosedBy === 'visitor')) {
+            if (isAgent && !isOpen && !alreadyPainted) {
                 try {
                     ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true });
                 } catch (eMax) {}
