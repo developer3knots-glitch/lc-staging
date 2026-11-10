@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 248;
+    var LC_WIDGET_BUILD = 249;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -225,6 +225,8 @@
     var resumeGraceUntil = 0;
     /** After visitor X-close: ignore stale active/waiting polls until close API lands. */
     var visitorCloseGraceUntil = 0;
+    /** Bumped on Start new chat so late visitor-close callbacks cannot re-flash ended UI. */
+    var visitorCloseEpoch = 0;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
@@ -1890,6 +1892,8 @@
             openTicketResumeFromEnded();
             return;
         }
+        // Leaving ended screen — late close callbacks must not re-flash it
+        visitorCloseEpoch += 1;
         var resumeBtn = document.getElementById('lc-resume-ticket');
         if (resumeBtn) {
             resumeBtn.disabled = true;
@@ -3553,6 +3557,8 @@
         client.on('conversation.updated', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if (payload && payload.status === 'closed') {
+                // Already left this thread (Start new chat) — never flash ended over the new session
+                if (forceNewChat || !conversationId) return;
                 if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
                     stopLiveMessageSync();
                     stopSafetySync();
@@ -5874,6 +5880,9 @@
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn) closeBtn.disabled = true;
 
+        var closingId = parseInt(conversationId, 10) || 0;
+        var closeEpoch = visitorCloseEpoch;
+
         // Optimistic: show Resume / Email / New chat immediately so close never
         // looks broken while the API runs (and never soft-close compose).
         lastClosedBy = 'visitor';
@@ -5883,7 +5892,7 @@
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
-                conversation_id: conversationId,
+                conversation_id: closingId,
                 visitor_uid: visitorUid,
                 chat_token: chatToken || getStoredChatToken() || '',
                 closed_by: 'visitor'
@@ -5891,6 +5900,9 @@
         })
         .then(function (r) { return r.json().catch(function () { return {}; }); })
         .then(function (data) {
+            // Start new chat / resume already left this ended screen — do not flash it back
+            if (closeEpoch !== visitorCloseEpoch || forceNewChat) return;
+            if ((parseInt(conversationId, 10) || 0) !== closingId) return;
             lastClosedBy = 'visitor';
             showEndedState('visitor');
             if (data && data.success === false && !(data.already_closed)) {
@@ -5900,6 +5912,8 @@
             }
         })
         .catch(function () {
+            if (closeEpoch !== visitorCloseEpoch || forceNewChat) return;
+            if ((parseInt(conversationId, 10) || 0) !== closingId) return;
             lastClosedBy = 'visitor';
             showEndedState('visitor');
         });
@@ -5907,6 +5921,8 @@
 
     function startNewChat() {
         stopVisitorReopenWatch();
+        // Invalidate in-flight visitor-close callbacks so ended UI cannot flash over new chat
+        visitorCloseEpoch += 1;
         // Intentional new session — do not reopen today's closed thread.
         forceNewChat = true;
         // Intentional new session from ended screen — never leave a half-reset panel.
