@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 247;
+    var LC_WIDGET_BUILD = 248;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -223,6 +223,8 @@
     var SITE_NAV_FLAG_KEY = 'lc_site_nav_' + brandKey;
     var leaveCloseSent = false;
     var resumeGraceUntil = 0;
+    /** After visitor X-close: ignore stale active/waiting polls until close API lands. */
+    var visitorCloseGraceUntil = 0;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
@@ -2966,10 +2968,12 @@
                     var painted = paintLongPollMessages(messages, data);
                     window.__lcLastLongPollCount = painted;
                     if (chatClosed && data.status && data.status !== 'closed') {
-                        markChatContinuedFromClosed({
-                            status: data.status,
-                            agent: data.agent || null
-                        });
+                        if (!(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil)) {
+                            markChatContinuedFromClosed({
+                                status: data.status,
+                                agent: data.agent || null
+                            });
+                        }
                     }
                     // Immediate re-arm (empty = idle timeout; with msgs = next wait)
                     scheduleVisitorLongPoll(messages.length ? 50 : 80);
@@ -3377,25 +3381,27 @@
             }
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
-            // Agent follow-up must reopen UI even after visitor self-close
-            // (otherwise bubbles paint into display:none ended panel).
-            // Skip replay/retransmit of bubbles already on screen — that path was
-            // maximizing the minimized widget whenever Node refreshed recent frames
-            // (looked like "opens while agent is typing").
-            if (!alreadyPainted && (isAgent || (chatClosed && lastClosedBy !== 'visitor'))) {
-                if (chatClosed) {
+            // Soft-close (agent/inactivity): agent follow-up reopens compose.
+            // Visitor self-close: stay on Resume / New chat — never reopen from
+            // late/replay agent bubbles (that left agent locked + visitor still chatting).
+            // Skip already-painted replays so minimize doesn't pop open on WS refresh.
+            if (!alreadyPainted) {
+                if (chatClosed && lastClosedBy === 'visitor') {
+                    // Keep ended screen; do not paint/reopen for agent frames.
+                } else if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
                     markChatContinuedFromClosed({
                         status: 'active',
                         agent: (msg && msg.agent_name)
                             ? { name: msg.agent_name, avatar: msg.agent_avatar }
                             : null
                     });
-                } else {
+                } else if (isAgent) {
                     try { showChatView(); } catch (eSv) {}
                 }
             }
             // Minimized widget: only NEW agent messages maximize (not ack/replay dupes).
-            if (isAgent && !isOpen && !alreadyPainted) {
+            // Never pop open after visitor self-close — ended screen owns the session.
+            if (isAgent && !isOpen && !alreadyPainted && !(chatClosed && lastClosedBy === 'visitor')) {
                 try {
                     ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true });
                 } catch (eMax) {}
@@ -3558,6 +3564,12 @@
                 return;
             }
             if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
+                var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
+                var visitorReopened = payload.reopened_by === 'visitor';
+                // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
+                if (visitorSelfEnded && !visitorReopened) {
+                    return;
+                }
                 if (chatClosed) {
                     markChatContinuedFromClosed({
                         status: payload.status,
@@ -5243,6 +5255,7 @@
 
         if (visitorEnded) {
             // Classic ended screen — Resume / Email / Start new
+            visitorCloseGraceUntil = Date.now() + 15000;
             if (conversationId) {
                 persistConversationId(conversationId);
                 persistChatToken(chatToken || '');
@@ -5322,12 +5335,21 @@
         }, 3000);
     }
 
-    function markChatContinuedFromClosed(data) {
+    function markChatContinuedFromClosed(data, opts) {
+        opts = opts || {};
+        // Visitor ended screen must not flip back open from late agent WS / pre-close polls.
+        // Resume / New chat / server reopen (after grace) pass through.
+        if (lastClosedBy === 'visitor' && !opts.fromVisitorAction) {
+            if (Date.now() < visitorCloseGraceUntil) {
+                return;
+            }
+        }
         stopVisitorReopenWatch();
         chatClosed = false;
         lastClosedBy = '';
         leaveCloseSent = false;
         pendingHistoryWipe = false;
+        visitorCloseGraceUntil = 0;
         // In-flight polls may still say status=closed — don't flip back to ended UI
         resumeGraceUntil = Date.now() + 20000;
         showChatView();
@@ -5831,6 +5853,7 @@
         chatClosed = false;
         lastClosedBy = '';
         leaveCloseSent = false;
+        visitorCloseGraceUntil = 0;
         var ended = document.getElementById('lc-panel-ended');
         if (ended) ended.style.display = 'none';
         // Do not enable compose here — caller must show idle / prechat / chat view.
@@ -7685,10 +7708,12 @@
                     setBubbleOnline(agentsOnline > 0);
                 }
                 if (chatClosed && data.status && data.status !== 'closed') {
-                    markChatContinuedFromClosed({
-                        status: data.status,
-                        agent: data.agent || null
-                    });
+                    if (!(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil)) {
+                        markChatContinuedFromClosed({
+                            status: data.status,
+                            agent: data.agent || null
+                        });
+                    }
                 }
                 if (data.status !== 'closed') {
                     applyAgentConnectionState(data);
