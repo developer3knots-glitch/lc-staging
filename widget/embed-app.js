@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 234;
+    var LC_WIDGET_BUILD = 235;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -715,8 +715,9 @@
             var nextStatus = localPresencePayload(fields, ts).status;
             fields._ts = ts;
             fields._from = fromStatus;
-            // Instant WS first (live agent UI). HTTP saves + backup fanout.
-            if (pushPresenceOverWs(fields, ts, fromStatus)) {
+            // Instant WS first (live agent UI). HTTP only for durable state / unload.
+            var wsOk = pushPresenceOverWs(fields, ts, fromStatus);
+            if (wsOk) {
                 lastPresenceKey = key;
                 pendingPresenceFields = null;
                 presenceRetryAttempt = 0;
@@ -726,7 +727,18 @@
                 kickVisitorRealtimeForPresence();
                 schedulePresenceWsRetry();
             }
-            persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
+            // WS-only: skip routine HTTP. Persist only unload / left / min↔max transitions
+            // so agent gets the minimize transcript line without presence poll spam.
+            var forceStatus = String(fields.force_status || '').toLowerCase();
+            var statusChanged = nextStatus !== lastReportedStatus;
+            var durablePresence = !!useBeacon
+                || !!fields.left_site
+                || forceStatus === 'minimized'
+                || forceStatus === 'active'
+                || (statusChanged && (nextStatus === 'minimized' || nextStatus === 'active' || nextStatus === 'left'));
+            if (!LC_WS_ONLY || durablePresence || !wsOk) {
+                persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
+            }
             lastReportedStatus = nextStatus;
         };
 
@@ -1463,6 +1475,33 @@
         } else {
             store.removeItem(PANEL_OPEN_KEY);
         }
+    }
+
+    function getStoredPanelOpen() {
+        return chatStore().getItem(PANEL_OPEN_KEY) === '1';
+    }
+
+    /** Active/resumed chats must open maximized after refresh. */
+    function shouldRestoreMaximizedChat() {
+        var stored = parseInt(getStoredConversationId(), 10) || 0;
+        var live = parseInt(conversationId, 10) || 0;
+        var pending = parseInt(pendingResumeConvId, 10) || 0;
+        return stored > 0 || live > 0 || pending > 0;
+    }
+
+    function ensureChatMaximized(opts) {
+        opts = opts || {};
+        if (isOpen) {
+            var panel = document.getElementById('lc-panel');
+            if (panel && panel.style.display === 'none') {
+                panel.style.setProperty('display', 'flex', 'important');
+            }
+            return;
+        }
+        openPanel({
+            silenceFlow: opts.silenceFlow !== false,
+            focusComposeOnOpen: !!opts.focusComposeOnOpen
+        });
     }
 
     function persistLastMsgId(id) {
@@ -2762,8 +2801,8 @@
                     playNotifySound();
                 }
                 if (!isOpen) {
-                    if (autoOpenOnMessage) {
-                        openPanel({
+                    if (m.sender_type === 'agent' || autoOpenOnMessage) {
+                        ensureChatMaximized({
                             silenceFlow: true,
                             focusComposeOnOpen: m.sender_type === 'agent'
                         });
@@ -3151,8 +3190,9 @@
                         playNotifySound();
                     }
                     if (!isOpen) {
-                        if (autoOpenOnMessage) {
-                            openPanel({
+                        // Agent messages always maximize a minimized widget.
+                        if (m.sender_type === 'agent' || autoOpenOnMessage) {
+                            ensureChatMaximized({
                                 silenceFlow: true,
                                 focusComposeOnOpen: m.sender_type === 'agent'
                             });
@@ -3264,6 +3304,12 @@
                 } else {
                     try { showChatView(); } catch (eSv) {}
                 }
+            }
+            // Minimized widget: agent message must maximize before/with paint.
+            if (isAgent && !isOpen) {
+                try {
+                    ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true });
+                } catch (eMax) {}
             }
             var painted = applyRealtimeMessage(payload);
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
@@ -4790,10 +4836,9 @@
 
     /** First paint: maximize instantly (no artificial delay). */
     function forceOpenChatPopup() {
-        if (!autoOpenOnLoad) return;
-        if (!isOpen) {
-            openPanel({ silenceFlow: true });
-        }
+        // Existing chat must reopen maximized even when site sets data-auto-open=false.
+        if (!autoOpenOnLoad && !shouldRestoreMaximizedChat()) return;
+        ensureChatMaximized({ silenceFlow: true });
         var panel = document.getElementById('lc-panel');
         if (panel) panel.style.setProperty('display', 'flex', 'important');
         var rootEl = document.getElementById('lc-widget-root');
@@ -4801,10 +4846,11 @@
         var bubble = document.getElementById('lc-bubble');
         if (bubble) bubble.classList.add('lcw-open');
         isOpen = true;
+        persistPanelOpen(true);
     }
 
     function scheduleAutoOpenOnLoad() {
-        if (!autoOpenOnLoad) return;
+        if (!autoOpenOnLoad && !shouldRestoreMaximizedChat()) return;
         didAutoOpenOnLoad = true;
         if (autoOpenTimer) {
             clearTimeout(autoOpenTimer);
@@ -4817,15 +4863,17 @@
     }
 
     function openPanelInstantIdle() {
-        if (!autoOpenOnLoad || didAutoOpenOnLoad || isOpen) return;
-        didAutoOpenOnLoad = true;
+        if (didAutoOpenOnLoad || isOpen) return;
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
+        // Active chat after refresh → always maximize. New visitors still respect autoOpenOnLoad.
+        if (!autoOpenOnLoad && storedChat < 1) return;
+        didAutoOpenOnLoad = true;
         if (storedChat > 0) {
             pendingResumeConvId = storedChat;
             bootHoldForChat = true;
         }
-        // Do not paint idle or an empty panel. A stored chat resumes while hidden.
         openPanel({ silenceFlow: true });
+        persistPanelOpen(true);
         if (storedChat > 0) initChat({ resumeConversationId: storedChat });
     }
 
@@ -7601,8 +7649,8 @@
                             playNotifySound();
                         }
                         if (!isOpen) {
-                            if (autoOpenOnMessage) {
-                                openPanel({
+                            if (m.sender_type === 'agent' || autoOpenOnMessage) {
+                                ensureChatMaximized({
                                     silenceFlow: true,
                                     focusComposeOnOpen: m.sender_type === 'agent'
                                 });

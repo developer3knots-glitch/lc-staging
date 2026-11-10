@@ -6660,8 +6660,7 @@
         document.addEventListener('visibilitychange', window.__lcReceiptVisHandler);
         if (selectedId) syncReceiptsOnly();
 
-        // Presence: WS visitor.presence is primary. HTTP is a slow safety net only
-        // (was 100ms and dominated server request volume).
+        // Presence: pure WS while socket is live. HTTP only when WS is down.
         if (window.__lcPresenceTimer) clearInterval(window.__lcPresenceTimer);
         window.__lcPresenceTimer = null;
         if (window.__lcPresenceVisHandler) {
@@ -6670,8 +6669,9 @@
         }
         function syncPresenceOnly() {
             if (!selectedId) return;
-            // While WS is live, skip hidden-tab polls entirely
-            if (document.hidden && isRealtimeWsLive()) return;
+            // Pure WS: no HTTP presence poll while realtime is connected
+            if (isRealtimeWsLive()) return;
+            if (document.hidden) return;
             fetch(base + '/api/agent-presence.php?conversation_id=' + encodeURIComponent(selectedId), {
                 credentials: 'same-origin',
                 cache: 'no-store'
@@ -6688,14 +6688,21 @@
                 })
                 .catch(function () {});
         }
-        // WS live → 8s safety; WS down → 1s (still far below the old 100ms hammer)
-        var presencePollMs = isRealtimeWsLive() ? 8000 : 1000;
-        window.__lcPresenceTimer = setInterval(syncPresenceOnly, presencePollMs);
+        // WS live → no interval. WS down → 2s fallback only.
+        if (!isRealtimeWsLive()) {
+            window.__lcPresenceTimer = setInterval(syncPresenceOnly, 2000);
+        } else {
+            // Re-check every 15s: if WS dropped, start the fallback poller
+            window.__lcPresenceTimer = setInterval(function () {
+                if (isRealtimeWsLive()) return;
+                syncPresenceOnly();
+            }, 15000);
+        }
         window.__lcPresenceVisHandler = function () {
-            if (!document.hidden && selectedId) syncPresenceOnly();
+            if (!document.hidden && selectedId && !isRealtimeWsLive()) syncPresenceOnly();
         };
         document.addEventListener('visibilitychange', window.__lcPresenceVisHandler);
-        if (selectedId) syncPresenceOnly();
+        if (selectedId && !isRealtimeWsLive()) syncPresenceOnly();
 
         // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
         // agent-poll + inbox list. Without listTimer, LEFT SITE stayed after a missed WS frame.
