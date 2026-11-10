@@ -6693,15 +6693,9 @@
                 })
                 .catch(function () {});
         }
-        // WS live → no interval. WS down → 2s fallback only.
+        // WS live → no presence HTTP at all. WS down → 2s fallback only.
         if (!isRealtimeWsLive()) {
             window.__lcPresenceTimer = setInterval(syncPresenceOnly, 2000);
-        } else {
-            // Re-check every 15s: if WS dropped, start the fallback poller
-            window.__lcPresenceTimer = setInterval(function () {
-                if (isRealtimeWsLive()) return;
-                syncPresenceOnly();
-            }, 15000);
         }
         window.__lcPresenceVisHandler = function () {
             if (!document.hidden && selectedId && !isRealtimeWsLive()) syncPresenceOnly();
@@ -6712,8 +6706,15 @@
         // Live presence prefers WS (visitor.presence). Poll fills gaps: open-chat
         // agent-poll + inbox list. Without listTimer, LEFT SITE stayed after a missed WS frame.
 
-        // Manual: Settings → Disable HTTP polling — still gap-fill open chat + inbox presence
+        // Manual: Settings → Disable HTTP polling.
+        // While WS is live: still zero message/inbox HTTP. Fallback only if WS is down.
         if (pollDisabled) {
+            if (isRealtimeWsLive()) {
+                pollTimer = null;
+                listTimer = null;
+                window.__lcJourneyTimer = null;
+                return;
+            }
             if (selectedId) {
                 pollTimer = setInterval(function () {
                     var painted = maxPaintedMessageId();
@@ -6731,15 +6732,11 @@
         }
 
         if (isRealtimeWsLive()) {
-            // Pure WS while socket is live — no agent-poll / receipt HTTP.
-            // Missed frames recover via reconnect, inbox.changed, scheduleMessageGapFill.
+            // Pure WS — no agent-poll, no inbox list poll, no journey poll.
+            // Inbox/presence updates arrive via inbox.changed / visitor.presence / message.new.
             pollTimer = null;
-            listTimer = setInterval(function () {
-                loadConversations();
-            }, isSupervising ? 2500 : 4000);
-            window.__lcJourneyTimer = setInterval(function () {
-                if (selectedId) loadPageJourney(false);
-            }, 30000);
+            listTimer = null;
+            window.__lcJourneyTimer = null;
             return;
         }
 

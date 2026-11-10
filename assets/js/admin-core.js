@@ -929,8 +929,8 @@
                         startPollFallback(POLL_MS);
                     });
                     landRt.on('connected', function () {
+                        // Pure WS while connected — no agent-traffic HTTP poll.
                         stopPollFallback();
-                        startPollFallback(12000);
                         // Seed known set once so a later disconnect→poll doesn't spam everyone already on site
                         if (knownOnSite === null) {
                             seedKnownOnSite();
