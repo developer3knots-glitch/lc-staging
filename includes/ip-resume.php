@@ -218,23 +218,42 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
     $ip = trim($ip);
     $userAgent = trim($userAgent);
     $exceptUid = trim($exceptUid);
-    // Never special-case a public office/test IP here — that left N Traffic
-    // "Browsing" clones for the same person (one row per localStorage uid).
-    if ($ip === '' || $userAgent === '' || !lc_ip_usable_for_identity($ip)) {
+    if ($ip === '' || !lc_ip_usable_for_identity($ip)) {
         return null;
     }
     try {
-        $stmt = lc_db()->prepare('
+        // Prefer exact UA, but Chrome minor bumps must not spawn a new Traffic ghost.
+        if ($userAgent !== '') {
+            $stmt = lc_db()->prepare('
+                SELECT *
+                FROM visitors
+                WHERE user_agent = ?
+                  AND visitor_uid <> ?
+                  AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)
+                  AND (ip_address = ? OR ipv4_address = ?)
+                ORDER BY last_seen DESC, id DESC
+                LIMIT 1
+            ');
+            $stmt->execute([$userAgent, $exceptUid, $ip, $ip]);
+            $row = $stmt->fetch();
+            if ($row) {
+                return $row;
+            }
+        }
+        $stmt = lc_db()->prepare("
             SELECT *
             FROM visitors
-            WHERE user_agent = ?
-              AND visitor_uid <> ?
+            WHERE visitor_uid <> ?
               AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)
+              AND left_site_at IS NULL
               AND (ip_address = ? OR ipv4_address = ?)
-            ORDER BY last_seen DESC, id DESC
+            ORDER BY
+              CASE WHEN TRIM(COALESCE(email, '')) <> '' THEN 0 ELSE 1 END,
+              last_seen DESC,
+              id DESC
             LIMIT 1
-        ');
-        $stmt->execute([$userAgent, $exceptUid, $ip, $ip]);
+        ");
+        $stmt->execute([$exceptUid, $ip, $ip]);
         $row = $stmt->fetch();
         return $row ?: null;
     } catch (Throwable $e) {
@@ -242,14 +261,13 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
             $stmt = lc_db()->prepare('
                 SELECT *
                 FROM visitors
-                WHERE user_agent = ?
-                  AND visitor_uid <> ?
+                WHERE visitor_uid <> ?
                   AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 SECOND)
                   AND ip_address = ?
                 ORDER BY last_seen DESC, id DESC
                 LIMIT 1
             ');
-            $stmt->execute([$userAgent, $exceptUid, $ip]);
+            $stmt->execute([$exceptUid, $ip]);
             $row = $stmt->fetch();
             return $row ?: null;
         } catch (Throwable $e2) {
@@ -259,14 +277,51 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
 }
 
 /**
- * Traffic list: one row per browser uid. Same uid from a double insert stays one row.
+ * Pick the strongest Traffic row from a browsing clone set.
+ * Prefer named/email contact, then newest last_seen, then newest visitor id.
  *
- * @param list<array<string,mixed>> $rows
- * @return list<array<string,mixed>>
+ * @param list<array<string,mixed>> $list
+ * @return array<string,mixed>|null
  */
+function lc_traffic_pick_best_browsing_row(array $list): ?array
+{
+    if ($list === []) {
+        return null;
+    }
+    usort($list, static function ($a, $b) {
+        $aName = trim((string) ($a['visitor_name'] ?? ''));
+        $bName = trim((string) ($b['visitor_name'] ?? ''));
+        $aEmail = trim((string) ($a['visitor_email'] ?? ''));
+        $bEmail = trim((string) ($b['visitor_email'] ?? ''));
+        $aKnown = ($aEmail !== '' ? 2 : 0) + (($aName !== '' && strcasecmp($aName, 'Visitor') !== 0) ? 1 : 0);
+        $bKnown = ($bEmail !== '' ? 2 : 0) + (($bName !== '' && strcasecmp($bName, 'Visitor') !== 0) ? 1 : 0);
+        if ($aKnown !== $bKnown) {
+            return $bKnown <=> $aKnown;
+        }
+        $ta = strtotime((string) ($a['last_seen'] ?? '')) ?: 0;
+        $tb = strtotime((string) ($b['last_seen'] ?? '')) ?: 0;
+        if ($ta !== $tb) {
+            return $tb <=> $ta;
+        }
+
+        return ((int) ($b['visitor_id'] ?? 0)) <=> ((int) ($a['visitor_id'] ?? 0));
+    });
+
+    return $list[0];
+}
+
 /**
- * Hide a second browsing row for the same IP, brand, and browser.
- * A row that has its own chat stays.
+ * Traffic list: collapse ghost browsing clones from the same person.
+ *
+ * Root causes of duplicate "Browsing" rows:
+ * - e2e / multi-tab creates a new localStorage visitor_uid each run
+ * - Chrome minor version churn made IP+UA keys miss (Chrome 156 vs 157)
+ * - a leftover hardcoded office IP used to skip merge entirely
+ *
+ * Rules:
+ * - Open chats (waiting/active) always stay (one row per conversation)
+ * - Pure browsing collapses to one row per public IP (account-scoped list)
+ * - Named/email contact wins over anonymous "Visitor"
  *
  * @param list<array<string,mixed>> $rows
  * @param array<int,array{id:int,key:string}> $pageBrandByVisitor
@@ -274,71 +329,94 @@ function lc_reuse_recent_same_browser(string $ip, string $userAgent, string $exc
  */
 function lc_traffic_collapse_browser_twins(array $rows, array $pageBrandByVisitor): array
 {
-    $groups = [];
-    $loose = [];
+    $chatting = [];
+    $browsing = [];
     foreach ($rows as $row) {
         if (!is_array($row)) {
             continue;
         }
-        $ip = trim((string) ($row['visitor_ip'] ?? ''));
-        $ua = trim((string) ($row['visitor_user_agent'] ?? ''));
-        $brand = (int) ($row['conversation_brand_id'] ?? 0);
-        if ($brand < 1) {
-            $vid = (int) ($row['visitor_id'] ?? 0);
-            $brand = (int) ($pageBrandByVisitor[$vid]['id'] ?? 0);
+        if ((int) ($row['conversation_id'] ?? 0) > 0) {
+            $chatting[] = $row;
+        } else {
+            $browsing[] = $row;
         }
-        // Empty IP/UA/brand cannot safely merge. Do NOT exclude a specific public IP —
-        // that was a leftover e2e hack and caused duplicate Browsing rows for 154.57.197.92.
-        if ($ip === '' || $ua === '' || $brand < 1) {
-            $loose[] = $row;
-            continue;
-        }
-        $key = $ip . '|' . $brand . '|' . sha1($ua);
-        $groups[$key][] = $row;
     }
 
-    $out = $loose;
-    foreach ($groups as $list) {
-        $chatting = [];
-        $browsing = [];
-        foreach ($list as $row) {
-            if ((int) ($row['conversation_id'] ?? 0) > 0) {
-                $chatting[] = $row;
-            } else {
-                $browsing[] = $row;
-            }
-        }
-        if ($chatting !== []) {
-            $seen = [];
-            foreach ($chatting as $row) {
-                $cid = (int) ($row['conversation_id'] ?? 0);
-                if ($cid > 0 && isset($seen[$cid])) {
-                    continue;
-                }
-                if ($cid > 0) {
-                    $seen[$cid] = true;
-                }
-                $out[] = $row;
-            }
+    $out = [];
+    $seenConv = [];
+    foreach ($chatting as $row) {
+        $cid = (int) ($row['conversation_id'] ?? 0);
+        if ($cid > 0 && isset($seenConv[$cid])) {
             continue;
         }
-        usort($browsing, static function ($a, $b) {
-            $ta = strtotime((string) ($a['visit_started_at'] ?? $a['visitor_created_at'] ?? '')) ?: 0;
-            $tb = strtotime((string) ($b['visit_started_at'] ?? $b['visitor_created_at'] ?? '')) ?: 0;
-            if ($ta === $tb) {
-                return ((int) ($a['visitor_id'] ?? 0)) <=> ((int) ($b['visitor_id'] ?? 0));
-            }
-
-            return $ta <=> $tb;
-        });
-        if ($browsing !== []) {
-            $out[] = $browsing[0];
+        if ($cid > 0) {
+            $seenConv[$cid] = true;
         }
+        $out[] = $row;
+    }
+
+    // IPs already in an open chat: drop browsing ghosts for that same person
+    $chatIps = [];
+    foreach ($out as $row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        if ($ip === '' || !lc_ip_usable_for_identity($ip)) {
+            continue;
+        }
+        $chatIps[$ip] = true;
+        $ipv4 = trim((string) ($row['visitor_ipv4'] ?? ''));
+        if ($ipv4 !== '') {
+            $chatIps[$ipv4] = true;
+        }
+    }
+
+    $byIp = [];
+    $noIp = [];
+    foreach ($browsing as $row) {
+        $ip = trim((string) ($row['visitor_ip'] ?? ''));
+        if ($ip === '' || !lc_ip_usable_for_identity($ip)) {
+            $noIp[] = $row;
+            continue;
+        }
+        if (!empty($chatIps[$ip])) {
+            continue;
+        }
+        $ipv4 = trim((string) ($row['visitor_ipv4'] ?? ''));
+        if ($ipv4 !== '' && !empty($chatIps[$ipv4])) {
+            continue;
+        }
+        $byIp[$ip][] = $row;
+    }
+
+    foreach ($byIp as $list) {
+        $best = lc_traffic_pick_best_browsing_row($list);
+        if ($best) {
+            $out[] = $best;
+        }
+    }
+    // No usable IP — still collapse by email when present, else keep as-is
+    $byEmail = [];
+    $anon = [];
+    foreach ($noIp as $row) {
+        $email = strtolower(trim((string) ($row['visitor_email'] ?? '')));
+        if ($email !== '' && strpos($email, '@') !== false) {
+            $byEmail[$email][] = $row;
+        } else {
+            $anon[] = $row;
+        }
+    }
+    foreach ($byEmail as $list) {
+        $best = lc_traffic_pick_best_browsing_row($list);
+        if ($best) {
+            $out[] = $best;
+        }
+    }
+    foreach ($anon as $row) {
+        $out[] = $row;
     }
 
     usort($out, static function ($a, $b) {
-        $ta = strtotime((string) ($a['visit_started_at'] ?? $a['visitor_created_at'] ?? '')) ?: 0;
-        $tb = strtotime((string) ($b['visit_started_at'] ?? $b['visitor_created_at'] ?? '')) ?: 0;
+        $ta = strtotime((string) ($a['last_seen'] ?? $a['visit_started_at'] ?? $a['visitor_created_at'] ?? '')) ?: 0;
+        $tb = strtotime((string) ($b['last_seen'] ?? $b['visit_started_at'] ?? $b['visitor_created_at'] ?? '')) ?: 0;
 
         return $tb <=> $ta;
     });
