@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 235;
+    var LC_WIDGET_BUILD = 236;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -3291,9 +3291,14 @@
                 try { persistConversationId(payloadCid); } catch (eP) {}
                 try { ensureVisitorConvChannel(); } catch (eSub2) {}
             }
+            var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
+            var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             // Agent follow-up must reopen UI even after visitor self-close
             // (otherwise bubbles paint into display:none ended panel).
-            if (isAgent || (chatClosed && lastClosedBy !== 'visitor')) {
+            // Skip replay/retransmit of bubbles already on screen — that path was
+            // maximizing the minimized widget whenever Node refreshed recent frames
+            // (looked like "opens while agent is typing").
+            if (!alreadyPainted && (isAgent || (chatClosed && lastClosedBy !== 'visitor'))) {
                 if (chatClosed) {
                     markChatContinuedFromClosed({
                         status: 'active',
@@ -3305,14 +3310,13 @@
                     try { showChatView(); } catch (eSv) {}
                 }
             }
-            // Minimized widget: agent message must maximize before/with paint.
-            if (isAgent && !isOpen) {
+            // Minimized widget: only NEW agent messages maximize (not ack/replay dupes).
+            if (isAgent && !isOpen && !alreadyPainted) {
                 try {
                     ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true });
                 } catch (eMax) {}
             }
             var painted = applyRealtimeMessage(payload);
-            var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             if (painted && isAgent && inDom) {
                 window.__lcWsAgentPainted = true;
@@ -3445,6 +3449,7 @@
         client.on('typing', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if ((payload.role || '') === 'agent') {
+                // Typing indicator only — never open/maximize the panel.
                 setPeerTypingVisible(!!payload.typing, payload.name || '');
             }
         });
@@ -3746,6 +3751,7 @@
         client.on('typing', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if ((payload.role || '') === 'agent') {
+                // Typing indicator only — never open/maximize the panel.
                 setPeerTypingVisible(!!payload.typing, payload.name || '');
             }
         });
