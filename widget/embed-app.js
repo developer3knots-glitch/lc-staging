@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 243;
+    var LC_WIDGET_BUILD = 244;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -867,6 +867,8 @@
     var widgetRevealed = false;
     var bootHoldForChat = false;
     var bootHistorySettled = false;
+    // Reload with stored chat: keep widget invisible until transcript bubbles exist.
+    var waitingForResumeTranscript = false;
     var widgetShowAt = Date.now() + 3000;
     var widgetShowTimer = null;
 
@@ -888,13 +890,34 @@
         tryRevealWidget();
     }
 
+    function beginResumeTranscriptGate() {
+        waitingForResumeTranscript = true;
+        bootHoldForChat = true;
+        bootHistorySettled = false;
+        // Once history is ready, show immediately — no artificial 3s idle/connecting flash.
+        widgetShowAt = Date.now();
+        if (widgetShowTimer) {
+            clearTimeout(widgetShowTimer);
+            widgetShowTimer = null;
+        }
+    }
+
+    function finishResumeTranscriptGate() {
+        if (!waitingForResumeTranscript) return;
+        if (!transcriptHasBubbles()) return;
+        waitingForResumeTranscript = false;
+        bootHoldForChat = false;
+        bootHistorySettled = true;
+        tryRevealWidget();
+    }
+
     function chatResumePending() {
-        return !!(bootHoldForChat || chatInitInFlight || chatHistoryLoading || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0));
+        return !!(waitingForResumeTranscript || bootHoldForChat || chatInitInFlight || chatHistoryLoading || pendingResumeConvId);
     }
 
     function transcriptHasBubbles() {
         var box = document.getElementById('lc-panel-messages');
-        if (!box || box.style.display === 'none') return false;
+        if (!box) return false;
         return !!box.querySelector('.lcw-msg, .lcw-msg-row, .lcw-system, .lcw-join-event, [data-msg-id]');
     }
 
@@ -908,9 +931,19 @@
     }
 
     function tryRevealWidget() {
-        if (widgetRevealed || !widgetStylesReady || chatHistoryLoading || chatInitInFlight) return;
-        // Existing chat: stay invisible until the transcript itself is on screen.
-        // Idle and the empty dark panel must never be the first thing the visitor sees.
+        if (widgetRevealed || !widgetStylesReady) return;
+        // Resume reload: stay fully hidden until real chat bubbles exist.
+        // Never reveal idle / empty "Connecting..." / blank white panel first.
+        if (waitingForResumeTranscript) {
+            if (chatInitInFlight || chatHistoryLoading) return;
+            if (!transcriptHasBubbles()) return;
+            waitingForResumeTranscript = false;
+            bootHoldForChat = false;
+            bootHistorySettled = true;
+            revealWidgetNow();
+            return;
+        }
+        if (chatHistoryLoading || chatInitInFlight) return;
         if (chatResumePending()) {
             if (!chatViewIsShowing()) return;
             if (!transcriptHasBubbles() && !bootHistorySettled) return;
@@ -923,6 +956,8 @@
 
     function revealWidgetNow() {
         if (widgetRevealed) return;
+        // Hard block: resume gate still waiting for transcript
+        if (waitingForResumeTranscript && !transcriptHasBubbles()) return;
         var wait = widgetShowAt - Date.now();
         if (wait > 0) {
             if (!widgetShowTimer) {
@@ -936,6 +971,7 @@
         var root = document.getElementById('lc-widget-root');
         if (!root) return;
         widgetRevealed = true;
+        waitingForResumeTranscript = false;
         var panel = document.getElementById('lc-panel');
         var teaser = document.getElementById('lc-teaser');
         if (panel) panel.style.animation = 'none';
@@ -1431,29 +1467,31 @@
             }
         });
 
-        // Widget loads in the background and stays hidden for 3 seconds, then shows.
+        // Widget stays hidden (lcw-booting) until ready. Resume: until transcript paints.
         openPanelInstantIdle();
         setTimeout(function () {
             widgetStylesReady = true;
             widgetEntryReady = true;
-            // Never force-settle while a resumed chat is still loading — that flashed idle/empty.
-            if (!(chatResumePending() && !transcriptHasBubbles())) {
-                bootHistorySettled = true;
-            }
             tryRevealWidget();
-        }, 3000);
-        // Safety: if resume hangs, still show the chat view (not idle) after 8s.
+        }, waitingForResumeTranscript ? 0 : 3000);
+        // Last-resort only: if resume truly hangs with zero bubbles, keep chat view (not idle).
         setTimeout(function () {
             if (widgetRevealed) return;
-            if (chatResumePending()) {
-                bootHistorySettled = true;
+            if (waitingForResumeTranscript) {
                 hideIdleIntro();
                 showChatView();
+                // Still no bubbles after 12s — lift gate so visitor can type
+                if (!transcriptHasBubbles() && !chatInitInFlight && !chatHistoryLoading) {
+                    waitingForResumeTranscript = false;
+                    bootHoldForChat = false;
+                    bootHistorySettled = true;
+                }
             }
             tryRevealWidget();
-            if (!widgetRevealed) revealWidgetNow();
-        }, 8000);
-        scheduleWelcomeEngagement();
+        }, 12000);
+        if (!waitingForResumeTranscript) {
+            scheduleWelcomeEngagement();
+        }
         loadWidgetSettings();
         startSettingsSync();
 
@@ -1597,6 +1635,7 @@
         chatToken = '';
         lastMsgId = 0;
         pendingResumeConvId = null;
+        waitingForResumeTranscript = false;
         bootHoldForChat = false;
         bootHistorySettled = true;
         persistConversationId(null);
@@ -4120,7 +4159,7 @@
         // checks on widget-init decide ownership — do not clear the thread here.
         if (resumeId > 0 && !options.forceNew) {
             pendingResumeConvId = resumeId;
-            bootHoldForChat = true;
+            beginResumeTranscriptGate();
             hideIdleIntro();
             showChatView();
             showChatLoading('Loading chat...', 'Waiting for chat to load');
@@ -4161,7 +4200,7 @@
         // Already-started chat (waiting queue OR active with agent) → open thread now.
         if (serverId > 0 && (liveStatus === 'active' || liveStatus === 'waiting' || liveStatus === 'closed')) {
             pendingResumeConvId = serverId;
-            bootHoldForChat = true;
+            beginResumeTranscriptGate();
             hideIdleIntro();
             showChatView();
             showChatLoading('Loading chat...', 'Waiting for chat to load');
@@ -4886,9 +4925,9 @@
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
         didAutoOpenOnLoad = true;
         if (storedChat > 0) {
-            // Reload with an active chat: jump straight into the thread — never idle first.
+            // Reload with an active chat: load behind boot shield — never idle/connecting flash.
             pendingResumeConvId = storedChat;
-            bootHoldForChat = true;
+            beginResumeTranscriptGate();
             hideIdleIntro();
             showChatView();
             showChatLoading('Loading chat...', 'Waiting for chat to load');
@@ -5982,7 +6021,10 @@
                 } catch (eBoot) {}
             });
             pendingHistoryWipe = false;
-            if (transcriptHasBubbles()) bootHistorySettled = true;
+            if (transcriptHasBubbles()) {
+                bootHistorySettled = true;
+                finishResumeTranscriptGate();
+            }
         }
 
         var isResume = !!(options.resumeConversationId);
@@ -6035,11 +6077,11 @@
         requestBrowserGeo();
         capturePublicIpv4();
         // Refresh resume of active chat: auto-maximize into the thread
-        bootHoldForChat = false;
         if (transcriptHasBubbles()) {
-            bootHistorySettled = true;
+            finishResumeTranscriptGate();
+        } else {
+            tryRevealWidget();
         }
-        tryRevealWidget();
         if (isResume) {
             scheduleAutoOpenOnLoad();
             return;
@@ -6375,9 +6417,13 @@
     function showChatLoading(title, sub) {
         chatHistoryLoading = true;
         if (chatLoadingWatchdog) clearTimeout(chatLoadingWatchdog);
-        chatLoadingWatchdog = setTimeout(function () {
-            hideChatLoading();
-        }, 3500);
+        chatLoadingWatchdog = null;
+        // Resume boot: never auto-hide at 3.5s (that revealed blank/connecting before messages).
+        if (!waitingForResumeTranscript) {
+            chatLoadingWatchdog = setTimeout(function () {
+                hideChatLoading();
+            }, 3500);
+        }
 
         var el = ensureChatLoadingEl();
         if (el) {
@@ -6414,7 +6460,12 @@
                 try { node.remove(); } catch (eRem) {}
             });
         } catch (eAny) {}
-        tryRevealWidget();
+        // Resume: only reveal after bubbles exist (finishResumeTranscriptGate).
+        if (waitingForResumeTranscript) {
+            finishResumeTranscriptGate();
+        } else {
+            tryRevealWidget();
+        }
         if (pendingResumeStatus) {
             var st = pendingResumeStatus;
             pendingResumeStatus = null;
@@ -7729,8 +7780,9 @@
                     setPeerTypingVisible(!!data.peer_typing, data.peer_typing_name || (data.agent && data.agent.name) || data.agent_name);
                 }
                 if (data.reactions) applyWidgetReactionSnapshot(data.reactions);
-                if (isHistoryLoad && (transcriptHasBubbles() || !historyRetryTimer)) {
+                if (isHistoryLoad && transcriptHasBubbles()) {
                     bootHistorySettled = true;
+                    finishResumeTranscriptGate();
                 }
                 hideChatLoading();
                 if (viewing === '1') {
