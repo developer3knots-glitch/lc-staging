@@ -4760,6 +4760,13 @@
     function pollMessages(opts) {
         opts = opts || {};
         if (!selectedId) return;
+        // Pure WS: never hit agent-poll while socket is live — except opening a chat
+        // (needsFullHistory) or an explicit force. Stops Network spam from reconnect /
+        // inbox.changed / receipt / gap-fill catch-up callers.
+        var allowHttp = !!(opts.force || opts._forceHttp || needsFullHistory);
+        if (isRealtimeWsLive() && !allowHttp) {
+            return;
+        }
         var conversationId = selectedId;
         var isFirstLoadReq = needsFullHistory;
         var full = isFirstLoadReq ? 1 : 0;
@@ -6764,6 +6771,8 @@
         cursor = parseInt(cursor, 10) || 0;
         if (cursor < 1 || !selectedId || pollDisabled) return;
         if (pollOpts && pollOpts._gapFill) return;
+        // WS live → no HTTP gap-fill; message.new / staff.message already painted.
+        if (isRealtimeWsLive()) return;
         var painted = maxPaintedMessageId();
         if (cursor <= painted) return;
         // Server has messages we never painted — rewind cursor and catch up once
@@ -6772,6 +6781,7 @@
         messageGapFillTimer = setTimeout(function () {
             messageGapFillTimer = null;
             if (!selectedId || messageGapFillBusy) return;
+            if (isRealtimeWsLive()) return;
             messageGapFillBusy = true;
             pollMessages({ skipJourney: true, _gapFill: true });
             setTimeout(function () { messageGapFillBusy = false; }, 1500);
@@ -6882,8 +6892,7 @@
                 resetPollTimers();
                 // Re-join open conversation after reconnect
                 if (selectedId) syncRealtimeConversationChannel(selectedId);
-                // Pick up any read receipts missed while socket was down
-                if (selectedId) pollMessages();
+                // No agent-poll catch-up while WS is live — Network stays clean.
                 if (Date.now() - inboxLoadedAt > 1500) loadConversations();
             });
             realtimeClient.on('disconnected', function () {
@@ -6905,10 +6914,10 @@
                     clearLocalUnread(cid);
                     return true;
                 }
+                // Id-only frame with no body: wait for full message.new — do not agent-poll.
                 var onlyId = parseInt(payload && payload.message_id, 10) || 0;
                 if (onlyId > 0) {
-                    lastMsgId = Math.min(lastMsgId || onlyId, onlyId - 1);
-                    pollMessages({ skipJourney: true, _gapFill: true });
+                    if (onlyId > lastMsgId) lastMsgId = onlyId;
                     clearLocalUnread(cid);
                     return true;
                 }
@@ -6985,9 +6994,6 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {
                     loadConversations();
-                    if (selectedId && cid === selectedId) {
-                        pollMessages();
-                    }
                     return;
                 }
                 if (cid && payload && payload.message && payload.message.sender_type === 'visitor') {
@@ -6999,10 +7005,6 @@
                         if (payload.message.sender_type === 'visitor') {
                             markPriorAgentTicksRead(parseInt(payload.message.id, 10) || 0);
                         }
-                    } else {
-                        var painted = maxPaintedMessageId();
-                        if (painted > 0) lastMsgId = Math.min(lastMsgId, painted);
-                        pollMessages({ skipJourney: true });
                     }
                     clearLocalUnread(cid);
                     return;
@@ -7047,8 +7049,6 @@
                 if (payload && payload.receipts && payload.receipts.length) {
                     lastAgentReceipts = payload.receipts;
                     applyReceipts(payload.receipts);
-                } else {
-                    pollMessages({ skipJourney: true });
                 }
             });
             realtimeClient.on('conversation.note', handleStaffNotePayload);
@@ -7119,9 +7119,6 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (cid) {
                     loadConversations();
-                    if (selectedId && cid === selectedId) {
-                        pollMessages();
-                    }
                 }
             });
             realtimeClient.on('conversation.updated', function (payload) {
@@ -7133,9 +7130,7 @@
                     var closedBy = String(payload.closed_by || '');
                     if (closedBy === 'inactivity') {
                         applyConversationClosedLocally(cid, 'inactivity');
-                        if (selectedId && cid === selectedId) {
-                            pollMessages({ skipJourney: true });
-                        } else if (!(payload && (payload.transferred || payload.taken_over))) {
+                        if (!(selectedId && cid === selectedId) && !(payload && (payload.transferred || payload.taken_over))) {
                             loadConversations();
                         }
                         return;
@@ -7155,9 +7150,7 @@
                         }
                     }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
-                    if (selectedId && cid === selectedId) {
-                        pollMessages({ skipJourney: true });
-                    } else if (!(payload && (payload.transferred || payload.taken_over))) {
+                    if (!(selectedId && cid === selectedId) && !(payload && (payload.transferred || payload.taken_over))) {
                         loadConversations();
                     }
                     return;
@@ -7167,9 +7160,6 @@
                         playNotifyEvent('chat_continued', 'cont:' + cid);
                     }
                     applyConversationWaitingLocally(cid, { force: true });
-                    if (selectedId && cid === selectedId) {
-                        pollMessages({ skipJourney: true });
-                    }
                     return;
                 }
                 if (selectedId && cid === selectedId) {
@@ -7188,7 +7178,6 @@
                         var sendActiveBtn = document.getElementById('lc-send-reply');
                         if (sendActiveBtn) sendActiveBtn.disabled = false;
                     }
-                    pollMessages();
                 } else if (!(payload && (payload.transferred || payload.taken_over))) {
                     loadConversations();
                 }
