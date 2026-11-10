@@ -6630,8 +6630,8 @@
 
         function syncReceiptsOnly() {
             if (!selectedId) return;
-            // WS message.receipts is primary; skip hidden-tab HTTP while socket is live
-            if (document.hidden && isRealtimeWsLive()) return;
+            // WS message.receipts only while socket is live — no HTTP receipt poll.
+            if (isRealtimeWsLive()) return;
             fetch(base + '/api/agent-receipts.php?conversation_id=' + encodeURIComponent(selectedId), {
                 credentials: 'same-origin',
                 cache: 'no-store'
@@ -6647,18 +6647,23 @@
         }
         window.__lcSyncReceiptsNow = syncReceiptsOnly;
 
-        // WS-first ticks; HTTP is slow safety (was 1s hard poll)
-        var receiptPollMs = isRealtimeWsLive() ? 8000 : 2000;
-        window.__lcReceiptTimer = setInterval(syncReceiptsOnly, receiptPollMs);
+        // Receipts: pure WS while live. HTTP poll only when WS is down.
+        if (window.__lcReceiptTimer) {
+            clearInterval(window.__lcReceiptTimer);
+            window.__lcReceiptTimer = null;
+        }
+        if (!isRealtimeWsLive()) {
+            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
+            if (selectedId) syncReceiptsOnly();
+        }
         if (window.__lcReceiptVisHandler) {
             document.removeEventListener('visibilitychange', window.__lcReceiptVisHandler);
             window.__lcReceiptVisHandler = null;
         }
         window.__lcReceiptVisHandler = function () {
-            if (!document.hidden && selectedId) syncReceiptsOnly();
+            if (!document.hidden && selectedId && !isRealtimeWsLive()) syncReceiptsOnly();
         };
         document.addEventListener('visibilitychange', window.__lcReceiptVisHandler);
-        if (selectedId) syncReceiptsOnly();
 
         // Presence: pure WS while socket is live. HTTP only when WS is down.
         if (window.__lcPresenceTimer) clearInterval(window.__lcPresenceTimer);
@@ -6726,20 +6731,9 @@
         }
 
         if (isRealtimeWsLive()) {
-            // WS message.new / staff.message are primary. HTTP is a slow safety net
-            // only (was 400–800ms and hammered agent-poll.php). Missed frames still
-            // recover via reconnect poll, inbox.changed, and scheduleMessageGapFill.
-            var chatPollMs = isSupervising ? 15000 : 20000;
-            pollTimer = setInterval(function () {
-                if (!selectedId) return;
-                if (document.hidden) return;
-                // Never let lastMsgId drift past painted bubbles
-                var painted = maxPaintedMessageId();
-                if (painted > 0 && lastMsgId > painted) {
-                    lastMsgId = painted;
-                }
-                pollMessages({ skipJourney: true });
-            }, chatPollMs);
+            // Pure WS while socket is live — no agent-poll / receipt HTTP.
+            // Missed frames recover via reconnect, inbox.changed, scheduleMessageGapFill.
+            pollTimer = null;
             listTimer = setInterval(function () {
                 loadConversations();
             }, isSupervising ? 2500 : 4000);

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 236;
+    var LC_WIDGET_BUILD = 237;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -3047,6 +3047,8 @@
     /**
      * Tell server visitor got / saw agent messages.
      * @param {boolean} [deliveredOnly] - true = double grey ticks only (not blue read)
+     * WS-only while socket is live: Node bridges visitor.receipt_ack → PHP.
+     * HTTP visitor-ack.php is fallback only when WS is down.
      */
     function ackAgentMessagesSeen(deliveredOnly) {
         if (!conversationId || chatClosed) return;
@@ -3062,7 +3064,13 @@
             return;
         }
         // Prefer WS bridge (Node→PHP when LC_VISITOR_ACK_URL is set).
-        try { publishVisitorReceiptAck(viewing); } catch (eWsAck) {}
+        var viaWs = false;
+        try { viaWs = publishVisitorReceiptAck(viewing); } catch (eWsAck) { viaWs = false; }
+        if (viaWs && (LC_WS_ONLY || isVisitorWsLive())) {
+            window.__lcLastAckSig = ackSig;
+            window.__lcLastAckAt = nowAck;
+            return;
+        }
         if (ackReceiptInFlight) {
             ackReceiptQueued = true;
             ackReceiptQueuedDeliveredOnly = !!deliveredOnly || viewing !== 1;
@@ -3073,8 +3081,12 @@
         ackReceiptTimer = setTimeout(function () {
             ackReceiptTimer = null;
             if (!conversationId || chatClosed) return;
-            // Event-driven HTTP ack (paint / focus) — NOT the 15s heartbeat.
-            // Keeps Seen ticks working even before Node receipt bridge is configured.
+            // HTTP fallback only when WS bridge unavailable.
+            if (publishVisitorReceiptAck(viewingToSend) && (LC_WS_ONLY || isVisitorWsLive())) {
+                window.__lcLastAckSig = String(conversationId) + ':' + viewingToSend;
+                window.__lcLastAckAt = Date.now();
+                return;
+            }
             if (ackReceiptInFlight) {
                 ackReceiptQueued = true;
                 ackReceiptQueuedDeliveredOnly = viewingToSend !== 1;
