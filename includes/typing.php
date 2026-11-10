@@ -51,7 +51,9 @@ function lc_sanitize_typing_preview(string $raw): string
 
 function lc_typing_ttl_seconds(): int
 {
-    return 4;
+    // Visitor heartbeats ~2s while the field has text. Short TTL made peer_typing
+    // drop between keystrokes / missed beats and the agent bar flickered off.
+    return 20;
 }
 
 function lc_typing_heartbeat_is_active(?string $at, ?int $ttl = null): bool

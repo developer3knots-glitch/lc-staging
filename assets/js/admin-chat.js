@@ -7027,19 +7027,17 @@
                 var typingOn = payload.typing === true || payload.typing === 1 || payload.typing === '1';
                 var draftText = String((payload && payload.preview) || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
-                if (cleared || !typingOn) {
+                // Hide ONLY when field emptied / send cleared — not on flaky typing:false.
+                if (cleared || (!typingOn && !draftLeft)) {
                     setVisitorSidebarTyping(cid, false);
                     if (selectedId && cid === selectedId) setPeerTypingVisible(false);
                     return;
                 }
-                if (typingOn) {
+                if (typingOn || draftLeft) {
                     setVisitorSidebarTyping(cid, true);
                     if (selectedId && cid === selectedId) {
-                        // Always show while typingOn — old has-preview short-circuit
-                        // left the bar hidden with a stale draft label.
                         setPeerTypingVisible(true, payload.name || 'Visitor', draftLeft ? draftText : '');
                     }
-                    return;
                 }
             });
             realtimeClient.on('message.reaction', function (payload) {

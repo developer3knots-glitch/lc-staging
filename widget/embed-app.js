@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 239;
+    var LC_WIDGET_BUILD = 240;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -6505,22 +6505,31 @@
         if (!conversationId || chatClosed) return;
         var input = document.getElementById('lc-input');
         if (!input) return;
-        var hasText = (input.value || '').trim().length > 0;
+        // Show on agent until the compose field is actually empty (or send clears it).
+        // Do not use keyup-idle timeouts — pausing mid-sentence must keep the draft visible.
+        var hasText = (input.value || '').length > 0 && (input.value || '').replace(/\s/g, '') !== '';
         if (!hasText) {
-            stopOwnTyping();
+            // Truly empty (or only whitespace) → clear agent preview.
+            if (!(input.value || '').replace(/\s/g, '').length) {
+                stopOwnTyping();
+            }
             return;
         }
         postOwnTyping(true);
         if (!typingHeartbeatTimer) {
             typingHeartbeatTimer = setInterval(function () {
                 var el = document.getElementById('lc-input');
-                if (!conversationId || chatClosed || !el || !(el.value || '').trim()) {
+                if (!conversationId || chatClosed || !el) {
+                    stopOwnTyping();
+                    return;
+                }
+                if (!(el.value || '').replace(/\s/g, '').length) {
                     stopOwnTyping();
                     return;
                 }
                 lastTypingPostAt = 0;
                 postOwnTyping(true);
-            }, 2000);
+            }, 1500);
         }
     }
 

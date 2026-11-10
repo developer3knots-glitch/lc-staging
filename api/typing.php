@@ -58,8 +58,11 @@ try {
                     $preview = '';
                 }
             }
-            lc_set_typing($conversationId, 'visitor', $preview !== '', $preview);
-            lc_json(['success' => true, 'typing' => $preview !== '', 'preview' => $preview]);
+            // Keep typing ON while the client says so — never flip to false just because
+            // draft was briefly empty (keyup/input race). Agent hides only on typing:false
+            // / cleared when the compose field is empty or the message was sent.
+            lc_set_typing($conversationId, 'visitor', true, $preview);
+            lc_json(['success' => true, 'typing' => true, 'preview' => $preview]);
         }
 
         // typing:false always clears. Keeping a stale draft here left agent UI
