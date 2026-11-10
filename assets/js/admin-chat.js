@@ -6906,6 +6906,8 @@
                 if (msg && msg.id) {
                     if (msg.sender_type === 'visitor') {
                         noteVisitorMessaging(cid, payload && payload.visitor_presence);
+                        setVisitorSidebarTyping(cid, false);
+                        setPeerTypingVisible(false);
                     }
                     appendLiveMessage(msg);
                     if (msg.sender_type === 'visitor') {
@@ -6939,6 +6941,8 @@
                 }
                 if (cid && msg && msg.sender_type === 'visitor') {
                     setVisitorSidebarTyping(cid, false);
+                    // Message means draft was sent — never leave sticky preview ("… 8").
+                    if (selectedId && cid === selectedId) setPeerTypingVisible(false);
                     noteVisitorMessaging(cid, payload && payload.visitor_presence);
                 }
                 if (handleStaffMessagePayload(payload)) {
@@ -7018,14 +7022,15 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid || (payload.role || '') !== 'visitor') return;
                 var cleared = payload.cleared === true || payload.cleared === 1 || payload.cleared === '1';
+                var typingOn = payload.typing === true || payload.typing === 1 || payload.typing === '1';
                 var draftText = String((payload && payload.preview) || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
-                if (cleared) {
+                if (cleared || !typingOn) {
                     setVisitorSidebarTyping(cid, false);
                     if (selectedId && cid === selectedId) setPeerTypingVisible(false);
                     return;
                 }
-                if (payload.typing || draftLeft) {
+                if (typingOn) {
                     setVisitorSidebarTyping(cid, true);
                     if (selectedId && cid === selectedId && draftLeft) {
                         setPeerTypingVisible(true, payload.name || 'Visitor', draftText);

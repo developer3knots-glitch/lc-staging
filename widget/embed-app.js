@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 238;
+    var LC_WIDGET_BUILD = 239;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -6472,7 +6472,7 @@
         }).catch(function () {});
     }
 
-    function stopOwnTyping() {
+    function stopOwnTyping(forceClear) {
         if (typingHeartbeatTimer) {
             clearInterval(typingHeartbeatTimer);
             typingHeartbeatTimer = null;
@@ -6481,10 +6481,12 @@
             clearTimeout(typingIdleTimer);
             typingIdleTimer = null;
         }
-        if (ownTypingActive && conversationId) {
-            ownTypingActive = false;
-            lastTypingPostAt = 0;
-            lastTypingDraft = '';
+        var wasActive = ownTypingActive;
+        ownTypingActive = false;
+        lastTypingPostAt = 0;
+        lastTypingDraft = '';
+        // forceClear on send — wipe agent preview even if ownTypingActive raced false.
+        if (conversationId && (forceClear || wasActive)) {
             fetch(siteUrl + '/api/typing.php', {
                 method: 'POST',
                 headers: apiHeaders({ 'Content-Type': 'application/json' }),
@@ -6496,8 +6498,6 @@
                     cleared: 1
                 })
             }).catch(function () {});
-        } else {
-            ownTypingActive = false;
         }
     }
 
@@ -8180,7 +8180,7 @@
         var input = document.getElementById('lc-input');
         var msg = input.value.trim();
         if (!msg) return;
-        stopOwnTyping();
+        stopOwnTyping(true);
 
         if (Date.now() < sendCooldownUntil) {
             showTransientSendError('Too many requests. Please wait a moment.', msg);

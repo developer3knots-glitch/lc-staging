@@ -157,8 +157,15 @@ function lc_clear_typing(int $conversationId, ?string $role = null): void
         } catch (Throwable $e) {
             lc_db()->prepare('UPDATE conversations SET visitor_typing_at = NULL WHERE id = ?')->execute([$conversationId]);
         }
+        // Push cleared so agent typing bar drops even if widget clear raced.
+        if (function_exists('lc_realtime_publish_typing')) {
+            lc_realtime_publish_typing($conversationId, 'visitor', false, ['cleared' => true, 'preview' => '']);
+        }
     } elseif ($role === 'agent') {
         lc_db()->prepare('UPDATE conversations SET agent_typing_at = NULL WHERE id = ?')->execute([$conversationId]);
+        if (function_exists('lc_realtime_publish_typing')) {
+            lc_realtime_publish_typing($conversationId, 'agent', false);
+        }
     } else {
         try {
             lc_db()->prepare('UPDATE conversations SET visitor_typing_at = NULL, visitor_typing_preview = NULL, agent_typing_at = NULL WHERE id = ?')
@@ -166,6 +173,10 @@ function lc_clear_typing(int $conversationId, ?string $role = null): void
         } catch (Throwable $e) {
             lc_db()->prepare('UPDATE conversations SET visitor_typing_at = NULL, agent_typing_at = NULL WHERE id = ?')
                 ->execute([$conversationId]);
+        }
+        if (function_exists('lc_realtime_publish_typing')) {
+            lc_realtime_publish_typing($conversationId, 'visitor', false, ['cleared' => true, 'preview' => '']);
+            lc_realtime_publish_typing($conversationId, 'agent', false);
         }
     }
 }

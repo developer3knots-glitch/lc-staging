@@ -62,24 +62,8 @@ try {
             lc_json(['success' => true, 'typing' => $preview !== '', 'preview' => $preview]);
         }
 
-        $cleared = !empty($input['cleared']) && (
-            $input['cleared'] === true || $input['cleared'] === 1
-            || $input['cleared'] === '1' || $input['cleared'] === 'true'
-        );
-        if (!$cleared) {
-            $kept = '';
-            try {
-                $keep = $db->prepare('SELECT visitor_typing_preview FROM conversations WHERE id = ? LIMIT 1');
-                $keep->execute([$conversationId]);
-                $kept = lc_sanitize_typing_preview((string) ($keep->fetchColumn() ?: ''));
-            } catch (Throwable $e) {
-                $kept = '';
-            }
-            if ($kept !== '') {
-                lc_set_typing($conversationId, 'visitor', true, $kept);
-                lc_json(['success' => true, 'typing' => true, 'preview' => $kept]);
-            }
-        }
+        // typing:false always clears. Keeping a stale draft here left agent UI
+        // stuck on "… 8" after the visitor already sent that message.
         lc_set_typing($conversationId, 'visitor', false, '');
         lc_json(['success' => true, 'typing' => false, 'preview' => '', 'cleared' => true]);
     }
