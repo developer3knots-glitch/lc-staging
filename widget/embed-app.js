@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 241;
+    var LC_WIDGET_BUILD = 242;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -123,9 +123,7 @@
     }
 
     var brandKey = (script && script.getAttribute('data-brand')) || 'default';
-    // Default ON. Some sites set data-auto-open="false" — only never/off disables it.
-    var autoOpenAttr = ((script && script.getAttribute('data-auto-open')) || 'true').toLowerCase();
-    var autoOpenOnLoad = autoOpenAttr !== 'never' && autoOpenAttr !== 'off' && autoOpenAttr !== '0';
+    // Always maximize on page load / reload (site data-auto-open=never is ignored).
     var autoOpenOnMessage = ((script && script.getAttribute('data-auto-open-msg')) || 'true').toLowerCase() !== 'false';
     var didAutoOpenOnLoad = false;
 
@@ -4856,8 +4854,6 @@
 
     /** First paint: maximize instantly (no artificial delay). */
     function forceOpenChatPopup() {
-        // Existing chat must reopen maximized even when site sets data-auto-open=false.
-        if (!autoOpenOnLoad && !shouldRestoreMaximizedChat()) return;
         ensureChatMaximized({ silenceFlow: true });
         var panel = document.getElementById('lc-panel');
         if (panel) panel.style.setProperty('display', 'flex', 'important');
@@ -4870,7 +4866,6 @@
     }
 
     function scheduleAutoOpenOnLoad() {
-        if (!autoOpenOnLoad && !shouldRestoreMaximizedChat()) return;
         didAutoOpenOnLoad = true;
         if (autoOpenTimer) {
             clearTimeout(autoOpenTimer);
@@ -4885,8 +4880,6 @@
     function openPanelInstantIdle() {
         if (didAutoOpenOnLoad || isOpen) return;
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
-        // Active chat after refresh → always maximize. New visitors still respect autoOpenOnLoad.
-        if (!autoOpenOnLoad && storedChat < 1) return;
         didAutoOpenOnLoad = true;
         if (storedChat > 0) {
             pendingResumeConvId = storedChat;
