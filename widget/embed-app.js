@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 240;
+    var LC_WIDGET_BUILD = 241;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -6453,8 +6453,10 @@
             if (draft.length > 2000) draft = draft.slice(0, 2000);
         }
         var now = Date.now();
-        // Keep heartbeats flowing; only skip identical drafts briefly.
-        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 1200) {
+        // Identical draft: skip most heartbeats so agent DOM is not rewritten
+        // every 1.5s (that restarted the typing-dots animation = blink).
+        // Still pulse rarely so DB TTL stays warm for WS-down fallback only.
+        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 8000) {
             return;
         }
         lastTypingPostAt = now;
@@ -6527,9 +6529,10 @@
                     stopOwnTyping();
                     return;
                 }
-                lastTypingPostAt = 0;
+                // Do NOT zero lastTypingPostAt — identical-draft throttle above
+                // avoids blinky republish; only actual text changes force immediate post.
                 postOwnTyping(true);
-            }, 1500);
+            }, 4000);
         }
     }
 

@@ -276,13 +276,23 @@
         playNotifyEvent(eventName || 'message_here', dedupeKey);
     }
 
+    var peerTypingShown = false;
+    var peerTypingDraftKey = '';
     function setPeerTypingVisible(show, name, preview) {
         if (!typingEl) return;
         if (show) {
+            var who = (name || 'Visitor').trim() || 'Visitor';
+            var draft = String(preview || '').replace(/^[ \t]+|[ \t]+$/g, '');
+            var key = (draft.replace(/\s/g, '') !== '' ? ('p:' + draft) : ('t:' + who));
+            // Same preview already painted — do not rewrite DOM (heartbeat was
+            // restarting the dots animation = blink).
+            if (peerTypingShown && !typingEl.hidden && key === peerTypingDraftKey) {
+                return;
+            }
+            peerTypingShown = true;
+            peerTypingDraftKey = key;
             typingEl.hidden = false;
             if (typingLabelEl) {
-                var who = (name || 'Visitor').trim() || 'Visitor';
-                var draft = String(preview || '').replace(/^[ \t]+|[ \t]+$/g, '');
                 if (draft && draft.replace(/\s/g, '') !== '') {
                     typingLabelEl.classList.add('has-preview');
                     typingLabelEl.innerHTML = esc(draft).replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
@@ -294,6 +304,9 @@
                 }
             }
         } else {
+            if (!peerTypingShown && typingEl.hidden) return;
+            peerTypingShown = false;
+            peerTypingDraftKey = '';
             typingEl.hidden = true;
             if (typingLabelEl) {
                 typingLabelEl.classList.remove('has-preview');
@@ -7027,8 +7040,9 @@
                 var typingOn = payload.typing === true || payload.typing === 1 || payload.typing === '1';
                 var draftText = String((payload && payload.preview) || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
-                // Hide ONLY when field emptied / send cleared — not on flaky typing:false.
-                if (cleared || (!typingOn && !draftLeft)) {
+                // Hide ONLY on explicit clear (field empty / send). Never blink off on
+                // typing:false heartbeats or empty-preview races — Pure WS, no poll.
+                if (cleared) {
                     setVisitorSidebarTyping(cid, false);
                     if (selectedId && cid === selectedId) setPeerTypingVisible(false);
                     return;
