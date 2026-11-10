@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 250;
+    var LC_WIDGET_BUILD = 251;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -5265,6 +5265,10 @@
         }
         leaveCloseSent = true;
         setWaitingState(false);
+        if (visitorEnded) {
+            updateHeaderAgent(null);
+            currentAgent = { name: '', avatar: null };
+        }
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
@@ -6470,9 +6474,19 @@
             } else {
                 setWaitingState(true);
                 updateHeaderAgent(null);
+                currentAgent = { name: '', avatar: null };
                 updateStatus('Connecting to live agent...', agentsOnline > 0);
                 return;
             }
+        }
+        // Waiting / unassigned must win over stale agent fields — otherwise the
+        // previous agent name (e.g. Isabelle) sticks after close → new/resume.
+        if (data.status === 'waiting') {
+            setWaitingState(true);
+            updateHeaderAgent(null);
+            currentAgent = { name: '', avatar: null };
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
+            return;
         }
         var assigned = !!(data.is_assigned || (parseInt(data.agent_id, 10) || 0) > 0);
         var agentObj = data.agent && data.agent.name ? data.agent : null;
@@ -6492,10 +6506,7 @@
             return;
         }
 
-        if (data.status === 'waiting') {
-            setWaitingState(true);
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
-        } else if (agentsOnline > 0) {
+        if (agentsOnline > 0) {
             updateStatus('Team online', true);
         }
     }
@@ -6517,8 +6528,13 @@
             // The waiting bar already says connecting. Don't repeat it as a card.
             card.hidden = true;
         }
-        if (waiting && !chatClosed) {
-            updateStatus(soft ? 'Waiting for an agent...' : 'Connecting to live agent...', agentsOnline > 0);
+        if (waiting) {
+            // Unassigned queue — never keep the previous agent name in the header.
+            updateHeaderAgent(null);
+            currentAgent = { name: '', avatar: null };
+            if (!chatClosed) {
+                updateStatus(soft ? 'Waiting for an agent...' : 'Connecting to live agent...', agentsOnline > 0);
+            }
         }
     }
 
@@ -7406,7 +7422,8 @@
         var timeHtml = msgTimeHtml(m.created_at);
 
         if (isAgentJoinMessage(m)) {
-            if (!options.suppressAgentState) {
+            // Waiting/unassigned: paint the join line but do not claim an assignee in the header.
+            if (!options.suppressAgentState && !isWaitingForAgent && !isVisitorEndedScreen()) {
                 setWaitingState(false);
                 var joinName = m.agent_name || 'Agent';
                 var joinAvatar = resolveMessageAvatar(m, joinName);
@@ -7439,7 +7456,7 @@
                 leaveDiv.innerHTML = '<strong>' + esc(prevName) + '</strong> left the conversation';
                 box.appendChild(leaveDiv);
             }
-            if (!options.suppressAgentState) {
+            if (!options.suppressAgentState && !isWaitingForAgent && !isVisitorEndedScreen()) {
                 setWaitingState(false);
                 var joinAvatar = resolveMessageAvatar(m, takerName);
                 updateHeaderAgent({ name: takerName, avatar: joinAvatar });
@@ -7453,7 +7470,7 @@
                 '<div class="lcw-join-text"><strong>' + esc(takerName) + '</strong> joined the conversation</div>';
             placeInTranscript(box, joinDiv, m.id);
         } else if (m.sender_type === 'agent') {
-            if (!options.suppressAgentState) {
+            if (!options.suppressAgentState && !isWaitingForAgent && !isVisitorEndedScreen()) {
                 setWaitingState(false);
                 var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
                 var agentAvatar = resolveMessageAvatar(m, agentName);
