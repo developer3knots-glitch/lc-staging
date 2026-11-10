@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 245;
+    var LC_WIDGET_BUILD = 246;
     // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
     // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
     // History seed (empty transcript once) still allowed so open-chat can load past msgs.
@@ -911,6 +911,30 @@
         tryRevealWidget();
     }
 
+    /** Never leave the widget invisible forever (stuck resume / hung poll). */
+    function forceRevealWidget() {
+        waitingForResumeTranscript = false;
+        bootHoldForChat = false;
+        bootHistorySettled = true;
+        widgetStylesReady = true;
+        widgetEntryReady = true;
+        widgetShowAt = Date.now();
+        if (widgetShowTimer) {
+            clearTimeout(widgetShowTimer);
+            widgetShowTimer = null;
+        }
+        if (chatLoadingWatchdog) {
+            clearTimeout(chatLoadingWatchdog);
+            chatLoadingWatchdog = null;
+        }
+        chatHistoryLoading = false;
+        try {
+            var loadEl = document.getElementById('lc-chat-loading');
+            if (loadEl && loadEl.parentNode) loadEl.parentNode.removeChild(loadEl);
+        } catch (eClr) {}
+        revealWidgetNow(true);
+    }
+
     function chatResumePending() {
         return !!(waitingForResumeTranscript || bootHoldForChat || chatInitInFlight || chatHistoryLoading || pendingResumeConvId);
     }
@@ -932,15 +956,14 @@
 
     function tryRevealWidget() {
         if (widgetRevealed || !widgetStylesReady) return;
-        // Resume reload: stay fully hidden until real chat bubbles exist.
-        // Never reveal idle / empty "Connecting..." / blank white panel first.
+        // Resume reload: prefer waiting for bubbles, but never block forever.
         if (waitingForResumeTranscript) {
-            if (chatInitInFlight || chatHistoryLoading) return;
-            if (!transcriptHasBubbles()) return;
-            waitingForResumeTranscript = false;
-            bootHoldForChat = false;
-            bootHistorySettled = true;
-            revealWidgetNow();
+            if (transcriptHasBubbles()) {
+                waitingForResumeTranscript = false;
+                bootHoldForChat = false;
+                bootHistorySettled = true;
+                revealWidgetNow();
+            }
             return;
         }
         if (chatHistoryLoading || chatInitInFlight) return;
@@ -954,12 +977,12 @@
         revealWidgetNow();
     }
 
-    function revealWidgetNow() {
+    function revealWidgetNow(force) {
         if (widgetRevealed) return;
-        // Hard block: resume gate still waiting for transcript
-        if (waitingForResumeTranscript && !transcriptHasBubbles()) return;
+        // Hard block: resume gate still waiting for transcript (unless forced timeout)
+        if (!force && waitingForResumeTranscript && !transcriptHasBubbles()) return;
         var wait = widgetShowAt - Date.now();
-        if (wait > 0) {
+        if (!force && wait > 0) {
             if (!widgetShowTimer) {
                 widgetShowTimer = setTimeout(function () {
                     widgetShowTimer = null;
@@ -1473,22 +1496,18 @@
             widgetStylesReady = true;
             widgetEntryReady = true;
             tryRevealWidget();
-        }, waitingForResumeTranscript ? 0 : 3000);
-        // Last-resort only: if resume truly hangs with zero bubbles, keep chat view (not idle).
+        }, waitingForResumeTranscript ? 0 : 1200);
+        // Absolute cap — never leave the site without a visible widget (stuck resume).
         setTimeout(function () {
             if (widgetRevealed) return;
-            if (waitingForResumeTranscript) {
+            if (waitingForResumeTranscript || bootHoldForChat) {
                 hideIdleIntro();
-                showChatView();
-                // Still no bubbles after 12s — lift gate so visitor can type
-                if (!transcriptHasBubbles() && !chatInitInFlight && !chatHistoryLoading) {
-                    waitingForResumeTranscript = false;
-                    bootHoldForChat = false;
-                    bootHistorySettled = true;
+                if (conversationId || pendingResumeConvId || (parseInt(getStoredConversationId(), 10) || 0)) {
+                    showChatView();
                 }
             }
-            tryRevealWidget();
-        }, 12000);
+            forceRevealWidget();
+        }, 4000);
         if (!waitingForResumeTranscript) {
             scheduleWelcomeEngagement();
         }
@@ -4897,6 +4916,17 @@
 
     /** First paint: maximize instantly (no artificial delay). */
     function forceOpenChatPopup() {
+        // Fresh visitor with no thread — paint idle shell first (never blank white).
+        var hasChat = (parseInt(conversationId, 10) || 0) > 0
+            || (parseInt(pendingResumeConvId, 10) || 0) > 0
+            || (parseInt(getStoredConversationId(), 10) || 0) > 0;
+        if (!hasChat && !isIdleLandingVisible()) {
+            var pre = document.getElementById('lc-panel-prechat');
+            var preVisible = !!(pre && pre.style.display !== 'none' && !pre.hidden);
+            if (!preVisible) {
+                try { showIdleIntro(); } catch (eIdle) {}
+            }
+        }
         ensureChatMaximized({ silenceFlow: true });
         var panel = document.getElementById('lc-panel');
         if (panel) panel.style.setProperty('display', 'flex', 'important');
@@ -4923,9 +4953,9 @@
     function openPanelInstantIdle() {
         if (didAutoOpenOnLoad || isOpen) return;
         var storedChat = parseInt(getStoredConversationId(), 10) || 0;
-        didAutoOpenOnLoad = true;
         if (storedChat > 0) {
             // Reload with an active chat: load behind boot shield — never idle/connecting flash.
+            didAutoOpenOnLoad = true;
             pendingResumeConvId = storedChat;
             beginResumeTranscriptGate();
             hideIdleIntro();
@@ -4936,8 +4966,8 @@
             initChat({ resumeConversationId: storedChat });
             return;
         }
-        openPanel({ silenceFlow: true });
-        persistPanelOpen(true);
+        // Fresh visitor: do NOT open a blank white panel here — routeVisitorEntry
+        // paints idle/prechat then scheduleAutoOpenOnLoad maximizes.
     }
 
     function welcomeSeenKey() {
@@ -6431,13 +6461,11 @@
     function showChatLoading(title, sub) {
         chatHistoryLoading = true;
         if (chatLoadingWatchdog) clearTimeout(chatLoadingWatchdog);
-        chatLoadingWatchdog = null;
-        // Resume boot: never auto-hide at 3.5s (that revealed blank/connecting before messages).
-        if (!waitingForResumeTranscript) {
-            chatLoadingWatchdog = setTimeout(function () {
-                hideChatLoading();
-            }, 3500);
-        }
+        // Always arm a watchdog — resume without one left the widget invisible forever.
+        chatLoadingWatchdog = setTimeout(function () {
+            hideChatLoading();
+            if (!widgetRevealed) forceRevealWidget();
+        }, 3500);
 
         var el = ensureChatLoadingEl();
         if (el) {
