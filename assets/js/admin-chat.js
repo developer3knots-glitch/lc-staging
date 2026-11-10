@@ -2278,7 +2278,19 @@
         if (!t) return false;
         return /chat closed automatically due to inactivity/i.test(t)
             || /^chat closed by agent/i.test(t)
-            || /ip blocked — chat moved to history/i.test(t);
+            || /ip blocked — chat moved to history/i.test(t)
+            // Visitor self-close: "{Name} closed the live chat." / "Visitor closed the live chat."
+            || /closed the live chat/i.test(t)
+            || /left the page — chat closed/i.test(t);
+    }
+
+    function closeReasonFromSystemMessage(m) {
+        var t = String((m && (m.message || m.body)) || '');
+        if (/inactivity/i.test(t)) return 'inactivity';
+        if (/left the page/i.test(t)) return 'leave';
+        if (/closed the live chat/i.test(t)) return 'visitor';
+        if (/chat closed by agent/i.test(t)) return 'agent';
+        return 'agent';
     }
 
     function isContinueSystemMessage(m) {
@@ -2349,6 +2361,28 @@
         return 0;
     }
 
+    function transcriptShowsAssignedAgent() {
+        if (!selectedId || !messagesEl) return false;
+        try {
+            // Walk newest → oldest system lines in the open thread.
+            var texts = messagesEl.querySelectorAll('.lc-msg.system');
+            for (var i = texts.length - 1; i >= 0; i--) {
+                var t = String(texts[i].textContent || '');
+                // A later visitor/agent close means assignment for this round ended.
+                if (/closed the live chat|chat closed by agent|closed automatically due to inactivity|left the page — chat closed/i.test(t)) {
+                    return false;
+                }
+                // Join already painted = Assign succeeded — don't flash Unassigned.
+                if (/joined the chat|joined the conversation/i.test(t)) return true;
+            }
+            // Any agent bubble in the current open thread also means we're past Assign.
+            if (messagesEl.querySelector('.lc-msg.agent')) return true;
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function applyConversationWaitingLocally(cid, opts) {
         cid = parseInt(cid, 10) || 0;
         if (!cid) return;
@@ -2356,12 +2390,22 @@
         var prev = conversationRowStatus(cid);
         var force = !!opts.force;
         var rowAgent = conversationRowAgentId(cid);
+        var looksClosed = prev === 'closed' || (selectedId === cid && uiLooksClosedForSelected());
         // After Assign succeeded, late waiting/reopened WS frames must NOT flip
         // the composer back to "Assign to me" (agent already replied).
         if (prev === 'active' && (rowAgent > 0 || currentAssignedAgentId > 0)) {
             return;
         }
         if (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0 && !uiLooksClosedForSelected()) {
+            return;
+        }
+        // Join line already in the open thread = assigned; ignore stale waiting frames.
+        if (selectedId === cid && !uiLooksClosedForSelected() && (currentAssignedAgentId > 0 || transcriptShowsAssignedAgent())) {
+            return;
+        }
+        // Closed + visitor ended screen on the other side: only real reopen may unlock.
+        // Stale status=waiting frames were painting "Unassigned" over a closed chat.
+        if (looksClosed && !opts.fromReopen && !opts.fromVisitorMessage) {
             return;
         }
         // Only promote closed → waiting (don't steal active assigned chats)
@@ -2881,7 +2925,7 @@
         if (sender === 'system' && (m.message || '').indexOf('transferred this chat') !== -1) {
             cls += ' is-transfer';
         }
-        if (sender === 'system' && (m.message || '').indexOf('Visitor closed the live chat') !== -1) {
+        if (sender === 'system' && /closed the live chat/i.test(String(m.message || ''))) {
             cls += ' is-visitor-close';
         }
         if (sender === 'system' && isHiddenChatPresenceLog(m.message || '')) {
@@ -6930,26 +6974,28 @@
                         if (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed') {
                             applyConversationWaitingLocally(cid, {
                                 force: true,
+                                fromVisitorMessage: true,
                                 last_message: msg.message || '',
                                 last_message_at: msg.created_at || undefined
                             });
                         }
                     } else if (msg && isContinueSystemMessage(msg)) {
-                        applyConversationWaitingLocally(cid, { force: true });
+                        applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
                     } else if (msg && isCloseSystemMessage(msg)) {
-                        var byClose = /inactivity/i.test(String(msg.message || '')) ? 'inactivity' : 'agent';
-                        applyConversationClosedLocally(cid, byClose);
+                        applyConversationClosedLocally(cid, closeReasonFromSystemMessage(msg));
                     }
                     return;
                 }
                 if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
                     applyConversationWaitingLocally(cid, {
                         force: true,
+                        fromReopen: !!isContinueSystemMessage(msg),
+                        fromVisitorMessage: msg.sender_type === 'visitor',
                         last_message: msg.message || undefined,
                         last_message_at: msg.created_at || undefined
                     });
                 } else if (cid && msg && isCloseSystemMessage(msg)) {
-                    syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
+                    applyConversationClosedLocally(cid, closeReasonFromSystemMessage(msg));
                 }
                 if (cid && patchInboxRowActivity(cid, msg)) {
                     if (msg && (isPresenceLogText(msg.message) || isInactivityNotice(msg))) {
@@ -7156,10 +7202,19 @@
                         }
                         return;
                     }
+                    // After visitor close, ignore plain waiting frames (no reopened_by).
+                    // Those were flipping Closed → Unassigned while visitor already saw ended.
+                    if (payload.status === 'waiting' && payload.reopened_by !== 'visitor'
+                        && (prevWait === 'closed' || (selectedId === cid && uiLooksClosedForSelected()))) {
+                        return;
+                    }
                     if (payload.reopened_by === 'visitor') {
                         playNotifyEvent('chat_continued', 'cont:' + cid);
                     }
-                    applyConversationWaitingLocally(cid, { force: true });
+                    applyConversationWaitingLocally(cid, {
+                        force: true,
+                        fromReopen: payload.reopened_by === 'visitor'
+                    });
                     return;
                 }
                 if (selectedId && cid === selectedId) {
@@ -7181,8 +7236,12 @@
                         if (sendActiveBtn) sendActiveBtn.disabled = false;
                     } else if (payload && payload.status === 'waiting' && newAgent === 0) {
                         // Only show Assign again if we are not already the active assignee
+                        // and the thread is not already visitor-closed.
                         if (currentAssignedAgentId !== myAgentId || conversationRowStatus(cid) !== 'active') {
-                            applyConversationWaitingLocally(cid, { force: true });
+                            applyConversationWaitingLocally(cid, {
+                                force: true,
+                                fromReopen: payload.reopened_by === 'visitor'
+                            });
                         }
                     }
                 } else if (!(payload && (payload.transferred || payload.taken_over))) {
