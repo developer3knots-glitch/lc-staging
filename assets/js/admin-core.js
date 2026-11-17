@@ -136,9 +136,9 @@
             });
         }
 
-        setInterval(function () {
-            postStatus(true);
-        }, 45000);
+        // No HTTP heartbeat. agents.last_seen is refreshed by the realtime
+        // Node process on agent WebSocket ping → api/agent-ws-touch.php.
+        // Status dropdown still POSTs once when the agent picks Online/Away/Offline.
     }
 
     var app = document.getElementById('lc-app');

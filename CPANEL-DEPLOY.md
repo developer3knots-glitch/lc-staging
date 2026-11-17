@@ -13,7 +13,7 @@ Yeh guide step-by-step hai **cPanel shared hosting** par LiveChat live karne ke 
 | Apache | mod_rewrite (optional) |
 | SSL | Recommended (Let's Encrypt / AutoSSL) |
 
-WebSocket **nahi** chahiye — polling se kaam chal jata hai.
+Production ab **WebSocket-only** hai (HTTP poll loops band). Shared hosting bina WS ke purani poll mode se chal sakti thi; aaPanel/VPS par realtime Node + `LC_AGENT_TOUCH_URL` chahiye.
 
 ---
 

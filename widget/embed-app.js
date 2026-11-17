@@ -8,10 +8,9 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 252;
-    // Hard WS-only test: while socket is up, zero visitor-poll / wait / ack-heartbeat / gap-fill HTTP.
-    // Event-driven receipt ack on paint still runs (DB delivered/read + staff Seen ticks).
-    // History seed (empty transcript once) still allowed so open-chat can load past msgs.
+    var LC_WIDGET_BUILD = 253;
+    // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
+    // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__LC_WS_ONLY = LC_WS_ONLY;
@@ -61,8 +60,8 @@
 
     /** True when message HTTP paths must stay silent (WS owns live delivery). */
     function blockHttpMessageSync() {
-        if (!LC_WS_ONLY) return false;
-        return !!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected());
+        // Absolute WS-only: block incremental/catch-up HTTP even if the socket is briefly down.
+        return !!LC_WS_ONLY;
     }
 
     /** True only after this tab has actually received a chat/probe event over WS. */
@@ -2675,7 +2674,7 @@
         });
     }
 
-    /** WS-only: no HTTP message poll loops. Live path = message.new; gap fill = one-shot hydrate. */
+    /** WS-only: no HTTP message poll loops. Live path = message.new + WS replay. */
     function startLiveMessageSync() {
         stopLiveMessageSync();
         stopWsSafetyCatchup();
@@ -2683,11 +2682,11 @@
         stopVisitorLongPoll();
         if (!conversationId) return;
         ensureVisitorConvChannel();
-        if (isVisitorWsLive() || blockHttpMessageSync()) {
-            startWsSafetyCatchup();
-            return;
-        }
-        // Socket down — one-shot HTTP hydrate until reconnect (no interval)
+        // Never start visitor-poll intervals/catch-up HTTP. Empty panel may still
+        // one-shot seed via pollMessages(true) from the open-chat path only.
+        startWsSafetyCatchup();
+        if (LC_WS_ONLY) return;
+        if (isVisitorWsLive()) return;
         if (messagesNeedHistoryReload()) {
             lastMsgId = 0;
             pollMessages(true);
@@ -7610,13 +7609,8 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS-only: while socket connected, block ALL visitor-poll except empty-transcript seed.
-        if (blockHttpMessageSync()) {
-            if (!(isHistoryLoad && !hasBubbles)) {
-                if (typeof done === 'function') done();
-                return;
-            }
-        } else if (isVisitorWsLive() && !window.__lcForcePollOnce) {
+        // WS-only: block ALL visitor-poll except empty-transcript one-shot seed.
+        if (blockHttpMessageSync() || (isVisitorWsLive() && !window.__lcForcePollOnce)) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;

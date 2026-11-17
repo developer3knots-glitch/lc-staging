@@ -173,9 +173,9 @@ function lc_realtime_client_config(?int $brandId = null): array
     return [
         'mode' => $mode,
         'wsUrl' => $mode === 'ws' ? $wsUrl : '',
-        'pollFallbackMs' => defined('LC_POLL_INTERVAL') ? (int) LC_POLL_INTERVAL : 1500,
-        // WS-first: modest HTTP catch-up (widget clamps ~2.5–5s; 15s felt delayed on miss)
-        'backupPollMs' => 3000,
+        // Legacy fields kept for old clients; browser poll loops are hard-disabled.
+        'pollFallbackMs' => 0,
+        'backupPollMs' => 0,
     ];
 }
 

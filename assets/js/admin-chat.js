@@ -2343,38 +2343,10 @@
         return true;
     }
 
-    var lastCloseReconcileAt = 0;
+    // Pure WS: never HTTP-reconcile closed status via agent-poll.
+    // Close / conversation.updated frames own this path.
     function reconcileSelectedClosedStatus() {
-        var cid = parseInt(selectedId, 10) || 0;
-        if (!cid) return;
-        var now = Date.now();
-        if (now - lastCloseReconcileAt < 6000) return;
-        lastCloseReconcileAt = now;
-        var afterId = lastMsgId || 0;
-        fetch(base + '/api/agent-poll.php?conversation_id=' + encodeURIComponent(cid) + '&last_id=' + encodeURIComponent(afterId), {
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
-        }).then(function (r) {
-            return r.json().catch(function () { return null; });
-        }).then(function (data) {
-            if (!data || data.success === false) return;
-            if ((parseInt(selectedId, 10) || 0) !== cid) return;
-            var conv = data.conversation || {};
-            var st = String(conv.status || data.status || '').toLowerCase();
-            if (st !== 'closed') return;
-            (data.messages || []).forEach(function (m) {
-                if (m && m.id) appendLiveMessage(m);
-            });
-            var reason = 'agent';
-            var msgs = data.messages || [];
-            for (var i = msgs.length - 1; i >= 0; i--) {
-                if (isCloseSystemMessage(msgs[i])) {
-                    reason = closeReasonFromSystemMessage(msgs[i]);
-                    break;
-                }
-            }
-            applyConversationClosedLocally(cid, reason);
-        }).catch(function () {});
+        return;
     }
 
     function applyConversationClosedLocally(cid, closedBy) {

@@ -466,8 +466,8 @@ function lc_notify_event_enabled(int $accountId, string $event): bool
 }
 
 /**
- * Logged-in agents ping last_seen about every 45s.
- * No ping for 2 minutes means logout was missed: browser closed or session expired.
+ * Agent last_seen is refreshed by the realtime Node WS bridge (api/agent-ws-touch.php),
+ * not by browser HTTP polling. No touch for ~2 minutes means the tab/socket is gone.
  * Manual Away stays while the session is still alive.
  */
 function lc_sweep_stale_agent_presence(int $staleSec = 120): void

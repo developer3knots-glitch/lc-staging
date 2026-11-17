@@ -53,10 +53,16 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 23;
+const REALTIME_BUILD = 24;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
+/** Optional PHP agent last_seen touch — replaces browser agent-status.php ping polling. */
+const AGENT_TOUCH_URL = String(process.env.LC_AGENT_TOUCH_URL || '').trim();
+const AGENT_TOUCH_HOST = String(process.env.LC_AGENT_TOUCH_HOST || '').trim();
+/** @type {Map<number, number>} agent_id → last touch ms */
+const agentTouchAt = new Map();
+const AGENT_TOUCH_MIN_MS = 30000;
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
@@ -312,6 +318,47 @@ function deliverToVisitorUid(uid, event, data, skipClients) {
     } catch (e) { /* ignore */ }
   });
   return n;
+}
+
+/** Touch agents.last_seen via PHP so browser never polls agent-status.php. */
+function forwardAgentPresenceTouch(claims) {
+  if (!AGENT_TOUCH_URL || !SECRET) return;
+  const role = String((claims && claims.role) || '');
+  if (role !== 'agent') return;
+  const agentId = parseInt((claims && claims.agent_id) || 0, 10) || 0;
+  if (agentId < 1) return;
+  const now = Date.now();
+  const prev = agentTouchAt.get(agentId) || 0;
+  if (now - prev < AGENT_TOUCH_MIN_MS) return;
+  agentTouchAt.set(agentId, now);
+  const ts = Math.floor(now / 1000);
+  const sig = crypto.createHmac('sha256', SECRET).update(String(agentId) + '|' + String(ts)).digest('hex');
+  const body = JSON.stringify({ agent_id: agentId, ts: ts, sig: sig });
+  try {
+    const u = new URL(AGENT_TOUCH_URL);
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + (u.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        ...(AGENT_TOUCH_HOST ? { Host: AGENT_TOUCH_HOST } : {}),
+      },
+      timeout: 2500,
+    }, function (res) {
+      res.resume();
+    });
+    req.on('error', function () { /* ignore */ });
+    req.on('timeout', function () {
+      try { req.destroy(); } catch (eT) { /* ignore */ }
+    });
+    req.write(body);
+    req.end();
+  } catch (eFwd) { /* ignore */ }
 }
 
 /** Bridge visitor receipt ack → PHP (marks delivered/read + publishes message.receipts). */
@@ -864,8 +911,17 @@ function wireWebSocket(server) {
           // Re-register as tip + replay missed message.new (ghost delivery recovery)
           registerVisitorSocket(ws);
           refreshVisitorSocket(ws);
-        } else if (ws._lcAuthed && ws._lcChannels) {
+        } else if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'agent') {
+          forwardAgentPresenceTouch(ws._lcClaims);
           // Agent tab wake / keepalive: replay recent bubbles on joined rooms (no HTTP poll)
+          if (ws._lcChannels) {
+            ws._lcChannels.forEach(function (name) {
+              if (/^(conv|staff:conv|agent):/.test(String(name || ''))) {
+                replayMessageNew(ws, name);
+              }
+            });
+          }
+        } else if (ws._lcAuthed && ws._lcChannels) {
           ws._lcChannels.forEach(function (name) {
             if (/^(conv|staff:conv|agent):/.test(String(name || ''))) {
               replayMessageNew(ws, name);
@@ -880,6 +936,8 @@ function wireWebSocket(server) {
           touchVisitorSocket(ws);
           registerVisitorSocket(ws);
           refreshVisitorSocket(ws);
+        } else if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'agent') {
+          forwardAgentPresenceTouch(ws._lcClaims);
         }
         return;
       }
@@ -895,6 +953,9 @@ function wireWebSocket(server) {
         ws._lcClaims = claims;
         touchVisitorSocket(ws);
         registerVisitorSocket(ws);
+        if (String(claims.role || '') === 'agent') {
+          forwardAgentPresenceTouch(claims);
+        }
         const channels = Array.isArray(claims.channels) ? claims.channels : [];
         channels.forEach(function (ch) { subscribe(ws, String(ch)); });
         ws.send(JSON.stringify({ type: 'auth.ok', channels: Array.from(ws._lcChannels || []) }));
