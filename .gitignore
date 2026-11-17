@@ -1,12 +1,7 @@
 # Zip archives only
 *.zip
 
-# Local / secrets (not app source)
-.env
-realtime/server/.env
-includes/vapid-keys.local.php
-includes/config.php
-includes/config.realtime.local.php
+# Local tooling (not app source)
 .git-real/
 .git-broken-lock/
 
