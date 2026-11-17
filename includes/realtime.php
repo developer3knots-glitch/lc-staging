@@ -200,6 +200,12 @@ function lc_realtime_channel_brand_inbox(int $brandId): string
     return 'brand:' . max(0, $brandId) . ':inbox';
 }
 
+/** Public brand presence for widgets (agents_online) — not the staff inbox. */
+function lc_realtime_channel_brand_presence(int $brandId): string
+{
+    return 'brand:' . max(0, $brandId) . ':presence';
+}
+
 function lc_realtime_issue_token(array $claims, int $ttlSeconds = 3600): string
 {
     $payload = array_merge($claims, [
@@ -302,6 +308,9 @@ function lc_realtime_visitor_token(string $visitorUid, int $conversationId, int 
             $agentId = (int) ($conv['agent_id'] ?? 0);
         }
     }
+    if ($brandId > 0) {
+        $channels[] = lc_realtime_channel_brand_presence($brandId);
+    }
 
     return lc_realtime_issue_token([
         'role' => 'visitor',
@@ -314,14 +323,20 @@ function lc_realtime_visitor_token(string $visitorUid, int $conversationId, int 
     ], 7200);
 }
 
-/** Visitor presence channel only — for proactive chat.invite before a thread is open. */
-function lc_realtime_visitor_presence_token(string $visitorUid): string
+/** Visitor presence channel — proactive invite + live agents_online before a thread is open. */
+function lc_realtime_visitor_presence_token(string $visitorUid, int $brandId = 0): string
 {
+    $channels = [lc_realtime_channel_visitor($visitorUid)];
+    if ($brandId > 0) {
+        $channels[] = lc_realtime_channel_brand_presence($brandId);
+    }
+
     return lc_realtime_issue_token([
         'role' => 'visitor',
         'visitor_uid' => $visitorUid,
         'conversation_id' => 0,
-        'channels' => [lc_realtime_channel_visitor($visitorUid)],
+        'brand_id' => max(0, $brandId),
+        'channels' => array_values(array_unique($channels)),
     ], 7200);
 }
 
@@ -1032,9 +1047,11 @@ function lc_realtime_defer(callable $fn): void
 function lc_realtime_publish_agent_presence(array $agent, string $status): void
 {
     $channels = [];
+    $brandIds = [];
     $brandId = function_exists('lc_agent_brand_id') ? lc_agent_brand_id($agent) : null;
     $accountId = function_exists('lc_agent_account_id') ? (int) lc_agent_account_id($agent) : 0;
     if ($brandId !== null && (int) $brandId > 0) {
+        $brandIds[] = (int) $brandId;
         $channels[] = lc_realtime_channel_brand_inbox((int) $brandId);
     } elseif ($accountId > 0) {
         try {
@@ -1043,6 +1060,7 @@ function lc_realtime_publish_agent_presence(array $agent, string $status): void
             foreach ($stmt->fetchAll() as $row) {
                 $id = (int) ($row['id'] ?? 0);
                 if ($id > 0) {
+                    $brandIds[] = $id;
                     $channels[] = lc_realtime_channel_brand_inbox($id);
                 }
             }
@@ -1056,6 +1074,43 @@ function lc_realtime_publish_agent_presence(array $agent, string $status): void
         'agent_id' => (int) ($agent['id'] ?? 0),
         'status' => $status,
     ], 120);
+    // Instant widget Online/Away — no HTTP settings poll
+    if (function_exists('lc_realtime_publish_team_presence')) {
+        try {
+            lc_realtime_publish_team_presence($brandIds, $accountId > 0 ? $accountId : null);
+        } catch (Throwable $e) {
+        }
+    }
+}
+
+/**
+ * Push agents_online to brand presence channels so widgets flip Online/Away with 0 delay.
+ *
+ * @param list<int> $brandIds
+ */
+function lc_realtime_publish_team_presence(array $brandIds, ?int $accountId = null): void
+{
+    $brandIds = array_values(array_unique(array_filter(array_map('intval', $brandIds))));
+    if ($brandIds === []) {
+        return;
+    }
+    foreach ($brandIds as $bid) {
+        if ($bid < 1) {
+            continue;
+        }
+        $count = function_exists('lc_get_online_agents_count')
+            ? lc_get_online_agents_count($bid, $accountId)
+            : 0;
+        lc_realtime_publish_channels(
+            [lc_realtime_channel_brand_presence($bid)],
+            'team.presence',
+            [
+                'brand_id' => $bid,
+                'agents_online' => (int) $count,
+            ],
+            120
+        );
+    }
 }
 
 function lc_realtime_publish_traffic(int $brandId, string $presence, array $extra = []): void

@@ -41,6 +41,8 @@ if (!hash_equals($expected, $sig)) {
 }
 
 try {
+    // Live admin WS = tab is open. Refresh last_seen so stale sweep cannot
+    // flip Online → Offline while the socket is still authenticated.
     $stmt = lc_db()->prepare('UPDATE agents SET last_seen = UTC_TIMESTAMP() WHERE id = ?');
     $stmt->execute([$agentId]);
     lc_json(['success' => true, 'agent_id' => $agentId]);

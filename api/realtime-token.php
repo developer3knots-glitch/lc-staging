@@ -44,7 +44,13 @@ try {
             ]);
         }
 
-        // Presence-only token (proactive agent invite while browsing)
+        // Presence-only token (proactive invite + live team.presence)
+        $brandKey = trim((string) ($_GET['brand_key'] ?? ''));
+        $brandId = 0;
+        if ($brandKey !== '' && function_exists('lc_get_brand_by_key')) {
+            $brand = lc_get_brand_by_key($brandKey);
+            $brandId = $brand ? (int) ($brand['id'] ?? 0) : 0;
+        }
         $exists = lc_db()->prepare('SELECT id FROM visitors WHERE visitor_uid = ? LIMIT 1');
         $exists->execute([$visitorUid]);
         if (!$exists->fetch()) {
@@ -52,8 +58,8 @@ try {
         }
         lc_json([
             'success' => true,
-            'token' => lc_realtime_visitor_presence_token($visitorUid),
-            'realtime' => lc_realtime_client_config(),
+            'token' => lc_realtime_visitor_presence_token($visitorUid, $brandId),
+            'realtime' => lc_realtime_client_config($brandId > 0 ? $brandId : null),
         ]);
     }
 

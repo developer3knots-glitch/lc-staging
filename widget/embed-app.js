@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 253;
+    var LC_WIDGET_BUILD = 254;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -2434,21 +2434,71 @@
     }
 
     function updatePrechatStatus(count) {
-        agentsOnline = count || 0;
+        agentsOnline = parseInt(count, 10) || 0;
         var textEl = document.getElementById('lc-prechat-status-text');
         var iconEl = document.getElementById('lc-prechat-status-icon');
         var hintEl = document.getElementById('lc-response-hint');
-        if (!textEl) return;
-        if (agentsOnline > 0) {
-            textEl.textContent = settings.welcome_message || 'Our team is online and ready to assist you.';
-            if (iconEl) iconEl.className = 'lcw-status-icon is-online';
-            if (hintEl) hintEl.textContent = 'Typical response time: under 5 minutes';
-        } else {
-            textEl.textContent = settings.offline_message || 'We\'re away right now. Leave your details and we\'ll follow up by email.';
-            if (iconEl) iconEl.className = 'lcw-status-icon is-away';
-            if (hintEl) hintEl.textContent = 'We\'ll respond as soon as we\'re back online';
+        if (textEl) {
+            if (agentsOnline > 0) {
+                textEl.textContent = settings.welcome_message || 'Our team is online and ready to assist you.';
+                if (iconEl) iconEl.className = 'lcw-status-icon is-online';
+                if (hintEl) hintEl.textContent = 'Typical response time: under 5 minutes';
+            } else {
+                textEl.textContent = settings.offline_message || 'We\'re away right now. Leave your details and we\'ll follow up by email.';
+                if (iconEl) iconEl.className = 'lcw-status-icon is-away';
+                if (hintEl) hintEl.textContent = 'We\'ll respond as soon as we\'re back online';
+            }
         }
         setBubbleOnline(agentsOnline > 0);
+        // Live team.presence: leave Away/Thanks the moment someone is Online
+        if (agentsOnline > 0 && awayFormMode && !(parseInt(conversationId, 10) > 0)) {
+            try { sessionStorage.removeItem(AWAY_THANKS_KEY); } catch (eClr) {}
+            awayFormMode = false;
+            var panel = document.getElementById('lc-panel-prechat');
+            if (panel) panel.classList.remove('is-away');
+            if (prechatFormEnabled && !visitorHasKnownIdentity()) {
+                showPrechatForm(true, true);
+            } else {
+                showIdleChatReady({ keepResume: true });
+            }
+        }
+    }
+
+    /** Instant Online/Away from WS team.presence (no settings HTTP poll). */
+    function applyTeamPresence(payload) {
+        if (!payload) return;
+        var brandId = parseInt((settings && settings.brand_id) || 0, 10) || 0;
+        var payloadBrand = parseInt(payload.brand_id, 10) || 0;
+        if (brandId > 0 && payloadBrand > 0 && brandId !== payloadBrand) return;
+        if (payload.agents_online === undefined && payload.agentsOnline === undefined) return;
+        var next = parseInt(payload.agents_online !== undefined ? payload.agents_online : payload.agentsOnline, 10) || 0;
+        updatePrechatStatus(next);
+        if ((parseInt(conversationId, 10) || 0) > 0 && !chatClosed && isWaitingForAgent) {
+            updateStatus('Connecting to live agent...', next > 0);
+        }
+    }
+
+    function bindTeamPresenceHandlers(client) {
+        if (!client || client._lcTeamPresenceBound) return;
+        client._lcTeamPresenceBound = true;
+        client.on('team.presence', function (payload) {
+            applyTeamPresence(payload || {});
+        });
+        client.on('agent.presence', function () {
+            // Staff-only event may also arrive on shared sockets — refresh via count if present
+        });
+        client.on('event', function (msg) {
+            if (!msg || !msg.event) return;
+            if (msg.event === 'team.presence') {
+                applyTeamPresence(msg.data || {});
+            }
+        });
+    }
+
+    function ensureBrandPresenceChannel(client) {
+        var brandId = parseInt((settings && settings.brand_id) || 0, 10) || 0;
+        if (brandId < 1 || !client || typeof client.subscribe !== 'function') return;
+        try { client.subscribe('brand:' + brandId + ':presence'); } catch (eSub) {}
     }
 
     function getSettingsSyncMs() {
@@ -3308,6 +3358,7 @@
             if (vCh) {
                 try { realtimeClient.subscribe(vCh); } catch (e1b) {}
             }
+            ensureBrandPresenceChannel(realtimeClient);
         }
         // Never subscribe presenceClient to conv: — a second WS was racing the chat
         // socket and eating message.new frames.
@@ -3578,6 +3629,8 @@
                 markChatContinuedFromClosed({ status: 'waiting' });
             }
         });
+        bindTeamPresenceHandlers(client);
+        ensureBrandPresenceChannel(client);
     }
 
     function connectVisitorRealtimeWithToken(token, wsUrl) {
@@ -3650,7 +3703,9 @@
 
     function fetchVisitorPresenceToken() {
         if (!visitorUid) return Promise.resolve('');
-        return fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid), {
+        var q = siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid);
+        if (brandKey) q += '&brand_key=' + encodeURIComponent(brandKey);
+        return fetch(q, {
             credentials: 'omit',
             headers: apiHeaders()
         })
@@ -3872,6 +3927,10 @@
                 presenceClient.on('chat.invite', function (payload) {
                     acceptProactiveInvite(payload || {});
                 });
+                presenceClient.on('connected', function () {
+                    ensureBrandPresenceChannel(presenceClient);
+                });
+                bindTeamPresenceHandlers(presenceClient);
                 bindPresenceMessageFallback(presenceClient);
                 presenceClient.connect();
             });
@@ -3999,8 +4058,9 @@
             realtimeChanged = (realtimeConfig.mode !== nextMode) || (realtimeConfig.wsUrl !== nextUrl);
             realtimeConfig = data.realtime;
             // Modest backup while WS carries live traffic (poll mode uses liveSync 1s)
-            if (!realtimeConfig.backupPollMs) {
-                realtimeConfig.backupPollMs = 3000;
+            // Respect server 0 (WS-only). Never coerce falsy 0 → 3000 poll.
+            if (realtimeConfig.backupPollMs === undefined || realtimeConfig.backupPollMs === null) {
+                realtimeConfig.backupPollMs = 0;
             }
         }
         // Only reconnect when mode/URL actually changed — never flap on settings sync
@@ -4112,14 +4172,15 @@
         options = options || {};
         if (!data || !data.success) return;
         applyWidgetSettings(data);
-        // Nobody online: always the away form, even if the composer already opened
-        // or a same-day waiting/closed chat would otherwise resume.
-        // An active thread (agent already in it) stays on the chat.
+        // Nobody online → Away form only for a brand-new entry (no live/waiting thread).
+        // Waiting chats must open Connecting so the agent can join over WS.
         var liveStatusNow = String(serverLiveConversationStatus || '').toLowerCase();
         var serverIdNow = parseInt(serverLiveConversationId, 10) || 0;
         var openIdNow = parseInt(conversationId, 10) || 0;
-        var keepActiveThread = liveStatusNow === 'active' && (serverIdNow > 0 || openIdNow > 0);
-        if (agentsAreOffline() && !keepActiveThread && !bootHoldForChat && !chatInitInFlight && !(parseInt(getStoredConversationId(), 10) || 0)) {
+        var storedIdNow = parseInt(getStoredConversationId(), 10) || 0;
+        var keepLiveThread = (liveStatusNow === 'active' || liveStatusNow === 'waiting')
+            && (serverIdNow > 0 || openIdNow > 0 || storedIdNow > 0);
+        if (agentsAreOffline() && !keepLiveThread && !bootHoldForChat && !chatInitInFlight && !storedIdNow) {
             entryRouted = true;
             var thanksNow = readAwayThanksId();
             if (thanksNow > 0 && serverIdNow === thanksNow && liveStatusNow === 'waiting') {
@@ -4665,8 +4726,12 @@
             forceNewChat = false;
             if (visitorHasKnownIdentity()) serverIdentityComplete = true;
             hideTeaser(true);
-            var nobodyOnline = awayFormMode || (parseInt(data.agents_online, 10) || 0) < 1;
-            if (nobodyOnline) {
+            // Only the intentional Away leave-a-message path shows Thanks.
+            // If agents_online raced to 0 but a waiting chat was created, go Connecting
+            // so the agent can assign and the visitor sees join with 0 delay over WS.
+            var onlineNow = (parseInt(data.agents_online, 10) || 0) > 0;
+            var wasAwayLeave = !!awayFormMode;
+            if (wasAwayLeave && !onlineNow) {
                 var savedId = parseInt(data.conversation_id, 10) || 0;
                 if (savedId > 0) {
                     persistConversationId(savedId);
@@ -4679,6 +4744,7 @@
             awayFormMode = false;
             var awayPanel = document.getElementById('lc-panel-prechat');
             if (awayPanel) awayPanel.classList.remove('is-away');
+            try { sessionStorage.removeItem(AWAY_THANKS_KEY); } catch (eThanksClr) {}
             showChatView();
             handleChatStarted(data, { keepMessages: false });
         })

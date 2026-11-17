@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 24;
+const REALTIME_BUILD = 25;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -62,7 +62,7 @@ const AGENT_TOUCH_URL = String(process.env.LC_AGENT_TOUCH_URL || '').trim();
 const AGENT_TOUCH_HOST = String(process.env.LC_AGENT_TOUCH_HOST || '').trim();
 /** @type {Map<number, number>} agent_id → last touch ms */
 const agentTouchAt = new Map();
-const AGENT_TOUCH_MIN_MS = 30000;
+const AGENT_TOUCH_MIN_MS = 15000;
 
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {

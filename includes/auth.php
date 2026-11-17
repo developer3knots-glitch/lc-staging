@@ -136,6 +136,13 @@ function lc_login_agent(string $email, string $password): bool
     }
     $upd = lc_db()->prepare("UPDATE agents SET status = 'online', last_seen = UTC_TIMESTAMP() WHERE id = ?");
     $upd->execute([(int) $agent['id']]);
+    $agent['status'] = 'online';
+    if (function_exists('lc_realtime_publish_agent_presence')) {
+        try {
+            lc_realtime_publish_agent_presence($agent, 'online');
+        } catch (Throwable $e) {
+        }
+    }
     if (function_exists('lc_drain_waiting_queue_for_agent')) {
         lc_drain_waiting_queue_for_agent((int) $agent['id']);
     }
@@ -154,8 +161,22 @@ function lc_register_agent(string $name, string $email, string $password, string
 function lc_logout_agent(): void
 {
     if (!empty($_SESSION['agent_id'])) {
+        $agentId = (int) $_SESSION['agent_id'];
+        $agentRow = null;
+        try {
+            $agentRow = lc_auth_agent();
+        } catch (Throwable $e) {
+            $agentRow = null;
+        }
         $stmt = lc_db()->prepare("UPDATE agents SET status = 'offline', last_seen = UTC_TIMESTAMP() WHERE id = ?");
-        $stmt->execute([$_SESSION['agent_id']]);
+        $stmt->execute([$agentId]);
+        if ($agentRow && function_exists('lc_realtime_publish_agent_presence')) {
+            try {
+                $agentRow['status'] = 'offline';
+                lc_realtime_publish_agent_presence($agentRow, 'offline');
+            } catch (Throwable $e) {
+            }
+        }
     }
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {

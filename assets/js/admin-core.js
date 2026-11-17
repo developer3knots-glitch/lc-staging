@@ -136,9 +136,16 @@
             });
         }
 
-        // No HTTP heartbeat. agents.last_seen is refreshed by the realtime
+        // No HTTP heartbeat loop. agents.last_seen is refreshed by the realtime
         // Node process on agent WebSocket ping → api/agent-ws-touch.php.
-        // Status dropdown still POSTs once when the agent picks Online/Away/Offline.
+        // One-shot assert on load + tab focus so UI Online cannot drift from DB
+        // after a stale sweep (widget Away while header still says Online).
+        postStatus(false);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') {
+                postStatus(false);
+            }
+        });
     }
 
     var app = document.getElementById('lc-app');
