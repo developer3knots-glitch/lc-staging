@@ -272,13 +272,17 @@
             }
         });
 
-        // Fast poll only when WebSocket is off; WS mode uses a slow safety net.
-        var rt = global.LC_REALTIME || {};
-        var pollMs = (rt.mode === 'ws' && rt.wsUrl)
-            ? 30000
-            : (parseInt(global.LC_POLL_INTERVAL, 10) || 1500);
+        // WS-only: one-shot hydrate. Live badge updates come from host pages via setCount/pulse.
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
         pollStats();
-        pollTimer = setInterval(pollStats, Math.max(3000, pollMs));
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') {
+                pollStats();
+            }
+        });
     }
 
     global.LCTabNotify = {

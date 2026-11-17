@@ -951,9 +951,11 @@
         }
 
         function startPollFallback(ms) {
-            if (pollTimer) return;
-            pollOnSiteLand();
-            pollTimer = setInterval(pollOnSiteLand, Math.max(3000, ms || POLL_MS));
+            // WS-only: never poll agent-traffic for land/leave detection.
+            stopPollFallback();
+            if (knownOnSite === null) {
+                seedKnownOnSite(); // one-shot seed only
+            }
         }
 
         function seedKnownOnSite() {

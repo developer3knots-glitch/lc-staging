@@ -783,14 +783,8 @@
         signalVisitorHere();
         clearSiteNavigation();
         if (presenceTimer) clearInterval(presenceTimer);
-        presenceTimer = setInterval(function () {
-            if (siteLeaveSent) {
-                if (document.visibilityState === 'hidden') return;
-                siteLeaveSent = false;
-                reportEngagementPresence(false, true);
-            }
-            sendStay(false);
-        }, 15000);
+        presenceTimer = null;
+        // WS-only: no 15s presence poll — open / focus / visibility / WS connect only.
 
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
@@ -2465,8 +2459,17 @@
     function startSettingsSync() {
         if (settingsSyncTimer) {
             clearInterval(settingsSyncTimer);
+            settingsSyncTimer = null;
         }
-        settingsSyncTimer = setInterval(refreshWidgetSettings, getSettingsSyncMs());
+        // WS-only: settings loaded on init / visibility — no interval poll
+        if (!window.__lcSettingsVisBound) {
+            window.__lcSettingsVisBound = true;
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    refreshWidgetSettings();
+                }
+            });
+        }
     }
 
     function isTicketReferenceMessage(m) {
@@ -2672,48 +2675,25 @@
         });
     }
 
-    /** HTTP poll ONLY when WebSocket is down. WS-only test: no long-poll either. */
+    /** WS-only: no HTTP message poll loops. Live path = message.new; gap fill = one-shot hydrate. */
     function startLiveMessageSync() {
         stopLiveMessageSync();
+        stopWsSafetyCatchup();
+        stopSafetySync();
+        stopVisitorLongPoll();
         if (!conversationId) return;
+        ensureVisitorConvChannel();
         if (isVisitorWsLive() || blockHttpMessageSync()) {
-            stopVisitorLongPoll();
-            stopSafetySync();
             startWsSafetyCatchup();
             return;
         }
-        stopWsSafetyCatchup();
-        if (!LC_WS_ONLY) {
-            startVisitorLongPoll();
+        // Socket down — one-shot HTTP hydrate until reconnect (no interval)
+        if (messagesNeedHistoryReload()) {
+            lastMsgId = 0;
+            pollMessages(true);
+        } else {
+            scheduleCatchupSync();
         }
-        var liveSyncTick = 0;
-        liveSyncTimer = setInterval(function () {
-            if (!conversationId) {
-                stopLiveMessageSync();
-                return;
-            }
-            if (isVisitorWsLive() || blockHttpMessageSync()) {
-                stopLiveMessageSync();
-                stopVisitorLongPoll();
-                startWsSafetyCatchup();
-                return;
-            }
-            liveSyncTick += 1;
-            if (!LC_WS_ONLY && !visitorWaitActive && !window.__lcLongPollDisabled) {
-                startVisitorLongPoll();
-            }
-            if (messagesNeedHistoryReload()) {
-                lastMsgId = 0;
-                pollMessages(true);
-                return;
-            }
-            if (liveSyncTick % 3 === 0) {
-                scheduleGapFill();
-            } else {
-                scheduleCatchupSync();
-            }
-        }, 1000);
-        if (!LC_WS_ONLY) scheduleGapFill();
     }
 
     function stopLiveMessageSync() {
@@ -2755,21 +2735,14 @@
         }, 15000);
     }
 
-    /** Extra catch-up only while WS is down */
+    /** Extra catch-up only while WS is down — one-shot, no interval. */
     function startSafetySyncWhileDisconnected() {
         stopSafetySync();
         if (!conversationId || chatClosed) return;
-        safetySyncTimer = setInterval(function () {
-            if (!conversationId || chatClosed) {
-                stopSafetySync();
-                return;
-            }
-            if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()) {
-                stopSafetySync();
-                return;
-            }
-            scheduleCatchupSync();
-        }, 3000);
+        if (realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected()) {
+            return;
+        }
+        scheduleCatchupSync();
     }
 
     function stopWsSafetyCatchup() {
@@ -3102,22 +3075,7 @@
         stopAckHeartbeat();
         bindAckVisibility();
         if (!conversationId || !isOpen || chatClosed) return;
-        // WS-only: no 15s ack poll. Receipts fire event-driven on paint / visibility.
-        if (blockHttpMessageSync() || isVisitorWsLive()) {
-            ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
-            return;
-        }
-        ackHeartbeatTimer = setInterval(function () {
-            if (!isOpen || chatClosed || !conversationId) {
-                stopAckHeartbeat();
-                return;
-            }
-            if (blockHttpMessageSync() || isVisitorWsLive()) {
-                stopAckHeartbeat();
-                return;
-            }
-            ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
-        }, 15000);
+        // Event-driven ack only (open / focus / visibility) — no interval poll
         ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
     }
 
@@ -5363,14 +5321,7 @@
 
     function startVisitorReopenWatch() {
         stopVisitorReopenWatch();
-        if (!conversationId) return;
-        visitorReopenTimer = setInterval(function () {
-            if (!chatClosed || !conversationId || lastClosedBy !== 'visitor') {
-                stopVisitorReopenWatch();
-                return;
-            }
-            pollMessages(false);
-        }, 3000);
+        // WS-only: reopen comes from conversation.updated / message.new — no poll loop
     }
 
     function markChatContinuedFromClosed(data, opts) {
@@ -6721,22 +6672,15 @@
             return;
         }
         postOwnTyping(true);
-        if (!typingHeartbeatTimer) {
-            typingHeartbeatTimer = setInterval(function () {
-                var el = document.getElementById('lc-input');
-                if (!conversationId || chatClosed || !el) {
-                    stopOwnTyping();
-                    return;
-                }
-                if (!(el.value || '').replace(/\s/g, '').length) {
-                    stopOwnTyping();
-                    return;
-                }
-                // Do NOT zero lastTypingPostAt — identical-draft throttle above
-                // avoids blinky republish; only actual text changes force immediate post.
-                postOwnTyping(true);
-            }, 4000);
+        if (typingHeartbeatTimer) {
+            clearInterval(typingHeartbeatTimer);
+            typingHeartbeatTimer = null;
         }
+        if (typingIdleTimer) clearTimeout(typingIdleTimer);
+        // Keystroke + idle stop only — no typing poll heartbeat
+        typingIdleTimer = setTimeout(function () {
+            stopOwnTyping();
+        }, 6000);
     }
 
     function playJoinChime() {

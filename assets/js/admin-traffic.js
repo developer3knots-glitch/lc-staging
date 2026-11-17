@@ -680,22 +680,23 @@
         }
     }
 
-    function schedule(intervalMs) {
+    function schedule() {
+        // WS-only: never start an HTTP poll interval for traffic.
         stopSchedule();
-        timer = setInterval(function () { load(); }, Math.max(2000, intervalMs || pollMs));
     }
 
     function initTrafficRealtime() {
         var cfg = window.LC_REALTIME || {};
+        stopSchedule();
         if (cfg.mode !== 'ws' || !cfg.wsUrl || !window.LCRealtime) {
-            schedule(pollMs);
+            load(); // one-shot hydrate only
             return;
         }
         fetch(base + '/api/realtime-token.php', { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.success || !data.token) {
-                    schedule(pollMs);
+                    load(); // one-shot hydrate only
                     return;
                 }
                 if (realtimeClient && realtimeClient.disconnect) {
@@ -705,13 +706,14 @@
                     mode: 'ws',
                     wsUrl: cfg.wsUrl,
                     token: data.token,
-                    fallbackPoll: function () { load(); }
+                    fallbackPoll: function () { /* WS-only — no poll */ }
                 });
                 realtimeClient.on('connected', function () {
-                    schedule(8000);
+                    stopSchedule();
+                    load(); // one-shot after reconnect
                 });
                 realtimeClient.on('disconnected', function () {
-                    schedule(pollMs);
+                    stopSchedule(); // no poll while down
                 });
                 realtimeClient.on('traffic.changed', function () {
                     loadSoon();
@@ -725,7 +727,7 @@
                 realtimeClient.connect();
             })
             .catch(function () {
-                schedule(pollMs);
+                load(); // one-shot hydrate only
             });
     }
 

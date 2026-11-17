@@ -608,9 +608,20 @@
 
     setDates(shiftDays(-6), shiftDays(0));
     load();
-    pollTimer = setInterval(function () {
-        if (document.hidden) return;
-        load(true);
-    }, 3000);
+    // WS-only: no agent-visitors HTTP poll. Refresh on tab focus / traffic events.
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+            load(true);
+        }
+    });
+    if (window.LCRealtime && window.LC_REALTIME && window.LC_REALTIME.mode === 'ws') {
+        // Prefer shared staff socket events when available from admin-core / page hosts.
+        document.addEventListener('lc:traffic.changed', function () { load(true); });
+        document.addEventListener('lc:inbox.changed', function () { load(true); });
+    }
     setInterval(tickDurations, 1000);
 })();

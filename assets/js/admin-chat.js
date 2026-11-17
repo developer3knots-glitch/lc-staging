@@ -379,16 +379,11 @@
             return;
         }
         postOwnTyping(true);
-        if (!typingHeartbeatTimer) {
-            typingHeartbeatTimer = setInterval(function () {
-                if (!selectedId || !replyInput || !(replyInput.value || '').trim() || composeMode === 'note') {
-                    stopOwnTyping();
-                    return;
-                }
-                lastTypingPostAt = 0;
-                postOwnTyping(true);
-            }, 2000);
+        if (typingHeartbeatTimer) {
+            clearInterval(typingHeartbeatTimer);
+            typingHeartbeatTimer = null;
         }
+        // Keystroke + idle stop only — no typing HTTP heartbeat poll
         if (typingIdleTimer) {
             clearTimeout(typingIdleTimer);
         }
@@ -6844,14 +6839,13 @@
         }
         window.__lcSyncReceiptsNow = syncReceiptsOnly;
 
-        // Receipts: pure WS while live. HTTP poll only when WS is down.
+        // Receipts: pure WS. One-shot hydrate only when socket is down (no interval).
         if (window.__lcReceiptTimer) {
             clearInterval(window.__lcReceiptTimer);
             window.__lcReceiptTimer = null;
         }
-        if (!isRealtimeWsLive()) {
-            window.__lcReceiptTimer = setInterval(syncReceiptsOnly, 2000);
-            if (selectedId) syncReceiptsOnly();
+        if (!isRealtimeWsLive() && selectedId) {
+            syncReceiptsOnly();
         }
         if (window.__lcReceiptVisHandler) {
             document.removeEventListener('visibilitychange', window.__lcReceiptVisHandler);
@@ -6890,9 +6884,10 @@
                 })
                 .catch(function () {});
         }
-        // WS live → no presence HTTP at all. WS down → 2s fallback only.
-        if (!isRealtimeWsLive()) {
-            window.__lcPresenceTimer = setInterval(syncPresenceOnly, 2000);
+        // WS-only: no presence HTTP interval. Visibility handler may one-shot when down.
+        if (window.__lcPresenceTimer) {
+            clearInterval(window.__lcPresenceTimer);
+            window.__lcPresenceTimer = null;
         }
         window.__lcPresenceVisHandler = function () {
             if (!document.hidden && selectedId && !isRealtimeWsLive()) syncPresenceOnly();

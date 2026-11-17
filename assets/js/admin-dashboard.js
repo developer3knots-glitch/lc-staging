@@ -376,22 +376,20 @@
     }
 
     function schedulePoll() {
+        // WS-only: never start dashboard HTTP poll interval.
         stopPoll();
-        // Full page refresh only while the socket is down. The three counters
-        // keep their own timer so they still move when no chat event fires.
-        if (useWebsocket && wsConnected) {
-            return;
+        if (overviewTimer) {
+            clearInterval(overviewTimer);
+            overviewTimer = null;
         }
-        pollTimer = setInterval(function () {
-            refreshDashboard(false);
-        }, pollMs);
     }
 
     function startOverviewPoll() {
-        if (overviewTimer) return;
-        overviewTimer = setInterval(function () {
-            refreshOverview();
-        }, 4000);
+        // WS-only: overview updates via traffic/inbox/message/agent events.
+        if (overviewTimer) {
+            clearInterval(overviewTimer);
+            overviewTimer = null;
+        }
     }
 
     function refreshOverview() {
@@ -533,7 +531,8 @@
 
         fetchAgentToken().then(function (token) {
             if (!token) {
-                schedulePoll();
+                refreshDashboard(true);
+                refreshOverview();
                 return;
             }
             try {
@@ -548,12 +547,13 @@
                 });
                 realtimeClient.on('connected', function () {
                     wsConnected = true;
-                    stopPoll();
+                    schedulePoll();
                     refreshDashboard(false);
+                    refreshOverview();
                 });
                 realtimeClient.on('disconnected', function () {
                     wsConnected = false;
-                    schedulePoll();
+                    schedulePoll(); // ensure no interval while down
                 });
                 function onChange() {
                     refreshOverview();
@@ -571,15 +571,11 @@
                 if (typeof realtimeClient.connect === 'function') {
                     realtimeClient.connect();
                 }
-                // If WS never comes up, fall back to poll once.
-                setTimeout(function () {
-                    if (!wsConnected) {
-                        schedulePoll();
-                    }
-                }, 5000);
             } catch (e) {
                 wsConnected = false;
                 schedulePoll();
+                refreshDashboard(true);
+                refreshOverview();
             }
         });
     }
@@ -642,8 +638,7 @@
 
     bindRealtime();
     refreshDashboard(true);
-    startOverviewPoll();
-    if (!useWebsocket) {
-        schedulePoll();
-    }
+    refreshOverview();
+    startOverviewPoll(); // no-op — keeps API clear that overview is WS-driven
+    schedulePoll(); // ensure no leftover HTTP poll interval
 })();
