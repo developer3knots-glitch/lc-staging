@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 25;
+const REALTIME_BUILD = 26;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -64,6 +64,29 @@ const AGENT_TOUCH_HOST = String(process.env.LC_AGENT_TOUCH_HOST || '').trim();
 const agentTouchAt = new Map();
 const AGENT_TOUCH_MIN_MS = 15000;
 
+/** Keep compact avatar meta; drop only huge base64 data-URI blobs. */
+function slimAvatarField(value) {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    if (value.indexOf('data:') === 0) return undefined;
+    return value;
+  }
+  if (typeof value !== 'object') return undefined;
+  const url = String(value.url || '');
+  if (url.indexOf('data:') === 0) {
+    return {
+      url: '',
+      initials: String(value.initials || ''),
+      color: String(value.color || ''),
+    };
+  }
+  const out = {};
+  if (url) out.url = url;
+  if (value.initials) out.initials = String(value.initials);
+  if (value.color) out.color = String(value.color);
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Strip fat fields (base64 avatars) so WS frames always fit proxy/browser limits. */
 function slimEventData(event, data) {
   if (!data || typeof data !== 'object') return data || {};
@@ -71,13 +94,17 @@ function slimEventData(event, data) {
   const out = Object.assign({}, data);
   if (out.message && typeof out.message === 'object') {
     const m = Object.assign({}, out.message);
-    delete m.agent_avatar;
+    const av = slimAvatarField(m.agent_avatar || m.avatar || m.agentAvatar);
     delete m.avatar;
     delete m.agentAvatar;
+    if (av) m.agent_avatar = av;
+    else delete m.agent_avatar;
     out.message = m;
   }
-  delete out.agent_avatar;
+  const topAv = slimAvatarField(out.agent_avatar || out.avatar);
   delete out.avatar;
+  if (topAv) out.agent_avatar = topAv;
+  else delete out.agent_avatar;
   return out;
 }
 

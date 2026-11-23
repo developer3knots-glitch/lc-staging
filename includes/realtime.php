@@ -870,8 +870,7 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
     }
 
     $liveMessage = lc_format_message_row($row);
-    // Slim WS body — full avatar blobs are unnecessary for live paint and have
-    // caused encode/proxy edge cases; widget already has header agent avatar.
+    // Slim WS body — keep compact avatar meta (url/initials/color), never base64 blobs.
     $wsMessage = [
         'id' => (int) ($liveMessage['id'] ?? $messageId),
         'sender_type' => (string) ($liveMessage['sender_type'] ?? ''),
@@ -886,6 +885,24 @@ function lc_realtime_publish_message(int $conversationId, int $messageId, array 
     }
     if (!empty($liveMessage['attachment'])) {
         $wsMessage['attachment'] = $liveMessage['attachment'];
+    }
+    // Live agent/system bubbles need the photo URL — stripping it forced IH initials.
+    if (!empty($liveMessage['agent_avatar']) && is_array($liveMessage['agent_avatar'])) {
+        $av = $liveMessage['agent_avatar'];
+        $url = trim((string) ($av['url'] ?? ''));
+        if ($url !== '' && strncmp($url, 'data:', 5) !== 0) {
+            $wsMessage['agent_avatar'] = [
+                'url' => $url,
+                'initials' => (string) ($av['initials'] ?? ''),
+                'color' => (string) ($av['color'] ?? ''),
+            ];
+        } elseif (!empty($av['initials']) || !empty($av['color'])) {
+            $wsMessage['agent_avatar'] = [
+                'url' => '',
+                'initials' => (string) ($av['initials'] ?? ''),
+                'color' => (string) ($av['color'] ?? ''),
+            ];
+        }
     }
 
     $msgPayload = [

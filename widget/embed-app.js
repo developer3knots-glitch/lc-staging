@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 254;
+    var LC_WIDGET_BUILD = 255;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -7019,14 +7019,48 @@
         return parts[0].charAt(0).toUpperCase();
     }
 
+    /** Remember last good photo URL per agent so slim WS frames still paint the image. */
+    var agentAvatarCache = {};
+    function rememberAgentAvatar(name, avatar) {
+        var key = String(name || '').trim().toLowerCase();
+        if (!key || !avatar || !avatar.url) return;
+        if (String(avatar.url).indexOf('data:') === 0) return;
+        agentAvatarCache[key] = {
+            url: String(avatar.url),
+            initials: String(avatar.initials || avatarInitials(avatar, name)),
+            color: String(avatar.color || ((settings && settings.widget_color) || '#6FD943'))
+        };
+    }
+
     function resolveMessageAvatar(m, name) {
+        var wanted = String(name || '').trim();
+        var key = wanted.toLowerCase();
         var av = m && m.agent_avatar ? m.agent_avatar : null;
-        if (av && av.url) return av;
+        if (av && av.url && String(av.url).indexOf('data:') !== 0) {
+            rememberAgentAvatar(wanted, av);
+            return av;
+        }
         var currentName = currentAgent && currentAgent.name ? String(currentAgent.name).trim().toLowerCase() : '';
-        var wanted = String(name || '').trim().toLowerCase();
-        if (currentName && wanted && currentName === wanted && currentAgent.avatar && currentAgent.avatar.url) {
+        if (currentName && key && currentName === key && currentAgent.avatar && currentAgent.avatar.url) {
+            rememberAgentAvatar(wanted, currentAgent.avatar);
             return currentAgent.avatar;
         }
+        if (key && agentAvatarCache[key] && agentAvatarCache[key].url) {
+            return agentAvatarCache[key];
+        }
+        // Reuse photo already painted in an earlier bubble (history had it; live WS did not).
+        try {
+            var img = document.querySelector('#lc-panel-messages img.lcw-msg-avatar, #lc-panel-messages img.lcw-join-avatar, #lc-head-agent-avatar img');
+            if (img && img.getAttribute('src')) {
+                var cached = {
+                    url: img.getAttribute('src'),
+                    initials: avatarInitials(av, wanted),
+                    color: (av && av.color) || ((settings && settings.widget_color) || '#6FD943')
+                };
+                rememberAgentAvatar(wanted, cached);
+                return cached;
+            }
+        } catch (eDom) {}
         return av;
     }
 
@@ -7040,7 +7074,7 @@
         return '<span class="' + className + ' lcw-avatar-initials" style="background:' + esc(color) + '">' + esc(initials) + '</span>';
     }
 
-        function updateHeaderAgent(agent) {
+    function updateHeaderAgent(agent) {
         var wrap = document.getElementById('lc-head-agent-avatar');
         var nameEl = document.getElementById('lc-panel-agent-name');
         var roleEl = document.getElementById('lc-panel-agent-role');
@@ -7062,16 +7096,34 @@
             if (titleEl) titleEl.textContent = team;
             return;
         }
-        currentAgent = agent;
+        // Never wipe a known photo when a later frame sends name-only agent meta.
+        var nextAvatar = agent.avatar ? Object.assign({}, agent.avatar) : {};
+        var sameName = currentAgent && currentAgent.name
+            && String(currentAgent.name).trim().toLowerCase() === String(agent.name).trim().toLowerCase();
+        if ((!nextAvatar.url || String(nextAvatar.url).indexOf('data:') === 0) && sameName
+            && currentAgent.avatar && currentAgent.avatar.url) {
+            nextAvatar = Object.assign({}, currentAgent.avatar);
+        }
+        if ((!nextAvatar.url || String(nextAvatar.url).indexOf('data:') === 0)) {
+            var cached = agentAvatarCache[String(agent.name).trim().toLowerCase()];
+            if (cached && cached.url) nextAvatar = Object.assign({}, cached);
+        }
+        rememberAgentAvatar(agent.name, nextAvatar);
+        currentAgent = {
+            name: agent.name,
+            avatar: nextAvatar,
+            tagline: agent.tagline || agent.role || (currentAgent && currentAgent.tagline) || '',
+            role: agent.role || (currentAgent && currentAgent.role) || ''
+        };
         if (fallback) fallback.style.display = 'none';
         if (pill) pill.classList.add('is-live');
         wrap.style.display = 'flex';
-        var av = agent.avatar ? Object.assign({}, agent.avatar) : {};
+        var av = Object.assign({}, nextAvatar);
         if (!av.color) av.color = (settings && settings.widget_color) ? settings.widget_color : '#6FD943';
         wrap.innerHTML = renderAvatar(av, agent.name, 'lcw-head-avatar');
         nameEl.textContent = agent.name;
         if (roleEl) {
-            var tag = String(agent.tagline || agent.role || '').trim();
+            var tag = String(agent.tagline || agent.role || (currentAgent && currentAgent.tagline) || '').trim();
             roleEl.textContent = tag || 'Agent';
             roleEl.hidden = false;
         }
@@ -7493,18 +7545,18 @@
                 '<div class="lcw-join-text"><strong>' + esc(takerName) + '</strong> joined the conversation</div>';
             placeInTranscript(box, joinDiv, m.id);
         } else if (m.sender_type === 'agent') {
-            if (!options.suppressAgentState && !isWaitingForAgent && !isVisitorEndedScreen()) {
+            var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
+            var agentAvatar = resolveMessageAvatar(m, agentName);
+            rememberAgentAvatar(agentName, agentAvatar);
+            // Always adopt agent identity on live agent bubbles — even while Connecting.
+            if (!options.suppressAgentState && !isVisitorEndedScreen()) {
                 setWaitingState(false);
-                var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
-                var agentAvatar = resolveMessageAvatar(m, agentName);
                 updateHeaderAgent({ name: agentName, avatar: agentAvatar });
                 updateStatus('Chatting with ' + agentName, true);
             }
             var row = document.createElement('div');
             row.className = 'lcw-msg-row lcw-agent-row';
             if (msgKey) row.setAttribute('data-msg-id', msgKey);
-            var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
-            var agentAvatar = resolveMessageAvatar(m, agentName);
             row.innerHTML = renderAvatar(agentAvatar, agentName, 'lcw-msg-avatar') +
                 '<div class="lcw-msg-wrap lcw-agent-wrap">' +
                 '<div class="lcw-msg lcw-agent' + (m.attachment ? ' has-attachment' : '') + '">' +
