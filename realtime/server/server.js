@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 27;
+const REALTIME_BUILD = 28;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -1046,11 +1046,33 @@ function wireWebSocket(server) {
         return;
       }
 
-      // Visitor → server events (presence fanout + receive self-test)
+      // Authenticated client → server events (visitor + agent)
       if (msg.type === 'client_event') {
         const claims = ws._lcClaims || {};
         const event = String(msg.event || '');
-        if (String(claims.role || '') !== 'visitor') return;
+        const role = String(claims.role || '');
+
+        // Agent typing → visitor + staff rooms (no HTTP typing.php)
+        if (role === 'agent' && event === 'agent.typing') {
+          const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          let cid = parseInt(data.conversation_id, 10) || 0;
+          if (cid < 1) return;
+          const agentId = parseInt(claims.agent_id, 10) || 0;
+          const convCh = 'conv:' + cid;
+          const staffCh = 'staff:conv:' + cid;
+          const channels = [convCh, staffCh];
+          if (agentId > 0) channels.push('agent:' + agentId);
+          const typingOn = !(data.typing === false || data.typing === 0 || data.typing === '0' || data.typing === 'false');
+          publishMany(channels, 'typing', {
+            conversation_id: cid,
+            role: 'agent',
+            typing: typingOn,
+            name: String(data.name || claims.name || ''),
+          });
+          return;
+        }
+
+        if (role !== 'visitor') return;
 
         // Echo proves browser can RECEIVE frames on this socket (no PHP hop)
         if (event === 'visitor.ws_probe') {
@@ -1115,13 +1137,15 @@ function wireWebSocket(server) {
           if (brandId > 0) channels.push('brand:' + brandId + ':inbox');
           if (agentId > 0) channels.push('agent:' + agentId);
           const draft = String(data.draft || data.preview || '').slice(0, 2000);
-          const typingOn = !(data.typing === false || data.typing === 0 || data.typing === '0' || data.typing === 'false');
+          const cleared = data.cleared === true || data.cleared === 1 || data.cleared === '1';
+          const typingOn = !cleared && !(data.typing === false || data.typing === 0 || data.typing === '0' || data.typing === 'false');
           publishMany(channels, 'typing', {
             conversation_id: cid,
             role: 'visitor',
             typing: typingOn,
-            preview: draft,
-            draft: draft,
+            cleared: cleared ? 1 : 0,
+            preview: typingOn ? draft : '',
+            draft: typingOn ? draft : '',
             name: String(data.name || ''),
           });
           return;

@@ -318,6 +318,21 @@
         }
     }
 
+    function publishAgentTyping(isTyping) {
+        if (!selectedId) return false;
+        if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') return false;
+        if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
+        try {
+            return !!realtimeClient.publishClientEvent('agent.typing', {
+                conversation_id: selectedId,
+                typing: !!isTyping,
+                name: (window.LC_AGENT_NAME || 'Agent')
+            });
+        } catch (eT) {
+            return false;
+        }
+    }
+
     function postOwnTyping(isTyping) {
         if (!selectedId) return;
         // Internal notes must never show "typing…" to the visitor
@@ -335,12 +350,8 @@
         }
         lastTypingPostAt = now;
         ownTypingActive = !!isTyping;
-        fetch(base + '/api/typing.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId, typing: !!isTyping })
-        }).catch(function () {});
+        // Pure WS — no HTTP typing.php
+        publishAgentTyping(!!isTyping);
     }
 
     function stopOwnTyping() {
@@ -355,12 +366,7 @@
         if (ownTypingActive && selectedId) {
             ownTypingActive = false;
             lastTypingPostAt = 0;
-            fetch(base + '/api/typing.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ conversation_id: selectedId, typing: false })
-            }).catch(function () {});
+            publishAgentTyping(false);
         } else {
             ownTypingActive = false;
         }
@@ -7171,16 +7177,15 @@
                 }
                 loadConversations();
             });
-            realtimeClient.on('typing', function (payload) {
+            function handleVisitorTypingPayload(payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid || (payload.role || '') !== 'visitor') return;
                 var cleared = payload.cleared === true || payload.cleared === 1 || payload.cleared === '1';
                 var typingOn = payload.typing === true || payload.typing === 1 || payload.typing === '1';
-                var draftText = String((payload && payload.preview) || '');
+                var draftText = String((payload && (payload.preview || payload.draft)) || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
-                // Hide ONLY on explicit clear (field empty / send). Never blink off on
-                // typing:false heartbeats or empty-preview races — Pure WS, no poll.
-                if (cleared) {
+                // Hide ONLY on explicit clear (field empty / send). Pure WS, no poll.
+                if (cleared || (!typingOn && !draftLeft)) {
                     setVisitorSidebarTyping(cid, false);
                     if (selectedId && cid === selectedId) setPeerTypingVisible(false);
                     return;
@@ -7191,6 +7196,12 @@
                         setPeerTypingVisible(true, payload.name || 'Visitor', draftLeft ? draftText : '');
                     }
                 }
+            }
+            realtimeClient.on('typing', handleVisitorTypingPayload);
+            // Backup path — some frames only surface on the generic event emitter
+            realtimeClient.on('event', function (msg) {
+                if (!msg || msg.event !== 'typing') return;
+                handleVisitorTypingPayload(msg.data || {});
             });
             realtimeClient.on('message.reaction', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;

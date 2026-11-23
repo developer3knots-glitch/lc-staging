@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 256;
+    var LC_WIDGET_BUILD = 257;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -6672,49 +6672,38 @@
             if (draft.length > 2000) draft = draft.slice(0, 2000);
         }
         var now = Date.now();
-        // Identical draft: skip most heartbeats so agent DOM is not rewritten
-        // every 1.5s (that restarted the typing-dots animation = blink).
-        // Still pulse rarely so DB TTL stays warm for WS-down fallback only.
-        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 8000) {
+        // Identical draft: skip most heartbeats so agent DOM is not rewritten.
+        // Still pulse rarely over WS so agent UI stays warm while visitor pauses.
+        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 2500) {
             return;
         }
         lastTypingPostAt = now;
         lastTypingDraft = draft;
         ownTypingActive = !!isTyping;
-        publishVisitorTyping(!!isTyping, draft);
+        publishVisitorTyping(!!isTyping, draft, false);
     }
 
-    /** Prefer WS typing (no CORS / no HTTP). HTTP typing.php only if socket is down. */
-    function publishVisitorTyping(isTyping, draft) {
+    /** Pure WS typing — no HTTP typing.php hits. */
+    function publishVisitorTyping(isTyping, draft, cleared) {
         var cid = parseInt(conversationId, 10) || 0;
-        if (cid < 1) return;
+        if (cid < 1) return false;
+        if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') return false;
+        if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
         var payload = {
             conversation_id: cid,
             visitor_uid: visitorUid || '',
             typing: !!isTyping,
             draft: String(draft || ''),
-            role: 'visitor'
+            preview: String(draft || ''),
+            role: 'visitor',
+            name: String(serverVisitorName || '').trim(),
+            cleared: cleared ? 1 : 0
         };
         try {
-            if (realtimeClient && typeof realtimeClient.publishClientEvent === 'function'
-                && realtimeClient.isConnected && realtimeClient.isConnected()) {
-                if (realtimeClient.publishClientEvent('visitor.typing', payload)) {
-                    return;
-                }
-            }
-        } catch (eWs) {}
-        // Fallback only — never depend on host-site nginx CORS for the happy path.
-        fetch(siteUrl + '/api/typing.php', {
-            method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
-            credentials: 'omit',
-            body: JSON.stringify({
-                conversation_id: cid,
-                visitor_uid: visitorUid,
-                typing: !!isTyping,
-                draft: String(draft || '')
-            })
-        }).catch(function () {});
+            return !!realtimeClient.publishClientEvent('visitor.typing', payload);
+        } catch (eWs) {
+            return false;
+        }
     }
 
     function stopOwnTyping(forceClear) {
@@ -6730,9 +6719,9 @@
         ownTypingActive = false;
         lastTypingPostAt = 0;
         lastTypingDraft = '';
-        // forceClear on send — wipe agent preview even if ownTypingActive raced false.
+        // forceClear on send / empty field — wipe agent preview.
         if (conversationId && (forceClear || wasActive)) {
-            publishVisitorTyping(false, '');
+            publishVisitorTyping(false, '', true);
         }
     }
 
@@ -6741,13 +6730,11 @@
         var input = document.getElementById('lc-input');
         if (!input) return;
         // Show on agent until the compose field is actually empty (or send clears it).
-        // Do not use keyup-idle timeouts — pausing mid-sentence must keep the draft visible.
-        var hasText = (input.value || '').length > 0 && (input.value || '').replace(/\s/g, '') !== '';
+        // Pausing mid-sentence must keep the draft visible — no idle clear.
+        var raw = String(input.value || '');
+        var hasText = raw.replace(/\s/g, '') !== '';
         if (!hasText) {
-            // Truly empty (or only whitespace) → clear agent preview.
-            if (!(input.value || '').replace(/\s/g, '').length) {
-                stopOwnTyping();
-            }
+            stopOwnTyping(true);
             return;
         }
         postOwnTyping(true);
@@ -6755,11 +6742,25 @@
             clearInterval(typingHeartbeatTimer);
             typingHeartbeatTimer = null;
         }
-        if (typingIdleTimer) clearTimeout(typingIdleTimer);
-        // Keystroke + idle stop only — no typing poll heartbeat
-        typingIdleTimer = setTimeout(function () {
-            stopOwnTyping();
-        }, 6000);
+        if (typingIdleTimer) {
+            clearTimeout(typingIdleTimer);
+            typingIdleTimer = null;
+        }
+        // Soft WS refresh while text remains — never HTTP / never clear on pause.
+        typingHeartbeatTimer = setInterval(function () {
+            if (!conversationId || chatClosed) {
+                stopOwnTyping(true);
+                return;
+            }
+            var el = document.getElementById('lc-input');
+            var still = el && String(el.value || '').replace(/\s/g, '') !== '';
+            if (!still) {
+                stopOwnTyping(true);
+                return;
+            }
+            lastTypingPostAt = 0;
+            postOwnTyping(true);
+        }, 4000);
     }
 
     function playJoinChime() {
