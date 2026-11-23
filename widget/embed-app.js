@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 255;
+    var LC_WIDGET_BUILD = 256;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -6681,14 +6681,38 @@
         lastTypingPostAt = now;
         lastTypingDraft = draft;
         ownTypingActive = !!isTyping;
+        publishVisitorTyping(!!isTyping, draft);
+    }
+
+    /** Prefer WS typing (no CORS / no HTTP). HTTP typing.php only if socket is down. */
+    function publishVisitorTyping(isTyping, draft) {
+        var cid = parseInt(conversationId, 10) || 0;
+        if (cid < 1) return;
+        var payload = {
+            conversation_id: cid,
+            visitor_uid: visitorUid || '',
+            typing: !!isTyping,
+            draft: String(draft || ''),
+            role: 'visitor'
+        };
+        try {
+            if (realtimeClient && typeof realtimeClient.publishClientEvent === 'function'
+                && realtimeClient.isConnected && realtimeClient.isConnected()) {
+                if (realtimeClient.publishClientEvent('visitor.typing', payload)) {
+                    return;
+                }
+            }
+        } catch (eWs) {}
+        // Fallback only — never depend on host-site nginx CORS for the happy path.
         fetch(siteUrl + '/api/typing.php', {
             method: 'POST',
             headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            credentials: 'omit',
             body: JSON.stringify({
-                conversation_id: conversationId,
+                conversation_id: cid,
                 visitor_uid: visitorUid,
                 typing: !!isTyping,
-                draft: draft
+                draft: String(draft || '')
             })
         }).catch(function () {});
     }
@@ -6708,17 +6732,7 @@
         lastTypingDraft = '';
         // forceClear on send — wipe agent preview even if ownTypingActive raced false.
         if (conversationId && (forceClear || wasActive)) {
-            fetch(siteUrl + '/api/typing.php', {
-                method: 'POST',
-                headers: apiHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({
-                    conversation_id: conversationId,
-                    visitor_uid: visitorUid,
-                    typing: false,
-                    draft: '',
-                    cleared: 1
-                })
-            }).catch(function () {});
+            publishVisitorTyping(false, '');
         }
     }
 

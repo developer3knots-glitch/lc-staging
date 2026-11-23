@@ -24,21 +24,16 @@ require_once __DIR__ . '/ip-resume.php';
 
 function lc_cors_headers(): void
 {
-    // Apache may already set these via api/.htaccess. Nginx/aaPanel does not —
-    // without these headers the browser blocks embeds on other domains.
-    if (!headers_sent()) {
-        $already = false;
-        foreach (headers_list() as $h) {
-            if (stripos($h, 'Access-Control-Allow-Origin:') === 0) {
-                $already = true;
-                break;
-            }
-        }
-        if (!$already) {
-            header('Access-Control-Allow-Origin: *');
-            header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-            header('Access-Control-Allow-Headers: Content-Type, ngrok-skip-browser-warning');
-        }
+    // Always emit from PHP — never depend on nginx/aaPanel/client-site CORS config.
+    if (function_exists('lc_emit_cors_headers')) {
+        lc_emit_cors_headers();
+    } elseif (!headers_sent()) {
+        header_remove('Access-Control-Allow-Origin');
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning');
+        header('Access-Control-Max-Age: 86400');
+        header('Vary: Origin');
     }
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
         http_response_code(204);
@@ -51,6 +46,10 @@ function lc_json(array $data, int $code = 200): void
     // Drop any prior notices/BOM so fetch().json() / JSON.parse never fails
     while (ob_get_level() > 0) {
         @ob_end_clean();
+    }
+    // Re-assert CORS on every JSON response (covers fatals recovered mid-request).
+    if (function_exists('lc_cors_headers')) {
+        lc_cors_headers();
     }
     if (!headers_sent()) {
         http_response_code($code);

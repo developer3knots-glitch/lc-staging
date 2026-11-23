@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 26;
+const REALTIME_BUILD = 27;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -1092,6 +1092,38 @@ function wireWebSocket(server) {
           touchVisitorSocket(ws);
           registerVisitorSocket(ws);
           forwardVisitorReceiptAck(claims, ackData);
+          return;
+        }
+
+        // Visitor typing over WS — no HTTP typing.php / CORS dependency
+        if (event === 'visitor.typing') {
+          const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          const claimCid = parseInt(claims.conversation_id, 10) || 0;
+          let cid = parseInt(data.conversation_id, 10) || 0;
+          if (cid < 1) cid = claimCid;
+          if (cid < 1) return;
+          touchVisitorSocket(ws);
+          registerVisitorSocket(ws);
+          const convCh = 'conv:' + cid;
+          const staffCh = 'staff:conv:' + cid;
+          const brandId = parseInt(claims.brand_id, 10) || parseInt(data.brand_id, 10) || 0;
+          const agentId = parseInt(claims.agent_id, 10) || parseInt(data.agent_id, 10) || 0;
+          if (!(ws._lcChannels && ws._lcChannels.has(convCh))) {
+            subscribe(ws, convCh);
+          }
+          const channels = [convCh, staffCh];
+          if (brandId > 0) channels.push('brand:' + brandId + ':inbox');
+          if (agentId > 0) channels.push('agent:' + agentId);
+          const draft = String(data.draft || data.preview || '').slice(0, 2000);
+          const typingOn = !(data.typing === false || data.typing === 0 || data.typing === '0' || data.typing === 'false');
+          publishMany(channels, 'typing', {
+            conversation_id: cid,
+            role: 'visitor',
+            typing: typingOn,
+            preview: draft,
+            draft: draft,
+            name: String(data.name || ''),
+          });
           return;
         }
 
