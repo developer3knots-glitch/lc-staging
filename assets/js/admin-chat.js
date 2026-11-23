@@ -1671,9 +1671,36 @@
 
     var visitorTypingMap = {};
     var visitorTypingTimers = {};
+    /** Sticky visitor draft until field empty / send — pause must NOT hide on agent. */
+    var stickyVisitorDraft = {};
 
     function visitorIsTypingInList(conversationId) {
-        return !!visitorTypingMap[parseInt(conversationId, 10) || 0];
+        var id = parseInt(conversationId, 10) || 0;
+        return !!(visitorTypingMap[id] || (stickyVisitorDraft[id] && stickyVisitorDraft[id].draft));
+    }
+
+    function clearStickyVisitorDraft(conversationId) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (id < 1) return;
+        delete stickyVisitorDraft[id];
+        setVisitorSidebarTyping(id, false);
+        if (selectedId && id === selectedId) setPeerTypingVisible(false);
+    }
+
+    function applyStickyVisitorDraft(conversationId, name, draft) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (id < 1) return;
+        var text = String(draft || '');
+        if (text.replace(/\s/g, '') === '') return;
+        stickyVisitorDraft[id] = {
+            name: String(name || 'Visitor').trim() || 'Visitor',
+            draft: text,
+            at: Date.now()
+        };
+        setVisitorSidebarTyping(id, true);
+        if (selectedId && id === selectedId) {
+            setPeerTypingVisible(true, stickyVisitorDraft[id].name, text);
+        }
     }
 
     function itemPreviewHtml(c) {
@@ -5156,10 +5183,12 @@
                 var draftText = String(data.peer_typing_preview || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
                 if (data.peer_typing || draftLeft) {
-                    setPeerTypingVisible(true, data.peer_typing_name || (c && c.visitor_name), draftText);
-                } else if (!(typingLabelEl && typingLabelEl.classList.contains('has-preview'))) {
-                    setPeerTypingVisible(false);
+                    applyStickyVisitorDraft(selectedId, data.peer_typing_name || (c && c.visitor_name), draftText || ((stickyVisitorDraft[selectedId] && stickyVisitorDraft[selectedId].draft) || ''));
+                } else if (stickyVisitorDraft[selectedId] && stickyVisitorDraft[selectedId].draft) {
+                    // Poll TTL expired — keep sticky WS draft until field clears.
+                    applyStickyVisitorDraft(selectedId, stickyVisitorDraft[selectedId].name, stickyVisitorDraft[selectedId].draft);
                 }
+                // Never hide sticky draft from poll misses / pause.
             })
             .catch(function (err) {
                 console.error('Agent poll error:', err);
@@ -7026,8 +7055,7 @@
                 if (msg && msg.id) {
                     if (msg.sender_type === 'visitor') {
                         noteVisitorMessaging(cid, payload && payload.visitor_presence);
-                        setVisitorSidebarTyping(cid, false);
-                        setPeerTypingVisible(false);
+                        clearStickyVisitorDraft(cid);
                     }
                     appendLiveMessage(msg);
                     if (msg.sender_type === 'visitor') {
@@ -7060,9 +7088,8 @@
                     syncBadgeFromPresenceLog(msg.message, cid);
                 }
                 if (cid && msg && msg.sender_type === 'visitor') {
-                    setVisitorSidebarTyping(cid, false);
-                    // Message means draft was sent — never leave sticky preview ("… 8").
-                    if (selectedId && cid === selectedId) setPeerTypingVisible(false);
+                    // Message means draft was sent — clear sticky preview.
+                    clearStickyVisitorDraft(cid);
                     noteVisitorMessaging(cid, payload && payload.visitor_presence);
                 }
                 if (handleStaffMessagePayload(payload)) {
@@ -7184,18 +7211,29 @@
                 var typingOn = payload.typing === true || payload.typing === 1 || payload.typing === '1';
                 var draftText = String((payload && (payload.preview || payload.draft)) || '');
                 var draftLeft = draftText.replace(/\s/g, '') !== '';
-                // Hide ONLY on explicit clear (field empty / send). Pure WS, no poll.
-                if (cleared || (!typingOn && !draftLeft)) {
-                    setVisitorSidebarTyping(cid, false);
-                    if (selectedId && cid === selectedId) setPeerTypingVisible(false);
+                // Hide ONLY when visitor field is empty / message sent (cleared:1).
+                // Pause mid-sentence must keep the last draft on screen.
+                if (cleared) {
+                    clearStickyVisitorDraft(cid);
                     return;
                 }
-                if (typingOn || draftLeft) {
-                    setVisitorSidebarTyping(cid, true);
-                    if (selectedId && cid === selectedId) {
-                        setPeerTypingVisible(true, payload.name || 'Visitor', draftLeft ? draftText : '');
-                    }
+                if (draftLeft) {
+                    applyStickyVisitorDraft(cid, payload.name || 'Visitor', draftText);
+                    return;
                 }
+                if (typingOn) {
+                    // Keep existing sticky draft if we only got a bare "typing" pulse.
+                    if (stickyVisitorDraft[cid] && stickyVisitorDraft[cid].draft) {
+                        applyStickyVisitorDraft(cid, stickyVisitorDraft[cid].name, stickyVisitorDraft[cid].draft);
+                    } else {
+                        setVisitorSidebarTyping(cid, true);
+                        if (selectedId && cid === selectedId) {
+                            setPeerTypingVisible(true, payload.name || 'Visitor', '');
+                        }
+                    }
+                    return;
+                }
+                // typing:false without cleared — ignore (user paused, field still has text)
             }
             realtimeClient.on('typing', handleVisitorTypingPayload);
             // Backup path — some frames only surface on the generic event emitter
