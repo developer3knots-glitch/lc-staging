@@ -1679,9 +1679,20 @@
         return !!(visitorTypingMap[id] || (stickyVisitorDraft[id] && stickyVisitorDraft[id].draft));
     }
 
-    function clearStickyVisitorDraft(conversationId) {
+    function clearStickyVisitorDraft(conversationId, sentText) {
         var id = parseInt(conversationId, 10) || 0;
         if (id < 1) return;
+        var keep = stickyVisitorDraft[id] || null;
+        var sent = String(sentText || '').replace(/^[ \t]+|[ \t]+$/g, '');
+        // Race fix: a late message.new clear must NOT wipe a newer draft the visitor
+        // already typed after send (that caused blink while field still had text).
+        if (keep && keep.draft && sent) {
+            var draft = String(keep.draft).replace(/^[ \t]+|[ \t]+$/g, '');
+            if (draft && draft !== sent && sent.indexOf(draft) !== 0 && draft.indexOf(sent) !== 0) {
+                applyStickyVisitorDraft(id, keep.name, keep.draft);
+                return;
+            }
+        }
         delete stickyVisitorDraft[id];
         setVisitorSidebarTyping(id, false);
         if (selectedId && id === selectedId) setPeerTypingVisible(false);
@@ -7055,7 +7066,7 @@
                 if (msg && msg.id) {
                     if (msg.sender_type === 'visitor') {
                         noteVisitorMessaging(cid, payload && payload.visitor_presence);
-                        clearStickyVisitorDraft(cid);
+                        clearStickyVisitorDraft(cid, msg.message || '');
                     }
                     appendLiveMessage(msg);
                     if (msg.sender_type === 'visitor') {
@@ -7088,8 +7099,8 @@
                     syncBadgeFromPresenceLog(msg.message, cid);
                 }
                 if (cid && msg && msg.sender_type === 'visitor') {
-                    // Message means draft was sent — clear sticky preview.
-                    clearStickyVisitorDraft(cid);
+                    // Message means draft was sent — clear sticky, but keep a newer draft.
+                    clearStickyVisitorDraft(cid, msg.message || '');
                     noteVisitorMessaging(cid, payload && payload.visitor_presence);
                 }
                 if (handleStaffMessagePayload(payload)) {
