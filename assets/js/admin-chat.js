@@ -1673,6 +1673,29 @@
     var visitorTypingTimers = {};
     /** Sticky visitor draft until field empty / send — pause must NOT hide on agent. */
     var stickyVisitorDraft = {};
+    // Last visitor message text per chat — used to ignore late typing echoes after send
+    // (those were re-showing the sent draft and causing sticky blink).
+    var lastVisitorSentSticky = {};
+
+    function noteVisitorSentForSticky(conversationId, sentText) {
+        var id = parseInt(conversationId, 10) || 0;
+        if (id < 1) return;
+        var sent = String(sentText || '').replace(/^[ \t]+|[ \t]+$/g, '');
+        if (!sent) return;
+        lastVisitorSentSticky[id] = { text: sent, at: Date.now() };
+    }
+
+    function isStaleTypingDraft(conversationId, draftText) {
+        var id = parseInt(conversationId, 10) || 0;
+        var last = lastVisitorSentSticky[id];
+        if (!last || !last.text) return false;
+        if ((Date.now() - last.at) > 2500) return false;
+        var d = String(draftText || '').replace(/^[ \t]+|[ \t]+$/g, '');
+        if (!d) return false;
+        var s = last.text;
+        // Exact sent text, or a shorter prefix echo of it. Longer new drafts are allowed.
+        return d === s || (d.length < s.length && s.indexOf(d) === 0);
+    }
 
     function visitorIsTypingInList(conversationId) {
         var id = parseInt(conversationId, 10) || 0;
@@ -1684,6 +1707,7 @@
         if (id < 1) return;
         var keep = stickyVisitorDraft[id] || null;
         var sent = String(sentText || '').replace(/^[ \t]+|[ \t]+$/g, '');
+        if (sent) noteVisitorSentForSticky(id, sent);
         // Race fix: a late message.new clear must NOT wipe a newer draft the visitor
         // already typed after send (that caused blink while field still had text).
         if (keep && keep.draft && sent) {
@@ -1703,6 +1727,7 @@
         if (id < 1) return;
         var text = String(draft || '');
         if (text.replace(/\s/g, '') === '') return;
+        if (isStaleTypingDraft(id, text)) return;
         stickyVisitorDraft[id] = {
             name: String(name || 'Visitor').trim() || 'Visitor',
             draft: text,
@@ -7227,16 +7252,21 @@
                 if (cleared) {
                     // Send-clear often carries the just-sent text in preview/draft — use it
                     // so a newer in-progress draft is not wiped. Empty cleared that arrives
-                    // AFTER the next keystrokes already updated sticky must also be ignored.
+                    // AFTER the next keystrokes already updated sticky must also be ignored —
+                    // but never keep an echo of the message that was just sent (blink source).
                     var keepDraft = stickyVisitorDraft[cid] || null;
                     if (!draftLeft && keepDraft && keepDraft.draft && keepDraft.at && (Date.now() - keepDraft.at) < 900) {
-                        applyStickyVisitorDraft(cid, keepDraft.name, keepDraft.draft);
-                        return;
+                        if (!isStaleTypingDraft(cid, keepDraft.draft)) {
+                            applyStickyVisitorDraft(cid, keepDraft.name, keepDraft.draft);
+                            return;
+                        }
                     }
                     clearStickyVisitorDraft(cid, draftText);
                     return;
                 }
                 if (draftLeft) {
+                    // Ignore late typing frames that only echo the just-sent message.
+                    if (isStaleTypingDraft(cid, draftText)) return;
                     applyStickyVisitorDraft(cid, payload.name || 'Visitor', draftText);
                     return;
                 }
