@@ -7225,7 +7225,15 @@
                 // Hide ONLY when visitor field is empty / message sent (cleared:1).
                 // Pause mid-sentence must keep the last draft on screen.
                 if (cleared) {
-                    clearStickyVisitorDraft(cid);
+                    // Send-clear often carries the just-sent text in preview/draft — use it
+                    // so a newer in-progress draft is not wiped. Empty cleared that arrives
+                    // AFTER the next keystrokes already updated sticky must also be ignored.
+                    var keepDraft = stickyVisitorDraft[cid] || null;
+                    if (!draftLeft && keepDraft && keepDraft.draft && keepDraft.at && (Date.now() - keepDraft.at) < 900) {
+                        applyStickyVisitorDraft(cid, keepDraft.name, keepDraft.draft);
+                        return;
+                    }
+                    clearStickyVisitorDraft(cid, draftText);
                     return;
                 }
                 if (draftLeft) {

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 259;
+    var LC_WIDGET_BUILD = 260;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -6706,7 +6706,7 @@
         }
     }
 
-    function stopOwnTyping(forceClear) {
+    function stopOwnTyping(forceClear, clearedForText) {
         if (typingHeartbeatTimer) {
             clearInterval(typingHeartbeatTimer);
             typingHeartbeatTimer = null;
@@ -6720,8 +6720,9 @@
         lastTypingPostAt = 0;
         lastTypingDraft = '';
         // forceClear on send / empty field — wipe agent preview.
+        // On send, pass the just-sent text so agent can keep a newer draft (no blink).
         if (conversationId && (forceClear || wasActive)) {
-            publishVisitorTyping(false, '', true);
+            publishVisitorTyping(false, forceClear ? String(clearedForText || '') : '', true);
         }
     }
 
@@ -8470,7 +8471,7 @@
         var input = document.getElementById('lc-input');
         var msg = input.value.trim();
         if (!msg) return;
-        stopOwnTyping(true);
+        stopOwnTyping(true, msg);
 
         if (Date.now() < sendCooldownUntil) {
             showTransientSendError('Too many requests. Please wait a moment.', msg);
