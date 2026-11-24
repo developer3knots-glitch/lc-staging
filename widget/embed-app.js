@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 277;
+    var LC_WIDGET_BUILD = 278;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -260,6 +260,14 @@
     var visitorCloseGraceUntil = 0;
     /** Bumped on Start new chat so late visitor-close callbacks cannot re-flash ended UI. */
     var visitorCloseEpoch = 0;
+    /**
+     * After reopen/continue/join: ignore closed frames whose message_id is <= this watermark
+     * (late chat.closed retries were flipping soft-close + agent Closed↔Unassigned).
+     * New closes always have a higher message_id and still apply immediately.
+     */
+    var ignoreClosedBelowMsgId = 0;
+    /** Fallback when a stale closed frame has no message_id (status-only retry). */
+    var ignoreClosedStatusUntil = 0;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
@@ -3564,10 +3572,14 @@
                         status: 'active',
                         agent: (msg && msg.agent_name)
                             ? { name: msg.agent_name, avatar: msg.agent_avatar }
-                            : (payload && payload.agent) || null
+                            : (payload && payload.agent) || null,
+                        message_id: mid
                     }, { fromAgentReopen: !!isJoinOrReopen });
                 } else if (isAgent || isJoinOrReopen) {
                     try { showChatView(); } catch (eSv) {}
+                    if (isJoinOrReopen && mid > 0) {
+                        noteVisitorThreadReopened(mid);
+                    }
                 }
             }
             // Minimized widget: only NEW agent messages maximize (not ack/replay dupes).
@@ -3580,7 +3592,9 @@
             var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             // WS-only: close can arrive as message.new without conversation.updated.
             if (isCloseLine) {
-                showEndedState('agent');
+                if (!isStaleVisitorClosePayload({ message_id: mid, message: msg })) {
+                    showEndedState('agent');
+                }
             } else if (isVisitorCloseLine) {
                 showEndedState('visitor');
             }
@@ -3765,6 +3779,10 @@
         if (payload && payload.status === 'closed') {
             // Already left this thread (Start new chat) — never flash ended over the new session
             if (forceNewChat || !conversationId) return;
+            // Late/retried close after reopen/continue — do not soft-close again.
+            if (isStaleVisitorClosePayload(payload)) {
+                return;
+            }
             // Paint close line from this frame when message.new was missed (WS-only).
             if (payload.message && (payload.message.id || payload.message_id)) {
                 try {
@@ -5489,14 +5507,24 @@
     function detectClosedByFromMessages() {
         var box = document.getElementById('lc-panel-messages');
         if (!box) return lastClosedBy || '';
-        var sysMsgs = box.querySelectorAll('.lcw-msg.lcw-system');
-        for (var i = sysMsgs.length - 1; i >= 0; i--) {
-            var txt = (sysMsgs[i].textContent || '').trim();
-            // Continue after a close means the thread is open again — ignore older closes
-            if (/continued this conversation|returned\. Previous conversation|Visitor returned|reopened this chat/i.test(txt)) {
+        // Join events are separate nodes (.lcw-join-event), not always .lcw-system
+        var nodes = box.querySelectorAll('.lcw-msg.lcw-system, .lcw-join-event');
+        for (var i = nodes.length - 1; i >= 0; i--) {
+            var txt = (nodes[i].textContent || '').trim();
+            // Newest join/rejoin/continue means the thread is live again — do not
+            // fall through to an older "Chat closed by agent" line.
+            if (/re-?joined the (?:chat|conversation)/i.test(txt)
+                || /joined the (?:chat|conversation)/i.test(txt)
+                || /continued this conversation/i.test(txt)
+                || /returned\. Previous conversation/i.test(txt)
+                || /Visitor returned/i.test(txt)
+                || /reopened this chat/i.test(txt)) {
                 return '';
             }
             if (/will close soon due to inactivity|Are you still there/i.test(txt)) {
+                continue;
+            }
+            if (/left the (?:chat|conversation)/i.test(txt)) {
                 continue;
             }
             if (/chat closed by agent/i.test(txt)) return 'agent';
@@ -5506,6 +5534,29 @@
             if (/closed the live chat/i.test(txt)) return 'visitor';
         }
         return lastClosedBy || '';
+    }
+
+    function noteVisitorThreadReopened(msgId) {
+        var mid = parseInt(msgId, 10) || 0;
+        var floor = Math.max(lastMsgId || 0, mid, ignoreClosedBelowMsgId || 0);
+        ignoreClosedBelowMsgId = floor;
+        ignoreClosedStatusUntil = Date.now() + 20000;
+        resumeGraceUntil = Date.now() + 20000;
+    }
+
+    function isStaleVisitorClosePayload(payload) {
+        payload = payload || {};
+        var mid = parseInt(payload.message_id, 10)
+            || parseInt(payload.message && payload.message.id, 10)
+            || 0;
+        if (mid > 0 && mid <= (ignoreClosedBelowMsgId || 0)) {
+            return true;
+        }
+        // Status-only / retry close with no id after we already continued/rejoined
+        if (mid < 1 && !chatClosed && Date.now() < (ignoreClosedStatusUntil || 0)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -5546,6 +5597,9 @@
         if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
         resumeGraceUntil = 0;
+        // Applied close becomes the new floor so the same frame cannot re-apply.
+        ignoreClosedBelowMsgId = Math.max(ignoreClosedBelowMsgId || 0, lastMsgId || 0);
+        ignoreClosedStatusUntil = 0;
         clearPendingAttachment();
         stopOwnTyping();
         setPeerTypingVisible(false);
@@ -5659,8 +5713,9 @@
         leaveCloseSent = false;
         pendingHistoryWipe = false;
         visitorCloseGraceUntil = 0;
-        // In-flight polls may still say status=closed — don't flip back to ended UI
-        resumeGraceUntil = Date.now() + 20000;
+        // Watermark + grace: late chat.closed retries must not re-soft-close.
+        var reopenMid = parseInt(data && (data.message_id || (data.message && data.message.id)), 10) || 0;
+        noteVisitorThreadReopened(reopenMid);
         showChatView();
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
@@ -6358,38 +6413,43 @@
             updateWidgetReference(data.reference);
         }
         if (chatClosed) {
-            if (Date.now() < resumeGraceUntil) {
-                chatClosed = false;
-            } else {
-                // Soft-close: keep compose + full current-round transcript (never blank/idle)
-                showEndedState(data.closed_by || detectClosedByFromMessages() || 'remote');
-                if (!options.keepMessages) {
-                    lastMsgId = 0;
-                    lastDateLabel = '';
-                    try { persistLastMsgId(0); } catch (eSoftLm) {}
-                    pendingHistoryWipe = true;
-                }
-                var softBoot = Array.isArray(data.messages) ? data.messages : [];
-                if (softBoot.length) {
-                    softBoot.forEach(function (m) {
-                        try {
-                            appendMessage(m, { suppressAgentState: true });
-                            var smid = parseInt(m && m.id, 10) || 0;
-                            if (smid > 0) advanceLastMsgId(smid);
-                        } catch (eSoftBoot) {}
-                    });
-                    pendingHistoryWipe = false;
-                }
-                hideChatLoading();
-                pollMessages(true);
-                startLiveMessageSync();
-                var softToken = data.realtime_token || '';
-                loadRealtimeScript(function () {
-                    initVisitorRealtime(softToken || null);
-                });
-                scheduleAutoOpenOnLoad();
-                return;
+            if (!options.keepMessages) {
+                lastMsgId = 0;
+                lastDateLabel = '';
+                try { persistLastMsgId(0); } catch (eSoftLm) {}
+                pendingHistoryWipe = true;
             }
+            var softBoot = Array.isArray(data.messages) ? data.messages : [];
+            if (softBoot.length) {
+                softBoot.forEach(function (m) {
+                    try {
+                        appendMessage(m, { suppressAgentState: true });
+                        var smid = parseInt(m && m.id, 10) || 0;
+                        if (smid > 0) advanceLastMsgId(smid);
+                    } catch (eSoftBoot) {}
+                });
+                pendingHistoryWipe = false;
+            }
+            // Transcript newer than close (join/rejoin/continue) → stay open; else soft-close.
+            var bootClosedBy = detectClosedByFromMessages();
+            if (!bootClosedBy || Date.now() < resumeGraceUntil) {
+                chatClosed = false;
+                noteVisitorThreadReopened(lastMsgId);
+                showChatView();
+                var bootInput = document.getElementById('lc-input');
+                if (bootInput) bootInput.placeholder = 'Write a message...';
+            } else {
+                showEndedState(data.closed_by || bootClosedBy || 'remote');
+            }
+            hideChatLoading();
+            pollMessages(true);
+            startLiveMessageSync();
+            var softToken = data.realtime_token || '';
+            loadRealtimeScript(function () {
+                initVisitorRealtime(softToken || null);
+            });
+            scheduleAutoOpenOnLoad();
+            return;
         }
         hideEndedState();
         showChatView();
@@ -8282,7 +8342,23 @@
                 if (data.status === 'closed') {
                     setPeerTypingVisible(false);
                     stopOwnTyping();
-                    if (Date.now() >= resumeGraceUntil) {
+                    // Prefer message-id watermark over blind resumeGrace — a NEW close
+                    // after continue must still soft-close immediately.
+                    var pollCloseMid = 0;
+                    if (Array.isArray(data.messages)) {
+                        for (var pci = data.messages.length - 1; pci >= 0; pci--) {
+                            var pcm = data.messages[pci];
+                            if (pcm && pcm.sender_type === 'system' && isAgentCloseSystemMessage(pcm.message || '')) {
+                                pollCloseMid = parseInt(pcm.id, 10) || 0;
+                                break;
+                            }
+                        }
+                    }
+                    if (!isStaleVisitorClosePayload({
+                        message_id: pollCloseMid,
+                        status: 'closed',
+                        closed_by: data.closed_by
+                    })) {
                         if (lastClosedBy === 'visitor' || detectClosedByFromMessages() === 'visitor') {
                             showEndedState('visitor');
                         } else {
