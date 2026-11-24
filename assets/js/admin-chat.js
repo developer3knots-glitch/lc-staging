@@ -568,12 +568,18 @@
             if (value === false || value === 0 || value === '0' || value === 'false') return false;
             return true;
         }
+        var widgetOpen = (presence.widget_open === undefined || presence.widget_open === null || presence.widget_open === '')
+            ? (status !== 'minimized' && status !== 'left')
+            : flagOn(presence.widget_open, true);
+        // Active is only valid while the widget panel is open.
+        if (status === 'active' && !widgetOpen) {
+            status = 'minimized';
+            widgetOpen = false;
+        }
         return {
             status: status,
-            label: presence.label || labels[status],
-            widget_open: (presence.widget_open === undefined || presence.widget_open === null || presence.widget_open === '')
-                ? (status !== 'minimized' && status !== 'left')
-                : flagOn(presence.widget_open, true),
+            label: (status === 'minimized' ? labels.minimized : (presence.label || labels[status])),
+            widget_open: widgetOpen,
             page_visible: flagOn(presence.page_visible, status !== 'away' && status !== 'left'),
             window_focused: true,
             left_site: !!presence.left_site || status === 'left',

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 261;
+    var LC_WIDGET_BUILD = 262;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -206,6 +206,18 @@
     var transcriptEmailForClose = '';
     var fullHistoryMode = false;
     var isOpen = false;
+    /** True only when the chat panel is actually visible — Active presence requires this. */
+    function isChatPanelOpen() {
+        if (!isOpen) return false;
+        var panel = document.getElementById('lc-panel');
+        if (!panel) return false;
+        if (panel.style.display === 'none' || panel.hidden) {
+            // Self-heal: DOM closed but flag lagged (keeps presence from sticking on Active).
+            isOpen = false;
+            return false;
+        }
+        return true;
+    }
     var chatClosed = false;
     var chatToken = '';
     var widgetLoadedAt = 0;
@@ -395,7 +407,8 @@
 
         function engagementFields() {
             return {
-                chat_open: isOpen ? 1 : 0,
+                // Active only while panel is open; launcher-only = Minimized.
+                chat_open: isChatPanelOpen() ? 1 : 0,
                 page_visible: (typeof document !== 'undefined' && document.visibilityState === 'hidden') ? 0 : 1,
                 window_focused: windowFocused ? 1 : 0
             };
@@ -746,7 +759,10 @@
         function signalVisitorHere() {
             siteLeaveSent = false;
             leaveSentForUrl = '';
-            reportEngagementPresence(false, true);
+            // Keep Minimized when launcher-only — never force Active on pageshow/focus.
+            reportEngagementPresence(false, true, {
+                chat_open: isChatPanelOpen() ? 1 : 0
+            });
         }
         window.__lcNoteVisitorStillHere = function () {
             signalVisitorHere();
@@ -759,10 +775,14 @@
         // Expose flush for realtime connected handlers outside this closure
         window.__lcFlushVisitorPresence = function () {
             // Visible tab = visitor is here. Never re-fire a queued Left after pageshow.
+            // Panel closed → Minimized; panel open → Active. Never invent Active while minimized.
             if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
                 siteLeaveSent = false;
                 pendingPresenceFields = null;
-                reportEngagementPresence(false, true);
+                reportEngagementPresence(false, true, {
+                    chat_open: isChatPanelOpen() ? 1 : 0,
+                    force_status: isChatPanelOpen() ? 'active' : 'minimized'
+                });
                 return;
             }
             if (siteLeaveSent) {
@@ -770,7 +790,8 @@
                 return;
             }
             var fields = pendingPresenceFields || engagementFields();
-            reportEngagementPresence(false, true, fields.left_site ? { left_site: 1 } : null);
+            fields.chat_open = isChatPanelOpen() ? 1 : 0;
+            reportEngagementPresence(false, true, fields.left_site ? { left_site: 1, chat_open: 0 } : fields);
         };
 
         recordView();
@@ -787,7 +808,12 @@
             if (document.visibilityState === 'visible') {
                 siteLeaveSent = false;
                 leaveSentForUrl = '';
-                reportEngagementPresence(false, true);
+                // Tab back: Active only if panel open, else Minimized (not Away).
+                reportEngagementPresence(false, true, {
+                    chat_open: isChatPanelOpen() ? 1 : 0,
+                    page_visible: 1,
+                    force_status: isChatPanelOpen() ? 'active' : 'minimized'
+                });
                 sendStay(false);
                 if (conversationId && !chatClosed) {
                     if (!blockHttpMessageSync()) scheduleCatchupSync();
@@ -796,9 +822,18 @@
                     }
                 }
             } else {
-                // Tab hidden ≠ left website — save the stay, then report Away.
+                // Tab hidden ≠ left website — save the stay, then report Away (only if chat open).
+                // Launcher-only stays Minimized (tab hide does not upgrade to Away over Minimized).
                 sendStay(true);
-                reportEngagementPresence(true, true);
+                if (isChatPanelOpen()) {
+                    reportEngagementPresence(true, true, { chat_open: 1, page_visible: 0 });
+                } else {
+                    reportEngagementPresence(true, true, {
+                        chat_open: 0,
+                        page_visible: 0,
+                        force_status: 'minimized'
+                    });
+                }
             }
         });
 
@@ -815,9 +850,12 @@
                 clearTimeout(windowBlurTimer);
                 windowBlurTimer = null;
             }
-            // Returning focus with a visible tab → ensure Active (WS, no delay).
+            // Re-sync current panel state — never force Active while minimized.
             if (document.visibilityState !== 'hidden') {
-                reportEngagementPresence(false, true);
+                reportEngagementPresence(false, true, {
+                    chat_open: isChatPanelOpen() ? 1 : 0,
+                    force_status: isChatPanelOpen() ? 'active' : 'minimized'
+                });
             }
         });
 
@@ -3080,9 +3118,7 @@
 
     /** Chat panel open = can receive. Read only while this tab is in the foreground. */
     function isVisitorActivelyViewingChat() {
-        if (!isOpen || chatClosed) return false;
-        var panel = document.getElementById('lc-panel');
-        if (!panel || panel.style.display === 'none') return false;
+        if (!isChatPanelOpen() || chatClosed) return false;
         try {
             if (document.visibilityState === 'hidden') return false;
         } catch (eVis) {}
@@ -4902,6 +4938,15 @@
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
+        // Re-assert Minimized after focus/blur races from closing the panel.
+        setTimeout(function () {
+            if (isChatPanelOpen()) return;
+            reportEngagementPresence(false, true, {
+                chat_open: 0,
+                force_status: 'minimized',
+                page_visible: document.visibilityState === 'hidden' ? 0 : 1
+            });
+        }, 0);
     }
 
     /**
