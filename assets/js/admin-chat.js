@@ -1013,7 +1013,9 @@
 
         var next = String(presence.status || '').toLowerCase();
         var leftNow = next === 'left' || presence.left_site === true || presence.left_site === 1 || presence.left_site === '1';
-        var panelClosed = !leftNow && (presence.widget_open === false || next === 'minimized');
+        // Minimized only when status says so (or Active with widget_open false).
+        // Never collapse Tab/Away into Minimized — that hid realtime tab switches.
+        var panelClosed = !leftNow && next !== 'away' && (next === 'minimized' || (next === 'active' && presence.widget_open === false));
         if (panelClosed) {
             next = 'minimized';
             presence.status = 'minimized';

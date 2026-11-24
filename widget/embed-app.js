@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 263;
+    var LC_WIDGET_BUILD = 265;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -286,7 +286,8 @@
 
     setupReloadDetection();
     setupSiteNavigationDetection();
-    initPageTracker();
+    // initPageTracker() MUST run after `var reportEngagementPresence = stub` below.
+    // Calling it earlier let the stub assignment wipe the real publisher → 0 presence WS frames.
     loadNotifySoundScript();
     loadTimeScript();
     capturePublicIpv4();
@@ -575,12 +576,13 @@
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
+            } else if (tabHidden) {
+                // Tab/away wins over minimized so agent sees Tab, not a false Minimized.
+                status = 'away';
+                label = 'Switched tab';
             } else if (fields.force_status === 'minimized' || !fields.chat_open) {
                 status = 'minimized';
                 label = 'Chat minimized';
-            } else if (tabHidden) {
-                status = 'away';
-                label = 'Switched tab';
             }
             return {
                 status: status,
@@ -614,17 +616,29 @@
             for (var i = 0; i < clients.length; i++) {
                 var client = clients[i];
                 if (!(client && typeof client.publishClientEvent === 'function')) continue;
-                if (!(client.isConnected && client.isConnected())) continue;
                 try {
                     if (typeof client.subscribe === 'function') {
                         client.subscribe('conv:' + cid);
                     }
                 } catch (eSub) {}
                 try {
+                    // Prefer publishClientEvent (now tolerates connected-flag lag).
                     if (client.publishClientEvent('visitor.presence', eventData)) {
                         return true;
                     }
                 } catch (ePub) {}
+                // Hard fallback: raw OPEN socket even if driver flags say disconnected.
+                try {
+                    var sock = client.ws || (client.driver && client.driver.ws) || null;
+                    if (sock && sock.readyState === 1) {
+                        sock.send(JSON.stringify({
+                            type: 'client_event',
+                            event: 'visitor.presence',
+                            data: eventData
+                        }));
+                        return true;
+                    }
+                } catch (eRaw) {}
             }
             return false;
         }
@@ -869,6 +883,9 @@
         window.addEventListener('pagehide', sendSiteLeave);
         window.addEventListener('beforeunload', sendSiteLeave);
     }
+
+    // After stub + real assignment inside initPageTracker — never call before the stub line.
+    initPageTracker();
 
     function setupReloadDetection() {
         window.addEventListener('keydown', function (e) {
@@ -4045,7 +4062,7 @@
             return;
         }
         var s = document.createElement('script');
-        s.src = siteUrl + '/assets/js/lc-realtime.js?v=21';
+        s.src = siteUrl + '/assets/js/lc-realtime.js?v=22';
         s.async = true;
         s.setAttribute('data-lc-realtime', '1');
         s.onload = function () { if (done) done(); };

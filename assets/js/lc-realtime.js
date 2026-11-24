@@ -110,7 +110,11 @@
      */
     WebSocketDriver.prototype.publishClientEvent = function (event, data) {
         event = String(event || '');
-        if (!event || !this.isConnected()) return false;
+        if (!event || !this.ws) return false;
+        // Socket OPEN is enough — `connected` flag can lag after tab resume / auth.ok race,
+        // which previously dropped visitor.presence (status stuck on agent).
+        if (this.ws.readyState !== 1) return false;
+        this.connected = true;
         try {
             this.ws.send(JSON.stringify({
                 type: 'client_event',
