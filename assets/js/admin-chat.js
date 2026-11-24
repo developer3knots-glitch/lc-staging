@@ -2551,6 +2551,7 @@
         if (!force) {
             if (prev === 'active' || prev === 'waiting') {
                 if (selectedId === cid && prev === 'waiting') {
+                    setReopenBarVisible(false);
                     setUnassignedMode(true);
                 }
                 return;
@@ -2581,6 +2582,7 @@
         }
         var sendBtn = document.getElementById('lc-send-reply');
         if (sendBtn) sendBtn.disabled = true;
+        setReopenBarVisible(false);
         setUnassignedMode(true);
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
@@ -3659,6 +3661,16 @@
     }
 
     function setUnassignedMode(on) {
+        if (on) {
+            // Never stack with closed-chat "Visitor is browsing" reopen bar.
+            var reopenBar = document.getElementById('lc-reopen-bar');
+            var composeEl = document.getElementById('lc-chat-compose');
+            if (reopenBar) {
+                reopenBar.hidden = true;
+                reopenBar.classList.remove('is-on');
+            }
+            if (composeEl) composeEl.classList.remove('is-hidden-for-reopen');
+        }
         if (unassignedBar) {
             if (on) {
                 unassignedBar.hidden = false;
@@ -4022,6 +4034,20 @@
     function setReopenBarVisible(on) {
         var bar = document.getElementById('lc-reopen-bar');
         var compose = document.getElementById('lc-chat-compose');
+        if (on) {
+            // Closed+browsing only — never show beside Assign / unassigned bar.
+            if (unassignedBar) {
+                unassignedBar.hidden = true;
+                unassignedBar.classList.remove('is-on');
+            }
+            if (acceptBtn) {
+                acceptBtn.style.display = 'none';
+                acceptBtn.hidden = true;
+                acceptBtn.setAttribute('aria-hidden', 'true');
+            }
+            if (composeBox) composeBox.classList.remove('is-hidden-for-unassigned');
+            document.body.classList.remove('lc-chat-is-unassigned');
+        }
         if (bar) {
             bar.hidden = !on;
             bar.classList.toggle('is-on', !!on);
@@ -4130,6 +4156,7 @@
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
             replyInput.placeholder = 'Assign to yourself to reply';
+            setReopenBarVisible(false);
             setUnassignedMode(true);
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
@@ -7377,6 +7404,7 @@
                 if (selectedId && cid === selectedId) {
                     // Never force past presence_ts — older Active must not stomp Minimized.
                     setVisitorPresenceBadge(presence, { source: 'ws' });
+                    // Reopen bar only while CLOSED. Waiting/unassigned owns Assign UI alone.
                     if (conversationRowStatus(cid) === 'closed') {
                         setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
                         if (replyInput) {
@@ -7384,6 +7412,8 @@
                                 ? 'Visitor is browsing — open this chat'
                                 : 'Chat closed - visitor ended this conversation';
                         }
+                    } else if (conversationRowStatus(cid) === 'waiting') {
+                        setReopenBarVisible(false);
                     }
                 }
             });
