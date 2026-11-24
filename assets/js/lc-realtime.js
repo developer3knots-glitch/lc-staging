@@ -333,11 +333,11 @@
                                 try { self.ws.send(JSON.stringify({ type: 'ping' })); } catch (e2) {}
                                 return;
                             }
-                            // Dead / half-open watchdog: no inbound frame for 5s → reconnect.
-                            // Half-open pipes still accept client→server pings while server→client
-                            // is dead (messages only appear after pm2 restart otherwise).
+                            // Dead / half-open watchdog: require ~3 missed ping rounds (~15s).
+                            // A 5s cutoff raced the 5s ping interval and caused reconnect storms
+                            // (admin then spammed agent-conversations.php on every connected).
                             var lastIn = self._lastFrameAt || self._lastPongAt || 0;
-                            if (lastIn && (now - lastIn) > 5000) {
+                            if (lastIn && (now - lastIn) > 15000) {
                                 self.connected = false;
                                 self._clearSocket(true);
                                 self.scheduleReconnect();

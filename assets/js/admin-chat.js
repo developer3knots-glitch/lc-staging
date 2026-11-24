@@ -2648,7 +2648,7 @@
         });
         noteAdminThreadReopened(cid, opts.message_id || 0);
         if (selectedId !== cid) {
-            loadConversations();
+            scheduleInboxRefresh();
             return;
         }
         currentAssignedAgentId = 0;
@@ -2667,7 +2667,7 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         setPeerTypingVisible(false);
-        loadConversations();
+        scheduleInboxRefresh();
     }
 
     function paintConversationList(conversations) {
@@ -3482,8 +3482,20 @@
 
     var inboxLoadedAt = 0;
 
-    function loadConversations() {
-        inboxLoadedAt = Date.now();
+    function loadConversations(force) {
+        var now = Date.now();
+        if (inboxLoadInFlight) {
+            inboxLoadQueued = true;
+            return;
+        }
+        if (!force && inboxLoadLastAt && (now - inboxLoadLastAt) < INBOX_LOAD_MIN_MS) {
+            scheduleInboxRefresh(INBOX_LOAD_MIN_MS - (now - inboxLoadLastAt) + 50);
+            return;
+        }
+        inboxLoadInFlight = true;
+        inboxLoadQueued = false;
+        inboxLoadLastAt = now;
+        inboxLoadedAt = now;
         var url = base + '/api/agent-conversations.php?tab=' + encodeURIComponent(currentTab);
         if (selectedId) {
             url += '&selected_id=' + encodeURIComponent(selectedId);
@@ -3608,6 +3620,14 @@
 
                 // Keep the open chat mounted even if inbox hides IP duplicates.
                 // Tearing it down here made the panel vanish after email/list refresh.
+            })
+            .catch(function () { /* ignore */ })
+            .then(function () {
+                inboxLoadInFlight = false;
+                if (inboxLoadQueued) {
+                    inboxLoadQueued = false;
+                    scheduleInboxRefresh(80);
+                }
             });
     }
 
@@ -5387,12 +5407,18 @@
 
     var agentSendInFlight = 0;
     var inboxRefreshTimer = null;
-    function scheduleInboxRefresh() {
+    var inboxLoadInFlight = false;
+    var inboxLoadQueued = false;
+    var inboxLoadLastAt = 0;
+    var INBOX_LOAD_MIN_MS = 2500;
+
+    /** Coalesce inbox HTTP — never stampede agent-conversations.php (WS owns live updates). */
+    function scheduleInboxRefresh(delayMs) {
         if (inboxRefreshTimer) clearTimeout(inboxRefreshTimer);
         inboxRefreshTimer = setTimeout(function () {
             inboxRefreshTimer = null;
             loadConversations();
-        }, 400);
+        }, typeof delayMs === 'number' ? delayMs : 2000);
     }
 
     function sendReply() {
@@ -6236,7 +6262,7 @@
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === convId);
         });
-        loadConversations();
+        scheduleInboxRefresh(600);
     }
 
     function closeConversationById(conversationId) {
@@ -7279,9 +7305,8 @@
                 resetPollTimers();
                 // Re-join open conversation after reconnect
                 if (selectedId) syncRealtimeConversationChannel(selectedId);
-                // Pure WS — no agent-poll catch-up. Missed frames are avoided by
-                // publish retry on delivered:0 + staff channel re-subscribe here.
-                if (Date.now() - inboxLoadedAt > 1500) loadConversations();
+                // Never HTTP-spam on reconnect storms — coalesce into one inbox refresh.
+                if (Date.now() - inboxLoadedAt > 5000) scheduleInboxRefresh(800);
             });
             realtimeClient.on('disconnected', function () {
                 resetPollTimers();
@@ -7375,7 +7400,7 @@
                     return;
                 }
                 if (!cid || !msg) {
-                    loadConversations();
+                    scheduleInboxRefresh();
                 }
             });
             // Proven staff-room path (same as notes) — supervisors get agent replies here
@@ -7407,7 +7432,7 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 var msg = payload && payload.message;
                 if (payload && (payload.transferred || payload.taken_over)) {
-                    loadConversations();
+                    scheduleInboxRefresh(400);
                     return;
                 }
                 // Assign / join / reopen: seed missing rows (Waiting tab often empty for active).
@@ -7425,7 +7450,7 @@
                         }
                     }
                     if (!known) {
-                        loadConversations();
+                        scheduleInboxRefresh(400);
                     }
                 }
                 // conversation.updated close is mirrored as inbox.changed — often with
@@ -7452,7 +7477,7 @@
                     }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
                     if (!(selectedId && cid === selectedId)) {
-                        loadConversations();
+                        scheduleInboxRefresh();
                     }
                     return;
                 }
@@ -7503,7 +7528,7 @@
                 if (cid && patchInboxRowActivity(cid, msg, { countUnread: false })) {
                     return;
                 }
-                loadConversations();
+                scheduleInboxRefresh();
             });
             function handleVisitorTypingPayload(payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
@@ -7647,13 +7672,13 @@
                 }
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (cid) {
-                    loadConversations();
+                    scheduleInboxRefresh(400);
                 }
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {
-                    loadConversations();
+                    scheduleInboxRefresh(400);
                 }
                 if (payload && payload.status === 'closed' && cid) {
                     if (isStaleAdminClose(cid, payload)) {
@@ -7677,7 +7702,7 @@
                     if (selectedId && cid !== selectedId) {
                         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
                         if (!(payload && (payload.transferred || payload.taken_over))) {
-                            loadConversations();
+                            scheduleInboxRefresh();
                         }
                         return;
                     }
@@ -7771,10 +7796,10 @@
                     });
                     noteAdminThreadReopened(cid, payload.message_id || (payload.message && payload.message.id) || 0);
                     if (!(payload && (payload.transferred || payload.taken_over))) {
-                        loadConversations();
+                        scheduleInboxRefresh();
                     }
                 } else if (!(payload && (payload.transferred || payload.taken_over))) {
-                    loadConversations();
+                    scheduleInboxRefresh();
                 }
             });
             // Join the open chat before auth returns, so the first frame is not missed.
