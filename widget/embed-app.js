@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 265;
+    var LC_WIDGET_BUILD = 266;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -211,7 +211,10 @@
         if (!isOpen) return false;
         var panel = document.getElementById('lc-panel');
         if (!panel) return false;
-        if (panel.style.display === 'none' || panel.hidden) {
+        // openPanel uses display:flex !important — check computed style, not only inline.
+        var display = '';
+        try { display = window.getComputedStyle(panel).display; } catch (eCs) { display = panel.style.display; }
+        if (display === 'none' || panel.hidden) {
             // Self-heal: DOM closed but flag lagged (keeps presence from sticking on Active).
             isOpen = false;
             return false;
@@ -4872,7 +4875,13 @@
 
     /** Toolbar / Escape minimize — instant Minimized presence (no confirm delay). */
     function requestMinimize() {
-        if (!isOpen) {
+        var panel = document.getElementById('lc-panel');
+        var visuallyOpen = false;
+        if (panel) {
+            try { visuallyOpen = window.getComputedStyle(panel).display !== 'none' && !panel.hidden; }
+            catch (eVis) { visuallyOpen = panel.style.display !== 'none' && !panel.hidden; }
+        }
+        if (!isOpen && !visuallyOpen) {
             // Panel already hidden — still re-assert Minimized over WS (0 delay).
             reportEngagementPresence(false, true, {
                 chat_open: 0,
@@ -4960,7 +4969,8 @@
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
         if (panel) {
-            panel.style.display = 'none';
+            // Must beat openPanel's display:flex !important or 2nd minimize leaves panel stuck open.
+            panel.style.setProperty('display', 'none', 'important');
             panel.style.animation = '';
         }
         if (bubble) bubble.classList.remove('lcw-open');
@@ -7768,7 +7778,19 @@
 
     function isAdminOnlySystemMessage(m) {
         if (!m || m.sender_type !== 'system') return false;
-        var t = String(m.message || '');
+        var t = String(m.message || '').replace(/\s+/g, ' ').trim();
+        // Agent-only presence / ops lines — never paint in the visitor widget.
+        if (/^Visitor minimized the chat \(still on website\)$/i.test(t)
+            || /^Visitor maximized the chat$/i.test(t)
+            || /^Visitor returned to the tab$/i.test(t)
+            || /^Visitor returned to the window$/i.test(t)
+            || /^Visitor is active in chat$/i.test(t)
+            || /^Visitor switched tab$/i.test(t)
+            || /^Visitor switched window$/i.test(t)
+            || /^Visitor left the website$/i.test(t)
+            || /^Visitor appears disconnected$/i.test(t)) {
+            return true;
+        }
         return /^Pre-chat details\b/.test(t)
             || /Merged\s+\d+\s+earlier chat/i.test(t)
             || /from the same visitor into this thread/i.test(t)

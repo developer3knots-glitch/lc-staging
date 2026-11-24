@@ -1332,6 +1332,13 @@ function lc_message_hidden_from_visitor(string $message): bool
     if ($t === '') {
         return false;
     }
+    // Presence transcript lines are agent-only (visitor must not see minimize spam).
+    if (preg_match(
+        '/^Visitor (minimized the chat \(still on website\)|maximized the chat|returned to the tab|returned to the window|is active in chat|switched tab|switched window|left the website|appears disconnected)\.?$/iu',
+        $t
+    )) {
+        return true;
+    }
     // Internal / agent-only notices (never show in visitor widget)
     return (bool) preg_match(
         '/Merged \d+ earlier chat|transcript requested|IP blocked|visitor IP was blocked|moved to history after visitor IP|assigned to|transferred to|was contacted by an agent/i',
@@ -1348,6 +1355,13 @@ function lc_sanitize_system_message_for_visitor(string $message): string
     $t = trim($message);
     if ($t === '') {
         return $t;
+    }
+    // Agent-only presence transcript lines — never show in the visitor widget.
+    if (preg_match(
+        '/^Visitor (minimized the chat \(still on website\)|maximized the chat|returned to the tab|returned to the window|is active in chat|switched tab|switched window|left the website|appears disconnected)\.?$/iu',
+        $t
+    )) {
+        return '';
     }
     if (preg_match('/^(.+?\s+transferred this chat to\s+.+?)(?:\.|\s|$)/iu', $t, $m)) {
         $base = rtrim(trim($m[1]), '.');

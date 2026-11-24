@@ -82,6 +82,9 @@ try {
                 if (($row['sender_type'] ?? '') === 'system'
                     && function_exists('lc_sanitize_system_message_for_visitor')) {
                     $row['message'] = lc_sanitize_system_message_for_visitor((string) ($row['message'] ?? ''));
+                    if (trim((string) $row['message']) === '') {
+                        continue;
+                    }
                 }
                 $messages[] = lc_format_message_row($row, $chatToken !== '' ? $chatToken : null);
             }
