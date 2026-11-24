@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 272;
+    var LC_WIDGET_BUILD = 273;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3525,12 +3525,16 @@
             var myCidNow = parseInt(conversationId, 10) || 0;
             var msg = payload && payload.message;
             var isAgent = !!(msg && msg.sender_type === 'agent');
-            var isJoinOrReopen = !!(msg && msg.sender_type === 'system' && (
+            var msgText = String((msg && msg.message) || '');
+            var isCloseLine = !!(msg && msg.sender_type === 'system' && isAgentCloseSystemMessage(msgText));
+            var isVisitorCloseLine = !!(msg && msg.sender_type === 'system' && /closed the live chat/i.test(msgText)
+                && !/chat closed by agent/i.test(msgText));
+            var isJoinOrReopen = !!(msg && msg.sender_type === 'system' && !isCloseLine && (
                 isAgentJoinMessage(msg)
-                || /reopened this chat/i.test(String(msg.message || ''))
+                || /reopened this chat/i.test(msgText)
             ));
             // Agent + join/reopen system lines may retarget cid after soft-close / resume.
-            var adoptLive = isAgent || isJoinOrReopen;
+            var adoptLive = isAgent || isJoinOrReopen || isCloseLine;
             if (payloadCid > 0 && (myCidNow < 1 || (adoptLive && payloadCid !== myCidNow))) {
                 conversationId = payloadCid;
                 try { persistConversationId(payloadCid); } catch (eP) {}
@@ -3539,15 +3543,17 @@
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             // Soft-close (agent/inactivity): agent follow-up / join / reopen reopens compose.
+            // Close system lines must NEVER reopen — they apply ended/soft-close instead.
             // Visitor self-close: stay on Resume / New chat — never reopen from
             // late/replay agent bubbles (that left agent locked + visitor still chatting).
-            // Skip already-painted replays so minimize doesn't pop open on WS refresh.
             if (isVisitorEndedScreen()) {
                 // Keep ended screen — late close/system/agent frames must not paint or flash chat.
                 return;
             }
             if (!alreadyPainted) {
-                if (chatClosed && (isAgent || isJoinOrReopen || lastClosedBy !== 'visitor')) {
+                if (isCloseLine || isVisitorCloseLine) {
+                    // Paint + close UI below — do not treat as continue.
+                } else if (chatClosed && (isAgent || isJoinOrReopen || lastClosedBy !== 'visitor')) {
                     markChatContinuedFromClosed({
                         status: 'active',
                         agent: (msg && msg.agent_name)
@@ -3566,6 +3572,12 @@
             }
             var painted = applyRealtimeMessage(payload);
             var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
+            // WS-only: close can arrive as message.new without conversation.updated.
+            if (isCloseLine) {
+                showEndedState('agent');
+            } else if (isVisitorCloseLine) {
+                showEndedState('visitor');
+            }
             if (painted && isAgent && inDom) {
                 window.__lcWsAgentPainted = true;
             }
@@ -3713,12 +3725,23 @@
             if (payload && payload.status === 'closed') {
                 // Already left this thread (Start new chat) — never flash ended over the new session
                 if (forceNewChat || !conversationId) return;
+                // Paint close line from this frame when message.new was missed (WS-only).
+                if (payload.message && (payload.message.id || payload.message_id)) {
+                    try {
+                        applyRealtimeMessage({
+                            conversation_id: payload.conversation_id,
+                            message_id: payload.message_id || (payload.message && payload.message.id),
+                            message: payload.message,
+                            visitor_uid: payload.visitor_uid
+                        });
+                    } catch (eClosePaint) {}
+                }
                 if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
                     stopLiveMessageSync();
                     stopSafetySync();
                     showEndedState('visitor');
                 } else {
-                    showEndedState(payload.closed_by || 'remote');
+                    showEndedState(payload.closed_by || 'agent');
                     startLiveMessageSync();
                 }
                 return;
@@ -5475,6 +5498,8 @@
         if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
         if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
+        // Agent/visitor close must win over recent continue/reopen grace.
+        resumeGraceUntil = 0;
         clearPendingAttachment();
         stopOwnTyping();
         setPeerTypingVisible(false);
@@ -6667,11 +6692,24 @@
     }
 
 
+    function isAgentCloseSystemMessage(text) {
+        var t = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!t) return false;
+        return /chat closed by agent/i.test(t)
+            || /closed automatically due to inactivity/i.test(t)
+            || /left the page — chat closed/i.test(t)
+            || /^IP blocked/i.test(t)
+            || /chat moved to history/i.test(t);
+    }
+
     function isAgentJoinMessage(m) {
         if (!m) return false;
         if (m.event === 'agent_join') return true;
         if (m.sender_type !== 'system') return false;
-        return /joined the (?:chat|conversation)\.?$/i.test(String(m.message || '').trim());
+        var t = String(m.message || '').trim();
+        // Never treat close lines as join/reopen continue signals.
+        if (isAgentCloseSystemMessage(t)) return false;
+        return /joined the (?:chat|conversation)\.?$/i.test(t);
     }
 
     function isAgentLeaveMessage(m) {

@@ -75,10 +75,11 @@ try {
         ? 'IP blocked — chat moved to history.'
         : 'Chat closed by agent.';
     if ($upd->rowCount() > 0) {
+        // Insert + message.new to visitor first (lc_add_system_message publishes).
         $closeMsgId = lc_add_system_message($conversationId, $closeNote);
         $closePayload = [
             'status' => 'closed',
-            'closed_by' => !empty($input['blocked_leave']) ? 'agent' : 'agent',
+            'closed_by' => 'agent',
             'agent_id' => 0,
             'previous_agent_id' => $previousAgentId,
         ];
@@ -91,8 +92,32 @@ try {
                 'created_at' => gmdate('c'),
             ];
         }
+        // Visitor uid on payload helps widgets that match peer before conv: subscribe.
+        $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
+        if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0) {
+            try {
+                $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                $vStmt->execute([(int) $conv['visitor_id']]);
+                $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+            } catch (Throwable $eUid) {
+                $visitorUid = '';
+            }
+        }
+        if ($visitorUid !== '') {
+            $closePayload['visitor_uid'] = $visitorUid;
+        }
         // previous_agent_id keeps agent:{id} in the fanout after agent_id was nulled
         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $closePayload);
+        // Explicit visitor hop — soft-close widgets must get status=closed even if
+        // staff fanout wins the race or message.new was coalesced away.
+        if ($visitorUid !== '' && function_exists('lc_realtime_publish')) {
+            lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), 'conversation.updated', array_merge([
+                'conversation_id' => $conversationId,
+            ], $closePayload), 250);
+            lc_realtime_publish(lc_realtime_channel_conversation($conversationId), 'conversation.updated', array_merge([
+                'conversation_id' => $conversationId,
+            ], $closePayload), 250);
+        }
         if (function_exists('lc_realtime_publish_staff_event')) {
             lc_realtime_publish_staff_event($conversationId, 'conversation.updated', $closePayload, 250);
             if (!empty($closePayload['message'])) {
