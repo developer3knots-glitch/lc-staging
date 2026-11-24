@@ -1,8 +1,5 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-if (function_exists('lc_sweep_stale_agent_presence')) {
-    lc_sweep_stale_agent_presence();
-}
 
 $agent = lc_auth_agent();
 if (!$agent) {
@@ -15,12 +12,31 @@ $isPing = !empty($input['ping']);
 
 if ($isPing) {
     try {
+        $agentId = (int) $agent['id'];
+        // Reaffirm Online/Away + last_seen BEFORE any stale sweep so a late
+        // heartbeat cannot leave the agent offline and block transfers.
+        $keep = in_array($status, ['online', 'away'], true) ? $status : '';
+        if ($keep !== '') {
+            $stmt = lc_db()->prepare('UPDATE agents SET status = ?, last_seen = UTC_TIMESTAMP() WHERE id = ?');
+            $stmt->execute([$keep, $agentId]);
+            if (function_exists('lc_sweep_stale_agent_presence')) {
+                lc_sweep_stale_agent_presence();
+            }
+            lc_json(['success' => true, 'status' => $keep]);
+        }
         $stmt = lc_db()->prepare('UPDATE agents SET last_seen = UTC_TIMESTAMP() WHERE id = ?');
-        $stmt->execute([(int) $agent['id']]);
+        $stmt->execute([$agentId]);
+        if (function_exists('lc_sweep_stale_agent_presence')) {
+            lc_sweep_stale_agent_presence();
+        }
         lc_json(['success' => true, 'status' => $agent['status']]);
     } catch (Throwable $e) {
         lc_json(['success' => false, 'error' => 'Server error'], 500);
     }
+}
+
+if (function_exists('lc_sweep_stale_agent_presence')) {
+    lc_sweep_stale_agent_presence();
 }
 
 if (!in_array($status, ['online', 'away', 'offline'], true)) {

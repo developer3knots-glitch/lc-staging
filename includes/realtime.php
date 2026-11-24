@@ -360,8 +360,8 @@ function lc_realtime_staff_channels(int $conversationId, ?array $conv = null): a
     if ($conv === null) {
         $conv = function_exists('lc_get_conversation') ? (lc_get_conversation($conversationId) ?: []) : [];
     }
+    // Staff-only rooms — never visitor conv: (notes / supervise must not hit the widget).
     $channels = [
-        lc_realtime_channel_conversation($conversationId),
         lc_realtime_channel_staff_conversation($conversationId),
     ];
     $brandId = (int) ($conv['brand_id'] ?? 0);

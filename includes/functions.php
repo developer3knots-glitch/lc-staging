@@ -469,9 +469,10 @@ function lc_notify_event_enabled(int $accountId, string $event): bool
  * not by browser HTTP polling. No touch for ~2 minutes means the tab/socket is gone.
  * Manual Away stays while the session is still alive.
  */
-function lc_sweep_stale_agent_presence(int $staleSec = 120): void
+function lc_sweep_stale_agent_presence(int $staleSec = 300): void
 {
-    $staleSec = max(90, min(600, $staleSec));
+    // 5 min grace: brief WS reconnect / tab blur must not kill transfer targets.
+    $staleSec = max(180, min(900, $staleSec));
     try {
         lc_db()->prepare("
             UPDATE agents
@@ -954,14 +955,18 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
     $excludeIds = array_values(array_unique($excludeIds));
 
     $placeholders = implode(',', array_fill(0, count($excludeIds), '?'));
+    // Include agents with fresh last_seen even if a stale sweep briefly marked them offline.
     $sql = "
         SELECT a.id, a.name, a.email, a.status, a.avatar, a.role, a.brand_id, b.name AS brand_name
         FROM agents a
         LEFT JOIN brands b ON b.id = a.brand_id
         WHERE a.is_active = 1
-          AND a.status IN ('online', 'away')
           AND a.role IN ('agent', 'admin')
           AND a.id NOT IN ({$placeholders})
+          AND (
+                a.status IN ('online', 'away')
+             OR a.last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 SECOND)
+          )
     ";
     $params = $excludeIds;
     $accountId = lc_agent_account_id($agent);
@@ -969,7 +974,7 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
         $sql .= ' AND a.account_id = ?';
         $params[] = $accountId;
     }
-    $sql .= " ORDER BY FIELD(a.status, 'online', 'away'), a.name ASC";
+    $sql .= " ORDER BY FIELD(a.status, 'online', 'away', 'offline'), a.name ASC";
 
     $stmt = lc_db()->prepare($sql);
     $stmt->execute($params);
@@ -977,6 +982,10 @@ function lc_get_transferable_agents(array $agent, int $conversationId): array
 
     foreach ($rows as &$row) {
         $row['can_receive'] = true;
+        // UI: treat recent presence as available even if status string is stale offline
+        if (($row['status'] ?? '') === 'offline') {
+            $row['status'] = 'away';
+        }
     }
     unset($row);
 
@@ -1032,7 +1041,7 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
         return ['ok' => false, 'error' => 'Chat is already with this agent'];
     }
 
-    $stmt = lc_db()->prepare('SELECT id, name, tagline, avatar, is_active, status, brand_id, role FROM agents WHERE id = ? LIMIT 1');
+    $stmt = lc_db()->prepare('SELECT id, name, tagline, avatar, is_active, status, brand_id, role, last_seen FROM agents WHERE id = ? LIMIT 1');
     $stmt->execute([$targetAgentId]);
     $target = $stmt->fetch();
     if (!$target || !(int) $target['is_active']) {
@@ -1041,8 +1050,23 @@ function lc_transfer_conversation(int $conversationId, array $actingAgent, int $
     if (!in_array(($target['role'] ?? ''), ['agent', 'admin'], true)) {
         return ['ok' => false, 'error' => 'Transfer is only available to team members'];
     }
-    if (($target['status'] ?? '') !== 'online' && ($target['status'] ?? '') !== 'away') {
-        return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
+    $targetStatus = (string) ($target['status'] ?? '');
+    if ($targetStatus !== 'online' && $targetStatus !== 'away') {
+        // Brief offline from sweep/reconnect: revive if last_seen is fresh (5 min).
+        $lastSeenRaw = (string) ($target['last_seen'] ?? '');
+        $lastSeenTs = $lastSeenRaw !== '' ? strtotime($lastSeenRaw . ' UTC') : false;
+        $fresh = $lastSeenTs !== false && (time() - $lastSeenTs) <= 300;
+        if ($fresh) {
+            try {
+                lc_db()->prepare("UPDATE agents SET status = 'online', last_seen = UTC_TIMESTAMP() WHERE id = ?")
+                    ->execute([$targetAgentId]);
+                $target['status'] = 'online';
+            } catch (Throwable $e) {
+                return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
+            }
+        } else {
+            return ['ok' => false, 'error' => 'Selected agent is not available (set status to Online or Away)'];
+        }
     }
 
     $actingName = trim((string) ($actingAgent['name'] ?? '')) ?: 'Agent';

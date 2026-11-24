@@ -41,9 +41,17 @@ if (!hash_equals($expected, $sig)) {
 }
 
 try {
-    // Live admin WS = tab is open. Refresh last_seen so stale sweep cannot
-    // flip Online → Offline while the socket is still authenticated.
-    $stmt = lc_db()->prepare('UPDATE agents SET last_seen = UTC_TIMESTAMP() WHERE id = ?');
+    // Live admin WS = tab is open. Refresh last_seen and revive a false
+    // offline from stale sweep so transfers keep working while socket is up.
+    $stmt = lc_db()->prepare("
+        UPDATE agents
+        SET last_seen = UTC_TIMESTAMP(),
+            status = CASE
+                WHEN status = 'offline' THEN 'online'
+                ELSE status
+            END
+        WHERE id = ?
+    ");
     $stmt->execute([$agentId]);
     lc_json(['success' => true, 'agent_id' => $agentId]);
 } catch (Throwable $e) {

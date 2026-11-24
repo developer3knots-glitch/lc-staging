@@ -672,7 +672,7 @@
         };
         applyVisitorPresenceToInbox(cid, presence);
         if (selectedId === cid) {
-            setVisitorPresenceBadge(presence, { source: 'ws', force: true });
+            setVisitorPresenceBadge(presence, { source: 'ws' });
         }
     }
 
@@ -982,12 +982,14 @@
                 return;
             }
         }
-        // Stale WS frames (slow minimize after a newer Active) used to flap the badge.
-        if (source === 'ws' && !opts.force && livePresenceTs > 0) {
+        // Stale frames must never overwrite a newer status — even when force:true
+        // (force used to let an older Active stomp a fresh Minimized).
+        if (livePresenceTs > 0) {
             if (incomingTs > 0 && incomingTs < livePresenceTs) {
                 return;
             }
-            if (!incomingTs) {
+            // Undated WS frames after we already have a timed status: ignore
+            if (source === 'ws' && !incomingTs && !opts.force) {
                 return;
             }
         }
@@ -2710,7 +2712,15 @@
     function setAgentMsgTickStatus(msgEl, status) {
         if (!msgEl || !msgEl.classList.contains('agent')) return;
         status = status || 'sent';
-        var ticks = msgEl.querySelector('.lc-msg-ticks');
+        var allTicks = msgEl.querySelectorAll('.lc-msg-ticks');
+        var ticks = allTicks.length ? allTicks[0] : null;
+        // History / reconcile races used to leave dozens of tick nodes per bubble.
+        if (allTicks.length > 1) {
+            for (var ti = 1; ti < allTicks.length; ti++) {
+                try { allTicks[ti].remove(); } catch (eDup) {}
+            }
+            ticks = msgEl.querySelector('.lc-msg-ticks');
+        }
         if (ticks && receiptRank(status) < receiptRank(tickStatusFromEl(ticks))) {
             return;
         }
@@ -2849,7 +2859,7 @@
     function scheduleReceiptSyncBursts() {
         if (!selectedId) return;
         clearReceiptSyncBursts();
-        [150, 500, 1200, 2500].forEach(function (ms) {
+        [80, 250, 800].forEach(function (ms) {
             receiptSyncTimers.push(setTimeout(function () {
                 if (selectedId && typeof window.__lcSyncReceiptsNow === 'function') {
                     window.__lcSyncReceiptsNow();
@@ -3833,14 +3843,30 @@
             renderConversationNotes([]);
             return;
         }
+        // Don't flash "0 / No notes" before the fetch settles.
+        if (notesListEl) {
+            notesListEl.dataset.notesKey = 'loading';
+            notesListEl.innerHTML = '<p class="lc-details-notes-empty" id="lc-details-notes-empty">Loading notes…</p>';
+        }
+        if (notesCountEl) {
+            notesCountEl.textContent = '…';
+        }
+        var reqId = conversationId;
         fetch(base + '/api/agent-notes.php?conversation_id=' + encodeURIComponent(conversationId), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (selectedId !== reqId) return;
                 if (data && data.success && Array.isArray(data.notes)) {
                     renderConversationNotes(data.notes);
+                } else if (notesListEl && notesListEl.dataset.notesKey === 'loading') {
+                    renderConversationNotes([]);
                 }
             })
-            .catch(function () {});
+            .catch(function () {
+                if (selectedId === reqId && notesListEl && notesListEl.dataset.notesKey === 'loading') {
+                    renderConversationNotes([]);
+                }
+            });
     }
 
     function setComposeMode(mode) {
@@ -7194,6 +7220,24 @@
                     loadConversations();
                     return;
                 }
+                // Assign / join / reopen: seed missing rows (Waiting tab often empty for active).
+                var inboxStatus = String(payload && payload.status || '').toLowerCase();
+                var inboxAgent = parseInt(payload && payload.agent_id, 10) || 0;
+                if (cid && (inboxStatus === 'active' || inboxStatus === 'waiting'
+                        || (inboxAgent > 0 && inboxAgent === myAgentId))) {
+                    var known = false;
+                    if (lastConversations && lastConversations.length) {
+                        for (var ki = 0; ki < lastConversations.length; ki++) {
+                            if ((parseInt(lastConversations[ki].id, 10) || 0) === cid) {
+                                known = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!known) {
+                        loadConversations();
+                    }
+                }
                 // conversation.updated close is mirrored as inbox.changed — often with
                 // status=closed and no message body. Must lock UI even without a bubble.
                 if (cid && payload && String(payload.status || '') === 'closed') {
@@ -7331,7 +7375,8 @@
                 // Pure WS paint — no HTTP reconcile (0 delay).
                 applyVisitorPresenceToInbox(cid, presence);
                 if (selectedId && cid === selectedId) {
-                    setVisitorPresenceBadge(presence, { source: 'ws', force: true });
+                    // Never force past presence_ts — older Active must not stomp Minimized.
+                    setVisitorPresenceBadge(presence, { source: 'ws' });
                     if (conversationRowStatus(cid) === 'closed') {
                         setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
                         if (replyInput) {

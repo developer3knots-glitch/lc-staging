@@ -136,11 +136,20 @@
             });
         }
 
-        // No HTTP heartbeat loop. agents.last_seen is refreshed by the realtime
-        // Node process on agent WebSocket ping → api/agent-ws-touch.php.
-        // One-shot assert on load + tab focus so UI Online cannot drift from DB
-        // after a stale sweep (widget Away while header still says Online).
+        // Primary last_seen refresh: realtime Node → api/agent-ws-touch.php.
+        // Safety ping every 45s while Online/Away so a missed WS touch cannot
+        // stale-sweep the agent offline and break transfers.
         postStatus(false);
+        var statusSafetyTimer = setInterval(function () {
+            if (!statusSelect) return;
+            var st = String(statusSelect.value || '');
+            if (st === 'online' || st === 'away') {
+                postStatus(true);
+            }
+        }, 45000);
+        if (typeof statusSafetyTimer.unref === 'function') {
+            try { statusSafetyTimer.unref(); } catch (eUnref) {}
+        }
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'visible') {
                 postStatus(false);
