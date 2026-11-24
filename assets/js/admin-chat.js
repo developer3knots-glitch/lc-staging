@@ -1640,16 +1640,19 @@
     }
 
     function filterConversations(list) {
-        // Blocked chats stay in inbox only while they are the open chat.
-        // Switching away (or refreshing on another chat) sends them to History.
+        // Blocked / closed chats stay visible while they are the open selected thread
+        // so agent close does not flash "Select a chat" / drop the transcript.
         list = (list || []).filter(function (c) {
             if (!c) return false;
+            var id = parseInt(c.id, 10) || 0;
+            if (selectedId && id === selectedId) {
+                return true;
+            }
             if (!inboxSearch && !conversationMatchesTab(c, currentTab)) {
                 return false;
             }
             if (!c.ip_blocked) return true;
-            var id = parseInt(c.id, 10) || 0;
-            return !!(selectedId && id === selectedId);
+            return false;
         });
         if (!inboxSearch) {
             return list;
@@ -4201,9 +4204,30 @@
             setTakeoverMenuVisible(false);
             replyInput.disabled = true;
             if (sendBtn) sendBtn.disabled = true;
-            replyInput.placeholder = visitorIsBrowsing(c)
-                ? 'Visitor is browsing — open this chat'
-                : 'Chat closed - visitor ended this conversation';
+            var closedReason = '';
+            try {
+                if (messagesEl) {
+                    var sysLines = messagesEl.querySelectorAll('.lc-msg.system');
+                    for (var si = sysLines.length - 1; si >= 0; si--) {
+                        var st = String(sysLines[si].textContent || '');
+                        if (/chat closed by agent/i.test(st)) { closedReason = 'agent'; break; }
+                        if (/closed automatically due to inactivity/i.test(st)) { closedReason = 'inactivity'; break; }
+                        if (/closed the live chat/i.test(st)) { closedReason = 'visitor'; break; }
+                        if (/left the page/i.test(st)) { closedReason = 'leave'; break; }
+                    }
+                }
+            } catch (eClosePh) {}
+            if (visitorIsBrowsing(c)) {
+                replyInput.placeholder = 'Visitor is browsing — open this chat';
+            } else if (closedReason === 'agent') {
+                replyInput.placeholder = 'Chat closed by agent';
+            } else if (closedReason === 'inactivity') {
+                replyInput.placeholder = 'Chat closed due to inactivity';
+            } else if (closedReason === 'leave') {
+                replyInput.placeholder = 'Chat closed - visitor left';
+            } else {
+                replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+            }
             setUnassignedMode(false);
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
@@ -5796,9 +5820,7 @@
                 loadConversations();
                 return;
             }
-            syncConversationListStatus({ id: convId, status: 'closed', agent_id: 0 });
-            pollMessages();
-            loadConversations();
+            finalizeAgentCloseUi(convId, data);
         }).catch(function (err) {
             alert('Could not archive chat: ' + (err && err.message ? err.message : 'network error'));
             pollMessages();
@@ -6165,6 +6187,58 @@
         emailPanel.addEventListener('click', function (e) { e.stopPropagation(); });
     }
 
+    function ensureAllTabForClosedThread(convId) {
+        convId = parseInt(convId, 10) || 0;
+        if (currentTab === 'all') {
+            if (convId) syncBrowserState(convId, 'all');
+            return;
+        }
+        currentTab = 'all';
+        document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
+            t.classList.toggle('active', t.dataset.tab === 'all');
+        });
+        syncBrowserState(convId || selectedId, 'all');
+    }
+
+    function paintAgentCloseLine(data, convId) {
+        convId = parseInt(convId, 10) || 0;
+        if (!convId || selectedId !== convId || !messagesEl) return;
+        var msg = (data && data.message) || null;
+        var mid = parseInt((msg && msg.id) || (data && data.message_id) || 0, 10) || 0;
+        var body = (msg && (msg.message || msg.body)) || 'Chat closed by agent.';
+        if (mid > 0 && messagesEl.querySelector('.lc-msg[data-id="' + mid + '"], [data-id="' + mid + '"]')) {
+            return;
+        }
+        if (!mid && messagesEl.querySelector('.lc-msg.system')) {
+            var lines = messagesEl.querySelectorAll('.lc-msg.system');
+            var last = lines.length ? String(lines[lines.length - 1].textContent || '') : '';
+            if (/chat closed by agent/i.test(last)) return;
+        }
+        try {
+            appendLiveMessage({
+                id: mid || ('close_' + convId + '_' + Date.now()),
+                sender_type: 'system',
+                message: body,
+                created_at: (msg && msg.created_at) || new Date().toISOString()
+            });
+        } catch (ePaintClose) {}
+    }
+
+    function finalizeAgentCloseUi(convId, data) {
+        convId = parseInt(convId, 10) || 0;
+        if (!convId) return;
+        // Keep the same chat selected — never flash empty "Select a chat".
+        selectedId = convId;
+        ensureAllTabForClosedThread(convId);
+        setChatThreadOpen(true);
+        paintAgentCloseLine(data || {}, convId);
+        applyConversationClosedLocally(convId, (data && data.closed_by) || 'agent');
+        document.querySelectorAll('.lc-chat-item').forEach(function (el) {
+            el.classList.toggle('active', parseInt(el.dataset.id, 10) === convId);
+        });
+        loadConversations();
+    }
+
     function closeConversationById(conversationId) {
         var id = parseInt(conversationId, 10) || 0;
         if (!id) return;
@@ -6195,13 +6269,11 @@
                 alert(data.error || 'Could not close chat');
                 return;
             }
-            if (selectedId === id) {
-                selectedId = 0;
-                syncBrowserState(0, currentTab);
-                setChatThreadOpen(false);
+            if (data && data.unsupervised) {
+                loadConversations();
+                return;
             }
-            syncConversationListStatus({ id: id, status: 'closed', agent_id: 0 });
-            loadConversations();
+            finalizeAgentCloseUi(id, data);
         }).catch(function () {
             alert('Could not close chat');
         });
@@ -7530,9 +7602,13 @@
                     if (conversationRowStatus(cid) === 'closed') {
                         setReopenBarVisible(visitorIsBrowsing(presence) && !currentIpBlocked);
                         if (replyInput) {
-                            replyInput.placeholder = visitorIsBrowsing(presence)
-                                ? 'Visitor is browsing — open this chat'
-                                : 'Chat closed - visitor ended this conversation';
+                            var phNow = String(replyInput.placeholder || '');
+                            // Don't overwrite agent/inactivity close copy with "visitor ended".
+                            if (visitorIsBrowsing(presence)) {
+                                replyInput.placeholder = 'Visitor is browsing — open this chat';
+                            } else if (!/chat closed by agent|due to inactivity|visitor left/i.test(phNow)) {
+                                replyInput.placeholder = 'Chat closed - visitor ended this conversation';
+                            }
                         }
                     } else if (conversationRowStatus(cid) === 'waiting') {
                         setReopenBarVisible(false);

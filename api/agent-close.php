@@ -74,6 +74,8 @@ try {
     $closeNote = !empty($input['blocked_leave'])
         ? 'IP blocked — chat moved to history.'
         : 'Chat closed by agent.';
+    $closeMsgId = 0;
+    $closeMessage = null;
     if ($upd->rowCount() > 0) {
         $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
         if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0) {
@@ -156,11 +158,17 @@ try {
         }
     }
 
-    lc_json([
+    $out = [
         'success' => true,
         'conversation_id' => $conversationId,
         'status' => 'closed',
-    ]);
+        'closed_by' => 'agent',
+    ];
+    if ($closeMsgId > 0 && is_array($closeMessage)) {
+        $out['message_id'] = $closeMsgId;
+        $out['message'] = $closeMessage;
+    }
+    lc_json($out);
 } catch (Throwable $e) {
     lc_json(['success' => false, 'error' => 'Server error: ' . $e->getMessage()], 500);
 }

@@ -179,7 +179,9 @@ try {
                 ");
                 $one->execute([$selectedId]);
                 $extra = $one->fetch(PDO::FETCH_ASSOC);
-                if ($extra && ($searchQ !== '' || ($extra['status'] ?? '') !== 'closed')) {
+                // Always keep the open selected thread — including after agent close —
+                // so the center pane does not flash empty "Select a chat".
+                if ($extra) {
                     $conversations[] = $extra;
                     $extraAgent = (int) ($extra['agent_id'] ?? 0);
                     if ($extraAgent > 0 && $extraAgent !== $agentId && ($extra['status'] ?? '') === 'active') {
