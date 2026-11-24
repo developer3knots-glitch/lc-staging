@@ -544,7 +544,7 @@ function lc_visitor_engagement_status(?array $row, int $staleSec = 90): array
         return array_merge($base, ['status' => 'minimized', 'label' => 'Chat minimized']);
     }
     if (!$pageVisible) {
-        return array_merge($base, ['status' => 'away', 'label' => 'Switched tab']);
+        return array_merge($base, ['status' => 'away', 'label' => 'Tab']);
     }
     return array_merge($base, ['status' => 'active', 'label' => 'Active']);
 }

@@ -229,8 +229,8 @@ try {
             'status' => $earlyStatus,
             'label' => $earlyStatus === 'minimized' ? 'Chat minimized'
                 : ($earlyStatus === 'left' ? 'Left website'
-                    : ($earlyStatus === 'away' ? 'Switched tab'
-                        : ($earlyStatus === 'window' ? 'Switched window' : 'Active'))),
+                    : ($earlyStatus === 'away' ? 'Tab'
+                        : ($earlyStatus === 'window' ? 'Tab' : 'Active'))),
             'widget_open' => !$earlyPanelClosed && !$leftSite,
             'page_visible' => (int) $pageVisible === 1,
             'window_focused' => (int) $windowOpenFlag === 1,

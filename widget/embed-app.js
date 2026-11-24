@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 267;
+    var LC_WIDGET_BUILD = 269;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -604,23 +604,28 @@
             var status = 'active';
             var label = 'Active';
             var tabHidden = !fields.page_visible;
+            var force = String(fields.force_status || '').toLowerCase();
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
-            } else if (tabHidden) {
-                // Tab/away wins over minimized so agent sees Tab, not a false Minimized.
+            } else if (force === 'away' || (tabHidden && !!fields.chat_open)) {
+                // Chat open + tab/window switch → Tab (away status, "Tab" label).
                 status = 'away';
-                label = 'Switched tab';
-            } else if (fields.force_status === 'minimized' || !fields.chat_open) {
+                label = 'Tab';
+            } else if (force === 'minimized' || !fields.chat_open) {
+                // Launcher-only (incl. tab hidden while minimized) stays Minimized.
                 status = 'minimized';
                 label = 'Chat minimized';
+            } else if (tabHidden) {
+                status = 'away';
+                label = 'Tab';
             }
             return {
                 status: status,
                 label: label,
                 widget_open: !!fields.chat_open,
                 page_visible: !tabHidden,
-                window_focused: true,
+                window_focused: !tabHidden,
                 left_site: !!fields.left_site,
                 presence_ts: ts || nextPresenceTs(),
                 last_seen: new Date().toISOString()
@@ -874,13 +879,16 @@
                     }
                 }
             } else {
-                // Tab hidden ≠ left website — save the stay, then report Away (only if chat open).
-                // Launcher-only stays Minimized (tab hide does not upgrade to Away over Minimized).
+                // Tab hidden ≠ left website — Away when chat open; Minimized when launcher-only.
                 sendStay(true);
                 if (isChatPanelOpen()) {
-                    reportEngagementPresence(true, true, { chat_open: 1, page_visible: 0 });
+                    reportEngagementPresence(false, true, {
+                        chat_open: 1,
+                        page_visible: 0,
+                        force_status: 'away'
+                    });
                 } else {
-                    reportEngagementPresence(true, true, {
+                    reportEngagementPresence(false, true, {
                         chat_open: 0,
                         page_visible: 0,
                         force_status: 'minimized'
@@ -889,12 +897,22 @@
             }
         });
 
-        // Window blur/focus is not a presence status (only Active / Minimized / Tab / Left).
-        // Tab hide is owned by visibilitychange → away; leave by pagehide/beforeunload.
+        // Alt-tab / other window: often blur without visibilitychange (side-by-side windows).
+        // Debounce so in-page clicks do not flicker Active → Tab.
         window.addEventListener('blur', function () {
             windowFocused = false;
             if (windowBlurTimer) clearTimeout(windowBlurTimer);
-            windowBlurTimer = null;
+            windowBlurTimer = setTimeout(function () {
+                windowBlurTimer = null;
+                if (document.visibilityState === 'hidden') return; // visibilitychange owns Tab
+                if (typeof document.hasFocus === 'function' && document.hasFocus()) return;
+                if (!isChatPanelOpen()) return; // launcher-only stays Minimized
+                reportEngagementPresence(false, true, {
+                    chat_open: 1,
+                    page_visible: 0,
+                    force_status: 'away'
+                });
+            }, 180);
         });
         window.addEventListener('focus', function () {
             windowFocused = true;
@@ -902,13 +920,13 @@
                 clearTimeout(windowBlurTimer);
                 windowBlurTimer = null;
             }
-            // Re-sync current panel state — never force Active while minimized.
-            if (document.visibilityState !== 'hidden') {
-                reportEngagementPresence(false, true, {
-                    chat_open: isChatPanelOpen() ? 1 : 0,
-                    force_status: isChatPanelOpen() ? 'active' : 'minimized'
-                });
-            }
+            // Never force Active while the tab is still hidden.
+            if (document.visibilityState === 'hidden') return;
+            reportEngagementPresence(false, true, {
+                chat_open: isChatPanelOpen() ? 1 : 0,
+                page_visible: 1,
+                force_status: isChatPanelOpen() ? 'active' : 'minimized'
+            });
         });
 
         window.addEventListener('pagehide', sendSiteLeave);

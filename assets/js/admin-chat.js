@@ -558,7 +558,7 @@
         var labels = {
             active: 'Active',
             minimized: 'Chat minimized',
-            away: 'Switched tab',
+            away: 'Tab',
             left: 'Left website'
         };
         if (!labels[status]) return null;
@@ -578,7 +578,8 @@
         }
         return {
             status: status,
-            label: (status === 'minimized' ? labels.minimized : (presence.label || labels[status])),
+            // Always canonical UI labels (never "Away" / "Switched tab").
+            label: labels[status],
             widget_open: widgetOpen,
             page_visible: flagOn(presence.page_visible, status !== 'away' && status !== 'left'),
             window_focused: true,
@@ -646,10 +647,10 @@
             widgetOpen = false;
         } else if (/switched tab|switched window/i.test(text)) {
             status = 'away';
-            label = 'Switched tab';
+            label = 'Tab';
         } else if (/disconnected/i.test(text)) {
             status = 'away';
-            label = 'Switched tab';
+            label = 'Tab';
             widgetOpen = false;
         } else if (/maximized|returned to the tab|returned to the window|is active in chat/i.test(text)) {
             status = 'active';
@@ -1031,7 +1032,8 @@
         var barLabel = presence.label
             || (leftNow ? 'Left website'
                 : (next === 'minimized' ? 'Chat minimized'
-                    : (next === 'away' ? 'Switched tab' : 'Active')));
+                    : (next === 'away' ? 'Tab' : 'Active')));
+        if (next === 'away') barLabel = 'Tab';
         // Closed thread + visitor still on site: don't flash "Active" like the chat is live
         if (selectedId && conversationRowStatus(selectedId) === 'closed' && !leftNow && next === 'active') {
             barLabel = 'Browsing site';
