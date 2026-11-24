@@ -53,18 +53,40 @@ if ($ownerName === '') {
     $ownerName = 'Agent';
 }
 
-lc_add_system_message($conversationId, $ownerName . ' reopened this chat.', true);
+// Visitor-visible join (same shape as Assign) so soft-closed widgets paint the agent return.
+$joinMsgId = 0;
+if (function_exists('lc_add_agent_join_message')) {
+    $joinMsgId = (int) lc_add_agent_join_message($conversationId, $ownerId, true);
+} else {
+    $joinMsgId = (int) lc_add_system_message($conversationId, $ownerName . ' joined the chat.', true);
+}
 
 $agentPublic = function_exists('lc_agent_public')
     ? lc_agent_public($ownerName, (string) ($agent['avatar'] ?? ''), (string) ($agent['tagline'] ?? ''))
     : ['name' => $ownerName];
 
-lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
+$updatedPayload = [
     'status' => 'active',
     'agent_id' => $ownerId,
     'reopened_by' => 'agent',
     'agent' => $agentPublic,
-]);
+];
+// Ride join on conversation.updated — WS-only visitors may miss a solo message.new
+// if the soft-close handler briefly churns the socket.
+if ($joinMsgId > 0) {
+    $updatedPayload['message_id'] = $joinMsgId;
+    $updatedPayload['message'] = [
+        'id' => $joinMsgId,
+        'sender_type' => 'system',
+        'sender_id' => $ownerId,
+        'message' => $ownerName . ' joined the chat.',
+        'agent_name' => $ownerName,
+        'agent_avatar' => $agentPublic['avatar'] ?? null,
+        'created_at' => gmdate('c'),
+        'event' => 'agent_join',
+    ];
+}
+lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $updatedPayload);
 if (function_exists('lc_realtime_publish_inbox')) {
     lc_realtime_publish_inbox((int) ($conv['brand_id'] ?? 0), 'inbox.updated', [
         'conversation_id' => $conversationId,

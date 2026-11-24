@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 271;
+    var LC_WIDGET_BUILD = 272;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3525,15 +3525,20 @@
             var myCidNow = parseInt(conversationId, 10) || 0;
             var msg = payload && payload.message;
             var isAgent = !!(msg && msg.sender_type === 'agent');
-            // Always align widget thread to agent live frames (cid drift was dropping bubbles)
-            if (payloadCid > 0 && (myCidNow < 1 || (isAgent && payloadCid !== myCidNow))) {
+            var isJoinOrReopen = !!(msg && msg.sender_type === 'system' && (
+                isAgentJoinMessage(msg)
+                || /reopened this chat/i.test(String(msg.message || ''))
+            ));
+            // Agent + join/reopen system lines may retarget cid after soft-close / resume.
+            var adoptLive = isAgent || isJoinOrReopen;
+            if (payloadCid > 0 && (myCidNow < 1 || (adoptLive && payloadCid !== myCidNow))) {
                 conversationId = payloadCid;
                 try { persistConversationId(payloadCid); } catch (eP) {}
                 try { ensureVisitorConvChannel(); } catch (eSub2) {}
             }
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
-            // Soft-close (agent/inactivity): agent follow-up reopens compose.
+            // Soft-close (agent/inactivity): agent follow-up / join / reopen reopens compose.
             // Visitor self-close: stay on Resume / New chat — never reopen from
             // late/replay agent bubbles (that left agent locked + visitor still chatting).
             // Skip already-painted replays so minimize doesn't pop open on WS refresh.
@@ -3542,14 +3547,14 @@
                 return;
             }
             if (!alreadyPainted) {
-                if (chatClosed && (isAgent || lastClosedBy !== 'visitor')) {
+                if (chatClosed && (isAgent || isJoinOrReopen || lastClosedBy !== 'visitor')) {
                     markChatContinuedFromClosed({
                         status: 'active',
                         agent: (msg && msg.agent_name)
                             ? { name: msg.agent_name, avatar: msg.agent_avatar }
-                            : null
+                            : (payload && payload.agent) || null
                     });
-                } else if (isAgent) {
+                } else if (isAgent || isJoinOrReopen) {
                     try { showChatView(); } catch (eSv) {}
                 }
             }
@@ -3721,6 +3726,7 @@
             if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
                 var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
                 var visitorReopened = payload.reopened_by === 'visitor';
+                var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
                 // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
                 if (visitorSelfEnded && !visitorReopened) {
                     return;
@@ -3741,6 +3747,33 @@
                     updateStatus('Chatting with ' + payload.agent.name, true);
                 } else if (payload.status === 'active') {
                     setWaitingState(false);
+                }
+                // WS-only: join/reopen may ride on conversation.updated when message.new
+                // was lost during a reconnect race after soft-close.
+                if (payload.message && (payload.message.id || payload.message_id)) {
+                    try {
+                        applyRealtimeMessage({
+                            conversation_id: payload.conversation_id,
+                            message_id: payload.message_id || (payload.message && payload.message.id),
+                            message: payload.message,
+                            visitor_uid: payload.visitor_uid
+                        });
+                    } catch (eJoinPaint) {}
+                } else if (agentReopened && payload.agent && payload.agent.name) {
+                    // Fallback join line if server sent status without message body.
+                    try {
+                        var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.agent_id || payload.agent.name);
+                        if (!document.querySelector('#lc-panel-messages [data-msg-id="' + synthId + '"]')) {
+                            appendMessage({
+                                id: synthId,
+                                sender_type: 'system',
+                                message: String(payload.agent.name) + ' joined the chat.',
+                                agent_name: payload.agent.name,
+                                agent_avatar: payload.agent.avatar || null,
+                                event: 'agent_join'
+                            });
+                        }
+                    } catch (eSynth) {}
                 }
                 startLiveMessageSync();
                 return;
@@ -5576,14 +5609,20 @@
                 }
             }
         }
-        // One catch-up on reopen only — then SSE/WS own live messages
-        window.__lcForcePollOnce = true;
-        try { pollMessages(false); } finally { window.__lcForcePollOnce = false; }
+        // WS-only: keep the live socket. Re-init only when disconnected — tearing down
+        // a healthy socket here dropped the agent join message.new after soft-close.
         startWsSafetyCatchup();
-        loadRealtimeScript(function () { initVisitorRealtime(); });
-        fetchVisitorRealtimeToken().then(function (t) {
-            if (t) startVisitorSse(t);
-        });
+        var wsLive = !!(realtimeClient && typeof realtimeClient.isConnected === 'function'
+            && realtimeClient.isConnected());
+        if (wsLive) {
+            try { ensureVisitorConvChannel(); } catch (eSubKeep) {}
+            try { bindVisitorRealtimeHandlers(realtimeClient); } catch (eBindKeep) {}
+        } else {
+            loadRealtimeScript(function () { initVisitorRealtime(); });
+            fetchVisitorRealtimeToken().then(function (t) {
+                if (t) startVisitorSse(t);
+            });
+        }
     }
 
     function loadVisitorSoundPref() {
