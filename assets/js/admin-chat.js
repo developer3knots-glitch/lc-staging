@@ -7308,6 +7308,7 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (!cid) return;
                 var presence = payload && (payload.visitor_presence || payload);
+                presence = normalizeVisitorPresence(presence) || presence;
                 if (presence && !presenceMeansLeft(presence)) {
                     presence = liftPresenceOverLeft(presence, cid);
                 }
@@ -7323,7 +7324,7 @@
                         playNotifyEvent('visitor_left', 'left:' + cid);
                     }
                 }
-                // Realtime: always force — never let a stuck livePresenceTs keep ON CHAT
+                // Pure WS paint — no HTTP reconcile (0 delay).
                 applyVisitorPresenceToInbox(cid, presence);
                 if (selectedId && cid === selectedId) {
                     setVisitorPresenceBadge(presence, { source: 'ws', force: true });
@@ -7334,9 +7335,6 @@
                                 ? 'Visitor is browsing — open this chat'
                                 : 'Chat closed - visitor ended this conversation';
                         }
-                    } else if (!uiLooksClosedForSelected()) {
-                        // Missed close WS frame while presence still flows — catch via HTTP
-                        reconcileSelectedClosedStatus();
                     }
                 }
             });

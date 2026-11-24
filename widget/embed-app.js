@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 262;
+    var LC_WIDGET_BUILD = 263;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -596,9 +596,14 @@
 
         function pushPresenceOverWs(fields, ts, fromStatus) {
             var cid = parseInt(conversationId, 10) || 0;
+            if (cid < 1) {
+                try { cid = parseInt(getStoredConversationId(), 10) || 0; } catch (eCid) { cid = 0; }
+            }
             if (cid < 1) return false;
             var payload = localPresencePayload(fields, ts);
             payload.from_status = fromStatus || '';
+            // Always stamp a fresh ms clock so agent never drops the frame as stale.
+            payload.presence_ts = ts || nextPresenceTs();
             var eventData = {
                 conversation_id: cid,
                 visitor_presence: payload
@@ -702,8 +707,9 @@
 
         function presenceKey(fields) {
             fields = fields || {};
-            // Window focus is not a presence status — only open/tab/left matter.
-            return (fields.chat_open ? 1 : 0) + ':' + (fields.page_visible ? 1 : 0) +
+            // Include derived status so Active↔Minimized never dedupes incorrectly.
+            var st = localPresencePayload(fields, 1).status;
+            return st + ':' + (fields.chat_open ? 1 : 0) + ':' + (fields.page_visible ? 1 : 0) +
                 (fields.left_site ? ':left' : '');
         }
 
@@ -720,13 +726,14 @@
             if (!fields.left_site && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
                 siteLeaveSent = false;
             }
-            var key = presenceKey(fields);
-            if (!force && key === lastPresenceKey) {
-                return;
-            }
             var ts = nextPresenceTs();
             var fromStatus = lastReportedStatus || '';
             var nextStatus = localPresencePayload(fields, ts).status;
+            var key = presenceKey(fields);
+            // Status change always ships immediately (0-delay WS), even without force flag.
+            if (!force && key === lastPresenceKey && nextStatus === lastReportedStatus) {
+                return;
+            }
             fields._ts = ts;
             fields._from = fromStatus;
             // Instant WS first (live agent UI). HTTP only for durable state / unload.
@@ -4846,13 +4853,19 @@
         return !(v === 0 || v === '0' || v === false || v === 'false');
     }
 
-    /** Toolbar / Escape minimize — respects brand toggle for the confirm sheet. */
+    /** Toolbar / Escape minimize — instant Minimized presence (no confirm delay). */
     function requestMinimize() {
-        if (!isOpen) return;
-        if (minimizeConfirmEnabled() && conversationId && !chatClosed) {
-            showMinimizeConfirm();
+        if (!isOpen) {
+            // Panel already hidden — still re-assert Minimized over WS (0 delay).
+            reportEngagementPresence(false, true, {
+                chat_open: 0,
+                force_status: 'minimized',
+                page_visible: document.visibilityState === 'hidden' ? 0 : 1
+            });
             return;
         }
+        // Always minimize immediately so agent badge flips Active → Minimized with no delay.
+        // Confirm sheet was leaving status stuck on Active while the dialog stayed open.
         minimizePanel();
     }
 
@@ -4919,6 +4932,7 @@
     function minimizePanel() {
         // Presence FIRST — agent badge must not wait on panel DOM / confirm cleanup
         isOpen = false;
+        hideMinimizeConfirm();
         reportEngagementPresence(false, true, {
             chat_open: 0,
             force_status: 'minimized',
@@ -4938,15 +4952,17 @@
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
-        // Re-assert Minimized after focus/blur races from closing the panel.
-        setTimeout(function () {
+        // Re-assert Minimized after focus/blur races from closing the panel (0 + 50ms).
+        function reassertMin() {
             if (isChatPanelOpen()) return;
             reportEngagementPresence(false, true, {
                 chat_open: 0,
                 force_status: 'minimized',
                 page_visible: document.visibilityState === 'hidden' ? 0 : 1
             });
-        }, 0);
+        }
+        setTimeout(reassertMin, 0);
+        setTimeout(reassertMin, 50);
     }
 
     /**
