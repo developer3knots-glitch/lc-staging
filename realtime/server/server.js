@@ -388,8 +388,55 @@ function forwardAgentPresenceTouch(claims) {
   } catch (eFwd) { /* ignore */ }
 }
 
+/**
+ * Instant agent-desk ticks over WS (no poll). PHP ack still persists DB + authoritative republish.
+ * Covers the gap when LC_VISITOR_ACK_URL hairpins/fails — message already on visitor screen.
+ */
+function publishOptimisticAgentReceipts(claims, data) {
+  const cid = parseInt((data && data.conversation_id) || (claims && claims.conversation_id) || 0, 10) || 0;
+  if (cid < 1) return;
+  const mid = parseInt((data && (data.message_id || data.id)) || 0, 10) || 0;
+  const viewing = !!(data && (data.viewing === 1 || data.viewing === '1' || data.viewing === true));
+  const status = viewing ? 'read' : 'delivered';
+  const agentId = parseInt((claims && claims.agent_id) || (data && data.agent_id) || 0, 10) || 0;
+  const receipts = [];
+  if (mid > 0) {
+    receipts.push({
+      id: mid,
+      delivery_status: status,
+      is_read: status === 'read',
+      is_delivered: true,
+    });
+  }
+  // Cascading high-water: also include any message_ids array from widget
+  const extraIds = Array.isArray(data && data.message_ids) ? data.message_ids : [];
+  extraIds.forEach(function (raw) {
+    const id = parseInt(raw, 10) || 0;
+    if (id < 1 || id === mid) return;
+    receipts.push({
+      id: id,
+      delivery_status: status,
+      is_read: status === 'read',
+      is_delivered: true,
+    });
+  });
+  if (!receipts.length) return;
+  const payload = {
+    conversation_id: cid,
+    for: 'agent',
+    receipts: receipts,
+  };
+  const channels = ['staff:conv:' + cid, 'conv:' + cid];
+  if (agentId > 0) channels.push('agent:' + agentId);
+  try {
+    publishMany(channels, 'message.receipts', payload);
+  } catch (ePub) { /* ignore */ }
+}
+
 /** Bridge visitor receipt ack → PHP (marks delivered/read + publishes message.receipts). */
 function forwardVisitorReceiptAck(claims, data) {
+  // Always paint agent ticks first over WS — never wait on PHP/HTTP bridge.
+  try { publishOptimisticAgentReceipts(claims, data); } catch (eOpt) { /* ignore */ }
   if (!VISITOR_ACK_URL) return;
   const uid = String((claims && claims.visitor_uid) || (data && data.visitor_uid) || '');
   const cid = parseInt((data && data.conversation_id) || (claims && claims.conversation_id) || 0, 10) || 0;

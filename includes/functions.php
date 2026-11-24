@@ -2648,28 +2648,34 @@ function lc_realtime_publish_message_receipts(int $conversationId, string $ownSe
         'for' => $ownSenderType,
         'receipts' => $receipts,
     ];
-    // Direct peer channels first (don't wait on full fanout)
+    // Agent ticks live on staff:conv + agent: (desk no longer relies on visitor conv: alone).
+    // Visitor ticks stay on visitor:/conv:. Always fan out — never early-return past staff rooms.
+    if ($ownSenderType === 'agent') {
+        if (function_exists('lc_realtime_publish_conversation_event')) {
+            lc_realtime_publish_conversation_event($conversationId, 'message.receipts', [
+                'for' => 'agent',
+                'receipts' => $receipts,
+            ], ['staff_only' => true, 'peers_only' => true]);
+        }
+        if (function_exists('lc_realtime_publish')) {
+            // Keep conv: as a secondary hop for older admin tabs still joined there.
+            lc_realtime_publish(lc_realtime_channel_conversation($conversationId), 'message.receipts', $payload, 120);
+        }
+        return;
+    }
     if (function_exists('lc_realtime_publish')) {
+        $conv = function_exists('lc_get_conversation') ? (lc_get_conversation($conversationId) ?: []) : [];
         lc_realtime_publish(lc_realtime_channel_conversation($conversationId), 'message.receipts', $payload, 120);
-        if ($ownSenderType === 'agent') {
-            $conv = lc_get_conversation($conversationId);
-            $agentId = (int) ($conv['agent_id'] ?? 0);
-            if ($agentId > 0) {
-                lc_realtime_publish(lc_realtime_channel_agent($agentId), 'message.receipts', $payload, 120);
-            }
-        } elseif ($ownSenderType === 'visitor') {
-            $conv = lc_get_conversation($conversationId);
-            $visitorId = (int) ($conv['visitor_id'] ?? 0);
-            if ($visitorId > 0) {
-                try {
-                    $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
-                    $vStmt->execute([$visitorId]);
-                    $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
-                    if ($visitorUid !== '') {
-                        lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), 'message.receipts', $payload, 120);
-                    }
-                } catch (Throwable $e) {
+        $visitorId = (int) ($conv['visitor_id'] ?? 0);
+        if ($visitorId > 0) {
+            try {
+                $vStmt = lc_db()->prepare('SELECT visitor_uid FROM visitors WHERE id = ? LIMIT 1');
+                $vStmt->execute([$visitorId]);
+                $visitorUid = trim((string) ($vStmt->fetchColumn() ?: ''));
+                if ($visitorUid !== '') {
+                    lc_realtime_publish(lc_realtime_channel_visitor($visitorUid), 'message.receipts', $payload, 120);
                 }
+            } catch (Throwable $e) {
             }
         }
         return;

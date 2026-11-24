@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 270;
+    var LC_WIDGET_BUILD = 271;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3188,6 +3188,7 @@
     var ackReceiptQueuedDeliveredOnly = false;
     var ackHeartbeatTimer = null;
     var ackVisibilityBound = false;
+    var lastReceiptAckPaintMid = 0;
 
     /** Chat panel open = can receive. Read only while this tab is in the foreground. */
     function isVisitorActivelyViewingChat() {
@@ -3236,7 +3237,7 @@
     }
 
     /** Prefer WS client_event so Node can bridge to PHP without poll spam. */
-    function publishVisitorReceiptAck(viewing) {
+    function publishVisitorReceiptAck(viewing, messageId) {
         if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') {
             return false;
         }
@@ -3244,12 +3245,16 @@
             return false;
         }
         try {
-            return !!realtimeClient.publishClientEvent('visitor.receipt_ack', {
+            var mid = parseInt(messageId, 10) || 0;
+            var payload = {
                 conversation_id: parseInt(conversationId, 10) || 0,
                 visitor_uid: visitorUid || '',
                 chat_token: chatToken || getStoredChatToken() || '',
                 viewing: viewing ? 1 : 0
-            });
+            };
+            // message_id lets Node paint optimistic agent ticks immediately (WS-only).
+            if (mid > 0) payload.message_id = mid;
+            return !!realtimeClient.publishClientEvent('visitor.receipt_ack', payload);
         } catch (ePub) {
             return false;
         }
@@ -3258,10 +3263,11 @@
     /**
      * Tell server visitor got / saw agent messages.
      * @param {boolean} [deliveredOnly] - true = double grey ticks only (not blue read)
+     * @param {number|boolean} [forceOrMessageId] - true = bypass short dedupe; number = message id
      * WS-only while socket is live: Node bridges visitor.receipt_ack → PHP.
      * HTTP visitor-ack.php is fallback only when WS is down.
      */
-    function ackAgentMessagesSeen(deliveredOnly) {
+    function ackAgentMessagesSeen(deliveredOnly, forceOrMessageId) {
         if (!conversationId || chatClosed) return;
         var viewing = 0;
         if (!deliveredOnly && isVisitorActivelyViewingChat()) {
@@ -3269,15 +3275,20 @@
         } else if (!deliveredOnly && !isOpen) {
             viewing = 0;
         }
-        var ackSig = String(conversationId) + ':' + viewing;
+        var force = forceOrMessageId === true;
+        var messageId = (typeof forceOrMessageId === 'number') ? forceOrMessageId
+            : (parseInt(forceOrMessageId, 10) || 0);
+        if (messageId > 0) force = true;
+        var ackSig = String(conversationId) + ':' + viewing + ':' + (messageId || lastReceiptAckPaintMid || 0);
         var nowAck = Date.now();
         // Keep ack snappy for Sent→Seen; still coalesce identical bursts.
-        if (window.__lcLastAckSig === ackSig && (nowAck - (window.__lcLastAckAt || 0)) < 400) {
+        // Never suppress a new message_id — that left agent ticks stuck on Sent.
+        if (!force && window.__lcLastAckSig === ackSig && (nowAck - (window.__lcLastAckAt || 0)) < 400) {
             return;
         }
-        // Prefer WS bridge (Node→PHP when LC_VISITOR_ACK_URL is set).
+        // Prefer WS bridge (Node optimistic receipts + PHP when LC_VISITOR_ACK_URL is set).
         var viaWs = false;
-        try { viaWs = publishVisitorReceiptAck(viewing); } catch (eWsAck) { viaWs = false; }
+        try { viaWs = publishVisitorReceiptAck(viewing, messageId); } catch (eWsAck) { viaWs = false; }
         if (viaWs && (LC_WS_ONLY || isVisitorWsLive())) {
             window.__lcLastAckSig = ackSig;
             window.__lcLastAckAt = nowAck;
@@ -3433,7 +3444,8 @@
                         focusVisitorCompose();
                     }
                     if (m.sender_type === 'agent') {
-                        ackAgentMessagesSeen(!isVisitorActivelyViewingChat());
+                        var ackMid = parseInt(m.id || mid, 10) || 0;
+                        ackAgentMessagesSeen(!isVisitorActivelyViewingChat(), ackMid || true);
                     }
                 }
             } else {
@@ -3472,7 +3484,6 @@
         // socket and eating message.new frames.
     }
 
-    var lastReceiptAckPaintMid = 0;
     function ackVisitorMessagePainted(messageId) {
         var mid = parseInt(messageId, 10) || 0;
         if (mid < 1) return;
@@ -3490,7 +3501,8 @@
         if (mid <= lastReceiptAckPaintMid) return;
         lastReceiptAckPaintMid = mid;
         try {
-            ackAgentMessagesSeen(!viewing);
+            // Pass mid so Node can emit message.receipts on staff:conv immediately (WS-only).
+            ackAgentMessagesSeen(!viewing, mid);
         } catch (eRec) {}
     }
 
