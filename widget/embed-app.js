@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 278;
+    var LC_WIDGET_BUILD = 279;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -5612,10 +5612,10 @@
         }
         leaveCloseSent = true;
         setWaitingState(false);
-        if (visitorEnded) {
-            updateHeaderAgent(null);
-            currentAgent = { name: '', avatar: null };
-        }
+        // Soft-close and hard-end: never keep the previous assignee in the header.
+        // (History replay of old agent bubbles was re-sticking Isabelle while Unassigned.)
+        updateHeaderAgent(null);
+        currentAgent = { name: '', avatar: null };
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
@@ -5720,18 +5720,25 @@
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         setCloseChatVisible(true);
-        var status = (data && data.status) || 'waiting';
-        if (status === 'waiting') {
+        // Visitor continue / soft reopen always re-queues as waiting until Assign.
+        // Force connecting UI everywhere — do not keep prior agent chrome.
+        var status = String((data && data.status) || 'waiting');
+        var forceConnecting = !!opts.fromVisitorAction
+            || status === 'waiting'
+            || !!(data && (data.reopened || data.reopened_by === 'visitor'));
+        if (forceConnecting && status !== 'active') {
+            status = 'waiting';
+        }
+        if (status === 'waiting' || forceConnecting) {
             updateHeaderAgent(null);
-            setWaitingState(true);
+            currentAgent = { name: '', avatar: null };
+            setWaitingState(true, { soft: false });
             updateStatus('Connecting to live agent...', agentsOnline > 0);
         } else {
             setWaitingState(false);
-            if (data && data.agent) {
+            if (data && data.agent && data.agent.name) {
                 updateHeaderAgent(data.agent);
-                if (data.agent.name) {
-                    updateStatus('Chatting with ' + data.agent.name, true);
-                }
+                updateStatus('Chatting with ' + data.agent.name, true);
             }
         }
         // WS-only: keep the live socket. Re-init only when disconnected — tearing down
@@ -7907,8 +7914,9 @@
             var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
             var agentAvatar = resolveMessageAvatar(m, agentName);
             rememberAgentAvatar(agentName, agentAvatar);
-            // Always adopt agent identity on live agent bubbles — even while Connecting.
-            if (!options.suppressAgentState && !isVisitorEndedScreen()) {
+            // While Connecting / Unassigned, never adopt identity from transcript replay
+            // (old agent bubbles were wiping connecting + sticking the previous agent).
+            if (!options.suppressAgentState && !isVisitorEndedScreen() && !isWaitingForAgent && !chatClosed) {
                 setWaitingState(false);
                 updateHeaderAgent({ name: agentName, avatar: agentAvatar });
                 updateStatus('Chatting with ' + agentName, true);
@@ -8302,7 +8310,12 @@
                     }
                     if (mid < 1 && !isHistoryLoad) return;
                     var isNewIncoming = !isHistoryLoad && m.sender_type !== 'visitor';
-                    var suppressAgentState = isHistoryLoad && (data.status === 'waiting' || ticketResumeAwaitingAgent);
+                    // Waiting/unassigned = connecting: never let transcript agent rows
+                    // reclaim the header (same IP / soft-continue race).
+                    var suppressAgentState = (data.status === 'waiting')
+                        || isWaitingForAgent
+                        || ticketResumeAwaitingAgent
+                        || (isHistoryLoad && data.status !== 'active');
                     // appendMessage adopts matching temp_* bubbles — do not remove+repaint
                     appendMessage(m, { suppressAgentState: suppressAgentState });
                     if (mid > 0 && document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
@@ -8749,10 +8762,16 @@
         var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
         if (data && data.success) {
             if (wasClosed || data.reopened) {
-                markChatContinuedFromClosed(data, { fromVisitorAction: true });
+                markChatContinuedFromClosed({
+                    status: (data && data.status) || 'waiting',
+                    reopened: !!(data && data.reopened),
+                    reopened_by: (data && data.reopened) ? 'visitor' : null,
+                    message_id: data && data.message_id
+                }, { fromVisitorAction: true });
             } else if ((data.status || '') === 'waiting') {
                 updateHeaderAgent(null);
-                setWaitingState(true);
+                currentAgent = { name: '', avatar: null };
+                setWaitingState(true, { soft: false });
                 updateStatus('Connecting to live agent...', agentsOnline > 0);
                 var inputFix = document.getElementById('lc-input');
                 if (inputFix) inputFix.placeholder = 'Write a message...';
