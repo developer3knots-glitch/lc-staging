@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 260;
+    var LC_WIDGET_BUILD = 261;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -555,10 +555,10 @@
 
         function localPresencePayload(fields, ts) {
             fields = fields || engagementFields();
+            // Only 4 statuses over WS: active | minimized | away(tab) | left
             var status = 'active';
             var label = 'Active';
             var tabHidden = !fields.page_visible;
-            var windowBlurred = fields.window_focused === 0 || fields.window_focused === false;
             if (fields.left_site) {
                 status = 'left';
                 label = 'Left website';
@@ -568,16 +568,13 @@
             } else if (tabHidden) {
                 status = 'away';
                 label = 'Switched tab';
-            } else if (windowBlurred) {
-                status = 'window';
-                label = 'Switched window';
             }
             return {
                 status: status,
                 label: label,
                 widget_open: !!fields.chat_open,
                 page_visible: !tabHidden,
-                window_focused: !windowBlurred,
+                window_focused: true,
                 left_site: !!fields.left_site,
                 presence_ts: ts || nextPresenceTs(),
                 last_seen: new Date().toISOString()
@@ -692,8 +689,9 @@
 
         function presenceKey(fields) {
             fields = fields || {};
-            return (fields.chat_open ? 1 : 0) + ':' + (fields.page_visible ? 1 : 0) + ':' +
-                (fields.window_focused ? 1 : 0) + (fields.left_site ? ':left' : '');
+            // Window focus is not a presence status — only open/tab/left matter.
+            return (fields.chat_open ? 1 : 0) + ':' + (fields.page_visible ? 1 : 0) +
+                (fields.left_site ? ':left' : '');
         }
 
         reportEngagementPresence = function (useBeacon, force, extraFields) {
@@ -804,15 +802,12 @@
             }
         });
 
+        // Window blur/focus is not a presence status (only Active / Minimized / Tab / Left).
+        // Tab hide is owned by visibilitychange → away; leave by pagehide/beforeunload.
         window.addEventListener('blur', function () {
             windowFocused = false;
             if (windowBlurTimer) clearTimeout(windowBlurTimer);
-            // Tab hide also blurs the window — let visibilitychange own that log.
-            windowBlurTimer = setTimeout(function () {
-                windowBlurTimer = null;
-                if (document.visibilityState === 'hidden') return;
-                reportEngagementPresence(true, true, { window_focused: 0 });
-            }, 80);
+            windowBlurTimer = null;
         });
         window.addEventListener('focus', function () {
             windowFocused = true;
@@ -820,7 +815,10 @@
                 clearTimeout(windowBlurTimer);
                 windowBlurTimer = null;
             }
-            reportEngagementPresence(false, true, { window_focused: 1 });
+            // Returning focus with a visible tab → ensure Active (WS, no delay).
+            if (document.visibilityState !== 'hidden') {
+                reportEngagementPresence(false, true);
+            }
         });
 
         window.addEventListener('pagehide', sendSiteLeave);

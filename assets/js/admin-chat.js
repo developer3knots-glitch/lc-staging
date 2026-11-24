@@ -552,13 +552,14 @@
     function normalizeVisitorPresence(presence) {
         if (!presence || typeof presence !== 'object') return null;
         var status = String(presence.status || '').toLowerCase();
+        // Legacy → 4-status map (Active / Minimized / Tab / Left only).
+        if (status === 'window') status = 'away';
+        if (status === 'disconnected') status = 'away';
         var labels = {
             active: 'Active',
             minimized: 'Chat minimized',
             away: 'Switched tab',
-            window: 'Switched window',
-            left: 'Left website',
-            disconnected: 'Disconnected'
+            left: 'Left website'
         };
         if (!labels[status]) return null;
         var ts = normalizePresenceTs(presence.presence_ts || presence.ts || 0);
@@ -573,9 +574,9 @@
             widget_open: (presence.widget_open === undefined || presence.widget_open === null || presence.widget_open === '')
                 ? (status !== 'minimized' && status !== 'left')
                 : flagOn(presence.widget_open, true),
-            page_visible: flagOn(presence.page_visible, true),
-            window_focused: flagOn(presence.window_focused, status !== 'window'),
-            left_site: !!presence.left_site,
+            page_visible: flagOn(presence.page_visible, status !== 'away' && status !== 'left'),
+            window_focused: true,
+            left_site: !!presence.left_site || status === 'left',
             from_status: String(presence.from_status || '').toLowerCase(),
             presence_ts: ts
         };
@@ -637,16 +638,12 @@
             status = 'left';
             label = 'Left website';
             widgetOpen = false;
-        } else if (/switched tab/i.test(text)) {
+        } else if (/switched tab|switched window/i.test(text)) {
             status = 'away';
             label = 'Switched tab';
-        } else if (/switched window/i.test(text)) {
-            status = 'window';
-            label = 'Switched window';
-            widgetOpen = true;
         } else if (/disconnected/i.test(text)) {
-            status = 'disconnected';
-            label = 'Disconnected';
+            status = 'away';
+            label = 'Switched tab';
             widgetOpen = false;
         } else if (/maximized|returned to the tab|returned to the window|is active in chat/i.test(text)) {
             status = 'active';
@@ -662,7 +659,7 @@
             label: label,
             widget_open: widgetOpen,
             page_visible: status !== 'away' && status !== 'left',
-            window_focused: status !== 'window' && status !== 'left',
+            window_focused: true,
             left_site: status === 'left',
             presence_ts: floor
         };
@@ -866,9 +863,7 @@
                 var badgeCls = 'lc-badge lc-badge-presence is-' + presence.status;
                 var label = presence.status === 'minimized' ? 'Minimized'
                     : (presence.status === 'away' ? 'Tab'
-                    : (presence.status === 'window' ? 'Window'
-                    : (presence.status === 'left' ? 'Left site'
-                    : (presence.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
+                    : (presence.status === 'left' ? 'Left site' : 'Active'));
                 if (old) {
                     old.className = badgeCls;
                     old.textContent = label;
@@ -1028,9 +1023,7 @@
         var barLabel = presence.label
             || (leftNow ? 'Left website'
                 : (next === 'minimized' ? 'Chat minimized'
-                    : (next === 'away' ? 'Switched tab'
-                        : (next === 'window' ? 'Switched window'
-                            : (next === 'disconnected' ? 'Disconnected' : 'On chat')))));
+                    : (next === 'away' ? 'Switched tab' : 'Active')));
         // Closed thread + visitor still on site: don't flash "Active" like the chat is live
         if (selectedId && conversationRowStatus(selectedId) === 'closed' && !leftNow && next === 'active') {
             barLabel = 'Browsing site';
@@ -1827,10 +1820,8 @@
             var eng = status !== 'closed' ? normalizeVisitorPresence(c.visitor_presence) : null;
             if (eng && status !== 'waiting') {
                 var engLabel = eng.status === 'minimized' ? 'Minimized'
-                    : (eng.status === 'away' ? 'Away'
-                    : (eng.status === 'window' ? 'Window'
-                    : (eng.status === 'left' ? 'Left site'
-                    : (eng.status === 'disconnected' ? 'Disconnected' : 'On chat'))));
+                    : (eng.status === 'away' ? 'Tab'
+                    : (eng.status === 'left' ? 'Left site' : 'Active'));
                 html += '<span class="lc-badge lc-badge-presence is-' + esc(eng.status) + '">' + esc(engLabel) + '</span>';
             }
             if (status === 'waiting') {
@@ -2424,7 +2415,7 @@
         // Capture before list sync — closed rows drop off Active/Waiting tabs
         var browsing = selectedVisitorIsBrowsing(cid);
         if (!browsing && selectedId === cid && lastPresenceStatusKey
-            && lastPresenceStatusKey !== 'left' && lastPresenceStatusKey !== 'disconnected') {
+            && lastPresenceStatusKey !== 'left') {
             browsing = true;
         }
         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
@@ -3979,8 +3970,7 @@
         if (!presence || presence.left_site) return false;
         return presence.status === 'active'
             || presence.status === 'minimized'
-            || presence.status === 'away'
-            || presence.status === 'window';
+            || presence.status === 'away';
     }
 
     function selectedVisitorIsBrowsing(cid) {
