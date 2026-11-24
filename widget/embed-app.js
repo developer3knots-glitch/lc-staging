@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 273;
+    var LC_WIDGET_BUILD = 274;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3695,6 +3695,8 @@
             window.__lcLastWsProbeAt = Date.now();
             window.__lcLastWsProbe = payload || null;
         });
+        client.on('chat.closed', handleVisitorChatClosed);
+        client.on('conversation.updated', handleVisitorConversationUpdated);
         // Backup path — some frames only surface on the generic 'event' emitter
         client.on('event', function (msg) {
             if (!msg || !msg.event) return;
@@ -3703,8 +3705,17 @@
                 window.__lcLastWsProbe = msg.data || null;
                 return;
             }
-            if (msg.event !== 'message.new') return;
-            handleVisitorMessageNew(msg.data || {});
+            if (msg.event === 'message.new') {
+                handleVisitorMessageNew(msg.data || {});
+                return;
+            }
+            if (msg.event === 'chat.closed') {
+                handleVisitorChatClosed(msg.data || {});
+                return;
+            }
+            if (msg.event === 'conversation.updated') {
+                handleVisitorConversationUpdated(msg.data || {});
+            }
         });
         client.on('typing', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
@@ -3720,93 +3731,121 @@
                 applyReceipts(payload.receipts);
             }
         });
-        client.on('conversation.updated', function (payload) {
-            if (!sameConversation(payload && payload.conversation_id)) return;
-            if (payload && payload.status === 'closed') {
-                // Already left this thread (Start new chat) — never flash ended over the new session
-                if (forceNewChat || !conversationId) return;
-                // Paint close line from this frame when message.new was missed (WS-only).
-                if (payload.message && (payload.message.id || payload.message_id)) {
-                    try {
-                        applyRealtimeMessage({
-                            conversation_id: payload.conversation_id,
-                            message_id: payload.message_id || (payload.message && payload.message.id),
-                            message: payload.message,
-                            visitor_uid: payload.visitor_uid
-                        });
-                    } catch (eClosePaint) {}
-                }
-                if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
-                    stopLiveMessageSync();
-                    stopSafetySync();
-                    showEndedState('visitor');
-                } else {
-                    showEndedState(payload.closed_by || 'agent');
-                    startLiveMessageSync();
-                }
-                return;
-            }
-            if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
-                var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
-                var visitorReopened = payload.reopened_by === 'visitor';
-                var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
-                // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
-                if (visitorSelfEnded && !visitorReopened) {
-                    return;
-                }
-                if (chatClosed) {
-                    markChatContinuedFromClosed({
-                        status: payload.status,
-                        agent: payload.agent
-                    });
-                } else if (payload.status === 'waiting') {
-                    updateHeaderAgent(null);
-                    setWaitingState(true);
-                    updateStatus('Connecting to live agent...', agentsOnline > 0);
-                }
-                if (payload.status === 'active' && payload.agent && payload.agent.name) {
-                    setWaitingState(false);
-                    updateHeaderAgent(payload.agent);
-                    updateStatus('Chatting with ' + payload.agent.name, true);
-                } else if (payload.status === 'active') {
-                    setWaitingState(false);
-                }
-                // WS-only: join/reopen may ride on conversation.updated when message.new
-                // was lost during a reconnect race after soft-close.
-                if (payload.message && (payload.message.id || payload.message_id)) {
-                    try {
-                        applyRealtimeMessage({
-                            conversation_id: payload.conversation_id,
-                            message_id: payload.message_id || (payload.message && payload.message.id),
-                            message: payload.message,
-                            visitor_uid: payload.visitor_uid
-                        });
-                    } catch (eJoinPaint) {}
-                } else if (agentReopened && payload.agent && payload.agent.name) {
-                    // Fallback join line if server sent status without message body.
-                    try {
-                        var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.agent_id || payload.agent.name);
-                        if (!document.querySelector('#lc-panel-messages [data-msg-id="' + synthId + '"]')) {
-                            appendMessage({
-                                id: synthId,
-                                sender_type: 'system',
-                                message: String(payload.agent.name) + ' joined the chat.',
-                                agent_name: payload.agent.name,
-                                agent_avatar: payload.agent.avatar || null,
-                                event: 'agent_join'
-                            });
-                        }
-                    } catch (eSynth) {}
-                }
-                startLiveMessageSync();
-                return;
-            }
-            if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
-                markChatContinuedFromClosed({ status: 'waiting' });
-            }
-        });
         bindTeamPresenceHandlers(client);
         ensureBrandPresenceChannel(client);
+    }
+
+    function handleVisitorChatClosed(payload) {
+        payload = payload || {};
+        if (!payload.status) payload.status = 'closed';
+        if (!payload.closed_by) payload.closed_by = 'agent';
+        handleVisitorConversationUpdated(payload);
+    }
+
+    function handleVisitorConversationUpdated(payload) {
+        if (!sameConversation(payload && payload.conversation_id)) {
+            // Allow close frames that carry visitor_uid even if cid briefly drifted.
+            var pUid = payload && payload.visitor_uid ? String(payload.visitor_uid) : '';
+            var myUid = visitorUid ? String(visitorUid) : '';
+            if (!(payload && payload.status === 'closed' && pUid && myUid && pUid === myUid)) {
+                return;
+            }
+            var pCid = parseInt(payload.conversation_id, 10) || 0;
+            if (pCid > 0) {
+                conversationId = pCid;
+                try { persistConversationId(pCid); } catch (eCidClose) {}
+            }
+        }
+        if (payload && payload.status === 'closed') {
+            // Already left this thread (Start new chat) — never flash ended over the new session
+            if (forceNewChat || !conversationId) return;
+            // Paint close line from this frame when message.new was missed (WS-only).
+            if (payload.message && (payload.message.id || payload.message_id)) {
+                try {
+                    applyRealtimeMessage({
+                        conversation_id: payload.conversation_id || conversationId,
+                        message_id: payload.message_id || (payload.message && payload.message.id),
+                        message: payload.message,
+                        visitor_uid: payload.visitor_uid
+                    });
+                } catch (eClosePaint) {}
+            } else if (payload.message_id && !document.querySelector('#lc-panel-messages [data-msg-id="' + payload.message_id + '"]')) {
+                try {
+                    appendMessage({
+                        id: payload.message_id,
+                        sender_type: 'system',
+                        message: 'Chat closed by agent.',
+                        created_at: (payload.message && payload.message.created_at) || null
+                    });
+                } catch (eCloseSynth) {}
+            }
+            if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
+                stopLiveMessageSync();
+                stopSafetySync();
+                showEndedState('visitor');
+            } else {
+                showEndedState(payload.closed_by || 'agent');
+                startLiveMessageSync();
+            }
+            return;
+        }
+        if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
+            var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
+            var visitorReopened = payload.reopened_by === 'visitor';
+            var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
+            // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
+            if (visitorSelfEnded && !visitorReopened) {
+                return;
+            }
+            if (chatClosed) {
+                markChatContinuedFromClosed({
+                    status: payload.status,
+                    agent: payload.agent
+                });
+            } else if (payload.status === 'waiting') {
+                updateHeaderAgent(null);
+                setWaitingState(true);
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
+            }
+            if (payload.status === 'active' && payload.agent && payload.agent.name) {
+                setWaitingState(false);
+                updateHeaderAgent(payload.agent);
+                updateStatus('Chatting with ' + payload.agent.name, true);
+            } else if (payload.status === 'active') {
+                setWaitingState(false);
+            }
+            // WS-only: join/reopen may ride on conversation.updated when message.new
+            // was lost during a reconnect race after soft-close.
+            if (payload.message && (payload.message.id || payload.message_id)) {
+                try {
+                    applyRealtimeMessage({
+                        conversation_id: payload.conversation_id,
+                        message_id: payload.message_id || (payload.message && payload.message.id),
+                        message: payload.message,
+                        visitor_uid: payload.visitor_uid
+                    });
+                } catch (eJoinPaint) {}
+            } else if (agentReopened && payload.agent && payload.agent.name) {
+                try {
+                    var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.agent_id || payload.agent.name);
+                    if (!document.querySelector('#lc-panel-messages [data-msg-id="' + synthId + '"]')) {
+                        appendMessage({
+                            id: synthId,
+                            sender_type: 'system',
+                            message: String(payload.agent.name) + ' joined the chat.',
+                            agent_name: payload.agent.name,
+                            agent_avatar: payload.agent.avatar || null,
+                            event: 'agent_join'
+                        });
+                    }
+                } catch (eSynth) {}
+            }
+            startLiveMessageSync();
+            return;
+        }
+        if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
+            markChatContinuedFromClosed({ status: 'waiting' });
+        }
     }
 
     function connectVisitorRealtimeWithToken(token, wsUrl) {

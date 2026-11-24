@@ -210,12 +210,16 @@ function isVisitorSocketFresh(client) {
 }
 
 /** Collect live sockets that should get visitor traffic for this uid. */
-function socketsForVisitorUid(uid) {
+function socketsForVisitorUid(uid, opts) {
   uid = String(uid || '');
+  opts = opts || {};
+  const allowStale = !!opts.allowStale;
   const out = [];
   const seen = new Set();
   function add(client) {
-    if (!client || seen.has(client) || !isVisitorSocketFresh(client)) return;
+    if (!client || seen.has(client)) return;
+    if (!allowStale && !isVisitorSocketFresh(client)) return;
+    if (client.readyState !== 1) return;
     seen.add(client);
     out.push(client);
   }
@@ -308,6 +312,16 @@ function armVisitorMsgAck(uid, messageId, raw) {
 /** Deliver to every FRESH visitor socket for this uid.
  * @param {Set<import('ws').WebSocket>|null} [skipClients] already got channel fanout this hop
  */
+function isVisitorClosePayload(event, data) {
+  if (event === 'chat.closed') return true;
+  if (event === 'conversation.updated' && data && String(data.status || '') === 'closed') return true;
+  if (event === 'message.new' && data) {
+    const text = String((data.message && data.message.message) || data.message || '');
+    return /chat closed by agent|closed automatically due to inactivity|IP blocked|chat moved to history/i.test(text);
+  }
+  return false;
+}
+
 function deliverToVisitorUid(uid, event, data, skipClients) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -317,16 +331,16 @@ function deliverToVisitorUid(uid, event, data, skipClients) {
     event: event,
     data: data,
   });
-  // Keep message.new queued even after send() — TCP can accept bytes on a
-  // half-open socket while the browser never gets the frame.
-  // Client dedupes by message id; clear after short retransmit window.
-  if (event === 'message.new') {
+  const closePayload = isVisitorClosePayload(event, data);
+  // Keep message.new / close frames queued even after send() — TCP can accept
+  // bytes on a half-open socket while the browser never gets the frame.
+  if (event === 'message.new' || closePayload) {
     queueVisitorPending(uid, raw);
-    [40, 200, 600, 1500].forEach(function (ms) {
+    [20, 80, 200, 600, 1500].forEach(function (ms) {
       setTimeout(function () { flushVisitorPending(uid); }, ms);
     });
     const mid = (data && data.message && data.message.id) || (data && data.message_id) || 0;
-    if (mid) armVisitorMsgAck(uid, mid, raw);
+    if (event === 'message.new' && mid) armVisitorMsgAck(uid, mid, raw);
     setTimeout(function () {
       const list = visitorPending.get(uid) || [];
       const remain = list.filter(function (item) { return item !== raw; });
@@ -335,7 +349,8 @@ function deliverToVisitorUid(uid, event, data, skipClients) {
     }, 5000);
   }
   let n = 0;
-  socketsForVisitorUid(uid).forEach(function (client) {
+  // Close must reach even "stale" live sockets (no recent presence pulse).
+  socketsForVisitorUid(uid, { allowStale: closePayload }).forEach(function (client) {
     // Skip sockets that already received this frame via channel fanout
     if (skipClients && skipClients.has(client)) return;
     try {
@@ -674,10 +689,10 @@ function publishMany(channels, event, data) {
     set.forEach(function (client) {
       if (client.readyState !== 1 || seenClients.has(client)) return;
       const role = String((client._lcClaims && client._lcClaims.role) || '');
-      // Stale visitor ghosts: skip. Fresh visitor tabs: allow channel fanout
-      // (map-tip-only missed the live tab when tip pointed at a dead socket —
-      // messages then only appeared after pm2 restart replay / page reload).
-      if (event === 'message.new' && role === 'visitor' && !isVisitorSocketFresh(client)) {
+      // Stale visitor ghosts: skip normal message.new. Close frames always land —
+      // freshness skip was why "Chat closed by agent" only appeared after reload.
+      if (event === 'message.new' && role === 'visitor'
+        && !isVisitorClosePayload(event, data) && !isVisitorSocketFresh(client)) {
         return;
       }
       seenClients.add(client);
@@ -691,7 +706,8 @@ function publishMany(channels, event, data) {
     });
   });
   // Also deliver via uid map (fresh sockets + pending retransmit)
-  if (event === 'message.new' || event === 'typing' || event === 'message.receipts' || event === 'conversation.updated') {
+  if (event === 'message.new' || event === 'typing' || event === 'message.receipts'
+    || event === 'conversation.updated' || event === 'chat.closed') {
     const uids = visitorUidsFromChannels(channels);
     const dataUid = String((data && data.visitor_uid) || '');
     if (dataUid && uids.indexOf(dataUid) === -1) uids.push(dataUid);
