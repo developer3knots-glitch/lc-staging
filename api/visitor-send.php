@@ -58,25 +58,14 @@ try {
 
     $reopened = false;
     $status = (string) ($conv['status'] ?? '');
+    // Hard-end: casual visitor-send must NOT reopen Closed → Unassigned.
+    // Only /api/visitor-resume.php (Resume chat) may re-queue the same ticket.
     if ($status === 'closed') {
-        $reopened = lc_reopen_closed_for_visitor_continue($conversationId, (int) $conv['visitor_id']);
-        if (!$reopened) {
-            lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
-        }
-        $status = 'waiting';
-        $conv['agent_id'] = 0;
-
-        // Tell agents IMMEDIATELY — do not defer (UI was stuck on CLOSED)
-        if (function_exists('lc_realtime_publish_conversation_event')) {
-            try {
-                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                    'status' => 'waiting',
-                    'agent_id' => 0,
-                    'reopened_by' => 'visitor',
-                ]);
-            } catch (Throwable $eRe) {
-            }
-        }
+        lc_json([
+            'success' => false,
+            'error' => 'This chat has ended. Tap Resume chat to continue.',
+            'chat_ended' => true,
+        ], 409);
     }
 
     $visitorId = (int) $conv['visitor_id'];
@@ -134,19 +123,7 @@ try {
                 $db = lc_db();
                 $alertIncoming = $publishIncoming;
                 $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $publishStatus);
-                if ($status === 'closed') {
-                    $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
-                        ->execute([$conversationId]);
-                    $status = 'waiting';
-                    $alertIncoming = true;
-                    if (function_exists('lc_realtime_publish_conversation_event')) {
-                        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
-                            'status' => 'waiting',
-                            'agent_id' => 0,
-                            'reopened_by' => 'visitor',
-                        ]);
-                    }
-                }
+                // Do not reopen closed here — hard-end is enforced at request start.
                 if ($status === 'waiting' && function_exists('lc_assign_agent')) {
                     lc_assign_agent($conversationId);
                     $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $status);

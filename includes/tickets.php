@@ -417,7 +417,9 @@ function lc_visitor_resume_closed_conversation(int $conversationId, int $visitor
     if (function_exists('lc_realtime_publish_conversation_event')) {
         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
             'status' => 'waiting',
+            'agent_id' => 0,
             'resumed' => true,
+            'reopened_by' => 'visitor',
         ]);
     }
 

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 274;
+    var LC_WIDGET_BUILD = 276;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -2400,8 +2400,10 @@
     }
 
     function isVisitorEndedScreen() {
-        // Classic "Thanks for chatting" — Resume / Email / New chat owns the panel.
-        return !!(chatClosed && lastClosedBy === 'visitor');
+        // Hard-ended panel (visitor OR agent close) — Resume / Email / New chat owns the UI.
+        // Soft-continue compose is gone: typing after agent close was bouncing Closed→Unassigned.
+        var ended = document.getElementById('lc-panel-ended');
+        return !!(chatClosed && ended && ended.style.display === 'flex');
     }
 
     function showChatView() {
@@ -2419,17 +2421,14 @@
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         document.getElementById('lc-panel-ended').style.display = 'none';
         hideIdleIntro();
-        var isVisitorEnded = chatClosed && (lastClosedBy === 'visitor' || detectClosedByFromMessages() === 'visitor');
-        setComposeEnabled(!isVisitorEnded);
+        setComposeEnabled(!chatClosed);
         setCloseChatVisible(!chatClosed);
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn && !chatClosed) closeBtn.style.display = 'inline-flex';
-        if (chatClosed && !isVisitorEnded) {
-            var inputEl = document.getElementById('lc-input');
-            if (inputEl) {
-                inputEl.placeholder = 'Type a message to continue...';
-                inputEl.disabled = false;
-            }
+        var inputEl = document.getElementById('lc-input');
+        if (inputEl && !chatClosed) {
+            inputEl.placeholder = 'Write a message...';
+            inputEl.disabled = false;
         }
     }
 
@@ -3119,14 +3118,7 @@
                     var messages = Array.isArray(data.messages) ? data.messages : [];
                     var painted = paintLongPollMessages(messages, data);
                     window.__lcLastLongPollCount = painted;
-                    if (chatClosed && data.status && data.status !== 'closed') {
-                        if (!(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil)) {
-                            markChatContinuedFromClosed({
-                                status: data.status,
-                                agent: data.agent || null
-                            });
-                        }
-                    }
+                    // Hard-ended: poll status must not leave Thanks — only Resume / agent reopen WS.
                     // Immediate re-arm (empty = idle timeout; with msgs = next wait)
                     scheduleVisitorLongPoll(messages.length ? 50 : 80);
                 })
@@ -3542,24 +3534,21 @@
             }
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
-            // Soft-close (agent/inactivity): agent follow-up / join / reopen reopens compose.
-            // Close system lines must NEVER reopen — they apply ended/soft-close instead.
-            // Visitor self-close: stay on Resume / New chat — never reopen from
-            // late/replay agent bubbles (that left agent locked + visitor still chatting).
-            if (isVisitorEndedScreen()) {
-                // Keep ended screen — late close/system/agent frames must not paint or flash chat.
+            // Hard-ended: only join/reopen may leave Thanks screen. Close lines apply ended.
+            // Late agent bubbles must not reopen compose (Closed→Unassigned bounce).
+            if (isVisitorEndedScreen() && !isJoinOrReopen && !isCloseLine) {
                 return;
             }
             if (!alreadyPainted) {
                 if (isCloseLine || isVisitorCloseLine) {
-                    // Paint + close UI below — do not treat as continue.
-                } else if (chatClosed && (isAgent || isJoinOrReopen || lastClosedBy !== 'visitor')) {
+                    // Paint + hard-end UI below — do not treat as continue.
+                } else if (chatClosed && isJoinOrReopen) {
                     markChatContinuedFromClosed({
                         status: 'active',
                         agent: (msg && msg.agent_name)
                             ? { name: msg.agent_name, avatar: msg.agent_avatar }
                             : (payload && payload.agent) || null
-                    });
+                    }, { fromAgentReopen: true });
                 } else if (isAgent || isJoinOrReopen) {
                     try { showChatView(); } catch (eSv) {}
                 }
@@ -3791,16 +3780,23 @@
         }
         if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
             var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
-            var visitorReopened = payload.reopened_by === 'visitor';
+            var visitorReopened = payload.reopened_by === 'visitor' || !!payload.resumed;
             var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
             // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
             if (visitorSelfEnded && !visitorReopened) {
                 return;
             }
+            // Hard-ended stays ended until Resume or agent reopen/assign — not bare status frames.
             if (chatClosed) {
+                if (!visitorReopened && !agentReopened) {
+                    return;
+                }
                 markChatContinuedFromClosed({
                     status: payload.status,
                     agent: payload.agent
+                }, {
+                    fromVisitorAction: visitorReopened,
+                    fromAgentReopen: agentReopened
                 });
             } else if (payload.status === 'waiting') {
                 updateHeaderAgent(null);
@@ -3844,7 +3840,7 @@
             return;
         }
         if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
-            markChatContinuedFromClosed({ status: 'waiting' });
+            markChatContinuedFromClosed({ status: 'waiting' }, { fromVisitorAction: true });
         }
     }
 
@@ -5499,24 +5495,21 @@
     }
 
     /**
-     * @param {string} [reason] visitor | agent | inactivity | leave
-     * Visitor self-close → Resume / Email / New chat buttons.
-     * Agent/auto close → keep transcript + compose to continue in waiting queue.
+     * @param {string} [reason] visitor | agent | inactivity | leave | remote
+     * All close reasons → hard ended screen (Resume / Email / New chat).
+     * Soft "type to continue" was reopening Closed chats into Unassigned on every visitor keystroke.
      */
     function showEndedState(reason) {
         hideChatLoading();
         var explicit = String(reason || '').toLowerCase();
-        // Visitor already on Resume / Email / New chat — don't flip back to soft-close compose
-        // when a later poll/WS frame says agent/remote.
         var endedPanel = document.getElementById('lc-panel-ended');
         var endedVisible = !!(endedPanel && endedPanel.style.display === 'flex');
+        // Already on hard-ended from visitor X — don't thrash if a late agent-close frame arrives.
         if (chatClosed && lastClosedBy === 'visitor' && endedVisible && explicit && !isVisitorSelfCloseReason(explicit)) {
             return;
         }
         var detected = detectClosedByFromMessages();
         reason = reason || detected || 'remote';
-        // Explicit visitor close must NEVER be overridden by an older "Chat closed by agent"
-        // line still sitting in the transcript (that was painting soft-close compose).
         if (isVisitorSelfCloseReason(explicit)) {
             reason = 'visitor';
         } else if (!isVisitorSelfCloseReason(reason) && detected === 'visitor') {
@@ -5537,7 +5530,6 @@
         if (typeof hideCloseConfirm === 'function') hideCloseConfirm();
         if (typeof hideMinimizeConfirm === 'function') hideMinimizeConfirm();
         chatClosed = true;
-        // Agent/visitor close must win over recent continue/reopen grace.
         resumeGraceUntil = 0;
         clearPendingAttachment();
         stopOwnTyping();
@@ -5551,10 +5543,8 @@
         }
         leaveCloseSent = true;
         setWaitingState(false);
-        if (visitorEnded) {
-            updateHeaderAgent(null);
-            currentAgent = { name: '', avatar: null };
-        }
+        updateHeaderAgent(null);
+        currentAgent = { name: '', avatar: null };
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
@@ -5563,67 +5553,37 @@
         document.getElementById('lc-panel-prechat').style.display = 'none';
         hideIdleIntro();
 
-        if (visitorEnded) {
-            // Classic ended screen — Resume / Email / Start new
-            visitorCloseGraceUntil = Date.now() + 15000;
-            if (conversationId) {
-                persistConversationId(conversationId);
-                persistChatToken(chatToken || '');
-            }
-            setComposeEnabled(false);
-            setCloseChatVisible(false);
-            document.getElementById('lc-panel-messages').style.display = 'none';
-            document.getElementById('lc-panel-compose').style.display = 'none';
-            document.getElementById('lc-panel-head').style.display = 'none';
-            document.getElementById('lc-panel-toolbar').style.display = 'flex';
-            document.getElementById('lc-panel-ended').style.display = 'flex';
-            document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
-            var emailInput = document.getElementById('lc-email-transcript-input');
-            if (emailInput && !emailInput.value) {
-                emailInput.value = storedVisitorEmail() || '';
-            }
-            var emailPanel = document.getElementById('lc-email-transcript-panel');
-            if (emailPanel) emailPanel.hidden = true;
-            var endedEl = document.getElementById('lc-panel-ended');
-            if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
-            setEmailTranscriptStatus('', false, 'ended');
-            if (currentReference) {
-                updateWidgetReference(currentReference);
-            }
-            syncTicketFeatureUi();
-            updateEndedResumeButton();
-            syncTranscriptSentUi('ended');
-            syncTranscriptEndedUi();
-            startVisitorReopenWatch();
-            return;
-        }
-
-        // Agent / inactivity close — stay in thread, type to re-queue
+        // Hard end for visitor AND agent/inactivity close — no compose, no Unassigned bounce.
+        visitorCloseGraceUntil = Date.now() + 15000;
         if (conversationId) {
             persistConversationId(conversationId);
             persistChatToken(chatToken || '');
         }
-        document.getElementById('lc-panel-ended').style.display = 'none';
-        document.getElementById('lc-panel-messages').style.display = 'flex';
-        document.getElementById('lc-panel-compose').style.display = 'block';
-        document.getElementById('lc-panel-head').style.display = 'flex';
-        document.getElementById('lc-panel-toolbar').style.display = 'none';
-        setComposeEnabled(true);
+        setComposeEnabled(false);
         setCloseChatVisible(false);
-        var inputEl = document.getElementById('lc-input');
-        if (inputEl) {
-            inputEl.placeholder = 'Type a message to continue...';
-            inputEl.disabled = false;
+        document.getElementById('lc-panel-messages').style.display = 'none';
+        document.getElementById('lc-panel-compose').style.display = 'none';
+        document.getElementById('lc-panel-head').style.display = 'none';
+        document.getElementById('lc-panel-toolbar').style.display = 'flex';
+        document.getElementById('lc-panel-ended').style.display = 'flex';
+        document.getElementById('lc-toolbar-brand').textContent = settings.site_name || 'LiveChat';
+        var emailInput = document.getElementById('lc-email-transcript-input');
+        if (emailInput && !emailInput.value) {
+            emailInput.value = storedVisitorEmail() || '';
         }
-        updateStatus('Chat closed', false);
-        var box = document.getElementById('lc-panel-messages');
-        if (box) {
-            stickToBottom = true;
-            try { box.scrollTop = box.scrollHeight; } catch (e) {}
+        var emailPanel = document.getElementById('lc-email-transcript-panel');
+        if (emailPanel) emailPanel.hidden = true;
+        var endedEl = document.getElementById('lc-panel-ended');
+        if (endedEl) endedEl.classList.remove('lcw-ended-email-open');
+        setEmailTranscriptStatus('', false, 'ended');
+        if (currentReference) {
+            updateWidgetReference(currentReference);
         }
-        // Keep receiving agent messages after soft close (inactivity / agent end)
-        startLiveMessageSync();
-        scheduleGapFill();
+        syncTicketFeatureUi();
+        updateEndedResumeButton();
+        syncTranscriptSentUi('ended');
+        syncTranscriptEndedUi();
+        startVisitorReopenWatch();
     }
 
     function stopVisitorReopenWatch() {
@@ -5640,12 +5600,10 @@
 
     function markChatContinuedFromClosed(data, opts) {
         opts = opts || {};
-        // Visitor ended screen must not flip back open from late agent WS / pre-close polls.
-        // Resume / New chat / server reopen (after grace) pass through.
-        if (lastClosedBy === 'visitor' && !opts.fromVisitorAction) {
-            if (Date.now() < visitorCloseGraceUntil) {
-                return;
-            }
+        // Hard-ended: only explicit Resume / agent join-reopen may leave Thanks screen.
+        // Bare status=waiting|active was flipping Closed→Unassigned after agent close.
+        if (chatClosed && !opts.fromVisitorAction && !opts.fromAgentReopen) {
+            return;
         }
         stopVisitorReopenWatch();
         chatClosed = false;
@@ -8120,15 +8078,8 @@
                     agentsOnline = data.agents_online;
                     setBubbleOnline(agentsOnline > 0);
                 }
-                if (chatClosed && data.status && data.status !== 'closed') {
-                    if (!(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil)) {
-                        markChatContinuedFromClosed({
-                            status: data.status,
-                            agent: data.agent || null
-                        });
-                    }
-                }
-                if (data.status !== 'closed') {
+                // Hard-ended: visitor-poll status must not leave Thanks — Resume / reopen only.
+                if (data.status !== 'closed' && !chatClosed) {
                     applyAgentConnectionState(data);
                 }
 
@@ -8496,9 +8447,16 @@
             websiteUrl: readHoneypotField('lc-honeypot'),
             widgetLoadedAt: widgetLoadedAt
         }).then(function (data) {
+            if (data && data.chat_ended) {
+                visitorUploadBusy = false;
+                if (attachBtn) attachBtn.classList.remove('is-busy');
+                if (sendBtn) sendBtn.classList.remove('is-sending');
+                try { showEndedState(lastClosedBy || 'agent'); } catch (eEndUp) {}
+                return;
+            }
             if (data && data.success) {
-                if (wasClosed || data.reopened) {
-                    markChatContinuedFromClosed(data);
+                if (data.reopened) {
+                    markChatContinuedFromClosed(data, { fromVisitorAction: true });
                 }
                 revokePendingPreview(item);
                 pendingAttachments.shift();
@@ -8653,9 +8611,16 @@
         visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
         if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
         var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
+        if (data && data.chat_ended) {
+            if (pending) {
+                try { pending.remove(); } catch (ePend) {}
+            }
+            try { showEndedState(lastClosedBy || 'agent'); } catch (eEnd) {}
+            return;
+        }
         if (data && data.success) {
-            if (wasClosed || data.reopened) {
-                markChatContinuedFromClosed(data);
+            if (data.reopened) {
+                markChatContinuedFromClosed(data, { fromVisitorAction: true });
             } else if ((data.status || '') === 'waiting') {
                 updateHeaderAgent(null);
                 setWaitingState(true);
