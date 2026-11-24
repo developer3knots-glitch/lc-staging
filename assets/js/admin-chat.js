@@ -2648,7 +2648,6 @@
         });
         noteAdminThreadReopened(cid, opts.message_id || 0);
         if (selectedId !== cid) {
-            scheduleInboxRefresh();
             return;
         }
         currentAssignedAgentId = 0;
@@ -2667,7 +2666,6 @@
         if (transferWrap) transferWrap.style.display = 'none';
         closeTransferPanel();
         setPeerTypingVisible(false);
-        scheduleInboxRefresh();
     }
 
     function paintConversationList(conversations) {
@@ -3486,14 +3484,20 @@
         var now = Date.now();
         if (inboxLoadInFlight) {
             inboxLoadQueued = true;
+            if (force) inboxLoadQueuedForce = true;
             return;
         }
         if (!force && inboxLoadLastAt && (now - inboxLoadLastAt) < INBOX_LOAD_MIN_MS) {
-            scheduleInboxRefresh(INBOX_LOAD_MIN_MS - (now - inboxLoadLastAt) + 50);
+            scheduleInboxRefresh(INBOX_LOAD_MIN_MS - (now - inboxLoadLastAt) + 50, false);
+            return;
+        }
+        // While WS is live, skip non-forced inbox HTTP (event storms used to look like polling).
+        if (!force && typeof isRealtimeWsLive === 'function' && isRealtimeWsLive() && inboxLoadedAt > 0) {
             return;
         }
         inboxLoadInFlight = true;
         inboxLoadQueued = false;
+        inboxLoadQueuedForce = false;
         inboxLoadLastAt = now;
         inboxLoadedAt = now;
         var url = base + '/api/agent-conversations.php?tab=' + encodeURIComponent(currentTab);
@@ -3626,7 +3630,9 @@
                 inboxLoadInFlight = false;
                 if (inboxLoadQueued) {
                     inboxLoadQueued = false;
-                    scheduleInboxRefresh(80);
+                    var qForce = inboxLoadQueuedForce;
+                    inboxLoadQueuedForce = false;
+                    scheduleInboxRefresh(80, qForce);
                 }
             });
     }
@@ -3722,7 +3728,7 @@
                     return;
                 }
                 closeTransferPanel();
-                loadConversations();
+                loadConversations(true);
                 if (parseInt(data.agent_id, 10) !== myAgentId) {
                     selectedId = 0;
                     syncRealtimeConversationChannel(0);
@@ -4103,7 +4109,7 @@
             var sendBtn = document.getElementById('lc-send-reply');
             if (sendBtn) sendBtn.disabled = false;
             pollMessages();
-            loadConversations();
+            loadConversations(true);
         }).catch(function () {
             if (takeoverBtn) takeoverBtn.disabled = false;
             if (superviseTakeoverBtn) superviseTakeoverBtn.disabled = false;
@@ -4184,7 +4190,7 @@
             var sendBtn = document.getElementById('lc-send-reply');
             if (sendBtn) sendBtn.disabled = false;
             pollMessages();
-            loadConversations();
+            loadConversations(true);
         }).catch(function () {
             if (btn) btn.disabled = false;
             alert('Could not reopen chat');
@@ -4711,10 +4717,10 @@
             body: JSON.stringify({ conversation_id: id, blocked_leave: true })
         }).then(function (r) { return r.json(); }).then(function () {
             delete blockedArchiveInFlight[id];
-            loadConversations();
+            loadConversations(true);
         }).catch(function () {
             delete blockedArchiveInFlight[id];
-            loadConversations();
+            loadConversations(true);
         });
     }
 
@@ -5174,7 +5180,7 @@
                         needsFullHistory = false;
                         chatTransferredAway = false;
                         showDetailsPanel(false);
-                        loadConversations();
+                        loadConversations(true);
                     }
                     return;
                 }
@@ -5409,15 +5415,22 @@
     var inboxRefreshTimer = null;
     var inboxLoadInFlight = false;
     var inboxLoadQueued = false;
+    var inboxLoadQueuedForce = false;
     var inboxLoadLastAt = 0;
     var INBOX_LOAD_MIN_MS = 2500;
 
-    /** Coalesce inbox HTTP — never stampede agent-conversations.php (WS owns live updates). */
-    function scheduleInboxRefresh(delayMs) {
+    /**
+     * Inbox HTTP is a rare fallback — while WS is live, local patches own the list.
+     * Pass force=true only for: missing row, transfer/takeover, tab/search, long reconnect.
+     */
+    function scheduleInboxRefresh(delayMs, force) {
+        if (!force && typeof isRealtimeWsLive === 'function' && isRealtimeWsLive()) {
+            return;
+        }
         if (inboxRefreshTimer) clearTimeout(inboxRefreshTimer);
         inboxRefreshTimer = setTimeout(function () {
             inboxRefreshTimer = null;
-            loadConversations();
+            loadConversations(!!force);
         }, typeof delayMs === 'number' ? delayMs : 2000);
     }
 
@@ -5546,9 +5559,8 @@
                     pollMessages();
                 }
                 scheduleReceiptSyncBursts();
-                // Keep inbox order stable & correct: agent reply also counts as newest
+                // Local inbox patch only — WS fans out to peers; no agent-conversations hit.
                 bumpConversationActivity(sendConvId, msg);
-                scheduleInboxRefresh();
                 return;
             }
         }).catch(function () {
@@ -5598,7 +5610,7 @@
             currentTab = tab.dataset.tab;
             inboxStableIds = [];
             syncBrowserState(selectedId, currentTab);
-            loadConversations();
+            loadConversations(true);
         });
     });
 
@@ -5719,7 +5731,7 @@
         var sendBtn = document.getElementById('lc-send-reply');
         if (sendBtn) sendBtn.disabled = false;
         pollMessages();
-        loadConversations();
+        loadConversations(true);
     }
 
     function verifyAssignedToMe(convId) {
@@ -5795,7 +5807,7 @@
                         + (res && res.raw && !data ? ': ' + res.raw : ''));
                 alert(err);
                 pollMessages();
-                loadConversations();
+                loadConversations(true);
             });
         }).catch(function (err) {
             verifyAssignedToMe(convId).then(function (ok) {
@@ -5807,7 +5819,7 @@
                 }
                 alert('Could not assign chat: ' + (err && err.message ? err.message : 'network error'));
                 pollMessages();
-                loadConversations();
+                loadConversations(true);
             });
         });
     }
@@ -5839,18 +5851,18 @@
                         + (res && res.status ? ' (HTTP ' + res.status + ')' : ''));
                 alert(err);
                 pollMessages();
-                loadConversations();
+                loadConversations(true);
                 return;
             }
             if (data.unsupervised) {
-                loadConversations();
+                loadConversations(true);
                 return;
             }
             finalizeAgentCloseUi(convId, data);
         }).catch(function (err) {
             alert('Could not archive chat: ' + (err && err.message ? err.message : 'network error'));
             pollMessages();
-            loadConversations();
+            loadConversations(true);
         });
     }
 
@@ -6262,7 +6274,7 @@
         document.querySelectorAll('.lc-chat-item').forEach(function (el) {
             el.classList.toggle('active', parseInt(el.dataset.id, 10) === convId);
         });
-        scheduleInboxRefresh(600);
+        // Local closed paint is enough — do not HTTP-refresh inbox on every close.
     }
 
     function closeConversationById(conversationId) {
@@ -6296,7 +6308,7 @@
                 return;
             }
             if (data && data.unsupervised) {
-                loadConversations();
+                loadConversations(true);
                 return;
             }
             finalizeAgentCloseUi(id, data);
@@ -6671,7 +6683,7 @@
                 // 2+ chars → server search (all statuses, name/email/phone/ticket)
                 // empty → reload normal inbox for current tab
                 if (inboxSearch.length >= 2 || inboxSearch.length === 0) {
-                    loadConversations();
+                    loadConversations(true);
                 } else {
                     paintConversationList(filterConversations(lastConversations));
                 }
@@ -7305,8 +7317,8 @@
                 resetPollTimers();
                 // Re-join open conversation after reconnect
                 if (selectedId) syncRealtimeConversationChannel(selectedId);
-                // Never HTTP-spam on reconnect storms — coalesce into one inbox refresh.
-                if (Date.now() - inboxLoadedAt > 5000) scheduleInboxRefresh(800);
+                // Only re-hydrate inbox after a long disconnect (not every reconnect blip).
+                if (Date.now() - inboxLoadedAt > 30000) scheduleInboxRefresh(800, true);
             });
             realtimeClient.on('disconnected', function () {
                 resetPollTimers();
@@ -7399,9 +7411,7 @@
                     }
                     return;
                 }
-                if (!cid || !msg) {
-                    scheduleInboxRefresh();
-                }
+                // Incomplete frame: local handlers already cover list — no inbox HTTP.
             });
             // Proven staff-room path (same as notes) — supervisors get agent replies here
             realtimeClient.on('staff.message', function (payload) {
@@ -7432,10 +7442,10 @@
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 var msg = payload && payload.message;
                 if (payload && (payload.transferred || payload.taken_over)) {
-                    scheduleInboxRefresh(400);
+                    scheduleInboxRefresh(400, true);
                     return;
                 }
-                // Assign / join / reopen: seed missing rows (Waiting tab often empty for active).
+                // Assign / join / reopen: HTTP only when the row is missing from local inbox.
                 var inboxStatus = String(payload && payload.status || '').toLowerCase();
                 var inboxAgent = parseInt(payload && payload.agent_id, 10) || 0;
                 if (cid && (inboxStatus === 'active' || inboxStatus === 'waiting'
@@ -7450,7 +7460,7 @@
                         }
                     }
                     if (!known) {
-                        scheduleInboxRefresh(400);
+                        scheduleInboxRefresh(400, true);
                     }
                 }
                 // conversation.updated close is mirrored as inbox.changed — often with
@@ -7476,9 +7486,6 @@
                         playNotifyEvent('chat_closed', 'close:' + cid);
                     }
                     applyConversationClosedLocally(cid, payload.closed_by || 'agent');
-                    if (!(selectedId && cid === selectedId)) {
-                        scheduleInboxRefresh();
-                    }
                     return;
                 }
                 if (cid && (inboxStatus === 'active' || inboxStatus === 'waiting')) {
@@ -7525,10 +7532,9 @@
                 }
                 if (applyCloseFromRealtimeMessage(cid, msg)) return;
                 // Preview/status only — unread is owned by message.new (avoids double +N new).
-                if (cid && patchInboxRowActivity(cid, msg, { countUnread: false })) {
-                    return;
+                if (cid) {
+                    patchInboxRowActivity(cid, msg, { countUnread: false });
                 }
-                scheduleInboxRefresh();
             });
             function handleVisitorTypingPayload(payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
@@ -7672,13 +7678,13 @@
                 }
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (cid) {
-                    scheduleInboxRefresh(400);
+                    scheduleInboxRefresh(400, true);
                 }
             });
             realtimeClient.on('conversation.updated', function (payload) {
                 var cid = parseInt(payload && payload.conversation_id, 10) || 0;
                 if (payload && (payload.transferred || payload.taken_over)) {
-                    scheduleInboxRefresh(400);
+                    scheduleInboxRefresh(400, true);
                 }
                 if (payload && payload.status === 'closed' && cid) {
                     if (isStaleAdminClose(cid, payload)) {
@@ -7701,9 +7707,6 @@
                     // Only lock the thread that actually closed — never the newly selected/current chat
                     if (selectedId && cid !== selectedId) {
                         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
-                        if (!(payload && (payload.transferred || payload.taken_over))) {
-                            scheduleInboxRefresh();
-                        }
                         return;
                     }
                     var closedBy = String(payload.closed_by || '');
@@ -7795,12 +7798,8 @@
                         agent: payload.agent || undefined
                     });
                     noteAdminThreadReopened(cid, payload.message_id || (payload.message && payload.message.id) || 0);
-                    if (!(payload && (payload.transferred || payload.taken_over))) {
-                        scheduleInboxRefresh();
-                    }
-                } else if (!(payload && (payload.transferred || payload.taken_over))) {
-                    scheduleInboxRefresh();
                 }
+                // WS owns live patches — never HTTP-refresh inbox on every conversation.updated.
             });
             // Join the open chat before auth returns, so the first frame is not missed.
             if (selectedId) syncRealtimeConversationChannel(selectedId);
@@ -7809,7 +7808,7 @@
     }
 
     bindDetailsAccordions();
-    loadConversations();
+    loadConversations(true);
     resetPollTimers();
     initAgentRealtime();
 
@@ -7837,7 +7836,7 @@
             document.querySelectorAll('.lc-chat-tab').forEach(function (t) {
                 t.classList.toggle('active', t.dataset.tab === currentTab);
             });
-            loadConversations();
+            loadConversations(true);
         }
         if (popId > 0 && popId !== selectedId) {
             openConversation(popId);
