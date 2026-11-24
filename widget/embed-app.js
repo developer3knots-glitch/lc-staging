@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 266;
+    var LC_WIDGET_BUILD = 267;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -206,6 +206,25 @@
     var transcriptEmailForClose = '';
     var fullHistoryMode = false;
     var isOpen = false;
+    /** Bumps on every open/minimize so late reassert timers cannot overwrite the new status. */
+    var presenceEpoch = 0;
+    var minimizeReassertTimers = [];
+    var clearPendingPresence = function () {};
+
+    function clearMinimizeReassertTimers() {
+        for (var ti = 0; ti < minimizeReassertTimers.length; ti++) {
+            try { clearTimeout(minimizeReassertTimers[ti]); } catch (eT) {}
+        }
+        minimizeReassertTimers = [];
+    }
+
+    function bumpPresenceEpoch() {
+        clearMinimizeReassertTimers();
+        try { clearPendingPresence(); } catch (eP) {}
+        presenceEpoch += 1;
+        return presenceEpoch;
+    }
+
     /** True only when the chat panel is actually visible — Active presence requires this. */
     function isChatPanelOpen() {
         if (!isOpen) return false;
@@ -408,6 +427,15 @@
         var lastPresenceKey = '';
         var pendingPresenceFields = null;
         var presenceFlushTimer = null;
+
+        clearPendingPresence = function () {
+            pendingPresenceFields = null;
+            presenceRetryAttempt = 0;
+            if (presenceFlushTimer) {
+                clearTimeout(presenceFlushTimer);
+                presenceFlushTimer = null;
+            }
+        };
 
         function engagementFields() {
             return {
@@ -769,11 +797,11 @@
             // so agent gets the minimize transcript line without presence poll spam.
             var forceStatus = String(fields.force_status || '').toLowerCase();
             var statusChanged = nextStatus !== lastReportedStatus;
+            // HTTP only on real status change / unload — reassert frames must not spam minimize logs.
             var durablePresence = !!useBeacon
                 || !!fields.left_site
-                || forceStatus === 'minimized'
-                || forceStatus === 'active'
-                || (statusChanged && (nextStatus === 'minimized' || nextStatus === 'active' || nextStatus === 'left'));
+                || (statusChanged && (forceStatus === 'minimized' || forceStatus === 'active'
+                    || nextStatus === 'minimized' || nextStatus === 'active' || nextStatus === 'left'));
             if (!LC_WS_ONLY || durablePresence || !wsOk) {
                 persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
             }
@@ -4956,6 +4984,7 @@
         });
     }
     function minimizePanel() {
+        var epoch = bumpPresenceEpoch();
         // Presence FIRST — agent badge must not wait on panel DOM / confirm cleanup
         isOpen = false;
         hideMinimizeConfirm();
@@ -4979,17 +5008,18 @@
         hideTranscriptSheet();
         hideTranscriptConfirm();
         persistPanelOpen(false);
-        // Re-assert Minimized after focus/blur races from closing the panel (0 + 50ms).
+        // Re-assert Minimized after focus/blur races — cancelled if user re-opens (epoch bump).
         function reassertMin() {
+            if (epoch !== presenceEpoch) return;
             if (isChatPanelOpen()) return;
+            // No force_status — avoids duplicate HTTP "Visitor minimized…" transcript lines.
             reportEngagementPresence(false, true, {
                 chat_open: 0,
-                force_status: 'minimized',
                 page_visible: document.visibilityState === 'hidden' ? 0 : 1
             });
         }
-        setTimeout(reassertMin, 0);
-        setTimeout(reassertMin, 50);
+        minimizeReassertTimers.push(setTimeout(reassertMin, 0));
+        minimizeReassertTimers.push(setTimeout(reassertMin, 50));
     }
 
     /**
@@ -5003,26 +5033,31 @@
             var badgeOpen = document.getElementById('lc-bubble-badge');
             if (badgeOpen) badgeOpen.style.display = 'none';
             startAckHeartbeat();
+            bumpPresenceEpoch();
             // Re-assert Active in case agent still shows Minimized after a missed frame
             reportEngagementPresence(false, true, {
                 chat_open: 1,
+                force_status: 'active',
                 page_visible: document.visibilityState === 'hidden' ? 0 : 1
             });
             return;
         }
+        bumpPresenceEpoch();
         isOpen = true;
-        // Presence FIRST — do not wait on history / realtime script / DOM
-        reportEngagementPresence(false, true, {
-            chat_open: 1,
-            page_visible: document.visibilityState === 'hidden' ? 0 : 1
-        });
-        loadRealtimeScript(function () { initVisitorRealtime(); });
         var panel = document.getElementById('lc-panel');
         var bubble = document.getElementById('lc-bubble');
         var root = document.getElementById('lc-widget-root');
+        // DOM before presence — otherwise late minimize reassert sees panel still closed and
+        // overwrites Active → admin stuck on Minimized while widget is open.
         if (panel) panel.style.setProperty('display', 'flex', 'important');
         if (bubble) bubble.classList.add('lcw-open');
         if (root) root.classList.add('lcw-panel-open');
+        reportEngagementPresence(false, true, {
+            chat_open: 1,
+            force_status: 'active',
+            page_visible: document.visibilityState === 'hidden' ? 0 : 1
+        });
+        loadRealtimeScript(function () { initVisitorRealtime(); });
         persistPanelOpen(true);
         hideTeaser(false);
         // Geo is requested once from handleChatStarted — not on every panel open
