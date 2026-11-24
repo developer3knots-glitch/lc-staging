@@ -1003,17 +1003,18 @@ function wireWebSocket(server) {
           refreshVisitorSocket(ws);
         } else if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'agent') {
           forwardAgentPresenceTouch(ws._lcClaims);
-          // Agent tab wake / keepalive: replay recent bubbles on joined rooms (no HTTP poll)
+          // Keepalive: replay ONLY the open staff conversation room.
+          // Replaying agent: / all conv: every ~5s re-inflated inbox "N new" badges.
           if (ws._lcChannels) {
             ws._lcChannels.forEach(function (name) {
-              if (/^(conv|staff:conv|agent):/.test(String(name || ''))) {
+              if (/^staff:conv:/.test(String(name || ''))) {
                 replayMessageNew(ws, name);
               }
             });
           }
         } else if (ws._lcAuthed && ws._lcChannels) {
           ws._lcChannels.forEach(function (name) {
-            if (/^(conv|staff:conv|agent):/.test(String(name || ''))) {
+            if (/^staff:conv:/.test(String(name || ''))) {
               replayMessageNew(ws, name);
             }
           });

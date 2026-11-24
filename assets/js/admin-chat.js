@@ -192,6 +192,8 @@
      */
     var ignoreClosedBelowByCid = {};
     var ignoreClosedStatusUntilByCid = {};
+    /** cid -> { messageId: true } — unread++ at most once per visitor message (WS replay safe). */
+    var inboxUnreadSeenByCid = {};
 
     function syncBrowserState(id, tab) {
         try {
@@ -1832,7 +1834,8 @@
             // Blocked replaces the normal active/waiting status chip
         } else {
             if (!isViewing && unreadCount > 0) {
-                html += '<span class="lc-badge lc-badge-unread">' + unreadCount + ' new</span>';
+                var unreadLabel = unreadCount > 99 ? '99+ new' : (unreadCount + ' new');
+                html += '<span class="lc-badge lc-badge-unread">' + unreadLabel + '</span>';
             }
             var isOtherAgentActive = status === 'active' && parseInt(c.agent_id || 0, 10) > 0 && parseInt(c.agent_id || 0, 10) !== myAgentId;
             var eng = status !== 'closed' ? normalizeVisitorPresence(c.visitor_presence) : null;
@@ -1992,13 +1995,28 @@
         return applyStableInboxOrder(collapsed);
     }
 
-    function patchInboxRowActivity(conversationId, messagePayload) {
+    /** @returns {boolean} true if this message id was already counted for unread */
+    function markInboxUnreadSeen(conversationId, messageId) {
+        var cid = parseInt(conversationId, 10) || 0;
+        var mid = parseInt(messageId, 10) || 0;
+        if (!cid || !mid) return false;
+        if (!inboxUnreadSeenByCid[cid]) inboxUnreadSeenByCid[cid] = {};
+        if (inboxUnreadSeenByCid[cid][mid]) return true;
+        inboxUnreadSeenByCid[cid][mid] = true;
+        return false;
+    }
+
+    function patchInboxRowActivity(conversationId, messagePayload, opts) {
+        opts = opts || {};
         var id = parseInt(conversationId, 10) || 0;
         if (!id) return false;
         var found = false;
         var msg = messagePayload || {};
         var text = String(msg.message || msg.body || '').trim();
         var sender = String(msg.sender_type || '');
+        var mid = parseInt(msg.id, 10) || parseInt(msg.message_id, 10) || 0;
+        // inbox.changed often mirrors message.new — preview/time only unless countUnread:true
+        var countUnread = opts.countUnread !== false;
         lastConversations = (lastConversations || []).map(function (row) {
             if ((parseInt(row.id, 10) || 0) !== id) return row;
             found = true;
@@ -2006,8 +2024,12 @@
             if (text) {
                 next.last_message = text.slice(0, 200);
             }
-            if (sender === 'visitor' && id !== selectedId) {
-                next.unread = (parseInt(next.unread, 10) || 0) + 1;
+            if (countUnread && sender === 'visitor' && id !== selectedId) {
+                // Same message.id from dual publish + ping replay must not inflate "N new".
+                var already = mid > 0 ? markInboxUnreadSeen(id, mid) : false;
+                if (!already) {
+                    next.unread = (parseInt(next.unread, 10) || 0) + 1;
+                }
             }
             // Update preview/time fields but do NOT reshuffle list order
             if (msg.created_at) {
@@ -2034,6 +2056,9 @@
     function clearLocalUnread(conversationId) {
         var id = parseInt(conversationId, 10) || 0;
         if (!id) return;
+        if (inboxUnreadSeenByCid[id]) {
+            delete inboxUnreadSeenByCid[id];
+        }
         var changed = false;
         lastConversations = (lastConversations || []).map(function (row) {
             if (parseInt(row.id, 10) !== id) return row;
@@ -7402,7 +7427,8 @@
                     return;
                 }
                 if (applyCloseFromRealtimeMessage(cid, msg)) return;
-                if (cid && patchInboxRowActivity(cid, msg)) {
+                // Preview/status only — unread is owned by message.new (avoids double +N new).
+                if (cid && patchInboxRowActivity(cid, msg, { countUnread: false })) {
                     return;
                 }
                 loadConversations();

@@ -86,6 +86,15 @@ try {
             }
         }
 
+        // Clear inbox unread for this thread. Do NOT publish receipts — soft-close
+        // visitor UI must not suddenly flip every bubble to "Read".
+        try {
+            if (function_exists('lc_mark_messages_read')) {
+                lc_mark_messages_read($conversationId, 'visitor');
+            }
+        } catch (Throwable $eRead) {
+        }
+
         // Insert + message.new (visitor-first hop inside lc_realtime_publish_message).
         $closeMsgId = lc_add_system_message($conversationId, $closeNote);
         $closeMessage = [
