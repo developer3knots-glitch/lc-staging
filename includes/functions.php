@@ -682,6 +682,26 @@ function lc_add_agent_join_message(int $conversationId, int $agentId, bool $publ
     return $messageId;
 }
 
+/** Agent reopen after close — visitor-visible "rejoined" (vs first Assign "joined"). */
+function lc_add_agent_rejoin_message(int $conversationId, int $agentId, bool $publishRealtime = true): int
+{
+    $stmt = lc_db()->prepare('SELECT name, avatar FROM agents WHERE id = ? LIMIT 1');
+    $stmt->execute([$agentId]);
+    $agent = $stmt->fetch();
+    $name = $agent ? trim((string) $agent['name']) : 'Agent';
+    if ($name === '') {
+        $name = 'Agent';
+    }
+    $msg = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
+    $msg->execute([$conversationId, 'system', $agentId, $name . ' rejoined the chat.']);
+    lc_touch_conversation($conversationId);
+    $messageId = (int) lc_db()->lastInsertId();
+    if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
+        lc_realtime_publish_message($conversationId, $messageId);
+    }
+    return $messageId;
+}
+
 function lc_add_system_message(int $conversationId, string $message, bool $publishRealtime = true): int
 {
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');

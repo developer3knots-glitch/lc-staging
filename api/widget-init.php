@@ -498,24 +498,31 @@ try {
         $convId = (int) $conv['id'];
         $status = (string) ($conv['status'] ?? '');
 
-        // Hard-end: casual init+message must NOT flip Closed → Unassigned.
-        // Resume chat (/api/visitor-resume.php) or Start new chat (force_new) only.
+        // Soft-close continue: same IP/day closed ticket + new visitor message → waiting/connecting.
         if ($status === 'closed' && $initialMessage !== '') {
-            lc_json([
-                'success' => false,
-                'error' => 'This chat has ended. Tap Resume chat or start a new conversation.',
-                'chat_ended' => true,
-            ], 409);
+            $didReopen = function_exists('lc_reopen_closed_for_visitor_continue')
+                && lc_reopen_closed_for_visitor_continue($convId, $visitorId);
+            if (!$didReopen) {
+                $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ? AND status = 'closed'")
+                    ->execute([$convId]);
+            }
+            $status = 'waiting';
+            $alertContinued = true;
         }
 
-        if ($initialMessage !== '' && $status !== 'closed') {
+        if ($initialMessage !== '') {
             $vMsg = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
             $vMsg->execute([$convId, 'visitor', $visitorId, $initialMessage]);
             $visitorMsgId = (int) $db->lastInsertId();
             lc_touch_conversation($convId);
 
+            // Never leave a visitor message stuck on a closed row (race / missed reopen).
             $curStatus = (string) ($db->query("SELECT status FROM conversations WHERE id = {$convId}")->fetchColumn() ?: '');
-            if ($curStatus === 'waiting' || $curStatus === 'active') {
+            if ($curStatus === 'closed') {
+                $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
+                    ->execute([$convId]);
+                $status = 'waiting';
+            } elseif ($curStatus === 'waiting' || $curStatus === 'active') {
                 $status = $curStatus;
             }
         }

@@ -53,12 +53,12 @@ if ($ownerName === '') {
     $ownerName = 'Agent';
 }
 
-// Visitor-visible join (same shape as Assign) so soft-closed widgets paint the agent return.
+// Visitor-visible rejoin after agent reopen (distinct from first Assign "joined").
 $joinMsgId = 0;
-if (function_exists('lc_add_agent_join_message')) {
-    $joinMsgId = (int) lc_add_agent_join_message($conversationId, $ownerId, true);
+if (function_exists('lc_add_agent_rejoin_message')) {
+    $joinMsgId = (int) lc_add_agent_rejoin_message($conversationId, $ownerId, true);
 } else {
-    $joinMsgId = (int) lc_add_system_message($conversationId, $ownerName . ' joined the chat.', true);
+    $joinMsgId = (int) lc_add_system_message($conversationId, $ownerName . ' rejoined the chat.', true);
 }
 
 $agentPublic = function_exists('lc_agent_public')
@@ -79,11 +79,11 @@ if ($joinMsgId > 0) {
         'id' => $joinMsgId,
         'sender_type' => 'system',
         'sender_id' => $ownerId,
-        'message' => $ownerName . ' joined the chat.',
+        'message' => $ownerName . ' rejoined the chat.',
         'agent_name' => $ownerName,
         'agent_avatar' => $agentPublic['avatar'] ?? null,
         'created_at' => gmdate('c'),
-        'event' => 'agent_join',
+        'event' => 'agent_rejoin',
     ];
 }
 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $updatedPayload);

@@ -369,5 +369,6 @@ function lc_agent_public(?string $name, ?string $avatar, ?string $tagline = null
 
 function lc_message_is_agent_join(string $message): bool
 {
-    return (bool) preg_match('/joined the chat\.?$/i', trim($message));
+    return (bool) preg_match('/re-?joined the chat\.?$/i', trim($message))
+        || (bool) preg_match('/joined the chat\.?$/i', trim($message));
 }

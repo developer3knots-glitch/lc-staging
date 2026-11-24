@@ -41,13 +41,12 @@ try {
     }
 
     $reopened = false;
-    // Hard-end: upload must not reopen Closed → Unassigned (Resume chat only).
     if (($conv['status'] ?? '') === 'closed') {
-        lc_json([
-            'success' => false,
-            'error' => 'This chat has ended. Tap Resume chat to continue.',
-            'chat_ended' => true,
-        ], 409);
+        $reopened = function_exists('lc_reopen_closed_for_visitor_continue')
+            && lc_reopen_closed_for_visitor_continue($conversationId, (int) $conv['visitor_id']);
+        if (!$reopened) {
+            lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
+        }
     }
 
     try {
@@ -70,6 +69,12 @@ try {
     lc_clear_typing($conversationId, 'visitor');
     lc_touch_conversation($conversationId);
     $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: 'waiting');
+    if ($status === 'closed') {
+        $db->prepare("UPDATE conversations SET status = 'waiting', agent_id = NULL, closed_at = NULL, last_message_at = NOW() WHERE id = ?")
+            ->execute([$conversationId]);
+        $status = 'waiting';
+        $reopened = true;
+    }
     $uploadIncoming = ($status === 'waiting');
     if ($status === 'waiting') {
         lc_assign_agent($conversationId);

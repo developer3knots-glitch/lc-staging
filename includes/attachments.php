@@ -431,11 +431,14 @@ function lc_format_message_row(array $row, ?string $chatToken = null): array
 
     if ($msg['sender_type'] === 'system' && lc_message_is_agent_join($msg['message'])) {
         $agentName = $row['agent_name'] ?? null;
-        if (!$agentName && preg_match('/^(.+?)\s+joined the chat\.?$/i', $msg['message'], $match)) {
+        $isRejoin = (bool) preg_match('/re-?joined the chat\.?$/i', (string) $msg['message']);
+        if (!$agentName && preg_match('/^(.+?)\s+re-?joined the chat\.?$/i', $msg['message'], $match)) {
+            $agentName = trim($match[1]);
+        } elseif (!$agentName && preg_match('/^(.+?)\s+joined the chat\.?$/i', $msg['message'], $match)) {
             $agentName = trim($match[1]);
         }
         $agentName = $agentName ?: 'Agent';
-        $msg['event'] = 'agent_join';
+        $msg['event'] = $isRejoin ? 'agent_rejoin' : 'agent_join';
         $msg['agent_name'] = $agentName;
         $msg['agent_avatar'] = function_exists('lc_resolve_message_agent_avatar')
             ? lc_resolve_message_agent_avatar($row, $agentName)
