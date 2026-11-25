@@ -2467,12 +2467,17 @@
         return 'agent';
     }
 
-    function isContinueSystemMessage(m) {
+    function isAgentRejoinSystemMessage(m) {
         if (!m) return false;
         var t = String(m.message || m.body || '');
+        return /re-?joined the (?:chat|conversation)/i.test(t);
+    }
+
+    function isContinueSystemMessage(m) {
+        if (!m || isAgentRejoinSystemMessage(m)) return false;
+        var t = String(m.message || m.body || '');
         return /continued this conversation/i.test(t)
-            || /resumed this conversation/i.test(t)
-            || /re-?joined the (?:chat|conversation)/i.test(t);
+            || /resumed this conversation/i.test(t);
     }
 
     function applyCloseFromRealtimeMessage(cid, msg) {
@@ -2595,6 +2600,33 @@
         } else if (presenceText && !browsing && (closedBy === 'leave' || lastPresenceStatusKey === 'left')) {
             presenceText.textContent = 'Left website';
         }
+    }
+
+    /** Agent Open after close — stay assigned. Never flash the Assign bar. */
+    function applyAgentRejoinLocally(cid, msg) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid) return;
+        var agentId = parseInt(msg && msg.sender_id, 10) || currentAssignedAgentId || myAgentId;
+        noteAdminThreadReopened(cid, (msg && msg.id) || 0);
+        syncConversationListStatus({
+            id: cid,
+            status: 'active',
+            agent_id: agentId
+        });
+        if (selectedId !== cid) return;
+        currentAssignedAgentId = agentId;
+        isSupervising = false;
+        chatTransferredAway = false;
+        if (superviseBar) superviseBar.hidden = true;
+        setTakeoverMenuVisible(false);
+        setReopenBarVisible(false);
+        setUnassignedMode(false);
+        if (replyInput) {
+            replyInput.disabled = false;
+            replyInput.placeholder = 'Type a message...';
+        }
+        var sendBtn = document.getElementById('lc-send-reply');
+        if (sendBtn) sendBtn.disabled = false;
     }
 
     /** Visitor continued after close → Incoming (waiting) so agent can Assign again */
@@ -7458,6 +7490,8 @@
                                 last_message_at: msg.created_at || undefined
                             });
                         }
+                    } else if (msg && isAgentRejoinSystemMessage(msg)) {
+                        applyAgentRejoinLocally(cid, msg);
                     } else if (msg && isContinueSystemMessage(msg)) {
                         applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
                     } else {
@@ -7465,7 +7499,9 @@
                     }
                     return;
                 }
-                if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
+                if (cid && msg && isAgentRejoinSystemMessage(msg)) {
+                    applyAgentRejoinLocally(cid, msg);
+                } else if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
                     applyConversationWaitingLocally(cid, {
                         force: true,
                         fromReopen: !!isContinueSystemMessage(msg),
@@ -7501,21 +7537,14 @@
                 // Close system lines often arrive only on staff.message (peers_only / nowait
                 // races). Apply closed UI even when message.new already painted the bubble.
                 if (applyCloseFromRealtimeMessage(cid, msg)) return;
-                if (msg && isContinueSystemMessage(msg) && cid) {
-                    noteAdminThreadReopened(cid, msg.id || 0);
-                    if (/re-?joined the (?:chat|conversation)/i.test(String(msg.message || msg.body || ''))) {
-                        syncConversationListStatus({
-                            id: cid,
-                            status: 'active',
-                            agent_id: parseInt(msg.sender_id, 10) || currentAssignedAgentId || myAgentId
-                        });
-                    } else {
-                        applyConversationWaitingLocally(cid, {
-                            force: true,
-                            fromReopen: true,
-                            message_id: msg.id || 0
-                        });
-                    }
+                if (msg && isAgentRejoinSystemMessage(msg) && cid) {
+                    applyAgentRejoinLocally(cid, msg);
+                } else if (msg && isContinueSystemMessage(msg) && cid) {
+                    applyConversationWaitingLocally(cid, {
+                        force: true,
+                        fromReopen: true,
+                        message_id: msg.id || 0
+                    });
                 }
             });
             realtimeClient.on('inbox.changed', function (payload) {
@@ -7583,21 +7612,14 @@
                     }
                     clearLocalUnread(cid);
                     if (applyCloseFromRealtimeMessage(cid, msg)) return;
-                    if (msg && isContinueSystemMessage(msg)) {
-                        noteAdminThreadReopened(cid, msg.id || 0);
-                        if (/re-?joined the (?:chat|conversation)/i.test(String(msg.message || msg.body || ''))) {
-                            syncConversationListStatus({
-                                id: cid,
-                                status: 'active',
-                                agent_id: parseInt(msg.sender_id, 10) || currentAssignedAgentId || myAgentId
-                            });
-                        } else {
-                            applyConversationWaitingLocally(cid, {
-                                force: true,
-                                fromReopen: true,
-                                message_id: msg.id || 0
-                            });
-                        }
+                    if (msg && isAgentRejoinSystemMessage(msg)) {
+                        applyAgentRejoinLocally(cid, msg);
+                    } else if (msg && isContinueSystemMessage(msg)) {
+                        applyConversationWaitingLocally(cid, {
+                            force: true,
+                            fromReopen: true,
+                            message_id: msg.id || 0
+                        });
                     } else if (msg && msg.sender_type === 'visitor'
                         && (uiLooksClosedForSelected() || conversationRowStatus(cid) === 'closed')) {
                         applyConversationWaitingLocally(cid, {
