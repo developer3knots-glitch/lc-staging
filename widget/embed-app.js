@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 290;
+    var LC_WIDGET_BUILD = 291;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3776,9 +3776,11 @@
         var box = document.getElementById('lc-panel-messages');
         if (!box) return;
         var nodes = box.querySelectorAll('.lcw-msg.lcw-system, .lcw-join-event');
-        if (nodes.length) {
-            var lastTxt = String(nodes[nodes.length - 1].textContent || '').replace(/\s+/g, ' ').trim();
+        for (var i = nodes.length - 1; i >= 0; i--) {
+            var lastTxt = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+            // Already on screen, or a newer join/rejoin is the latest event.
             if (lastTxt === line || lastTxt.indexOf(line) !== -1) return;
+            if (/re-?joined the (?:chat|conversation)|joined the (?:chat|conversation)/i.test(lastTxt)) return;
         }
         var mid = id || ('close_' + String(conversationId || '0'));
         if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) return;
@@ -3834,9 +3836,9 @@
         if (payload && payload.status === 'closed') {
             // Already left this thread (Start new chat) — never flash ended over the new session
             if (forceNewChat || !conversationId) return;
-            // Drop only a repeat of a close we already applied. An open thread must
-            // lock the moment this frame arrives — reload must not be required.
-            if (chatClosed && isStaleVisitorClosePayload(payload)) {
+            // Drop a repeat of a close we already passed (rejoin/resume). An open
+            // thread must still lock the moment a NEW close arrives.
+            if (isStaleVisitorClosePayload(payload)) {
                 return;
             }
             // Paint close line from this frame when message.new was missed (WS-only).
@@ -3881,7 +3883,8 @@
             if (chatClosed) {
                 markChatContinuedFromClosed({
                     status: payload.status,
-                    agent: payload.agent
+                    agent: payload.agent,
+                    message_id: payload.message_id || (payload.message && payload.message.id) || 0
                 }, {
                     fromVisitorAction: visitorReopened,
                     fromAgentReopen: agentReopened
@@ -3904,14 +3907,28 @@
             // WS-only: join/reopen may ride on conversation.updated when message.new
             // was lost during a reconnect race after soft-close.
             if (payload.message && (payload.message.id || payload.message_id)) {
+                var joinPainted = false;
                 try {
-                    applyRealtimeMessage({
+                    joinPainted = !!applyRealtimeMessage({
                         conversation_id: payload.conversation_id,
                         message_id: payload.message_id || (payload.message && payload.message.id),
                         message: payload.message,
                         visitor_uid: payload.visitor_uid
                     });
                 } catch (eJoinPaint) {}
+                if (!joinPainted && agentReopened && payload.agent && payload.agent.name) {
+                    var fallbackId = payload.message_id || (payload.message && payload.message.id);
+                    if (!document.querySelector('#lc-panel-messages [data-msg-id="' + fallbackId + '"]')) {
+                        appendMessage({
+                            id: fallbackId,
+                            sender_type: 'system',
+                            message: payload.message.message || (String(payload.agent.name) + ' rejoined the chat.'),
+                            agent_name: payload.agent.name,
+                            agent_avatar: payload.agent.avatar || payload.message.agent_avatar || null,
+                            event: payload.message.event || 'agent_rejoin'
+                        }, { forceScroll: true });
+                    }
+                }
             } else if (agentReopened && payload.agent && payload.agent.name) {
                 try {
                     var rejoin = payload.reopened_by === 'agent';
@@ -5609,6 +5626,28 @@
             if (/closed the live chat/i.test(txt)) return 'visitor';
         }
         return lastClosedBy || '';
+    }
+
+    function dropCloseLinesParkedAfterJoin() {
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        var nodes = box.querySelectorAll('.lcw-msg.lcw-system, .lcw-join-event');
+        var joinIndex = -1;
+        var i;
+        for (i = nodes.length - 1; i >= 0; i--) {
+            var txt = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+            if (/re-?joined the (?:chat|conversation)|joined the (?:chat|conversation)/i.test(txt)) {
+                joinIndex = i;
+                break;
+            }
+        }
+        if (joinIndex < 0) return;
+        for (i = nodes.length - 1; i > joinIndex; i--) {
+            var closeTxt = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+            if (/closed the chat|chat closed by agent|closed the live chat/i.test(closeTxt) && nodes[i].parentNode) {
+                nodes[i].parentNode.removeChild(nodes[i]);
+            }
+        }
     }
 
     function noteVisitorThreadReopened(msgId) {
@@ -8006,6 +8045,7 @@
             div.innerHTML = renderAvatar(joinAvatar, joinName, 'lcw-join-avatar') +
                 '<div class="lcw-join-text"><strong>' + esc(joinName) + '</strong> ' + joinVerb + '</div>';
             placeInTranscript(box, div, m.id);
+            dropCloseLinesParkedAfterJoin();
         } else if (isAgentLeaveMessage(m)) {
             var div = document.createElement('div');
             div.className = 'lcw-msg lcw-system lcw-leave-event';
