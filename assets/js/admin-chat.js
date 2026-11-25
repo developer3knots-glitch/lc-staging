@@ -7294,10 +7294,12 @@
     }
 
     function appendLiveMessage(m) {
-        if (!m || !m.id || !messagesEl) return;
+        if (!m || !messagesEl) return;
         var mid = parseInt(m.id, 10) || 0;
-        if (mid < 1) return;
-        if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"]')) {
+        var domId = mid > 0 ? String(mid) : (m.id ? String(m.id) : '');
+        // Close lines must still paint when the server omits a numeric id.
+        if (!domId || (mid < 1 && m.sender_type !== 'system')) return;
+        if (messagesEl.querySelector('.lc-msg[data-id="' + domId + '"]')) {
             if (mid > lastMsgId) lastMsgId = mid;
             return;
         }

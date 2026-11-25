@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 291;
+    var LC_WIDGET_BUILD = 292;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3598,6 +3598,7 @@
             if (isCloseLine) {
                 if (!(mid > 0 && mid <= (ignoreClosedBelowMsgId || 0))) {
                     lastAgentCloseLine = msgText;
+                    lastAgentCloseMsgId = mid;
                     showEndedState('agent', msgText);
                 }
             } else if (isVisitorCloseLine) {
@@ -3769,6 +3770,7 @@
     }
 
     var lastAgentCloseLine = '';
+    var lastAgentCloseMsgId = 0;
 
     function ensureVisitorCloseLine(text, id) {
         var line = String(text || '').replace(/\s+/g, ' ').trim();
@@ -3776,14 +3778,15 @@
         var box = document.getElementById('lc-panel-messages');
         if (!box) return;
         var nodes = box.querySelectorAll('.lcw-msg.lcw-system, .lcw-join-event');
-        for (var i = nodes.length - 1; i >= 0; i--) {
-            var lastTxt = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
-            // Already on screen, or a newer join/rejoin is the latest event.
+        if (nodes.length) {
+            var lastTxt = String(nodes[nodes.length - 1].textContent || '').replace(/\s+/g, ' ').trim();
+            // A rejoin above this close is the previous event. The new close still has to land under it.
             if (lastTxt === line || lastTxt.indexOf(line) !== -1) return;
-            if (/re-?joined the (?:chat|conversation)|joined the (?:chat|conversation)/i.test(lastTxt)) return;
         }
-        var mid = id || ('close_' + String(conversationId || '0'));
-        if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) return;
+        var mid = id || ('close_' + String(conversationId || '0') + '_' + Date.now());
+        if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
+            mid = 'close_' + String(conversationId || '0') + '_' + Date.now();
+        }
         try {
             appendMessage({
                 id: mid,
@@ -3867,6 +3870,9 @@
                 showEndedState('visitor');
             } else {
                 lastAgentCloseLine = agentCloseLineText(payload);
+                lastAgentCloseMsgId = parseInt(payload.message_id, 10)
+                    || parseInt(payload.message && payload.message.id, 10)
+                    || 0;
                 showEndedState(payload.closed_by || 'agent', lastAgentCloseLine);
                 startLiveMessageSync();
             }
@@ -5642,7 +5648,11 @@
             }
         }
         if (joinIndex < 0) return;
+        var joinId = parseInt(nodes[joinIndex].getAttribute('data-msg-id'), 10) || 0;
         for (i = nodes.length - 1; i > joinIndex; i--) {
+            var closeId = parseInt(nodes[i].getAttribute('data-msg-id'), 10) || 0;
+            // A later real close (higher id) belongs under the rejoin.
+            if (closeId > 0 && joinId > 0 && closeId > joinId) continue;
             var closeTxt = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
             if (/closed the chat|chat closed by agent|closed the live chat/i.test(closeTxt) && nodes[i].parentNode) {
                 nodes[i].parentNode.removeChild(nodes[i]);
@@ -5797,7 +5807,7 @@
         var lineToShow = String(closeLine || lastAgentCloseLine || '').trim();
         if (lineToShow) {
             lastAgentCloseLine = lineToShow;
-            ensureVisitorCloseLine(lineToShow);
+            ensureVisitorCloseLine(lineToShow, lastAgentCloseMsgId);
         }
         updateStatus('Chat closed', false);
         var closedRole = document.getElementById('lc-panel-agent-role');
@@ -5844,6 +5854,7 @@
         chatClosed = false;
         lastClosedBy = '';
         lastAgentCloseLine = '';
+        lastAgentCloseMsgId = 0;
         leaveCloseSent = false;
         pendingHistoryWipe = false;
         visitorCloseGraceUntil = 0;

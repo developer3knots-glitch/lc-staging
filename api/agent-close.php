@@ -27,8 +27,25 @@ try {
     $status = (string) ($conv['status'] ?? '');
     $isSupervising = ($status === 'active') && ($assignedAgentId > 0) && ($assignedAgentId !== $agentId);
 
-    // Already closed — archive click is idempotent
-    if ($status === 'closed') {
+    $agentName = trim((string) ($agent['name'] ?? ''));
+    if ($agentName === '') {
+        $agentName = 'Agent';
+    }
+    $closeNote = !empty($input['blocked_leave'])
+        ? 'IP blocked — chat moved to history.'
+        : ($agentName . ' closed the chat.');
+
+    $tailStmt = lc_db()->prepare('SELECT message FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1');
+    $tailStmt->execute([$conversationId]);
+    $tailText = trim((string) $tailStmt->fetchColumn());
+    $tailIsClose = $tailText !== '' && (
+        (bool) preg_match('/closed the chat\.?$/i', $tailText)
+        || (bool) preg_match('/chat closed by agent/i', $tailText)
+        || (bool) preg_match('/IP blocked/i', $tailText)
+    );
+
+    // Already closed and the visitor can already see the close line.
+    if ($status === 'closed' && $tailIsClose) {
         lc_json([
             'success' => true,
             'already_closed' => true,
@@ -62,25 +79,34 @@ try {
 
     $previousAgentId = $assignedAgentId > 0 ? $assignedAgentId : (int) ($conv['agent_id'] ?? 0);
 
-    $upd = lc_db()->prepare("
-        UPDATE conversations
-        SET status = 'closed',
-            closed_at = UTC_TIMESTAMP(),
-            agent_id = NULL
-        WHERE id = ? AND status != 'closed'
-    ");
-    $upd->execute([$conversationId]);
-
-    $agentName = trim((string) ($agent['name'] ?? ''));
-    if ($agentName === '') {
-        $agentName = 'Agent';
+    if ($status !== 'closed') {
+        $upd = lc_db()->prepare("
+            UPDATE conversations
+            SET status = 'closed',
+                closed_at = UTC_TIMESTAMP(),
+                agent_id = NULL
+            WHERE id = ? AND status != 'closed'
+        ");
+        $upd->execute([$conversationId]);
+        // PDO rowCount() is not reliable here (native prepares often report 0
+        // even when the row changed). Re-read, and force the close if needed.
+        $statusNow = lc_db()->prepare('SELECT status FROM conversations WHERE id = ? LIMIT 1');
+        $statusNow->execute([$conversationId]);
+        if ((string) $statusNow->fetchColumn() !== 'closed') {
+            $force = lc_db()->prepare("
+                UPDATE conversations
+                SET status = 'closed',
+                    closed_at = UTC_TIMESTAMP(),
+                    agent_id = NULL
+                WHERE id = ?
+            ");
+            $force->execute([$conversationId]);
+        }
     }
-    $closeNote = !empty($input['blocked_leave'])
-        ? 'IP blocked — chat moved to history.'
-        : ($agentName . ' closed the chat.');
+
     $closeMsgId = 0;
     $closeMessage = null;
-    if ($upd->rowCount() > 0) {
+    if (!$tailIsClose) {
         $visitorUid = trim((string) ($conv['visitor_uid'] ?? ''));
         if ($visitorUid === '' && (int) ($conv['visitor_id'] ?? 0) > 0) {
             try {
