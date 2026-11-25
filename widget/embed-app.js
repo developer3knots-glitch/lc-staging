@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 289;
+    var LC_WIDGET_BUILD = 290;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -2427,7 +2427,7 @@
         if (closeBtn && !chatClosed) closeBtn.style.display = 'inline-flex';
         if (agentEnded) {
             // Agent already closed this thread. Keep the transcript, but do not
-            // look like a live chat until the agent clicks Open (or the visitor resumes).
+            // look like a live chat until the agent clicks Open.
             var inputClosed = document.getElementById('lc-input');
             var sendClosed = document.getElementById('lc-send');
             if (inputClosed) {
@@ -2436,6 +2436,11 @@
             }
             if (sendClosed) sendClosed.disabled = true;
             updateStatus('Chat closed', false);
+            var closedRole = document.getElementById('lc-panel-agent-role');
+            if (closedRole) {
+                closedRole.textContent = 'Chat closed';
+                closedRole.hidden = false;
+            }
         } else {
             var inputOpen = document.getElementById('lc-input');
             if (inputOpen && !chatClosed) {
@@ -3592,7 +3597,8 @@
             // a later history reload. Watermark only blocks an older replayed id.
             if (isCloseLine) {
                 if (!(mid > 0 && mid <= (ignoreClosedBelowMsgId || 0))) {
-                    showEndedState('agent');
+                    lastAgentCloseLine = msgText;
+                    showEndedState('agent', msgText);
                 }
             } else if (isVisitorCloseLine) {
                 showEndedState('visitor');
@@ -3762,6 +3768,29 @@
         ensureBrandPresenceChannel(client);
     }
 
+    var lastAgentCloseLine = '';
+
+    function ensureVisitorCloseLine(text, id) {
+        var line = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!line) return;
+        var box = document.getElementById('lc-panel-messages');
+        if (!box) return;
+        var nodes = box.querySelectorAll('.lcw-msg.lcw-system, .lcw-join-event');
+        if (nodes.length) {
+            var lastTxt = String(nodes[nodes.length - 1].textContent || '').replace(/\s+/g, ' ').trim();
+            if (lastTxt === line || lastTxt.indexOf(line) !== -1) return;
+        }
+        var mid = id || ('close_' + String(conversationId || '0'));
+        if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) return;
+        try {
+            appendMessage({
+                id: mid,
+                sender_type: 'system',
+                message: line
+            }, { suppressAgentState: true, forceScroll: true });
+        } catch (eLine) {}
+    }
+
     function agentCloseLineText(payload) {
         payload = payload || {};
         var fromMsg = payload.message && (payload.message.message || payload.message.body);
@@ -3835,7 +3864,8 @@
                 stopSafetySync();
                 showEndedState('visitor');
             } else {
-                showEndedState(payload.closed_by || 'agent');
+                lastAgentCloseLine = agentCloseLineText(payload);
+                showEndedState(payload.closed_by || 'agent', lastAgentCloseLine);
                 startLiveMessageSync();
             }
             return;
@@ -5609,7 +5639,7 @@
      * Visitor self-close → Thanks / Resume / Email / New chat.
      * Agent/auto close → keep transcript + compose ("type to continue" → connecting).
      */
-    function showEndedState(reason) {
+    function showEndedState(reason, closeLine) {
         hideChatLoading();
         var explicit = String(reason || '').toLowerCase();
         var endedPanel = document.getElementById('lc-panel-ended');
@@ -5725,7 +5755,17 @@
             inputEl.value = '';
         }
         if (sendEl) sendEl.disabled = true;
+        var lineToShow = String(closeLine || lastAgentCloseLine || '').trim();
+        if (lineToShow) {
+            lastAgentCloseLine = lineToShow;
+            ensureVisitorCloseLine(lineToShow);
+        }
         updateStatus('Chat closed', false);
+        var closedRole = document.getElementById('lc-panel-agent-role');
+        if (closedRole) {
+            closedRole.textContent = 'Chat closed';
+            closedRole.hidden = false;
+        }
         if (!isOpen && !showEndedState._opening) {
             showEndedState._opening = true;
             try { ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: false }); } catch (eOpenClosed) {}
@@ -5764,6 +5804,7 @@
         stopVisitorReopenWatch();
         chatClosed = false;
         lastClosedBy = '';
+        lastAgentCloseLine = '';
         leaveCloseSent = false;
         pendingHistoryWipe = false;
         visitorCloseGraceUntil = 0;
