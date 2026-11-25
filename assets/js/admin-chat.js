@@ -6320,18 +6320,15 @@
         if (!convId || selectedId !== convId || !messagesEl) return;
         var msg = (data && data.message) || null;
         var mid = parseInt((msg && msg.id) || (data && data.message_id) || 0, 10) || 0;
-        var body = (msg && (msg.message || msg.body)) || 'Chat closed by agent.';
-        if (mid > 0 && messagesEl.querySelector('.lc-msg[data-id="' + mid + '"], [data-id="' + mid + '"]')) {
+        if (mid < 1) return;
+        var body = (msg && (msg.message || msg.body)) || '';
+        if (!body) return;
+        if (messagesEl.querySelector('.lc-msg[data-id="' + mid + '"], [data-id="' + mid + '"]')) {
             return;
-        }
-        if (!mid && messagesEl.querySelector('.lc-msg.system')) {
-            var lines = messagesEl.querySelectorAll('.lc-msg.system');
-            var last = lines.length ? String(lines[lines.length - 1].textContent || '') : '';
-            if (/chat closed by agent|closed the chat\.?$/i.test(last)) return;
         }
         try {
             appendLiveMessage({
-                id: mid || ('close_' + convId + '_' + Date.now()),
+                id: mid,
                 sender_type: 'system',
                 message: body,
                 created_at: (msg && msg.created_at) || new Date().toISOString()

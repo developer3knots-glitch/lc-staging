@@ -674,8 +674,8 @@ function lc_add_agent_join_message(int $conversationId, int $agentId, bool $publ
     }
     $msg = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $msg->execute([$conversationId, 'system', $agentId, $name . ' joined the chat.']);
+    $messageId = (int) lc_db()->query('SELECT LAST_INSERT_ID()')->fetchColumn();
     lc_touch_conversation($conversationId);
-    $messageId = (int) lc_db()->lastInsertId();
     if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
@@ -694,8 +694,8 @@ function lc_add_agent_rejoin_message(int $conversationId, int $agentId, bool $pu
     }
     $msg = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $msg->execute([$conversationId, 'system', $agentId, $name . ' rejoined the chat.']);
+    $messageId = (int) lc_db()->query('SELECT LAST_INSERT_ID()')->fetchColumn();
     lc_touch_conversation($conversationId);
-    $messageId = (int) lc_db()->lastInsertId();
     if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }
@@ -706,8 +706,8 @@ function lc_add_system_message(int $conversationId, string $message, bool $publi
 {
     $stmt = lc_db()->prepare('INSERT INTO messages (conversation_id, sender_type, message) VALUES (?, ?, ?)');
     $stmt->execute([$conversationId, 'system', $message]);
+    $messageId = (int) lc_db()->query('SELECT LAST_INSERT_ID()')->fetchColumn();
     lc_touch_conversation($conversationId);
-    $messageId = (int) lc_db()->lastInsertId();
     if ($publishRealtime && $messageId > 0 && function_exists('lc_realtime_publish_message')) {
         lc_realtime_publish_message($conversationId, $messageId);
     }

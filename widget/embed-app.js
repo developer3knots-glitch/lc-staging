@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 293;
+    var LC_WIDGET_BUILD = 294;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3783,10 +3783,9 @@
             // A rejoin above this close is the previous event. The new close still has to land under it.
             if (lastTxt === line || lastTxt.indexOf(line) !== -1) return;
         }
-        var mid = id || ('close_' + String(conversationId || '0') + '_' + Date.now());
-        if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {
-            mid = 'close_' + String(conversationId || '0') + '_' + Date.now();
-        }
+        var mid = parseInt(id, 10) || 0;
+        if (mid < 1) return;
+        if (document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) return;
         try {
             appendMessage({
                 id: mid,
@@ -3811,9 +3810,9 @@
         if (!payload.status) payload.status = 'closed';
         if (!payload.closed_by) payload.closed_by = 'agent';
         var line = agentCloseLineText(payload);
-        if (!payload.message || !(payload.message.message || payload.message.body)) {
+        if ((!payload.message || !(payload.message.message || payload.message.body)) && (parseInt(payload.message_id, 10) || 0) > 0) {
             payload.message = {
-                id: payload.message_id || ('close_' + String(payload.conversation_id || conversationId || '0')),
+                id: parseInt(payload.message_id, 10),
                 sender_type: 'system',
                 message: line,
                 created_at: new Date().toISOString()
@@ -3845,24 +3844,18 @@
                 return;
             }
             // Paint close line from this frame when message.new was missed (WS-only).
-            if (payload.message && (payload.message.id || payload.message_id)) {
+            var closeMid = parseInt(payload.message_id, 10)
+                || parseInt(payload.message && payload.message.id, 10)
+                || 0;
+            if (closeMid > 0 && payload.message) {
                 try {
                     applyRealtimeMessage({
                         conversation_id: payload.conversation_id || conversationId,
-                        message_id: payload.message_id || (payload.message && payload.message.id),
+                        message_id: closeMid,
                         message: payload.message,
                         visitor_uid: payload.visitor_uid
                     });
                 } catch (eClosePaint) {}
-            } else if (!document.querySelector('#lc-panel-messages [data-msg-id="' + (payload.message_id || '') + '"]')) {
-                try {
-                    appendMessage({
-                        id: payload.message_id || ('close_' + String(payload.conversation_id || conversationId || '0')),
-                        sender_type: 'system',
-                        message: agentCloseLineText(payload),
-                        created_at: (payload.message && payload.message.created_at) || null
-                    });
-                } catch (eCloseSynth) {}
             }
             if (lastClosedBy === 'visitor' || (payload && payload.closed_by === 'visitor')) {
                 stopLiveMessageSync();
@@ -3912,44 +3905,29 @@
             }
             // WS-only: join/reopen may ride on conversation.updated when message.new
             // was lost during a reconnect race after soft-close.
-            if (payload.message && (payload.message.id || payload.message_id)) {
+            var rejoinMid = parseInt(payload.message_id, 10)
+                || parseInt(payload.message && payload.message.id, 10)
+                || 0;
+            if (rejoinMid > 0 && payload.message) {
                 var joinPainted = false;
                 try {
                     joinPainted = !!applyRealtimeMessage({
                         conversation_id: payload.conversation_id,
-                        message_id: payload.message_id || (payload.message && payload.message.id),
+                        message_id: rejoinMid,
                         message: payload.message,
                         visitor_uid: payload.visitor_uid
                     });
                 } catch (eJoinPaint) {}
-                if (!joinPainted && agentReopened && payload.agent && payload.agent.name) {
-                    var fallbackId = payload.message_id || (payload.message && payload.message.id) || ('reopen_' + Date.now());
-                    if (!document.querySelector('#lc-panel-messages [data-msg-id="' + fallbackId + '"]')) {
-                        appendMessage({
-                            id: fallbackId,
-                            sender_type: 'system',
-                            message: payload.message.message || (String(payload.agent.name) + ' rejoined the chat.'),
-                            agent_name: payload.agent.name,
-                            agent_avatar: payload.agent.avatar || payload.message.agent_avatar || null,
-                            event: payload.message.event || 'agent_rejoin'
-                        }, { forceScroll: true });
-                    }
+                if (!joinPainted && !document.querySelector('#lc-panel-messages [data-msg-id="' + rejoinMid + '"]')) {
+                    appendMessage({
+                        id: rejoinMid,
+                        sender_type: 'system',
+                        message: payload.message.message || payload.message.body || '',
+                        agent_name: payload.message.agent_name || (payload.agent && payload.agent.name) || '',
+                        agent_avatar: payload.message.agent_avatar || (payload.agent && payload.agent.avatar) || null,
+                        event: payload.message.event || ''
+                    }, { forceScroll: true });
                 }
-            } else if (agentReopened && payload.agent && payload.agent.name) {
-                try {
-                    var rejoin = payload.reopened_by === 'agent';
-                    var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.message_id || Date.now());
-                    if (!document.querySelector('#lc-panel-messages [data-msg-id="' + synthId + '"]')) {
-                        appendMessage({
-                            id: synthId,
-                            sender_type: 'system',
-                            message: String(payload.agent.name) + (rejoin ? ' rejoined the chat.' : ' joined the chat.'),
-                            agent_name: payload.agent.name,
-                            agent_avatar: payload.agent.avatar || null,
-                            event: rejoin ? 'agent_rejoin' : 'agent_join'
-                        });
-                    }
-                } catch (eSynth) {}
             }
             startLiveMessageSync();
             return;
