@@ -484,7 +484,11 @@ try {
             $visitorMsgId = (int) $db->lastInsertId();
         }
         lc_touch_conversation($convId);
-        $assignedId = lc_assign_agent($convId);
+        // Start a new chat stays in the queue. The agent Assigns, then joins.
+        $assignedId = 0;
+        if (!$forceNew) {
+            $assignedId = lc_assign_agent($convId);
+        }
         $status = $assignedId ? 'active' : 'waiting';
         $alertIncoming = true;
 
@@ -593,6 +597,7 @@ try {
                 lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
                     'status' => $initStatus,
                     'agent' => $initAgentInfo,
+                    'agent_id' => $initStatus === 'waiting' ? 0 : null,
                 ]);
                 if ($alertIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
                     lc_realtime_publish_incoming_chat($convId, [
@@ -607,6 +612,7 @@ try {
             lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
                 'status' => $status,
                 'agent' => $agentInfo,
+                'agent_id' => $status === 'waiting' ? 0 : null,
             ]);
             if ($alertIncoming && function_exists('lc_realtime_publish_incoming_chat')) {
                 lc_realtime_publish_incoming_chat($convId, [

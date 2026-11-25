@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 295;
+    var LC_WIDGET_BUILD = 296;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -6419,6 +6419,53 @@
         });
     }
 
+    function queueFreshConversation() {
+        if (chatInitInFlight || proactiveInviteInFlight) return;
+        chatInitInFlight = true;
+        forceNewChat = true;
+        fetch(siteUrl + '/api/widget-init.php', {
+            method: 'POST',
+            headers: apiHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                visitor_uid: visitorUid,
+                brand_key: brandKey,
+                name: storedVisitorName(),
+                email: storedVisitorEmail(),
+                page_url: window.location.href,
+                website_url: '',
+                public_ipv4: publicIpv4,
+                chat_token: '',
+                force_new: 1
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            chatInitInFlight = false;
+            if (!data || !data.success) {
+                if (data && data.error === 'Pre-chat form required') {
+                    prechatFormEnabled = true;
+                    setWaitingState(false);
+                    showPrechatForm(true);
+                    return;
+                }
+                handleInitFailure((data && data.error) || 'Could not start chat.');
+                return;
+            }
+            forceNewChat = false;
+            pendingResumeConvId = null;
+            hideTeaser(true);
+            handleChatStarted(data, { keepMessages: false });
+            if (data.status === 'waiting' || !(data.agent && data.agent.name)) {
+                setWaitingState(true, { soft: false });
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
+            }
+        })
+        .catch(function () {
+            chatInitInFlight = false;
+            handleInitFailure('Connection error. Please try again.');
+        });
+    }
+
     function startNewChat() {
         stopVisitorReopenWatch();
         // Invalidate in-flight visitor-close callbacks so ended UI cannot flash over new chat
@@ -6486,23 +6533,22 @@
             serverIdentityComplete = true;
             entryRouted = true;
             forceNewChat = true;
-            paintFreshChatEntry();
-            // Soft settings sync only — do not re-route (that caused form → idle blink).
-            fetchWidgetSettings(function (data) {
-                if (!data || !data.success) return;
-                var rotated = !!data.visitor_uid_rotated;
-                applyWidgetSettings(data);
-                // New-chat flow: never adopt today's closed/live id from settings.
-                if (forceNewChat) {
-                    serverLiveConversationId = 0;
-                    serverLiveConversationStatus = '';
-                    pendingResumeConvId = null;
-                }
-                // Form only if IP actually rotated to a visitor with no profile.
-                if (rotated && prechatFormEnabled && !visitorHasKnownIdentity()) {
-                    showPrechatForm(true);
-                }
-            });
+            if ((parseInt(agentsOnline, 10) || 0) < 1) {
+                showAwayForm();
+                return;
+            }
+            showChatView();
+            var freshBox = document.getElementById('lc-panel-messages');
+            if (freshBox) freshBox.innerHTML = '';
+            setWaitingState(true, { soft: false });
+            updateStatus('Connecting to live agent...', agentsOnline > 0);
+            var freshRole = document.getElementById('lc-panel-agent-role');
+            if (freshRole) {
+                freshRole.textContent = 'Connecting to live agent...';
+                freshRole.hidden = false;
+            }
+            setComposeEnabled(true);
+            queueFreshConversation();
             return;
         }
 
