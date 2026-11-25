@@ -352,8 +352,8 @@
             }
         }
         var now = Date.now();
-        // Throttle true heartbeats; always allow false
-        if (isTyping && now - lastTypingPostAt < 1800) {
+        // First keystroke is immediate. Later identical pulses stay under 400ms.
+        if (isTyping && now - lastTypingPostAt < 400) {
             return;
         }
         lastTypingPostAt = now;
@@ -1762,7 +1762,13 @@
             html += '<span class="lc-chat-item-brand-tag">' + esc(c.brand_name) + '</span> ';
         }
         if (visitorIsTypingInList(c.id)) {
-            html += '<span class="lc-chat-item-typing">typing...</span>';
+            var liveId = parseInt(c.id, 10) || 0;
+            var liveSticky = stickyVisitorDraft[liveId];
+            var liveText = liveSticky && liveSticky.draft
+                ? String(liveSticky.draft).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '')
+                : '';
+            if (liveText.length > 90) liveText = liveText.slice(0, 90) + '\u2026';
+            html += '<span class="lc-chat-item-typing">' + (liveText ? esc(liveText) : 'typing...') + '</span>';
         } else {
             html += esc(c.last_message || ' - ');
         }

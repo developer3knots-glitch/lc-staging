@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 281;
+    var LC_WIDGET_BUILD = 282;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -7004,32 +7004,58 @@
         }
     }
 
+    var typingFlushTimer = null;
+
     function postOwnTyping(isTyping) {
         if (!conversationId || chatClosed) return;
-        var input = document.getElementById('lc-input');
-        var draft = '';
-        if (isTyping && input) {
-            draft = String(input.value || '');
-            if (draft.length > 2000) draft = draft.slice(0, 2000);
-        }
-        var now = Date.now();
-        // Identical draft: skip most heartbeats so agent DOM is not rewritten.
-        // Still pulse rarely over WS so agent UI stays warm while visitor pauses.
-        if (isTyping && draft === lastTypingDraft && now - lastTypingPostAt < 2500) {
+        if (!isTyping) {
+            if (typingFlushTimer) {
+                clearTimeout(typingFlushTimer);
+                typingFlushTimer = null;
+            }
+            publishVisitorTyping(false, '', true);
             return;
         }
-        lastTypingPostAt = now;
-        lastTypingDraft = draft;
-        ownTypingActive = !!isTyping;
-        publishVisitorTyping(!!isTyping, draft, false);
+        // One frame of coalesce so the textarea value is committed, then the
+        // latest draft goes out. No 2.5s hold — that was the visible delay.
+        if (typingFlushTimer) return;
+        typingFlushTimer = setTimeout(function () {
+            typingFlushTimer = null;
+            flushVisitorTypingNow();
+        }, 16);
     }
 
-    /** Pure WS typing — no HTTP typing.php hits. */
+    function flushVisitorTypingNow() {
+        if (!conversationId || chatClosed) return;
+        var input = document.getElementById('lc-input');
+        var draft = input ? String(input.value || '') : '';
+        if (draft.length > 2000) draft = draft.slice(0, 2000);
+        if (draft.replace(/\s/g, '') === '') {
+            stopOwnTyping(true);
+            return;
+        }
+        var now = Date.now();
+        if (draft === lastTypingDraft && now - lastTypingPostAt < 1500) return;
+        lastTypingPostAt = now;
+        lastTypingDraft = draft;
+        ownTypingActive = true;
+        if (!publishVisitorTyping(true, draft, false)) {
+            lastTypingPostAt = 0;
+            lastTypingDraft = '';
+            if (!typingFlushTimer) {
+                typingFlushTimer = setTimeout(function () {
+                    typingFlushTimer = null;
+                    flushVisitorTypingNow();
+                }, 120);
+            }
+        }
+    }
+
+    /** Pure WS typing — socket OPEN is enough. isConnected() lags and was dropping keystrokes. */
     function publishVisitorTyping(isTyping, draft, cleared) {
         var cid = parseInt(conversationId, 10) || 0;
         if (cid < 1) return false;
         if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') return false;
-        if (!(realtimeClient.isConnected && realtimeClient.isConnected())) return false;
         var payload = {
             conversation_id: cid,
             visitor_uid: visitorUid || '',
@@ -7048,6 +7074,10 @@
     }
 
     function stopOwnTyping(forceClear, clearedForText) {
+        if (typingFlushTimer) {
+            clearTimeout(typingFlushTimer);
+            typingFlushTimer = null;
+        }
         if (typingHeartbeatTimer) {
             clearInterval(typingHeartbeatTimer);
             typingHeartbeatTimer = null;
