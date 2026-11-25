@@ -5393,7 +5393,7 @@
                 } else {
                     paintIncremental();
                 }
-                if (!opts.skipJourney) {
+                if (!opts.skipJourney && !(typeof isRealtimeWsLive === 'function' && isRealtimeWsLive())) {
                     loadPageJourney(false);
                 }
                 var draftText = String(data.peer_typing_preview || '');

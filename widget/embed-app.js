@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 279;
+    var LC_WIDGET_BUILD = 281;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -806,17 +806,10 @@
                 kickVisitorRealtimeForPresence();
                 schedulePresenceWsRetry();
             }
-            // WS-only: skip routine HTTP. Persist only unload / left / min↔max transitions
-            // so agent gets the minimize transcript line without presence poll spam.
-            var forceStatus = String(fields.force_status || '').toLowerCase();
-            var statusChanged = nextStatus !== lastReportedStatus;
-            // HTTP only on real status change / unload — reassert frames must not spam minimize logs.
-            var durablePresence = !!useBeacon
-                || !!fields.left_site
-                || (statusChanged && (forceStatus === 'minimized' || forceStatus === 'active'
-                    || nextStatus === 'minimized' || nextStatus === 'active' || nextStatus === 'left'));
-            if (!LC_WS_ONLY || durablePresence || !wsOk) {
-                persistPresenceHttp(fields, !!useBeacon, ts, fromStatus);
+            // Status (Active / Minimized / Tab / Left) is a WS event only.
+            // HTTP is the dying-tab beacon, because the socket may already be gone.
+            if (useBeacon) {
+                persistPresenceHttp(fields, true, ts, fromStatus);
             }
             lastReportedStatus = nextStatus;
         };
@@ -879,7 +872,6 @@
                     page_visible: 1,
                     force_status: isChatPanelOpen() ? 'active' : 'minimized'
                 });
-                sendStay(false);
                 if (conversationId && !chatClosed) {
                     if (!blockHttpMessageSync()) scheduleCatchupSync();
                     if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
@@ -888,7 +880,7 @@
                 }
             } else {
                 // Tab hidden ≠ left website — Away when chat open; Minimized when launcher-only.
-                sendStay(true);
+                // Status goes over WS only. No visitor-pageview ping on hide/show.
                 if (isChatPanelOpen()) {
                     reportEngagementPresence(false, true, {
                         chat_open: 1,

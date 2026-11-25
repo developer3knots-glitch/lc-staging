@@ -136,25 +136,8 @@
             });
         }
 
-        // Primary last_seen refresh: realtime Node → api/agent-ws-touch.php.
-        // Safety ping every 45s while Online/Away so a missed WS touch cannot
-        // stale-sweep the agent offline and break transfers.
-        postStatus(false);
-        var statusSafetyTimer = setInterval(function () {
-            if (!statusSelect) return;
-            var st = String(statusSelect.value || '');
-            if (st === 'online' || st === 'away') {
-                postStatus(true);
-            }
-        }, 45000);
-        if (typeof statusSafetyTimer.unref === 'function') {
-            try { statusSafetyTimer.unref(); } catch (eUnref) {}
-        }
-        document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'visible') {
-                postStatus(false);
-            }
-        });
+        // last_seen is refreshed by the realtime server (agent-ws-touch) on WS ping.
+        // Browser posts agent-status.php only when the agent changes Online/Away/Offline.
     }
 
     var app = document.getElementById('lc-app');
