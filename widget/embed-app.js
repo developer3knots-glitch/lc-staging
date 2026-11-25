@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 301;
+    var LC_WIDGET_BUILD = 302;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -241,6 +241,9 @@
         return true;
     }
     var chatClosed = false;
+    /** Resume opened the closed transcript + composer. Connecting waits for the first send. */
+    var resumeDraft = false;
+    var resumeDraftSend = false;
     var chatToken = '';
     var widgetLoadedAt = 0;
     var sendCooldownUntil = 0;
@@ -2002,56 +2005,50 @@
         openTicketResumeFromEnded();
     }
 
-    function resumeSameChat() {
+    function showResumeComposer() {
         if (!conversationId) {
             openTicketResumeFromEnded();
             return;
         }
-        // Leaving ended screen — late close callbacks must not re-flash it
         visitorCloseEpoch += 1;
-        var resumeBtn = document.getElementById('lc-resume-ticket');
-        if (resumeBtn) {
-            resumeBtn.disabled = true;
-            resumeBtn.classList.add('is-loading');
+        resumeDraft = true;
+        resumeDraftSend = false;
+        chatClosed = false;
+        lastClosedBy = '';
+        leaveCloseSent = false;
+        isWaitingForAgent = false;
+        hideEndedState();
+        resumeDraft = true;
+        showChatView();
+        setWaitingState(false);
+        setComposeEnabled(true);
+        var waitBar = document.getElementById('lc-waiting-bar');
+        if (waitBar) waitBar.classList.remove('is-visible');
+        updateHeaderAgent(null);
+        var role = document.getElementById('lc-panel-agent-role');
+        if (role) {
+            role.hidden = false;
+            role.textContent = (parseInt(agentsOnline, 10) || 0) > 0 ? 'Online now' : 'Leave a message';
         }
-        fetch(siteUrl + '/api/visitor-resume.php', {
-            method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                visitor_uid: visitorUid,
-                brand_key: brandKey,
-                conversation_id: conversationId,
-                chat_token: chatToken || (typeof getStoredChatToken === 'function' ? getStoredChatToken() : '') || '',
-                page_url: window.location.href,
-                website_url: ''
-            })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (resumeBtn) {
-                resumeBtn.disabled = false;
-                resumeBtn.classList.remove('is-loading');
-            }
-            if (!data.success) {
-                // Stay on Thanks. A browser alert was covering the ended screen.
-                if (ticketResumeEnabled) {
-                    openTicketResumeFromEnded();
-                } else if (resumeBtn) {
-                    resumeBtn.textContent = data.error || 'Unable to resume this chat';
-                }
-                return;
-            }
-            leaveCloseSent = false;
-            resumeGraceUntil = Date.now() + 45000;
-            handleChatStarted(data, { keepMessages: false });
-        })
-        .catch(function () {
-            if (resumeBtn) {
-                resumeBtn.disabled = false;
-                resumeBtn.classList.remove('is-loading');
-            }
-            if (resumeBtn) resumeBtn.textContent = 'Unable to resume. Try again';
-        });
+        var input = document.getElementById('lc-input');
+        if (input) {
+            input.disabled = false;
+            input.placeholder = 'Write a message...';
+            setTimeout(function () {
+                try { input.focus(); } catch (eFocus) {}
+            }, 40);
+        }
+        var box = document.getElementById('lc-panel-messages');
+        var hasThread = box && box.querySelector('.lcw-msg, .lcw-msg-row, .lcw-msg-wrap, .lcw-join-event');
+        if (!hasThread) {
+            pollMessages(true);
+        } else {
+            try { box.scrollTop = box.scrollHeight; } catch (eScroll) {}
+        }
+    }
+
+    function resumeSameChat() {
+        showResumeComposer();
     }
     function openTicketResumeFromEnded() {
         if (!ticketResumeEnabled) {
@@ -3611,7 +3608,7 @@
             // a later history reload. Watermark only blocks an older replayed id.
             if (isVisitorCloseLine) {
                 // A replayed close from before Resume / Start new must not put Thanks back.
-                if (!deferHistoryCloseLines && !isStaleVisitorClosePayload({ message_id: mid, status: 'closed', closed_by: 'visitor' })) {
+                if (!resumeDraft && !deferHistoryCloseLines && !isStaleVisitorClosePayload({ message_id: mid, status: 'closed', closed_by: 'visitor' })) {
                     showEndedState('visitor');
                 }
             } else if (isCloseLine) {
@@ -3858,6 +3855,8 @@
         if (payload && payload.status === 'closed') {
             // Already left this thread (Start new chat) — never flash ended over the new session
             if (forceNewChat || !conversationId) return;
+            // Resume is the closed transcript + composer until they send.
+            if (resumeDraft) return;
             // Reload of an open chat replays the old close. Wait for the history seed.
             if (deferHistoryCloseLines) return;
             // Drop a repeat of a close we already passed (rejoin/resume). An open
@@ -3894,6 +3893,10 @@
             return;
         }
         if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
+            if (resumeDraft) {
+                startLiveMessageSync();
+                return;
+            }
             var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
             var visitorReopened = payload.reopened_by === 'visitor' || !!payload.resumed;
             var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign' || !!payload.proactive;
@@ -3958,7 +3961,7 @@
             startLiveMessageSync();
             return;
         }
-        if (payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
+        if (!resumeDraft && payload && payload.status === 'waiting' && payload.reopened_by === 'visitor') {
             markChatContinuedFromClosed({ status: 'waiting' }, { fromVisitorAction: true });
         }
     }
@@ -5702,6 +5705,8 @@
         if (forceNewChat && (parseInt(conversationId, 10) || 0) < 1) {
             return;
         }
+        // Resume is already on the closed transcript. Don't snap back to Thanks.
+        if (resumeDraft) return;
         var explicit = String(reason || '').toLowerCase();
         var endedPanel = document.getElementById('lc-panel-ended');
         var endedVisible = !!(endedPanel && endedPanel.style.display === 'flex');
@@ -6403,6 +6408,7 @@
     }
 
     function endChat() {
+        if (resumeDraft) resumeDraft = false;
         if (chatClosed && lastClosedBy === 'visitor') {
             // Already closed by visitor — keep ended actions visible
             showEndedState('visitor');
@@ -7105,6 +7111,7 @@
 
     function setWaitingState(waiting, opts) {
         opts = opts || {};
+        if (waiting && resumeDraft) return;
         isWaitingForAgent = waiting;
         var soft = !!opts.soft;
         var bar = document.getElementById('lc-waiting-bar');
@@ -7704,7 +7711,7 @@
             if (pill) pill.classList.remove('is-live');
             var team = (settings && settings.site_name) ? settings.site_name : 'LiveChat';
             nameEl.textContent = team;
-            var queueOpen = !chatClosed && !!conversationId;
+            var queueOpen = !resumeDraft && !chatClosed && !!conversationId;
             var idleNow = typeof isIdleLandingVisible === 'function' && isIdleLandingVisible();
             var msgsEl = document.getElementById('lc-panel-messages');
             if (msgsEl && msgsEl.style.display === 'none') queueOpen = false;
@@ -8501,7 +8508,7 @@
                             fromVisitorAction: true
                         });
                     }
-                } else if (data.status !== 'closed' && !chatClosed) {
+                } else if (!resumeDraft && data.status !== 'closed' && !chatClosed) {
                     applyAgentConnectionState(data);
                 }
 
@@ -8653,7 +8660,9 @@
                     deferHistoryCloseLines = false;
                     lastClosedBy = '';
                 }
-                if (data.status === 'closed') {
+                if (resumeDraft) {
+                    deferHistoryCloseLines = false;
+                } else if (data.status === 'closed') {
                     setPeerTypingVisible(false);
                     stopOwnTyping();
                     // Prefer message-id watermark over blind resumeGrace — a NEW close
@@ -8891,7 +8900,17 @@
         var item = pendingAttachments[0];
         var input = document.getElementById('lc-input');
         var useCaption = isFirst ? caption : '';
-        var wasClosed = chatClosed;
+        var leavingResumeDraft = isFirst && resumeDraft;
+        if (leavingResumeDraft) {
+            resumeDraft = false;
+            resumeDraftSend = true;
+            markChatContinuedFromClosed({
+                status: 'waiting',
+                reopened: true,
+                reopened_by: 'visitor'
+            }, { fromVisitorAction: true });
+        }
+        var wasClosed = chatClosed || leavingResumeDraft;
 
         window.LCChatFiles.upload({
             role: 'visitor',
@@ -8905,6 +8924,7 @@
             widgetLoadedAt: widgetLoadedAt
         }).then(function (data) {
             if (data && data.success) {
+                resumeDraftSend = false;
                 if (wasClosed || data.reopened) {
                     markChatContinuedFromClosed(data, { fromVisitorAction: true });
                 }
@@ -8933,11 +8953,19 @@
             visitorUploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
             if (sendBtn) sendBtn.classList.remove('is-sending');
+            if (resumeDraftSend) {
+                resumeDraftSend = false;
+                showResumeComposer();
+            }
             appendMessage({ sender_type: 'system', message: (data && data.error) || 'Upload failed' });
         }).catch(function () {
             visitorUploadBusy = false;
             if (attachBtn) attachBtn.classList.remove('is-busy');
             if (sendBtn) sendBtn.classList.remove('is-sending');
+            if (resumeDraftSend) {
+                resumeDraftSend = false;
+                showResumeComposer();
+            }
             appendMessage({ sender_type: 'system', message: 'Upload failed. Please try again.' });
         });
     }
@@ -9019,6 +9047,10 @@
         .catch(function () {
             visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
             if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
+            if (resumeDraftSend) {
+                resumeDraftSend = false;
+                showResumeComposer();
+            }
             markVisitorSendFailed(tempId);
         });
     }
@@ -9112,9 +9144,13 @@
             if (!(realtimeClient && realtimeClient.isConnected && realtimeClient.isConnected())) {
                 loadRealtimeScript(function () { initVisitorRealtime(); });
             }
+            resumeDraftSend = false;
             return;
         }
-        if (wasClosed && lastClosedBy !== 'visitor') {
+        if (resumeDraftSend) {
+            resumeDraftSend = false;
+            showResumeComposer();
+        } else if (wasClosed && lastClosedBy !== 'visitor') {
             chatClosed = true;
             lastClosedBy = 'agent';
             setWaitingState(false);
@@ -9223,8 +9259,18 @@
         var sendBtn = document.getElementById('lc-send');
         visitorTextInFlight += 1;
         if (sendBtn) sendBtn.classList.add('is-sending');
-        var wasClosed = chatClosed;
-        var agentClosedContinue = wasClosed && lastClosedBy !== 'visitor';
+        var leavingResumeDraft = resumeDraft;
+        if (leavingResumeDraft) {
+            resumeDraft = false;
+            resumeDraftSend = true;
+            markChatContinuedFromClosed({
+                status: 'waiting',
+                reopened: true,
+                reopened_by: 'visitor'
+            }, { fromVisitorAction: true });
+        }
+        var wasClosed = chatClosed || leavingResumeDraft;
+        var agentClosedContinue = wasClosed && lastClosedBy !== 'visitor' && !leavingResumeDraft;
         if (agentClosedContinue) {
             markChatContinuedFromClosed({
                 status: 'waiting',
