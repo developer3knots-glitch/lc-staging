@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 296;
+    var LC_WIDGET_BUILD = 297;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3137,14 +3137,15 @@
                     var painted = paintLongPollMessages(messages, data);
                     window.__lcLastLongPollCount = painted;
                     if (chatClosed && data.status && data.status !== 'closed') {
-                        var waitReopen = data.reopened_by === 'agent' || data.reopened_by === 'assign' || data.reopened_by === 'visitor' || !!data.resumed;
-                        if (waitReopen && !(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil && data.reopened_by !== 'agent' && data.reopened_by !== 'assign')) {
+                        var waitReopen = data.reopened_by === 'visitor' || !!data.resumed;
+                        if (lastClosedBy === 'visitor' && !waitReopen) {
+                            showEndedState('visitor');
+                        } else if (waitReopen) {
                             markChatContinuedFromClosed({
                                 status: data.status,
                                 agent: data.agent || null
                             }, {
-                                fromVisitorAction: data.reopened_by === 'visitor' || !!data.resumed,
-                                fromAgentReopen: data.reopened_by === 'agent' || data.reopened_by === 'assign'
+                                fromVisitorAction: true
                             });
                         }
                     }
@@ -3567,11 +3568,13 @@
             if (msg && isAdminOnlySystemMessage(msg)) {
                 return;
             }
-            // Thanks screen stays up for stray bubbles. Agent Open (rejoin/join) brings the visitor back.
-            if (isVisitorEndedScreen() && !isJoinOrReopen && !isCloseLine) {
+            // Visitor already chose Thanks. Join/close/agent frames must not
+            // blink the transcript back. Resume and Start a new chat opt out.
+            if (isVisitorEndedScreen()) {
+                if (isVisitorCloseLine) showEndedState('visitor');
                 return;
             }
-            if (isJoinOrReopen && (isVisitorEndedScreen() || chatClosed)) {
+            if (isJoinOrReopen && chatClosed) {
                 markChatContinuedFromClosed({
                     status: 'active',
                     agent: (msg && msg.agent_name)
@@ -3595,20 +3598,20 @@
             var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
             // WS-only: the close line itself is the runtime lock. Do not wait for
             // a later history reload. Watermark only blocks an older replayed id.
-            if (isCloseLine) {
+            if (isVisitorCloseLine) {
+                showEndedState('visitor');
+            } else if (isCloseLine) {
                 if (!(mid > 0 && mid <= (ignoreClosedBelowMsgId || 0))) {
                     lastAgentCloseLine = msgText;
                     lastAgentCloseMsgId = mid;
                     showEndedState('agent', msgText);
                 }
-            } else if (isVisitorCloseLine) {
-                showEndedState('visitor');
             }
             if (painted && isAgent && inDom) {
                 window.__lcWsAgentPainted = true;
             }
             // Frame arrived but bubble missing — one emergency history merge
-            if (mid > 0 && !inDom) {
+            if (mid > 0 && !inDom && !isVisitorEndedScreen()) {
                 if (msg && msg.id) {
                     try {
                         showChatView();
@@ -3875,8 +3878,9 @@
             var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
             var visitorReopened = payload.reopened_by === 'visitor' || !!payload.resumed;
             var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign' || !!payload.proactive;
-            // Visitor X-close stays on Thanks until they resume OR the agent opens the chat again.
-            if (visitorSelfEnded && !visitorReopened && !agentReopened) {
+            // Visitor close stays on Thanks until they press Resume or Start a new chat.
+            if (visitorSelfEnded && !visitorReopened) {
+                showEndedState('visitor');
                 return;
             }
             if (chatClosed) {
@@ -5318,7 +5322,7 @@
                 document.getElementById('lc-panel-compose').style.display = 'none';
                 document.getElementById('lc-panel-prechat').style.display = 'none';
             }
-        } else if (conversationId) {
+        } else if (conversationId && !isVisitorEndedScreen()) {
             // silenceFlow (e.g. auto-open on WS message): never full-reload transcript
             showChatView();
             if (chatClosed && lastClosedBy !== 'visitor') {
@@ -5674,9 +5678,14 @@
         var explicit = String(reason || '').toLowerCase();
         var endedPanel = document.getElementById('lc-panel-ended');
         var endedVisible = !!(endedPanel && endedPanel.style.display === 'flex');
-        // Visitor already on Thanks — don't flip back to soft-close compose on late agent frames.
-        if (chatClosed && lastClosedBy === 'visitor' && endedVisible && explicit && !isVisitorSelfCloseReason(explicit)) {
-            return;
+        // Visitor already chose Thanks. Late agent/close frames must not swap in the transcript.
+        if (chatClosed && lastClosedBy === 'visitor' && explicit && !isVisitorSelfCloseReason(explicit)) {
+            if (!endedVisible) {
+                explicit = 'visitor';
+                reason = 'visitor';
+            } else {
+                return;
+            }
         }
         var detected = detectClosedByFromMessages();
         reason = reason || detected || 'remote';
@@ -5826,10 +5835,10 @@
         opts = opts || {};
         // Visitor Thanks screen must not flip open from late agent WS / polls.
         // Resume / New chat / server reopen (after grace) pass through.
-        if (lastClosedBy === 'visitor' && !opts.fromVisitorAction && !opts.fromAgentReopen) {
-            if (Date.now() < visitorCloseGraceUntil) {
-                return;
-            }
+        // Thanks stays until the visitor presses Resume or Start a new chat.
+        if (lastClosedBy === 'visitor' && !opts.fromVisitorAction) {
+            showEndedState('visitor');
+            return;
         }
         stopVisitorReopenWatch();
         chatClosed = false;
@@ -8451,14 +8460,15 @@
                     setBubbleOnline(agentsOnline > 0);
                 }
                 if (chatClosed && data.status && data.status !== 'closed') {
-                    var pollReopen = data.reopened_by === 'agent' || data.reopened_by === 'assign' || data.reopened_by === 'visitor' || !!data.resumed;
-                    if (pollReopen && !(lastClosedBy === 'visitor' && Date.now() < visitorCloseGraceUntil && data.reopened_by !== 'agent' && data.reopened_by !== 'assign')) {
+                    var pollReopen = data.reopened_by === 'visitor' || !!data.resumed;
+                    if (lastClosedBy === 'visitor' && !pollReopen) {
+                        showEndedState('visitor');
+                    } else if (pollReopen) {
                         markChatContinuedFromClosed({
                             status: data.status,
                             agent: data.agent || null
                         }, {
-                            fromVisitorAction: data.reopened_by === 'visitor' || !!data.resumed,
-                            fromAgentReopen: data.reopened_by === 'agent' || data.reopened_by === 'assign'
+                            fromVisitorAction: true
                         });
                     }
                 } else if (data.status !== 'closed' && !chatClosed) {
