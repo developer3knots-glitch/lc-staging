@@ -2473,6 +2473,39 @@
         return /re-?joined the (?:chat|conversation)/i.test(t);
     }
 
+    function isAgentJoinSystemMessage(m) {
+        if (!m || isAgentRejoinSystemMessage(m)) return false;
+        var t = String(m.message || m.body || '');
+        return /joined the (?:chat|conversation)/i.test(t);
+    }
+
+    /** Join/rejoin unlocks the composer only when it is newer than the close already applied. */
+    function isLiveAgentJoinMessage(cid, msg) {
+        if (!isAgentRejoinSystemMessage(msg) && !isAgentJoinSystemMessage(msg)) return false;
+        var mid = parseInt(msg && msg.id, 10) || 0;
+        var below = parseInt(ignoreClosedBelowByCid[cid], 10) || 0;
+        if (mid > 0 && below > 0 && mid <= below) return false;
+        return true;
+    }
+
+    function seedOpenThreadWatermark(cid) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid || !messagesEl || selectedId !== cid) return;
+        var nodes = messagesEl.querySelectorAll('.lc-msg[data-id]');
+        var joinId = 0;
+        var closeId = 0;
+        for (var i = 0; i < nodes.length; i++) {
+            var id = parseInt(nodes[i].getAttribute('data-id'), 10) || 0;
+            if (id < 1) continue;
+            var t = String(nodes[i].textContent || '');
+            if (/joined the (?:chat|conversation)/i.test(t) && id > joinId) joinId = id;
+            if (/closed the (?:chat|live chat)|chat closed by agent/i.test(t) && id > closeId) closeId = id;
+        }
+        if (joinId > closeId && joinId > 0) {
+            noteAdminThreadReopened(cid, joinId);
+        }
+    }
+
     function isContinueSystemMessage(m) {
         if (!m || isAgentRejoinSystemMessage(m)) return false;
         var t = String(m.message || m.body || '');
@@ -3859,7 +3892,10 @@
         var st = conversationRowStatus(cid);
         var ag = conversationRowAgentId(cid);
         if (st === 'active' && ag === myAgentId && myAgentId > 0) {
-            if (!unassignedBar || unassignedBar.hidden) return;
+            var reopenBarNow = document.getElementById('lc-reopen-bar');
+            var reopenStuck = !!(reopenBarNow && !reopenBarNow.hidden);
+            var assignStuck = !!(unassignedBar && !unassignedBar.hidden);
+            if (!reopenStuck && !assignStuck && !uiLooksClosedForSelected()) return;
             currentAssignedAgentId = ag;
             setUnassignedMode(false);
             setReopenBarVisible(false);
@@ -5531,6 +5567,7 @@
                 } else {
                     paintIncremental();
                 }
+                if (c.status === 'active') seedOpenThreadWatermark(conversationId);
                 if (!opts.skipJourney && !(typeof isRealtimeWsLive === 'function' && isRealtimeWsLive())) {
                     loadPageJourney(false);
                 }
@@ -7519,7 +7556,7 @@
                                 last_message_at: msg.created_at || undefined
                             });
                         }
-                    } else if (msg && isAgentRejoinSystemMessage(msg)) {
+                    } else if (msg && isLiveAgentJoinMessage(cid, msg)) {
                         applyAgentRejoinLocally(cid, msg);
                     } else if (msg && isContinueSystemMessage(msg)) {
                         applyConversationWaitingLocally(cid, { force: true, fromReopen: true });
@@ -7528,7 +7565,7 @@
                     }
                     return;
                 }
-                if (cid && msg && isAgentRejoinSystemMessage(msg)) {
+                if (cid && msg && isLiveAgentJoinMessage(cid, msg)) {
                     applyAgentRejoinLocally(cid, msg);
                 } else if (cid && msg && (isContinueSystemMessage(msg) || (msg.sender_type === 'visitor' && conversationRowStatus(cid) === 'closed'))) {
                     applyConversationWaitingLocally(cid, {
@@ -7565,10 +7602,12 @@
                 handleStaffMessagePayload(payload);
                 // Close system lines often arrive only on staff.message (peers_only / nowait
                 // races). Apply closed UI even when message.new already painted the bubble.
-                if (applyCloseFromRealtimeMessage(cid, msg)) return;
-                if (msg && isAgentRejoinSystemMessage(msg) && cid) {
+                if (msg && isLiveAgentJoinMessage(cid, msg)) {
                     applyAgentRejoinLocally(cid, msg);
-                } else if (msg && isContinueSystemMessage(msg) && cid) {
+                    return;
+                }
+                if (applyCloseFromRealtimeMessage(cid, msg)) return;
+                if (msg && isContinueSystemMessage(msg) && cid) {
                     applyConversationWaitingLocally(cid, {
                         force: true,
                         fromReopen: true,
@@ -7640,10 +7679,12 @@
                         }
                     }
                     clearLocalUnread(cid);
-                    if (applyCloseFromRealtimeMessage(cid, msg)) return;
-                    if (msg && isAgentRejoinSystemMessage(msg)) {
+                    if (msg && isLiveAgentJoinMessage(cid, msg)) {
                         applyAgentRejoinLocally(cid, msg);
-                    } else if (msg && isContinueSystemMessage(msg)) {
+                        return;
+                    }
+                    if (applyCloseFromRealtimeMessage(cid, msg)) return;
+                    if (msg && isContinueSystemMessage(msg)) {
                         applyConversationWaitingLocally(cid, {
                             force: true,
                             fromReopen: true,
