@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 283;
+    var LC_WIDGET_BUILD = 284;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3582,9 +3582,10 @@
             }
             var painted = applyRealtimeMessage(payload);
             var inDom = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
-            // WS-only: close can arrive as message.new without conversation.updated.
+            // WS-only: the close line itself is the runtime lock. Do not wait for
+            // a later history reload. Watermark only blocks an older replayed id.
             if (isCloseLine) {
-                if (!isStaleVisitorClosePayload({ message_id: mid, message: msg })) {
+                if (!(mid > 0 && mid <= (ignoreClosedBelowMsgId || 0))) {
                     showEndedState('agent');
                 }
             } else if (isVisitorCloseLine) {
@@ -3790,8 +3791,9 @@
         if (payload && payload.status === 'closed') {
             // Already left this thread (Start new chat) — never flash ended over the new session
             if (forceNewChat || !conversationId) return;
-            // Late/retried close after reopen/continue — do not soft-close again.
-            if (isStaleVisitorClosePayload(payload)) {
+            // Drop only a repeat of a close we already applied. An open thread must
+            // lock the moment this frame arrives — reload must not be required.
+            if (chatClosed && isStaleVisitorClosePayload(payload)) {
                 return;
             }
             // Paint close line from this frame when message.new was missed (WS-only).
@@ -8005,6 +8007,14 @@
         dropExtraMessageNodes(msgKey);
         scrollMessagesToBottom(!!options.forceScroll);
         if (window.LCTime) window.LCTime.scan(box);
+        // Live bubble is enough to close. History batches pass suppressAgentState
+        // and still close from the status=closed payload at the end of the load.
+        if (!options.suppressAgentState && m.sender_type === 'system' && isAgentCloseSystemMessage(m.message || '')) {
+            var liveCloseId = parseInt(m.id, 10) || 0;
+            if (!(liveCloseId > 0 && liveCloseId <= (ignoreClosedBelowMsgId || 0))) {
+                showEndedState(isVisitorSelfCloseReason(m.closed_by) ? 'visitor' : 'agent');
+            }
+        }
     }
 
     function isMessagesNearBottom(threshold) {
