@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 32;
+const REALTIME_BUILD = 33;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -291,7 +291,7 @@ function armVisitorMsgAck(uid, messageId, raw) {
     if (!visitorMsgAcks.has(key)) return;
     entry.tries += 1;
     flushVisitorPending(uid);
-    socketsForVisitorUid(uid).forEach(function (client) {
+    socketsForVisitorUid(uid, { allowStale: true }).forEach(function (client) {
       try { client.send(entry.raw); } catch (eS) { /* ignore */ }
     });
     // After 2 misses: pipe is half-open (client→server ok, server→client dead).
@@ -355,12 +355,14 @@ function deliverToVisitorUid(uid, event, data, skipClients) {
     });
     const mid = (data && data.message && data.message.id) || (data && data.message_id) || 0;
     if (event === 'message.new' && mid) armVisitorMsgAck(uid, mid, raw);
+    // Hold until the widget acks or the visitor reconnects. A 5s drop was why
+    // Assign's join only appeared after a full page reload.
     setTimeout(function () {
       const list = visitorPending.get(uid) || [];
       const remain = list.filter(function (item) { return item !== raw; });
       if (remain.length) visitorPending.set(uid, remain);
       else visitorPending.delete(uid);
-    }, 5000);
+    }, 120000);
   }
   let n = 0;
   // Close must reach even "stale" live sockets (no recent presence pulse).

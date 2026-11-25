@@ -145,18 +145,53 @@ try {
             'avatar' => $agent['avatar'] ?? null,
         ];
 
-    // ALWAYS defer join/receipts/publish — Assign must return JSON instantly
-    $runAfter = static function () use ($conversationId, $agentId, $publishAgent): void {
+    // Join + visitor publish BEFORE the JSON response. Doing this in shutdown
+    // meant the frame was often sent after the visitor socket had already been
+    // torn down, so the widget only showed the join after a full page reload.
+    $joinMsgId = 0;
+    $agentName = trim((string) ($publishAgent['name'] ?? 'Agent'));
+    if ($agentName === '') {
+        $agentName = 'Agent';
+    }
+    if (function_exists('lc_add_agent_join_message')) {
+        $joinMsgId = (int) lc_add_agent_join_message($conversationId, $agentId, true);
+    }
+    if (function_exists('lc_realtime_publish_conversation_event')) {
+        $avatar = $publishAgent['avatar'] ?? null;
+        if (is_array($avatar)) {
+            $avatarUrl = trim((string) ($avatar['url'] ?? ''));
+            if ($avatarUrl !== '' && strncmp($avatarUrl, 'data:', 5) === 0) {
+                $avatar['url'] = '';
+            }
+        }
+        $updated = [
+            'status' => 'active',
+            'agent_id' => $agentId,
+            'agent' => [
+                'name' => $agentName,
+                'avatar' => $avatar,
+                'tagline' => (string) ($publishAgent['tagline'] ?? ''),
+            ],
+            'reopened_by' => 'assign',
+        ];
+        if ($joinMsgId > 0) {
+            $updated['message_id'] = $joinMsgId;
+            $updated['message'] = [
+                'id' => $joinMsgId,
+                'sender_type' => 'system',
+                'sender_id' => $agentId,
+                'message' => $agentName . ' joined the chat.',
+                'agent_name' => $agentName,
+                'created_at' => gmdate('c'),
+                'event' => 'agent_join',
+            ];
+        }
+        lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $updated);
+    }
+
+    // Receipts can follow the response. The visitor already has the join frame.
+    $runAfter = static function () use ($conversationId): void {
         try {
-            $joinMsgId = 0;
-            $agentName = trim((string) ($publishAgent['name'] ?? 'Agent'));
-            if ($agentName === '') {
-                $agentName = 'Agent';
-            }
-            if (function_exists('lc_add_agent_join_message')) {
-                // Publishes message.new to visitor; also embed below for WS reopen race.
-                $joinMsgId = (int) lc_add_agent_join_message($conversationId, $agentId, true);
-            }
             if (function_exists('lc_mark_messages_delivered')) {
                 lc_mark_messages_delivered($conversationId, 'visitor');
             }
@@ -166,30 +201,7 @@ try {
             if (function_exists('lc_realtime_publish_message_receipts')) {
                 lc_realtime_publish_message_receipts($conversationId, 'visitor');
             }
-            if (function_exists('lc_realtime_publish_conversation_event')) {
-                $updated = [
-                    'status' => 'active',
-                    'agent_id' => $agentId,
-                    'agent' => $publishAgent,
-                    'reopened_by' => 'assign',
-                ];
-                if ($joinMsgId > 0) {
-                    $updated['message_id'] = $joinMsgId;
-                    $updated['message'] = [
-                        'id' => $joinMsgId,
-                        'sender_type' => 'system',
-                        'sender_id' => $agentId,
-                        'message' => $agentName . ' joined the chat.',
-                        'agent_name' => $agentName,
-                        'agent_avatar' => $publishAgent['avatar'] ?? null,
-                        'created_at' => gmdate('c'),
-                        'event' => 'agent_join',
-                    ];
-                }
-                lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', $updated);
-            }
         } catch (Throwable $e) {
-            // never break Assign after JSON already sent
         }
     };
 

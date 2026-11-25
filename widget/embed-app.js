@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 303;
+    var LC_WIDGET_BUILD = 304;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -2947,7 +2947,8 @@
             return Promise.resolve('');
         }
         return fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
-            '&conversation_id=' + encodeURIComponent(cid), {
+            '&conversation_id=' + encodeURIComponent(cid) +
+            '&chat_token=' + encodeURIComponent(chatToken || (typeof getStoredChatToken === 'function' ? getStoredChatToken() : '') || ''), {
                 credentials: 'omit',
                 headers: apiHeaders()
             })
@@ -3635,6 +3636,8 @@
                 // Tell Node the browser actually got + painted this frame
                 ackVisitorMessagePainted(mid);
                 stopVisitorLongPoll();
+            } else if (isWaitingForAgent && !resumeDraft) {
+                scheduleWaitingCatchup();
             } else if (!blockHttpMessageSync()) {
                 // Emergency HTTP only when WS-only test is off
                 window.__lcForcePollOnce = true;
@@ -3654,7 +3657,11 @@
 
     function onVisitorRealtimeConnected(client) {
         realtimeBoundConvId = parseInt(conversationId, 10) || 0;
+        tearDownPresenceClient();
         ensureVisitorConvChannel();
+        if (isWaitingForAgent && !chatClosed && !resumeDraft) {
+            scheduleWaitingCatchup();
+        }
         resetVisitorPollTimers();
         stopSafetySync();
         stopLiveMessageSync();
@@ -4226,14 +4233,16 @@
             ensureVisitorConvChannel();
         });
         client.on('message.new', function (payload) {
-            if (!conversationId) return;
             try {
-                if (!applyRealtimeMessage(payload)) {
-                    forceMessageCatchup();
-                }
+                handleVisitorMessageNew(payload || {});
             } catch (eMsg) {
                 forceMessageCatchup();
             }
+        });
+        client.on('conversation.updated', function (payload) {
+            try {
+                handleVisitorConversationUpdated(payload || {});
+            } catch (eUp) {}
         });
         client.on('message.reaction', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
@@ -4307,8 +4316,8 @@
         var bindForConv = parseInt(conversationId, 10) || 0;
         if (bindForConv < 1) return;
 
-        // One WebSocket only: drop presence so conv:ID always arrives on the chat client
-        tearDownPresenceClient();
+        // Keep the presence socket until the chat socket is authenticated.
+        // Dropping it first left Assign's join with nobody to deliver to.
         ensureVisitorConvChannel();
 
         function bootSse(token) {
@@ -4320,6 +4329,7 @@
             && realtimeClient.opts && realtimeClient.opts.wsUrl === realtimeConfig.wsUrl
             && realtimeBoundConvId === bindForConv
             && (realtimeClient.isConnected && realtimeClient.isConnected() || realtimeClient.shouldRun)) {
+            tearDownPresenceClient();
             bindVisitorRealtimeHandlers(realtimeClient);
             if (realtimeClient.isConnected && realtimeClient.isConnected()) {
                 stopSafetySync();
@@ -7151,7 +7161,7 @@
             window.__lcWaitingCatchup = true;
             window.__lcForcePollOnce = true;
             try {
-                pollMessages(false, function () {
+                pollMessages(true, function () {
                     window.__lcWaitingCatchup = false;
                     window.__lcForcePollOnce = false;
                     if (isWaitingForAgent && !chatClosed && !resumeDraft) {
@@ -7163,7 +7173,7 @@
                 window.__lcForcePollOnce = false;
                 if (isWaitingForAgent && !chatClosed && !resumeDraft) scheduleWaitingCatchup();
             }
-        }, 1500);
+        }, 800);
     }
 
     function setWaitingState(waiting, opts) {
