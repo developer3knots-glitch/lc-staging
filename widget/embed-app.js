@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 294;
+    var LC_WIDGET_BUILD = 295;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3897,8 +3897,11 @@
                 setWaitingState(false);
                 updateHeaderAgent(payload.agent);
                 updateStatus('Chatting with ' + payload.agent.name, true);
-            } else if (payload.status === 'active') {
-                setWaitingState(false);
+            } else if (payload.status === 'active' && (payload.agent_id === 0 || payload.agent_id === '0')) {
+                // Active with no assignee is still the queue. Keep Connecting visible.
+                updateHeaderAgent(null);
+                setWaitingState(true);
+                updateStatus('Connecting to live agent...', agentsOnline > 0);
             }
             if (payload.proactive && !isOpen) {
                 try { ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true }); } catch (eProOpen) {}
@@ -7034,10 +7037,17 @@
         }
         if (waiting) {
             // Unassigned queue — never keep the previous agent name in the header.
+            // Role is the line the visitor actually sees. Status is screen-reader only.
             updateHeaderAgent(null);
             currentAgent = { name: '', avatar: null };
+            var waitLabel = soft ? 'Waiting for an agent...' : 'Connecting to live agent...';
+            var waitRole = document.getElementById('lc-panel-agent-role');
+            if (waitRole) {
+                waitRole.textContent = waitLabel;
+                waitRole.hidden = false;
+            }
             if (!chatClosed) {
-                updateStatus(soft ? 'Waiting for an agent...' : 'Connecting to live agent...', agentsOnline > 0);
+                updateStatus(waitLabel, agentsOnline > 0);
             }
         }
     }
@@ -7609,9 +7619,23 @@
             if (pill) pill.classList.remove('is-live');
             var team = (settings && settings.site_name) ? settings.site_name : 'LiveChat';
             nameEl.textContent = team;
+            var queueOpen = !chatClosed && !!conversationId;
+            var idleNow = typeof isIdleLandingVisible === 'function' && isIdleLandingVisible();
+            var msgsEl = document.getElementById('lc-panel-messages');
+            if (msgsEl && msgsEl.style.display === 'none') queueOpen = false;
+            if (idleNow) queueOpen = false;
             if (roleEl) {
-                roleEl.textContent = agentsOnline > 0 ? 'Online now' : 'Support';
+                roleEl.textContent = queueOpen
+                    ? 'Connecting to live agent...'
+                    : (agentsOnline > 0 ? 'Online now' : 'Support');
                 roleEl.hidden = false;
+            }
+            if (queueOpen) {
+                isWaitingForAgent = true;
+                var waitBar = document.getElementById('lc-waiting-bar');
+                if (waitBar) waitBar.classList.add('is-visible');
+                var waitText = document.getElementById('lc-waiting-text');
+                if (waitText) waitText.textContent = 'Connecting to live agent...';
             }
             if (titleEl) titleEl.textContent = team;
             return;
@@ -7635,6 +7659,9 @@
             tagline: agent.tagline || agent.role || (currentAgent && currentAgent.tagline) || '',
             role: agent.role || (currentAgent && currentAgent.role) || ''
         };
+        isWaitingForAgent = false;
+        var joinedBar = document.getElementById('lc-waiting-bar');
+        if (joinedBar) joinedBar.classList.remove('is-visible');
         if (fallback) fallback.style.display = 'none';
         if (pill) pill.classList.add('is-live');
         wrap.style.display = 'flex';

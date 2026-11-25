@@ -3703,6 +3703,7 @@
                             if (lastConversations[pi].visitor_presence) {
                                 applyPolledVisitorPresence(lastConversations[pi]);
                             }
+                            syncOpenAssignBar(selectedId);
                             break;
                         }
                     }
@@ -3850,6 +3851,25 @@
     function canTransferChat(c) {
         if (!c || c.status !== 'active') return false;
         return parseInt(c.agent_id || 0, 10) === myAgentId;
+    }
+
+    function syncOpenAssignBar(cid) {
+        cid = parseInt(cid, 10) || 0;
+        if (!cid || selectedId !== cid) return;
+        var st = conversationRowStatus(cid);
+        var ag = conversationRowAgentId(cid);
+        if (st === 'active' && ag === myAgentId && myAgentId > 0) {
+            if (!unassignedBar || unassignedBar.hidden) return;
+            currentAssignedAgentId = ag;
+            setUnassignedMode(false);
+            setReopenBarVisible(false);
+            if (replyInput) {
+                replyInput.disabled = false;
+                if (composeMode !== 'note') replyInput.placeholder = 'Type a message...';
+            }
+            var sendBtn = document.getElementById('lc-send-reply');
+            if (sendBtn) sendBtn.disabled = false;
+        }
     }
 
     function setUnassignedMode(on) {
@@ -7763,6 +7783,8 @@
                         }
                         var waitSend = document.getElementById('lc-send-reply');
                         if (waitSend) waitSend.disabled = true;
+                    } else {
+                        syncOpenAssignBar(cid);
                     }
                 }
             });
