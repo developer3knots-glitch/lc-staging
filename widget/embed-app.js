@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 287;
+    var LC_WIDGET_BUILD = 288;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -4514,7 +4514,11 @@
             pendingResumeConvId = resumeId;
             beginResumeTranscriptGate();
             hideIdleIntro();
-            showChatView();
+            // Closed thread must not open a live composer while init is in flight.
+            // widget-init then keeps Thanks (visitor) or the locked close (agent).
+            if (liveStatus !== 'closed') {
+                showChatView();
+            }
             showChatLoading('Loading chat...', 'Waiting for chat to load');
             initChat({ resumeConversationId: resumeId });
             scheduleAutoOpenOnLoad();
@@ -6474,17 +6478,15 @@
                 });
                 pendingHistoryWipe = false;
             }
-            // Transcript newer than close (join/rejoin/continue) → stay open; else soft-close.
+            // Server status is authoritative on reload. A truncated history whose
+            // newest painted line is an old "joined" must not start the chat again.
+            // Visitor close stays on Thanks. Agent close stays locked in the thread.
+            var serverClosedBy = String(data.closed_by || '').toLowerCase();
             var bootClosedBy = detectClosedByFromMessages();
-            if (!bootClosedBy || Date.now() < resumeGraceUntil) {
-                chatClosed = false;
-                noteVisitorThreadReopened(lastMsgId);
-                showChatView();
-                var bootInput = document.getElementById('lc-input');
-                if (bootInput) bootInput.placeholder = 'Write a message...';
-            } else {
-                showEndedState(data.closed_by || bootClosedBy || 'remote');
-            }
+            var endedReason = serverClosedBy || bootClosedBy || 'remote';
+            if (endedReason === 'self' || endedReason === 'visitor_close') endedReason = 'visitor';
+            chatClosed = true;
+            showEndedState(endedReason);
             hideChatLoading();
             pollMessages(true);
             startLiveMessageSync();

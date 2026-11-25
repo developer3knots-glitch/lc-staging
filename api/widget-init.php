@@ -637,7 +637,7 @@ try {
             LEFT JOIN agents a ON a.id = m.sender_id AND m.sender_type IN ('agent', 'system')
             WHERE m.conversation_id = ?
               AND m.id >= ?
-            ORDER BY m.id ASC
+            ORDER BY m.id DESC
             LIMIT 80
         ");
         $mStmt->execute([$convId, max(1, $floorId)]);
@@ -672,6 +672,9 @@ try {
         }
     } catch (Throwable $e) {
         $initMessages = [];
+    }
+    if ($initMessages) {
+        $initMessages = array_reverse($initMessages);
     }
     if ($initMessages && function_exists('lc_hydrate_message_reactions')) {
         $initMessages = lc_hydrate_message_reactions($initMessages);
