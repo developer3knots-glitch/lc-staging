@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 300;
+    var LC_WIDGET_BUILD = 301;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -1777,6 +1777,7 @@
         bootHistorySettled = true;
         persistConversationId(null);
         persistChatToken('');
+        setWaitingState(false);
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
@@ -3535,6 +3536,11 @@
 
     function handleVisitorMessageNew(payload) {
         try {
+            // Fresh composer has no conversation yet. Old close frames must not
+            // adopt the previous ticket or pull Thanks back over the composer.
+            if (forceNewChat && (parseInt(conversationId, 10) || 0) < 1) {
+                return;
+            }
             window.__lcLastWsMessageAt = Date.now();
             window.__lcLastWsMessagePayload = payload || null;
             try {
@@ -3833,6 +3839,9 @@
     }
 
     function handleVisitorConversationUpdated(payload) {
+        if (forceNewChat && (parseInt(conversationId, 10) || 0) < 1) {
+            return;
+        }
         if (!sameConversation(payload && payload.conversation_id)) {
             // Allow close frames that carry visitor_uid even if cid briefly drifted.
             var pUid = payload && payload.visitor_uid ? String(payload.visitor_uid) : '';
@@ -4071,6 +4080,7 @@
     function acceptProactiveInvite(payload) {
         var cid = parseInt(payload && payload.conversation_id, 10) || 0;
         if (cid < 1) return;
+        if (forceNewChat && (parseInt(conversationId, 10) || 0) < 1) return;
         if (proactiveInviteInFlight || chatInitInFlight) return;
 
         var inviteAgent = (payload && payload.agent && payload.agent.name) ? payload.agent : null;
@@ -4477,7 +4487,7 @@
             var liveId = (data && data.has_active_chat) ? (parseInt(data.conversation_id, 10) || 0) : 0;
             var status = String((data && data.conversation_status) || '').toLowerCase();
             var currentId = parseInt(conversationId, 10) || 0;
-            if (liveId > 0 && (status === 'active' || status === 'waiting')
+            if (!forceNewChat && liveId > 0 && (status === 'active' || status === 'waiting')
                 && currentId !== liveId
                 && !chatInitInFlight && !proactiveInviteInFlight
                 && (isOpen || isIdleLandingVisible() || !entryRouted)) {
@@ -5321,6 +5331,8 @@
                     if (messagesNeedHistoryReload()) {
                         pollMessages(true);
                     }
+                } else if (forceNewChat) {
+                    showFreshComposer();
                 } else {
                     beginNewConversationFlow();
                 }
@@ -5685,6 +5697,11 @@
      */
     function showEndedState(reason, closeLine) {
         hideChatLoading();
+        // Start a new chat is a blank composer until the first message.
+        // A late close from the previous ticket must not restore Thanks.
+        if (forceNewChat && (parseInt(conversationId, 10) || 0) < 1) {
+            return;
+        }
         var explicit = String(reason || '').toLowerCase();
         var endedPanel = document.getElementById('lc-panel-ended');
         var endedVisible = !!(endedPanel && endedPanel.style.display === 'flex');
@@ -6438,51 +6455,48 @@
         });
     }
 
-    function queueFreshConversation() {
-        if (chatInitInFlight || proactiveInviteInFlight) return;
-        chatInitInFlight = true;
+    function showFreshComposer() {
         forceNewChat = true;
-        fetch(siteUrl + '/api/widget-init.php', {
-            method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                visitor_uid: visitorUid,
-                brand_key: brandKey,
-                name: storedVisitorName(),
-                email: storedVisitorEmail(),
-                page_url: window.location.href,
-                website_url: '',
-                public_ipv4: publicIpv4,
-                chat_token: '',
-                force_new: 1
-            })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            chatInitInFlight = false;
-            if (!data || !data.success) {
-                if (data && data.error === 'Pre-chat form required') {
-                    prechatFormEnabled = true;
-                    setWaitingState(false);
-                    showPrechatForm(true);
-                    return;
-                }
-                handleInitFailure((data && data.error) || 'Could not start chat.');
-                return;
+        entryRouted = true;
+        chatClosed = false;
+        lastClosedBy = '';
+        conversationId = null;
+        chatToken = '';
+        serverLiveConversationId = 0;
+        serverLiveConversationStatus = '';
+        pendingResumeConvId = null;
+        isWaitingForAgent = false;
+        hideEndedState();
+        hideIdleIntro();
+        var draftOpen = chatComposerActive()
+            && !document.querySelector('#lc-panel-messages .lcw-msg-row, #lc-panel-messages .lcw-msg-wrap, #lc-panel-messages .lcw-join-event');
+        showChatView();
+        if (!draftOpen) {
+            var box = document.getElementById('lc-panel-messages');
+            if (box) box.innerHTML = '';
+            lastDateLabel = '';
+            showIdleWelcomePreview();
+        }
+        setWaitingState(false);
+        setComposeEnabled(true);
+        setCloseChatVisible(false);
+        updateHeaderAgent(null);
+        var role = document.getElementById('lc-panel-agent-role');
+        if (role) {
+            role.hidden = false;
+            role.textContent = (parseInt(agentsOnline, 10) || 0) > 0 ? 'Online now' : 'Leave a message';
+        }
+        updateStatus((parseInt(agentsOnline, 10) || 0) > 0 ? 'Team online' : 'Send a message to start', agentsOnline > 0);
+        var input = document.getElementById('lc-input');
+        if (input) {
+            input.disabled = false;
+            input.placeholder = 'Write a message...';
+            if (!draftOpen) {
+                setTimeout(function () {
+                    try { input.focus(); } catch (eFocus) {}
+                }, 40);
             }
-            forceNewChat = false;
-            pendingResumeConvId = null;
-            hideTeaser(true);
-            handleChatStarted(data, { keepMessages: false });
-            if (data.status === 'waiting' || !(data.agent && data.agent.name)) {
-                setWaitingState(true, { soft: false });
-                updateStatus('Connecting to live agent...', agentsOnline > 0);
-            }
-        })
-        .catch(function () {
-            chatInitInFlight = false;
-            handleInitFailure('Connection error. Please try again.');
-        });
+        }
     }
 
     function startNewChat() {
@@ -6556,18 +6570,7 @@
                 showAwayForm();
                 return;
             }
-            showChatView();
-            var freshBox = document.getElementById('lc-panel-messages');
-            if (freshBox) freshBox.innerHTML = '';
-            setWaitingState(true, { soft: false });
-            updateStatus('Connecting to live agent...', agentsOnline > 0);
-            var freshRole = document.getElementById('lc-panel-agent-role');
-            if (freshRole) {
-                freshRole.textContent = 'Connecting to live agent...';
-                freshRole.hidden = false;
-            }
-            setComposeEnabled(true);
-            queueFreshConversation();
+            showFreshComposer();
             return;
         }
 
@@ -9188,6 +9191,9 @@
         }
 
         if (!conversationId) {
+            if (chatInitInFlight || proactiveInviteInFlight) {
+                return;
+            }
             if (prechatFormEnabled && !visitorHasKnownIdentity()) {
                 showPrechatForm(true);
                 showPrechatError('Please complete the form to start chatting.');
