@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 292;
+    var LC_WIDGET_BUILD = 293;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3923,7 +3923,7 @@
                     });
                 } catch (eJoinPaint) {}
                 if (!joinPainted && agentReopened && payload.agent && payload.agent.name) {
-                    var fallbackId = payload.message_id || (payload.message && payload.message.id);
+                    var fallbackId = payload.message_id || (payload.message && payload.message.id) || ('reopen_' + Date.now());
                     if (!document.querySelector('#lc-panel-messages [data-msg-id="' + fallbackId + '"]')) {
                         appendMessage({
                             id: fallbackId,
@@ -3938,7 +3938,7 @@
             } else if (agentReopened && payload.agent && payload.agent.name) {
                 try {
                     var rejoin = payload.reopened_by === 'agent';
-                    var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.agent_id || payload.agent.name);
+                    var synthId = 'reopen_' + String(payload.conversation_id || '') + '_' + String(payload.message_id || Date.now());
                     if (!document.querySelector('#lc-panel-messages [data-msg-id="' + synthId + '"]')) {
                         appendMessage({
                             id: synthId,

@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 31;
+const REALTIME_BUILD = 32;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -322,6 +322,20 @@ function isVisitorClosePayload(event, data) {
   return false;
 }
 
+/** Close, join, and rejoin must hit the open widget even if its presence pulse looks idle. */
+function isVisitorLifecyclePayload(event, data) {
+  if (isVisitorClosePayload(event, data)) return true;
+  if (event === 'conversation.updated' && data) {
+    const by = String(data.reopened_by || '');
+    if (by === 'agent' || by === 'assign' || data.proactive) return true;
+  }
+  if (event === 'message.new' && data) {
+    const text = String((data.message && data.message.message) || '');
+    if (/re-?joined the (?:chat|conversation)|joined the (?:chat|conversation)/i.test(text)) return true;
+  }
+  return false;
+}
+
 function deliverToVisitorUid(uid, event, data, skipClients) {
   uid = String(uid || '');
   if (!uid) return 0;
@@ -331,7 +345,7 @@ function deliverToVisitorUid(uid, event, data, skipClients) {
     event: event,
     data: data,
   });
-  const closePayload = isVisitorClosePayload(event, data);
+  const closePayload = isVisitorLifecyclePayload(event, data);
   // Keep message.new / close frames queued even after send() — TCP can accept
   // bytes on a half-open socket while the browser never gets the frame.
   if (event === 'message.new' || closePayload) {
@@ -686,7 +700,7 @@ function publishMany(channels, event, data) {
       // Stale visitor ghosts: skip normal message.new. Close frames always land —
       // freshness skip was why "Chat closed by agent" only appeared after reload.
       if (event === 'message.new' && role === 'visitor'
-        && !isVisitorClosePayload(event, data) && !isVisitorSocketFresh(client)) {
+        && !isVisitorLifecyclePayload(event, data) && !isVisitorSocketFresh(client)) {
         return;
       }
       seenClients.add(client);

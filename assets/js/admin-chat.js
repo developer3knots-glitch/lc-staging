@@ -4261,8 +4261,8 @@
             var sendBtn = document.getElementById('lc-send-reply');
             if (sendBtn) sendBtn.disabled = false;
             needsFullHistory = false;
-            pollMessages({ force: true });
-            loadConversations(true);
+            // Line and inbox row come from this write response plus conversation.updated.
+            // Do not agent-poll — that was the HTTP reload after every rejoin.
         }).catch(function () {
             if (btn) btn.disabled = false;
             alert('Could not reopen chat');
@@ -7850,6 +7850,9 @@
                     if (payload && payload.status === 'active' && newAgent > 0) {
                         syncConversationListStatus({ id: cid, status: 'active', agent_id: newAgent });
                         noteAdminThreadReopened(cid, payload.message_id || (payload.message && payload.message.id) || 0);
+                        if (payload.message && payload.message.id) {
+                            try { appendLiveMessage(payload.message); } catch (eRejoinWs) {}
+                        }
                         if (newAgent === myAgentId) {
                             currentAssignedAgentId = newAgent;
                             setUnassignedMode(false);
