@@ -2561,6 +2561,8 @@
         }
         syncConversationListStatus({ id: cid, status: 'closed', agent_id: 0 });
         if (selectedId !== cid) return;
+        // Close ends this assignment. A later visitor Resume must be able to show Assign.
+        currentAssignedAgentId = 0;
         setText('lc-details-status', formatDetailStatus('closed'));
         if (replyInput) {
             replyInput.disabled = true;
@@ -2643,7 +2645,8 @@
     function uiLooksClosedForSelected() {
         if (!replyInput) return false;
         var ph = String(replyInput.placeholder || '');
-        return /chat closed/i.test(ph);
+        // Reopen bar copy is still a closed thread — "open this chat", not a live assignee.
+        return /chat closed/i.test(ph) || /open this chat/i.test(ph);
     }
 
     function conversationRowAgentId(cid) {
@@ -2686,16 +2689,22 @@
         var force = !!opts.force;
         var rowAgent = conversationRowAgentId(cid);
         var looksClosed = prev === 'closed' || (selectedId === cid && uiLooksClosedForSelected());
-        // After Assign succeeded, late waiting/reopened WS frames must NOT flip
-        // the composer back to "Assign to me" (agent already replied).
-        if (prev === 'active' && (rowAgent > 0 || currentAssignedAgentId > 0)) {
+        var visitorRequeue = !!opts.fromReopen || !!opts.fromVisitorMessage;
+        var liveAssigned = prev === 'active' && rowAgent > 0 && !uiLooksClosedForSelected();
+        // After Assign succeeded, late waiting frames must NOT flip the composer
+        // back to "Assign to me". A real visitor Resume of a closed chat must.
+        if (liveAssigned && !visitorRequeue) {
             return;
         }
-        if (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0 && !uiLooksClosedForSelected()) {
+        if (visitorRequeue && liveAssigned) {
+            return;
+        }
+        if (!visitorRequeue && selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0 && !uiLooksClosedForSelected()) {
             return;
         }
         // Join line already in the open thread = assigned; ignore stale waiting frames.
-        if (selectedId === cid && !uiLooksClosedForSelected() && (currentAssignedAgentId > 0 || transcriptShowsAssignedAgent())) {
+        // Old agent bubbles do not count after the visitor closed and resumed.
+        if (!visitorRequeue && selectedId === cid && !uiLooksClosedForSelected() && (currentAssignedAgentId > 0 || transcriptShowsAssignedAgent())) {
             return;
         }
         // Closed + visitor ended screen on the other side: only real reopen may unlock.
@@ -7744,7 +7753,16 @@
                             }
                         }
                     } else if (conversationRowStatus(cid) === 'waiting') {
+                        // Resume already queued this chat. Presence must not leave the Open bar up.
+                        currentAssignedAgentId = 0;
                         setReopenBarVisible(false);
+                        setUnassignedMode(true);
+                        if (replyInput) {
+                            replyInput.disabled = true;
+                            replyInput.placeholder = 'Assign to yourself to reply';
+                        }
+                        var waitSend = document.getElementById('lc-send-reply');
+                        if (waitSend) waitSend.disabled = true;
                     }
                 }
             });
@@ -7835,27 +7853,35 @@
                 }
                 if (payload && (payload.status === 'waiting' || payload.reopened_by === 'visitor') && cid) {
                     var prevWait = conversationRowStatus(cid);
-                    // Stale reopen/waiting after Assign — keep active assignee UI
-                    if (prevWait === 'active' || (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0)) {
-                        if (payload.reopened_by === 'visitor' && prevWait !== 'active') {
-                            playNotifyEvent('chat_continued', 'cont:' + cid);
-                        }
-                        // Still raise watermark so late closed retries cannot resurrect Closed
+                    var visitorResume = payload.reopened_by === 'visitor' || payload.resumed === true || payload.resumed === 1 || payload.resumed === '1';
+                    var liveAssignedWait = prevWait === 'active'
+                        && selectedId === cid
+                        && currentAssignedAgentId === myAgentId
+                        && myAgentId > 0
+                        && !uiLooksClosedForSelected();
+                    // Stale waiting after Assign — keep the live assignee UI.
+                    // Visitor Resume publishes reopened_by=visitor while the old assignee id
+                    // is still in memory; that must show Assign, not keep the Open bar.
+                    if (!visitorResume && (prevWait === 'active' || (selectedId === cid && currentAssignedAgentId === myAgentId && myAgentId > 0))) {
+                        noteAdminThreadReopened(cid, payload.message_id || (payload.message && payload.message.id) || 0);
+                        return;
+                    }
+                    if (visitorResume && liveAssignedWait) {
                         noteAdminThreadReopened(cid, payload.message_id || (payload.message && payload.message.id) || 0);
                         return;
                     }
                     // After visitor close, ignore plain waiting frames (no reopened_by).
                     // Those were flipping Closed → Unassigned while visitor already saw ended.
-                    if (payload.status === 'waiting' && payload.reopened_by !== 'visitor'
+                    if (payload.status === 'waiting' && !visitorResume
                         && (prevWait === 'closed' || (selectedId === cid && uiLooksClosedForSelected()))) {
                         return;
                     }
-                    if (payload.reopened_by === 'visitor') {
+                    if (visitorResume) {
                         playNotifyEvent('chat_continued', 'cont:' + cid);
                     }
                     applyConversationWaitingLocally(cid, {
                         force: true,
-                        fromReopen: payload.reopened_by === 'visitor',
+                        fromReopen: visitorResume,
                         message_id: payload.message_id || (payload.message && payload.message.id) || 0
                     });
                     return;
