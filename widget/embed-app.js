@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 302;
+    var LC_WIDGET_BUILD = 303;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3919,15 +3919,34 @@
                 setWaitingState(true);
                 updateStatus('Connecting to live agent...', agentsOnline > 0);
             }
-            if (payload.status === 'active' && payload.agent && payload.agent.name) {
-                setWaitingState(false);
-                updateHeaderAgent(payload.agent);
-                updateStatus('Chatting with ' + payload.agent.name, true);
-            } else if (payload.status === 'active' && (payload.agent_id === 0 || payload.agent_id === '0')) {
-                // Active with no assignee is still the queue. Keep Connecting visible.
-                updateHeaderAgent(null);
-                setWaitingState(true);
-                updateStatus('Connecting to live agent...', agentsOnline > 0);
+            if (payload.status === 'active') {
+                var activeAgentId = parseInt(payload.agent_id, 10) || 0;
+                var activeAgent = (payload.agent && payload.agent.name) ? payload.agent : null;
+                if (!activeAgent && payload.message && payload.message.agent_name) {
+                    activeAgent = {
+                        name: payload.message.agent_name,
+                        avatar: payload.message.agent_avatar || null
+                    };
+                }
+                if (activeAgent || activeAgentId > 0) {
+                    setWaitingState(false);
+                    if (activeAgent && activeAgent.name) {
+                        updateHeaderAgent(activeAgent);
+                        updateStatus('Chatting with ' + activeAgent.name, true);
+                    } else {
+                        var liveRole = document.getElementById('lc-panel-agent-role');
+                        if (liveRole) {
+                            liveRole.hidden = false;
+                            liveRole.textContent = 'Live agent';
+                        }
+                        updateStatus('Chatting with an agent', true);
+                    }
+                } else if (payload.agent_id === 0 || payload.agent_id === '0') {
+                    // Active with no assignee is still the queue. Keep Connecting visible.
+                    updateHeaderAgent(null);
+                    setWaitingState(true);
+                    updateStatus('Connecting to live agent...', agentsOnline > 0);
+                }
             }
             if (payload.proactive && !isOpen) {
                 try { ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true }); } catch (eProOpen) {}
@@ -7099,6 +7118,10 @@
                 updateHeaderAgent({ name: agentName, avatar: currentAgent.avatar });
                 updateStatus('Chatting with ' + agentName, true);
             } else if (data.status === 'active') {
+                var liveRoleOnly = document.getElementById('lc-panel-agent-role');
+                if (liveRoleOnly && /connecting/i.test(liveRoleOnly.textContent || '')) {
+                    liveRoleOnly.textContent = 'Live agent';
+                }
                 updateStatus('Chatting with an agent', true);
             }
             return;
@@ -7109,10 +7132,45 @@
         }
     }
 
+    var waitingCatchupTimer = null;
+
+    function stopWaitingCatchup() {
+        if (waitingCatchupTimer) {
+            clearTimeout(waitingCatchupTimer);
+            waitingCatchupTimer = null;
+        }
+    }
+
+    /** While Connecting, pull status once if the assign frame never arrived. Stops when an agent is on the chat. */
+    function scheduleWaitingCatchup() {
+        if (waitingCatchupTimer || resumeDraft || chatClosed) return;
+        if (!isWaitingForAgent || !(parseInt(conversationId, 10) > 0)) return;
+        waitingCatchupTimer = setTimeout(function () {
+            waitingCatchupTimer = null;
+            if (!isWaitingForAgent || chatClosed || resumeDraft || !(parseInt(conversationId, 10) > 0)) return;
+            window.__lcWaitingCatchup = true;
+            window.__lcForcePollOnce = true;
+            try {
+                pollMessages(false, function () {
+                    window.__lcWaitingCatchup = false;
+                    window.__lcForcePollOnce = false;
+                    if (isWaitingForAgent && !chatClosed && !resumeDraft) {
+                        scheduleWaitingCatchup();
+                    }
+                });
+            } catch (eWait) {
+                window.__lcWaitingCatchup = false;
+                window.__lcForcePollOnce = false;
+                if (isWaitingForAgent && !chatClosed && !resumeDraft) scheduleWaitingCatchup();
+            }
+        }, 1500);
+    }
+
     function setWaitingState(waiting, opts) {
         opts = opts || {};
         if (waiting && resumeDraft) return;
         isWaitingForAgent = waiting;
+        if (!waiting) stopWaitingCatchup();
         var soft = !!opts.soft;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
@@ -7141,6 +7199,7 @@
             if (!chatClosed) {
                 updateStatus(waitLabel, agentsOnline > 0);
             }
+            scheduleWaitingCatchup();
         }
     }
 
@@ -8136,8 +8195,8 @@
         var timeHtml = msgTimeHtml(m.created_at);
 
         if (isAgentJoinMessage(m)) {
-            // Waiting/unassigned: paint the join line but do not claim an assignee in the header.
-            if (!options.suppressAgentState && !isWaitingForAgent && !isVisitorEndedScreen()) {
+            // A live join ends Connecting. History of a still-waiting chat passes suppressAgentState.
+            if (!options.suppressAgentState && !isVisitorEndedScreen()) {
                 setWaitingState(false);
                 var joinName = m.agent_name || 'Agent';
                 var joinAvatar = resolveMessageAvatar(m, joinName);
@@ -8189,9 +8248,8 @@
             var agentName = m.agent_name || (currentAgent && currentAgent.name) || 'Agent';
             var agentAvatar = resolveMessageAvatar(m, agentName);
             rememberAgentAvatar(agentName, agentAvatar);
-            // While Connecting / Unassigned, never adopt identity from transcript replay
-            // (old agent bubbles were wiping connecting + sticking the previous agent).
-            if (!options.suppressAgentState && !isVisitorEndedScreen() && !isWaitingForAgent && !chatClosed) {
+            // Live agent reply ends Connecting. History replay of a waiting chat is suppressed.
+            if (!options.suppressAgentState && !isVisitorEndedScreen() && !chatClosed) {
                 setWaitingState(false);
                 updateHeaderAgent({ name: agentName, avatar: agentAvatar });
                 updateStatus('Chatting with ' + agentName, true);
@@ -8399,8 +8457,9 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS-only: block ALL visitor-poll except empty-transcript one-shot seed.
-        if (blockHttpMessageSync() || (isVisitorWsLive() && !window.__lcForcePollOnce)) {
+        // WS-only: block ALL visitor-poll except empty-transcript one-shot seed
+        // and the Connecting catch-up (assign frame missed).
+        if (!window.__lcWaitingCatchup && (blockHttpMessageSync() || (isVisitorWsLive() && !window.__lcForcePollOnce))) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
@@ -8606,10 +8665,13 @@
                     var isNewIncoming = !isHistoryLoad && m.sender_type !== 'visitor';
                     // Waiting/unassigned = connecting: never let transcript agent rows
                     // reclaim the header (same IP / soft-continue race).
-                    var suppressAgentState = (data.status === 'waiting')
+                    // Active thread: show the agent. Waiting history must not stick an old assignee.
+                    var suppressAgentState = data.status !== 'active' && (
+                        data.status === 'waiting'
                         || isWaitingForAgent
                         || ticketResumeAwaitingAgent
-                        || (isHistoryLoad && data.status !== 'active');
+                        || isHistoryLoad
+                    );
                     // appendMessage adopts matching temp_* bubbles — do not remove+repaint
                     appendMessage(m, { suppressAgentState: suppressAgentState });
                     if (mid > 0 && document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]')) {

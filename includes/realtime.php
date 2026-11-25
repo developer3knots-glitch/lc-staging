@@ -783,6 +783,11 @@ function lc_realtime_publish_conversation_event(int $conversationId, string $eve
             if ($visitorUid !== '' && $event !== 'message.receipts') {
                 array_unshift($peerChannels, lc_realtime_channel_visitor($visitorUid));
             }
+            // Chat socket sits on conv:ID. Status (assign/join) must land there even
+            // when the visitor: room was not in the login token yet.
+            if ($event !== 'message.receipts') {
+                $peerChannels[] = lc_realtime_channel_conversation($conversationId);
+            }
             if ($previousAgentId > 0 && $previousAgentId !== $agentId) {
                 $peerChannels[] = lc_realtime_channel_agent($previousAgentId);
             }
