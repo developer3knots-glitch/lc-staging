@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 285;
+    var LC_WIDGET_BUILD = 286;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3551,10 +3551,18 @@
             }
             var mid = parseInt(msg && msg.id, 10) || parseInt(payload && payload.message_id, 10) || 0;
             var alreadyPainted = mid > 0 && !!document.querySelector('#lc-panel-messages [data-msg-id="' + mid + '"]');
-            // Soft-close (agent): join / agent follow-up continues the thread.
-            // Visitor Thanks screen: never reopen from late agent bubbles.
-            if (isVisitorEndedScreen()) {
+            // Thanks screen stays up for stray bubbles. Agent Open (rejoin/join) must bring the visitor back.
+            if (isVisitorEndedScreen() && !isJoinOrReopen) {
                 return;
+            }
+            if (isVisitorEndedScreen() && isJoinOrReopen) {
+                markChatContinuedFromClosed({
+                    status: 'active',
+                    agent: (msg && msg.agent_name)
+                        ? { name: msg.agent_name, avatar: msg.agent_avatar }
+                        : (payload && payload.agent) || null,
+                    message_id: mid
+                }, { fromAgentReopen: true });
             }
             if (!alreadyPainted) {
                 if (isCloseLine || isVisitorCloseLine) {
@@ -3831,8 +3839,8 @@
             var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
             var visitorReopened = payload.reopened_by === 'visitor' || !!payload.resumed;
             var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
-            // After visitor X-close, ignore active/waiting frames unless resume actually reopened.
-            if (visitorSelfEnded && !visitorReopened) {
+            // Visitor X-close stays on Thanks until they resume OR the agent opens the chat again.
+            if (visitorSelfEnded && !visitorReopened && !agentReopened) {
                 return;
             }
             if (chatClosed) {
@@ -5732,6 +5740,9 @@
         var reopenMid = parseInt(data && (data.message_id || (data.message && data.message.id)), 10) || 0;
         noteVisitorThreadReopened(reopenMid);
         showChatView();
+        if (opts.fromAgentReopen) {
+            try { ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true }); } catch (eMaxRe) {}
+        }
         var inputEl = document.getElementById('lc-input');
         if (inputEl) inputEl.placeholder = 'Write a message...';
         setCloseChatVisible(true);
