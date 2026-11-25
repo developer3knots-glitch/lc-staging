@@ -53,9 +53,12 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 33;
+const REALTIME_BUILD = 35;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
+/** Browser never POSTs visitor-send. Node saves the row, then replies on the same socket. */
+const VISITOR_SEND_URL = String(process.env.LC_VISITOR_SEND_URL || '').trim()
+  || (VISITOR_ACK_URL ? VISITOR_ACK_URL.replace(/visitor-ack\.php/i, 'visitor-send.php') : '');
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
 /** Optional PHP agent last_seen touch — replaces browser agent-status.php ping polling. */
 const AGENT_TOUCH_URL = String(process.env.LC_AGENT_TOUCH_URL || '').trim();
@@ -506,13 +509,156 @@ function forwardVisitorReceiptAck(claims, data) {
   } catch (eFwd) { /* ignore */ }
 }
 
+function visitorIpFromRequest(req) {
+  const headers = (req && req.headers) || {};
+  const fwd = String(headers['x-forwarded-for'] || headers['x-real-ip'] || '');
+  const parts = fwd.split(',');
+  for (let i = 0; i < parts.length; i++) {
+    const ip = parts[i].trim().replace(/^::ffff:/, '');
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) continue;
+    if (ip === '127.0.0.1' || ip.indexOf('10.') === 0 || ip.indexOf('192.168.') === 0) continue;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) continue;
+    return ip;
+  }
+  return '';
+}
+
+function replyVisitorSend(ws, payload) {
+  if (!ws || ws.readyState !== 1) return;
+  try {
+    ws.send(JSON.stringify({
+      type: 'event',
+      event: 'visitor.message_result',
+      data: payload || {},
+    }));
+  } catch (eSend) { /* ignore */ }
+}
+
+/** Persist a visitor bubble via PHP, then return message_id on this socket only. */
+function forwardVisitorMessage(ws, claims, data) {
+  const tempId = String((data && data.temp_id) || '').replace(/[^\w.-]/g, '').slice(0, 80);
+  const uid = String((claims && claims.visitor_uid) || '');
+  const cid = parseInt((data && data.conversation_id) || 0, 10) || 0;
+  const message = String((data && data.message) || '').trim();
+  if (!uid || cid < 1 || !message || !VISITOR_SEND_URL) {
+    replyVisitorSend(ws, { temp_id: tempId, success: false, error: 'Could not send. Please try again.' });
+    return;
+  }
+  if (message.length > 2000) {
+    replyVisitorSend(ws, { temp_id: tempId, success: false, error: 'Message too long.' });
+    return;
+  }
+  const ip = String((ws && ws._lcIp) || (data && data.public_ipv4) || '');
+  const bodyObj = {
+    conversation_id: cid,
+    visitor_uid: uid,
+    chat_token: String((data && data.chat_token) || ''),
+    brand_key: String((data && data.brand_key) || ''),
+    message: message,
+    lc_hp: String((data && data.lc_hp) || ''),
+    presence_ts: Date.now(),
+  };
+  if (ip) bodyObj.public_ipv4 = ip;
+  const body = JSON.stringify(bodyObj);
+  let u;
+  try { u = new URL(VISITOR_SEND_URL); } catch (eUrl) {
+    replyVisitorSend(ws, { temp_id: tempId, success: false, error: 'Could not send. Please try again.' });
+    return;
+  }
+  const lib = u.protocol === 'https:' ? https : http;
+  const req = lib.request({
+    protocol: u.protocol,
+    hostname: u.hostname,
+    port: u.port || (u.protocol === 'https:' ? 443 : 80),
+    path: u.pathname + (u.search || ''),
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'User-Agent': String((ws && ws._lcUa) || 'LiveChat-Realtime').slice(0, 400),
+      ...(VISITOR_ACK_HOST ? { Host: VISITOR_ACK_HOST } : {}),
+    },
+    timeout: 8000,
+  }, function (res) {
+    let raw = '';
+    res.on('data', function (chunk) {
+      raw += chunk;
+      if (raw.length > 100000) raw = raw.slice(0, 100000);
+    });
+    res.on('end', function () {
+      let parsed = null;
+      try { parsed = raw ? JSON.parse(raw) : null; } catch (eParse) { parsed = null; }
+      if (!parsed || !parsed.success) {
+        replyVisitorSend(ws, {
+          temp_id: tempId,
+          success: false,
+          error: (parsed && parsed.error) ? String(parsed.error) : 'Could not send. Please try again.',
+        });
+        return;
+      }
+      replyVisitorSend(ws, {
+        temp_id: tempId,
+        success: true,
+        message_id: parseInt(parsed.message_id, 10) || 0,
+        status: String(parsed.status || ''),
+        reopened: !!parsed.reopened,
+      });
+    });
+  });
+  req.on('error', function () {
+    replyVisitorSend(ws, { temp_id: tempId, success: false, error: 'Could not send. Please try again.' });
+  });
+  req.on('timeout', function () {
+    try { req.destroy(); } catch (eT) { /* ignore */ }
+    replyVisitorSend(ws, { temp_id: tempId, success: false, error: 'Could not send. Please try again.' });
+  });
+  req.write(body);
+  req.end();
+}
+
 /** Replay recent chat frames + pending to a live visitor socket. */
 function refreshVisitorSocket(ws) {
   if (!ws || ws.readyState !== 1) return;
   // Pending queue only. Replaying the last 25 messages on every ping was
   // filling the socket so live typing frames sat behind old bubbles.
   const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
-  if (uid) flushVisitorPending(uid);
+  if (!uid) return;
+  flushVisitorPending(uid);
+  // Join/agent frames the widget never acked. A ping is enough to land Assign
+  // without a page reload, without replaying the whole recent backlog.
+  const prefix = uid + '#';
+  visitorMsgAcks.forEach(function (entry, key) {
+    if (String(key).indexOf(prefix) !== 0 || !entry || !entry.raw) return;
+    try { ws.send(entry.raw); } catch (eAck) { /* ignore */ }
+  });
+  replayVisitorJoinFrames(ws, uid);
+}
+
+/** Resend recent "joined the chat" frames. Later agent text can arrive on a
+ * socket that missed Assign; the widget dedupes by message id. */
+function replayVisitorJoinFrames(ws, uid) {
+  if (!ws || ws.readyState !== 1) return;
+  const cid = parseInt((ws._lcClaims && ws._lcClaims.conversation_id) || 0, 10) || 0;
+  const keys = ['visitor:' + String(uid || '')];
+  if (cid > 0) keys.push('conv:' + cid);
+  const now = Date.now();
+  const seen = {};
+  keys.forEach(function (key) {
+    const list = recentMessageNew.get(key) || [];
+    list.forEach(function (item) {
+      if (!item || !item.raw || (now - (item.ts || 0)) > RECENT_TTL_MS) return;
+      let text = '';
+      try {
+        const parsed = JSON.parse(item.raw);
+        text = String((parsed && parsed.data && parsed.data.message && parsed.data.message.message) || '');
+        const mid = (parsed && parsed.data && parsed.data.message && parsed.data.message.id) || 0;
+        if (mid && seen[mid]) return;
+        if (mid) seen[mid] = 1;
+      } catch (eParse) { return; }
+      if (!/joined the (?:chat|conversation)/i.test(text)) return;
+      try { ws.send(item.raw); } catch (eSend) { /* ignore */ }
+    });
+  });
 }
 
 function registerVisitorSse(uid, res) {
@@ -995,8 +1141,10 @@ const requestHandler = async function (req, res) {
 function wireWebSocket(server) {
   const wss = new WebSocketServer({ server });
 
-  wss.on('connection', function (ws) {
+  wss.on('connection', function (ws, req) {
     ws._lcAuthed = false;
+    ws._lcUa = String((req && req.headers && req.headers['user-agent']) || '').slice(0, 400);
+    ws._lcIp = visitorIpFromRequest(req);
     allSockets.add(ws);
 
     ws.on('message', function (raw) {
@@ -1161,6 +1309,15 @@ function wireWebSocket(server) {
         }
 
         if (role !== 'visitor') return;
+
+        // Visitor text rides the socket. PHP is only the save behind Node.
+        if (event === 'visitor.message') {
+          const sendData = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          touchVisitorSocket(ws);
+          registerVisitorSocket(ws);
+          forwardVisitorMessage(ws, claims, sendData);
+          return;
+        }
 
         // Echo proves browser can RECEIVE frames on this socket (no PHP hop)
         if (event === 'visitor.ws_probe') {

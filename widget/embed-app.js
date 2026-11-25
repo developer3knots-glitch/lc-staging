@@ -8,9 +8,9 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 304;
-    // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
-    // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
+    var LC_WIDGET_BUILD = 307;
+    // Hard WS-only: visitor text is sent and delivered on the socket.
+    // Empty-transcript one-shot history seed may still hit visitor-poll.php.
     var LC_WS_ONLY = true;
     window.__LC_WIDGET_BUILD = LC_WIDGET_BUILD;
     window.__LC_WS_ONLY = LC_WS_ONLY;
@@ -3637,7 +3637,10 @@
                 ackVisitorMessagePainted(mid);
                 stopVisitorLongPoll();
             } else if (isWaitingForAgent && !resumeDraft) {
-                scheduleWaitingCatchup();
+                // Missed Assign frame: ask the socket to replay it. No visitor-poll.
+                try {
+                    if (realtimeClient && typeof realtimeClient.ping === 'function') realtimeClient.ping();
+                } catch (eJoinPing) {}
             } else if (!blockHttpMessageSync()) {
                 // Emergency HTTP only when WS-only test is off
                 window.__lcForcePollOnce = true;
@@ -3659,9 +3662,6 @@
         realtimeBoundConvId = parseInt(conversationId, 10) || 0;
         tearDownPresenceClient();
         ensureVisitorConvChannel();
-        if (isWaitingForAgent && !chatClosed && !resumeDraft) {
-            scheduleWaitingCatchup();
-        }
         resetVisitorPollTimers();
         stopSafetySync();
         stopLiveMessageSync();
@@ -3738,6 +3738,7 @@
             paintWidgetReactions(payload && payload.message_id, payload && payload.reactions);
         });
         client.on('message.new', handleVisitorMessageNew);
+        client.on('visitor.message_result', handleVisitorMessageResult);
         client.on('ws.probe', function (payload) {
             window.__lcLastWsProbeAt = Date.now();
             window.__lcLastWsProbe = payload || null;
@@ -7142,45 +7143,10 @@
         }
     }
 
-    var waitingCatchupTimer = null;
-
-    function stopWaitingCatchup() {
-        if (waitingCatchupTimer) {
-            clearTimeout(waitingCatchupTimer);
-            waitingCatchupTimer = null;
-        }
-    }
-
-    /** While Connecting, pull status once if the assign frame never arrived. Stops when an agent is on the chat. */
-    function scheduleWaitingCatchup() {
-        if (waitingCatchupTimer || resumeDraft || chatClosed) return;
-        if (!isWaitingForAgent || !(parseInt(conversationId, 10) > 0)) return;
-        waitingCatchupTimer = setTimeout(function () {
-            waitingCatchupTimer = null;
-            if (!isWaitingForAgent || chatClosed || resumeDraft || !(parseInt(conversationId, 10) > 0)) return;
-            window.__lcWaitingCatchup = true;
-            window.__lcForcePollOnce = true;
-            try {
-                pollMessages(true, function () {
-                    window.__lcWaitingCatchup = false;
-                    window.__lcForcePollOnce = false;
-                    if (isWaitingForAgent && !chatClosed && !resumeDraft) {
-                        scheduleWaitingCatchup();
-                    }
-                });
-            } catch (eWait) {
-                window.__lcWaitingCatchup = false;
-                window.__lcForcePollOnce = false;
-                if (isWaitingForAgent && !chatClosed && !resumeDraft) scheduleWaitingCatchup();
-            }
-        }, 800);
-    }
-
     function setWaitingState(waiting, opts) {
         opts = opts || {};
         if (waiting && resumeDraft) return;
         isWaitingForAgent = waiting;
-        if (!waiting) stopWaitingCatchup();
         var soft = !!opts.soft;
         var bar = document.getElementById('lc-waiting-bar');
         if (bar) bar.classList.toggle('is-visible', !!waiting);
@@ -7209,7 +7175,6 @@
             if (!chatClosed) {
                 updateStatus(waitLabel, agentsOnline > 0);
             }
-            scheduleWaitingCatchup();
         }
     }
 
@@ -8467,9 +8432,8 @@
         var gen = ++pollGen;
         var hasBubbles = !messagesNeedHistoryReload();
 
-        // WS-only: block ALL visitor-poll except empty-transcript one-shot seed
-        // and the Connecting catch-up (assign frame missed).
-        if (!window.__lcWaitingCatchup && (blockHttpMessageSync() || (isVisitorWsLive() && !window.__lcForcePollOnce))) {
+        // WS-only: block ALL visitor-poll except empty-transcript one-shot seed.
+        if (blockHttpMessageSync() || (isVisitorWsLive() && !window.__lcForcePollOnce)) {
             if (!(isHistoryLoad && !hasBubbles)) {
                 if (typeof done === 'function') done();
                 return;
@@ -8499,11 +8463,12 @@
         }
         var fetchLastId = isHistoryLoad ? 0 : lastMsgId;
         var viewing = isVisitorActivelyViewingChat() ? '1' : '0';
+        var pollToken = chatToken || (typeof getStoredChatToken === 'function' ? getStoredChatToken() : '') || '';
 
         fetch(siteUrl + '/api/visitor-poll.php?conversation_id=' + conversationId +
             '&last_id=' + fetchLastId +
             '&visitor_uid=' + encodeURIComponent(visitorUid) +
-            '&chat_token=' + encodeURIComponent(chatToken || '') +
+            '&chat_token=' + encodeURIComponent(pollToken) +
             '&viewing=' + viewing +
             ((fullHistoryMode) ? '&full_history=1' : '') +
             (currentReference ? '&ticket_ref=' + encodeURIComponent(currentReference) : ''), {
@@ -9081,57 +9046,112 @@
             .catch(function () { return ''; });
     }
 
-    function postVisitorMessage(msg, tempId, wasClosed, sendBtn, isRetry) {
-        return fetch(siteUrl + '/api/visitor-send.php', {
-            method: 'POST',
-            headers: apiHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                conversation_id: conversationId,
-                visitor_uid: visitorUid,
-                chat_token: chatToken || getStoredChatToken() || '',
-                brand_key: brandKey,
-                widget_loaded_at: widgetLoadedAt,
-                lc_hp: readHoneypotField('lc-honeypot'),
-                message: msg,
-                presence_ts: Date.now()
-            })
-        })
-        .then(function (r) {
-            return r.text().then(function (text) {
-                var data = null;
-                try {
-                    data = text ? JSON.parse(text) : null;
-                } catch (eParse) {
-                    data = null;
-                }
-                return { ok: r.ok, data: data };
+    var visitorSendPending = {};
+
+    function publishVisitorMessage(msg, tempId) {
+        if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') return false;
+        return !!realtimeClient.publishClientEvent('visitor.message', {
+            temp_id: tempId,
+            conversation_id: parseInt(conversationId, 10) || 0,
+            chat_token: chatToken || getStoredChatToken() || '',
+            brand_key: brandKey,
+            message: msg,
+            public_ipv4: publicIpv4 || '',
+            lc_hp: readHoneypotField('lc-honeypot') || ''
+        });
+    }
+
+    function failVisitorSendLocal(tempId, sendBtn) {
+        visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
+        if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
+        if (resumeDraftSend) {
+            resumeDraftSend = false;
+            showResumeComposer();
+            return;
+        }
+        markVisitorSendFailed(tempId);
+    }
+
+    function handleVisitorMessageResult(data) {
+        data = data || {};
+        var tempId = String(data.temp_id || '');
+        var pending = tempId ? visitorSendPending[tempId] : null;
+        if (!pending || pending.settled) return;
+        pending.settled = true;
+        if (pending.timer) clearTimeout(pending.timer);
+        delete visitorSendPending[tempId];
+        if (data.success) {
+            finishVisitorSend(data, tempId, pending.wasClosed, pending.sendBtn);
+            return;
+        }
+        var err = data.error ? String(data.error) : '';
+        if (!pending.isRetry && /invalid session/i.test(err)) {
+            refreshChatToken().then(function () {
+                postVisitorMessage(pending.msg, tempId, pending.wasClosed, pending.sendBtn, true);
             });
-        })
-        .then(function (res) {
-            var data = res && res.data;
-            if (data && data.success) {
-                finishVisitorSend(data, tempId, wasClosed, sendBtn);
-                return data;
+            return;
+        }
+        finishVisitorSend({ success: false, error: err || 'Could not send. Please try again.' }, tempId, pending.wasClosed, pending.sendBtn);
+    }
+
+    function postVisitorMessage(msg, tempId, wasClosed, sendBtn, isRetry) {
+        function arm() {
+            if (visitorSendPending[tempId] && visitorSendPending[tempId].timer) {
+                clearTimeout(visitorSendPending[tempId].timer);
             }
-            finishVisitorSend(data || { success: false, error: 'Could not send. Please try again.' }, tempId, wasClosed, sendBtn);
-            return data;
-        })
-        .catch(function () {
-            visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
-            if (sendBtn && visitorTextInFlight === 0) sendBtn.classList.remove('is-sending');
-            if (resumeDraftSend) {
-                resumeDraftSend = false;
-                showResumeComposer();
-            }
-            markVisitorSendFailed(tempId);
+            visitorSendPending[tempId] = {
+                msg: msg,
+                wasClosed: wasClosed,
+                sendBtn: sendBtn,
+                isRetry: !!isRetry,
+                settled: false,
+                timer: setTimeout(function () {
+                    var row = visitorSendPending[tempId];
+                    if (!row || row.settled) return;
+                    row.settled = true;
+                    delete visitorSendPending[tempId];
+                    failVisitorSendLocal(tempId, sendBtn);
+                }, 12000)
+            };
+        }
+        if (publishVisitorMessage(msg, tempId)) {
+            arm();
+            return;
+        }
+        loadRealtimeScript(function () {
+            try { initVisitorRealtime(); } catch (eInit) {}
+            var tries = 0;
+            var wait = setInterval(function () {
+                tries += 1;
+                if (publishVisitorMessage(msg, tempId)) {
+                    clearInterval(wait);
+                    arm();
+                    return;
+                }
+                if (tries >= 8) {
+                    clearInterval(wait);
+                    failVisitorSendLocal(tempId, sendBtn);
+                }
+            }, 250);
         });
     }
 
     function markVisitorSendFailed(tempId) {
         var pending = document.querySelector('#lc-panel-messages [data-msg-id="' + tempId + '"]');
-        if (!pending) {
-            appendMessage({ sender_type: 'system', message: 'Could not send. Please try again.' });
-            return;
+        if (!pending) return;
+        var body = pending.querySelector('.lcw-msg-body');
+        var text = body ? String(body.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        if (text) {
+            var nodes = document.querySelectorAll('#lc-panel-messages [data-msg-id]');
+            for (var i = 0; i < nodes.length; i++) {
+                var id = nodes[i].getAttribute('data-msg-id') || '';
+                if (!/^\d+$/.test(id) || nodes[i] === pending) continue;
+                var other = nodes[i].querySelector('.lcw-msg-body');
+                if (other && String(other.textContent || '').replace(/\s+/g, ' ').trim() === text) {
+                    pending.remove();
+                    return;
+                }
+            }
         }
         pending.classList.remove('lcw-msg-pending');
         pending.classList.add('lcw-msg-failed');
@@ -9153,9 +9173,11 @@
         var sendBtn = document.getElementById('lc-send');
         if (sendBtn) sendBtn.classList.add('is-sending');
         var wasClosed = chatClosed;
+        visitorTextInFlight += 1;
         refreshChatToken().then(function () {
             return postVisitorMessage(msg, tempId, wasClosed, sendBtn, true);
         }).catch(function () {
+            visitorTextInFlight = Math.max(0, visitorTextInFlight - 1);
             if (sendBtn) sendBtn.classList.remove('is-sending');
             markVisitorSendFailed(tempId);
         });
@@ -9174,10 +9196,13 @@
                     message_id: data && data.message_id
                 }, { fromVisitorAction: true });
             } else if ((data.status || '') === 'waiting') {
-                updateHeaderAgent(null);
-                currentAgent = { name: '', avatar: null };
-                setWaitingState(true, { soft: false });
-                updateStatus('Connecting to live agent...', agentsOnline > 0);
+                var joinedAlready = !!document.querySelector('#lc-panel-messages .lcw-join-event');
+                if (!joinedAlready) {
+                    updateHeaderAgent(null);
+                    currentAgent = { name: '', avatar: null };
+                    setWaitingState(true, { soft: false });
+                    updateStatus('Connecting to live agent...', agentsOnline > 0);
+                }
                 var inputFix = document.getElementById('lc-input');
                 if (inputFix) inputFix.placeholder = 'Write a message...';
             }

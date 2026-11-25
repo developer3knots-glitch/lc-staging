@@ -89,8 +89,16 @@ try {
 
     $ins = $db->prepare('INSERT INTO messages (conversation_id, sender_type, sender_id, message) VALUES (?, ?, ?, ?)');
     $ins->execute([$conversationId, 'visitor', $visitorId, $message]);
-    $messageId = (int) $db->lastInsertId();
-    lc_touch_conversation($conversationId);
+    // Read before touch/typing. A later UPDATE makes PDO lastInsertId() return 0,
+    // the widget never clears the pending bubble, and the visitor sees Retry.
+    $messageId = (int) $db->query('SELECT LAST_INSERT_ID()')->fetchColumn();
+    if ($messageId < 1) {
+        $messageId = (int) $db->lastInsertId();
+    }
+    try {
+        lc_touch_conversation($conversationId);
+    } catch (Throwable $eTouch) {
+    }
 
     // Publish bubble to agents FIRST — never block behind clear_typing's WS confirm.
     // Live test: clear_typing-before-publish made visitor-send 600–800ms and agent
@@ -121,8 +129,11 @@ try {
         } catch (Throwable $ePub) {
         }
     }
-    // Clear typing after bubble publish (nowait inside publish_typing).
-    lc_clear_typing($conversationId, 'visitor');
+    // Anything after the insert must not turn a saved row into visitor Retry.
+    try {
+        lc_clear_typing($conversationId, 'visitor');
+    } catch (Throwable $eClear) {
+    }
 
     $publishStatus = $status !== '' ? $status : 'waiting';
     $publishReopened = $reopened;
