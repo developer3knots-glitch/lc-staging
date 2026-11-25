@@ -326,6 +326,44 @@
         }
     }
 
+    var visitorSeenTimer = null;
+    var visitorSeenCid = 0;
+    var visitorSeenMid = 0;
+    /** Open agent thread saw a visitor message — Read ticks over WS, one DB write. */
+    function ackVisitorMessagesSeen(conversationId, messageId, visitorUid) {
+        var cid = parseInt(conversationId, 10) || 0;
+        var mid = parseInt(messageId, 10) || 0;
+        if (!cid || !mid || cid !== selectedId) return;
+        var rowStatus = conversationRowStatus(cid);
+        if (rowStatus === 'waiting' || rowStatus === 'closed') return;
+        if (realtimeClient && typeof realtimeClient.publishClientEvent === 'function') {
+            try {
+                realtimeClient.publishClientEvent('agent.receipt_ack', {
+                    conversation_id: cid,
+                    message_id: mid,
+                    up_to: mid,
+                    visitor_uid: visitorUid || '',
+                    viewing: 1
+                });
+            } catch (eAck) {}
+        }
+        if (mid > visitorSeenMid) visitorSeenMid = mid;
+        visitorSeenCid = cid;
+        if (visitorSeenTimer) clearTimeout(visitorSeenTimer);
+        visitorSeenTimer = setTimeout(function () {
+            visitorSeenTimer = null;
+            var saveCid = visitorSeenCid;
+            var saveMid = visitorSeenMid;
+            if (!saveCid || !saveMid) return;
+            fetch(base + '/api/agent-seen.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: saveCid, up_to: saveMid })
+            }).catch(function () {});
+        }, 250);
+    }
+
     function publishAgentTyping(isTyping) {
         if (!selectedId) return false;
         if (!realtimeClient || typeof realtimeClient.publishClientEvent !== 'function') return false;
@@ -7346,6 +7384,7 @@
                     appendLiveMessage(msg);
                     if (msg.sender_type === 'visitor') {
                         markPriorAgentTicksRead(parseInt(msg.id, 10) || 0);
+                        ackVisitorMessagesSeen(cid, msg.id, payload && payload.visitor_uid);
                     }
                     clearLocalUnread(cid);
                     return true;

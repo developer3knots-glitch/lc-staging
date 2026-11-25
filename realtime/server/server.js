@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 30;
+const REALTIME_BUILD = 31;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -1115,6 +1115,32 @@ function wireWebSocket(server) {
             typing: typingOn,
             name: String(data.name || claims.name || ''),
           });
+          return;
+        }
+
+        // Agent has the thread open — visitor ticks go to Read without an HTTP poll.
+        if (role === 'agent' && event === 'agent.receipt_ack') {
+          const data = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+          let cid = parseInt(data.conversation_id, 10) || 0;
+          const mid = parseInt(data.message_id || data.up_to, 10) || 0;
+          if (cid < 1 || mid < 1) return;
+          const visitorUid = String(data.visitor_uid || '');
+          const receipts = [{
+            id: mid,
+            delivery_status: 'read',
+            is_read: true,
+            is_delivered: true,
+          }];
+          const payload = {
+            conversation_id: cid,
+            for: 'visitor',
+            up_to: mid,
+            visitor_uid: visitorUid,
+            receipts: receipts,
+          };
+          const channels = ['conv:' + cid];
+          if (visitorUid) channels.push('visitor:' + visitorUid);
+          publishMany(channels, 'message.receipts', payload);
           return;
         }
 

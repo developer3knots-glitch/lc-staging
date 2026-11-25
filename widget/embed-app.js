@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 284;
+    var LC_WIDGET_BUILD = 285;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3740,6 +3740,7 @@
         client.on('message.receipts', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if (payload && payload.for && payload.for !== 'visitor') return;
+            if (payload && payload.up_to) markOwnTicksUpTo(payload.up_to, 'read');
             if (payload && payload.receipts) {
                 applyReceipts(payload.receipts);
             }
@@ -4135,6 +4136,7 @@
         client.on('message.receipts', function (payload) {
             if (!sameConversation(payload && payload.conversation_id)) return;
             if (payload && payload.for && payload.for !== 'visitor') return;
+            if (payload && payload.up_to) markOwnTicksUpTo(payload.up_to, 'read');
             if (payload && payload.receipts) {
                 applyReceipts(payload.receipts);
             }
@@ -8119,6 +8121,16 @@
             || /was contacted by an agent/i.test(t)
             || /transcript requested/i.test(t);
     }
+    function markOwnTicksUpTo(upTo, status) {
+        upTo = parseInt(upTo, 10) || 0;
+        if (upTo < 1) return;
+        var nodes = document.querySelectorAll('#lc-panel-messages .lcw-visitor-wrap[data-msg-id]');
+        for (var i = 0; i < nodes.length; i++) {
+            var id = parseInt(nodes[i].getAttribute('data-msg-id'), 10) || 0;
+            if (id > 0 && id <= upTo) updateVisitorTicks(String(id), status || 'read');
+        }
+    }
+
     function applyReceipts(receipts) {
         if (!receipts || !receipts.length) return;
         receipts.forEach(function (r) {
