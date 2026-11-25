@@ -7085,13 +7085,16 @@
             staffSubHeartbeat = setInterval(function () {
                 if (!realtimeClient || typeof realtimeClient.subscribe !== 'function') return;
                 if (!realtimeClient.isConnected || !realtimeClient.isConnected()) return;
-                if (subscribedConvChannel) {
+                var has = typeof realtimeClient.hasChannel === 'function'
+                    ? realtimeClient.hasChannel.bind(realtimeClient)
+                    : function () { return false; };
+                if (subscribedConvChannel && !has(subscribedConvChannel)) {
                     try { realtimeClient.subscribe(subscribedConvChannel); } catch (e1) {}
                 }
-                if (subscribedStaffChannel) {
+                if (subscribedStaffChannel && !has(subscribedStaffChannel)) {
                     try { realtimeClient.subscribe(subscribedStaffChannel); } catch (e2) {}
                 }
-            }, 1000);
+            }, 15000);
         }
     }
 

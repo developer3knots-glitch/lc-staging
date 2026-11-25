@@ -80,6 +80,7 @@
         if (!channel) return false;
         this._wantChannels[channel] = true;
         if (!this.isConnected()) return false;
+        if (this._authedChannels && this._authedChannels[channel]) return true;
         try {
             this.ws.send(JSON.stringify({ type: 'subscribe', channel: channel }));
             // Wait for server 'subscribed' — optimistic ack hid dead sockets and

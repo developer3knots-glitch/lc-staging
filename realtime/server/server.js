@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 28;
+const REALTIME_BUILD = 29;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -493,16 +493,10 @@ function forwardVisitorReceiptAck(claims, data) {
 /** Replay recent chat frames + pending to a live visitor socket. */
 function refreshVisitorSocket(ws) {
   if (!ws || ws.readyState !== 1) return;
+  // Pending queue only. Replaying the last 25 messages on every ping was
+  // filling the socket so live typing frames sat behind old bubbles.
   const uid = String((ws._lcClaims && ws._lcClaims.visitor_uid) || '');
   if (uid) flushVisitorPending(uid);
-  if (ws._lcChannels) {
-    ws._lcChannels.forEach(function (ch) {
-      const name = String(ch || '');
-      if (/^(conv|visitor):/.test(name)) {
-        replayMessageNew(ws, name);
-      }
-    });
-  }
 }
 
 function registerVisitorSse(uid, res) {
@@ -1003,21 +997,6 @@ function wireWebSocket(server) {
           refreshVisitorSocket(ws);
         } else if (ws._lcAuthed && ws._lcClaims && String(ws._lcClaims.role || '') === 'agent') {
           forwardAgentPresenceTouch(ws._lcClaims);
-          // Keepalive: replay ONLY the open staff conversation room.
-          // Replaying agent: / all conv: every ~5s re-inflated inbox "N new" badges.
-          if (ws._lcChannels) {
-            ws._lcChannels.forEach(function (name) {
-              if (/^staff:conv:/.test(String(name || ''))) {
-                replayMessageNew(ws, name);
-              }
-            });
-          }
-        } else if (ws._lcAuthed && ws._lcChannels) {
-          ws._lcChannels.forEach(function (name) {
-            if (/^staff:conv:/.test(String(name || ''))) {
-              replayMessageNew(ws, name);
-            }
-          });
         }
         return;
       }
@@ -1083,10 +1062,13 @@ function wireWebSocket(server) {
           : [];
         // conv/staff are joined when a chat is opened. Brand and agent rooms stay inside the login token.
         if (!/^(conv|staff):/.test(ch) && allowed.indexOf(ch) === -1) return;
+        const already = !!(ws._lcChannels && ws._lcChannels.has(ch));
         subscribe(ws, ch);
+        // Repeat subscribe (admin 1s heartbeat, visitor catch-up) must not
+        // replay history. That backlog was delaying typing frames.
+        if (already) return;
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'subscribed', channel: ch }));
-          // Catch frames published before this socket joined (agent open-chat / reconnect)
           if (/^(conv|visitor|staff:conv|agent):/.test(ch)) {
             replayMessageNew(ws, ch);
           }
