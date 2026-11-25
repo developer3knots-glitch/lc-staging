@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 288;
+    var LC_WIDGET_BUILD = 289;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3715,6 +3715,9 @@
             window.__lcLastWsProbe = payload || null;
         });
         client.on('chat.closed', handleVisitorChatClosed);
+        client.on('chat.invite', function (payload) {
+            acceptProactiveInvite(payload || {});
+        });
         client.on('conversation.updated', handleVisitorConversationUpdated);
         // Backup path — some frames only surface on the generic 'event' emitter
         client.on('event', function (msg) {
@@ -3730,6 +3733,10 @@
             }
             if (msg.event === 'chat.closed') {
                 handleVisitorChatClosed(msg.data || {});
+                return;
+            }
+            if (msg.event === 'chat.invite') {
+                acceptProactiveInvite(msg.data || {});
                 return;
             }
             if (msg.event === 'conversation.updated') {
@@ -3836,7 +3843,7 @@
         if (payload && (payload.status === 'active' || payload.status === 'waiting')) {
             var visitorSelfEnded = chatClosed && lastClosedBy === 'visitor';
             var visitorReopened = payload.reopened_by === 'visitor' || !!payload.resumed;
-            var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign';
+            var agentReopened = payload.reopened_by === 'agent' || payload.reopened_by === 'assign' || !!payload.proactive;
             // Visitor X-close stays on Thanks until they resume OR the agent opens the chat again.
             if (visitorSelfEnded && !visitorReopened && !agentReopened) {
                 return;
@@ -3860,6 +3867,9 @@
                 updateStatus('Chatting with ' + payload.agent.name, true);
             } else if (payload.status === 'active') {
                 setWaitingState(false);
+            }
+            if (payload.proactive && !isOpen) {
+                try { ensureChatMaximized({ silenceFlow: true, focusComposeOnOpen: true }); } catch (eProOpen) {}
             }
             // WS-only: join/reopen may ride on conversation.updated when message.new
             // was lost during a reconnect race after soft-close.
@@ -3949,6 +3959,8 @@
                     handleVisitorMessageNew(data || {});
                 } else if (eventName === 'chat.closed') {
                     handleVisitorChatClosed(data || {});
+                } else if (eventName === 'chat.invite') {
+                    acceptProactiveInvite(data || {});
                 } else if (eventName === 'conversation.updated') {
                     handleVisitorConversationUpdated(data || {});
                 }
@@ -4019,6 +4031,8 @@
         var current = parseInt(conversationId, 10) || 0;
         if (current === cid) {
             chatClosed = false;
+            lastClosedBy = '';
+            visitorCloseGraceUntil = 0;
             if (!isOpen) openPanel({ silenceFlow: true, focusComposeOnOpen: true });
             showChatView();
             if (inviteAgent) {
@@ -4045,6 +4059,8 @@
         pendingResumeConvId = cid;
         serverLiveConversationId = cid;
         chatClosed = false;
+        lastClosedBy = '';
+        visitorCloseGraceUntil = 0;
         entryRouted = true;
 
         if (!isOpen) {

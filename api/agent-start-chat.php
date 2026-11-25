@@ -216,6 +216,7 @@ try {
     // isn't blocked waiting on multi-channel message fanout.
     $pendingPublishIds = [];
     $greetingPayload = null;
+    $startJoinMessage = null;
     $currentAgent = (int) ($conv['agent_id'] ?? 0);
     if ($currentAgent === $agentId) {
         // Fresh join line for both Start chat and the pencil button.
@@ -230,6 +231,21 @@ try {
         $joinId = $justJoined ? (int) $tailRow['id'] : lc_add_agent_join_message($convId, $agentId, false);
         if ($joinId > 0 && !in_array($joinId, $pendingPublishIds, true)) {
             $pendingPublishIds[] = $joinId;
+        }
+        if ($joinId > 0) {
+            $joinName = trim((string) ($agent['name'] ?? 'Agent'));
+            if ($joinName === '') {
+                $joinName = 'Agent';
+            }
+            $startJoinMessage = [
+                'id' => $joinId,
+                'sender_type' => 'system',
+                'sender_id' => $agentId,
+                'message' => $joinName . ' joined the chat.',
+                'agent_name' => $joinName,
+                'created_at' => gmdate('c'),
+                'event' => 'agent_join',
+            ];
         }
         if ($created) {
             // Agent-only audit note (hidden from visitor widget)
@@ -361,6 +377,7 @@ try {
         $seedMessages,
         $greetingPayload,
         $pendingPublishIds,
+        $startJoinMessage,
         $created,
         $visitorId,
         $visitorUid
@@ -380,11 +397,21 @@ try {
             }
         }
 
-        lc_realtime_publish_conversation_event($convId, 'conversation.updated', [
+        $startUpdate = [
             'status' => 'active',
             'agent' => $agentPublic,
+            'agent_id' => (int) ($agentPublic['id'] ?? 0),
             'proactive' => true,
-        ]);
+            'reopened_by' => 'agent',
+        ];
+        if (is_array($startJoinMessage) && !empty($startJoinMessage['id'])) {
+            $startJoinMessage['agent_name'] = (string) ($agentPublic['name'] ?? $startJoinMessage['agent_name']);
+            $startJoinMessage['agent_avatar'] = $agentPublic['avatar'] ?? null;
+            $startJoinMessage['message'] = trim((string) $startJoinMessage['agent_name']) . ' joined the chat.';
+            $startUpdate['message_id'] = (int) $startJoinMessage['id'];
+            $startUpdate['message'] = $startJoinMessage;
+        }
+        lc_realtime_publish_conversation_event($convId, 'conversation.updated', $startUpdate);
 
         $messageIds = $pendingPublishIds;
         if ($created) {
