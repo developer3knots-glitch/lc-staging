@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/realtime.php';
 lc_cors_headers();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
@@ -35,13 +36,26 @@ try {
     $brandSettings = lc_brand_settings($brand);
 
     $db = lc_db();
-    $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ?');
-    $stmt->execute([$visitorUid]);
-    $visitor = $stmt->fetch();
-    if (!$visitor) {
-        lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
+    $access = function_exists('lc_visitor_access_conversation')
+        ? lc_visitor_access_conversation($conversationId, $visitorUid, $chatToken)
+        : null;
+    if ($access) {
+        $visitorId = (int) ($access['visitor_id'] ?? 0);
+        if ((int) ($access['brand_id'] ?? 0) > 0) {
+            $brandId = (int) $access['brand_id'];
+        }
+    } else {
+        $stmt = $db->prepare('SELECT * FROM visitors WHERE visitor_uid = ?');
+        $stmt->execute([$visitorUid]);
+        $visitor = $stmt->fetch();
+        if (!$visitor) {
+            lc_json(['success' => false, 'error' => 'Visitor not found'], 404);
+        }
+        $visitorId = (int) $visitor['id'];
     }
-    $visitorId = (int) $visitor['id'];
+    if ($visitorId < 1) {
+        lc_json(['success' => false, 'error' => 'Conversation not found'], 404);
+    }
     lc_update_visitor_geo($visitorId, $ip, $userAgent, $pageUrl);
 
     // Optional token check when provided (ended screen keeps it in memory)

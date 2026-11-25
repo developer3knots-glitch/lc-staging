@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 297;
+    var LC_WIDGET_BUILD = 299;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -268,6 +268,11 @@
     var ignoreClosedBelowMsgId = 0;
     /** Fallback when a stale closed frame has no message_id (status-only retry). */
     var ignoreClosedStatusUntil = 0;
+    /**
+     * Boot of a chat the server says is still open. Ignore replayed close frames
+     * until the history seed sets the watermark. A newer close still applies after that.
+     */
+    var deferHistoryCloseLines = false;
     var settings = { widget_color: '#6FD943', site_name: 'LiveChat', poll_interval_ms: 1500 };
     var currentAgent = { name: '', avatar: null };
     var currentReference = '';
@@ -2015,7 +2020,7 @@
                 visitor_uid: visitorUid,
                 brand_key: brandKey,
                 conversation_id: conversationId,
-                chat_token: chatToken || '',
+                chat_token: chatToken || (typeof getStoredChatToken === 'function' ? getStoredChatToken() : '') || '',
                 page_url: window.location.href,
                 website_url: ''
             })
@@ -2027,11 +2032,11 @@
                 resumeBtn.classList.remove('is-loading');
             }
             if (!data.success) {
-                // Fall back to ticket form when one-click resume is not possible
+                // Stay on Thanks. A browser alert was covering the ended screen.
                 if (ticketResumeEnabled) {
                     openTicketResumeFromEnded();
-                } else {
-                    alert(data.error || 'Unable to resume this chat. Please start a new conversation.');
+                } else if (resumeBtn) {
+                    resumeBtn.textContent = data.error || 'Unable to resume this chat';
                 }
                 return;
             }
@@ -2044,7 +2049,7 @@
                 resumeBtn.disabled = false;
                 resumeBtn.classList.remove('is-loading');
             }
-            alert('Unable to resume this chat. Please try again.');
+            if (resumeBtn) resumeBtn.textContent = 'Unable to resume. Try again';
         });
     }
     function openTicketResumeFromEnded() {
@@ -3599,7 +3604,10 @@
             // WS-only: the close line itself is the runtime lock. Do not wait for
             // a later history reload. Watermark only blocks an older replayed id.
             if (isVisitorCloseLine) {
-                showEndedState('visitor');
+                // A replayed close from before Resume / Start new must not put Thanks back.
+                if (!deferHistoryCloseLines && !isStaleVisitorClosePayload({ message_id: mid, status: 'closed', closed_by: 'visitor' })) {
+                    showEndedState('visitor');
+                }
             } else if (isCloseLine) {
                 if (!(mid > 0 && mid <= (ignoreClosedBelowMsgId || 0))) {
                     lastAgentCloseLine = msgText;
@@ -3841,6 +3849,8 @@
         if (payload && payload.status === 'closed') {
             // Already left this thread (Start new chat) — never flash ended over the new session
             if (forceNewChat || !conversationId) return;
+            // Reload of an open chat replays the old close. Wait for the history seed.
+            if (deferHistoryCloseLines) return;
             // Drop a repeat of a close we already passed (rejoin/resume). An open
             // thread must still lock the moment a NEW close arrives.
             if (isStaleVisitorClosePayload(payload)) {
@@ -6594,6 +6604,23 @@
         chatClosed = data.status === 'closed';
         if (!chatClosed) {
             resetTranscriptSentState();
+            // This thread is open on the server. Close lines already in history
+            // (or replayed over WS on reload) must not snap back to Thanks.
+            var openFloor = parseInt(lastMsgId, 10) || 0;
+            var floorMsgs = Array.isArray(data.messages) ? data.messages : [];
+            for (var fi = 0; fi < floorMsgs.length; fi++) {
+                var fid = parseInt(floorMsgs[fi] && floorMsgs[fi].id, 10) || 0;
+                if (fid > openFloor) openFloor = fid;
+            }
+            if (openFloor > 0) {
+                ignoreClosedBelowMsgId = Math.max(ignoreClosedBelowMsgId || 0, openFloor);
+            }
+            lastClosedBy = '';
+            deferHistoryCloseLines = true;
+            ignoreClosedStatusUntil = Date.now() + 20000;
+            setTimeout(function () {
+                deferHistoryCloseLines = false;
+            }, 8000);
         }
         applyWidgetSettings(data);
         if (data.attachments && window.LCChatFiles) {
@@ -8609,6 +8636,20 @@
                     scrollMessagesToBottom(true);
                 }
 
+                if (!chatClosed && data.status && data.status !== 'closed') {
+                    var histFloor = ignoreClosedBelowMsgId || 0;
+                    if (Array.isArray(data.messages)) {
+                        for (var hfi = 0; hfi < data.messages.length; hfi++) {
+                            var hmid = parseInt(data.messages[hfi] && data.messages[hfi].id, 10) || 0;
+                            if (hmid > histFloor) histFloor = hmid;
+                        }
+                    }
+                    if (histFloor > 0) {
+                        ignoreClosedBelowMsgId = Math.max(ignoreClosedBelowMsgId || 0, histFloor);
+                    }
+                    deferHistoryCloseLines = false;
+                    lastClosedBy = '';
+                }
                 if (data.status === 'closed') {
                     setPeerTypingVisible(false);
                     stopOwnTyping();
