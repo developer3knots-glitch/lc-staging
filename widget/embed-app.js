@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 299;
+    var LC_WIDGET_BUILD = 300;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -2431,15 +2431,15 @@
         var closeBtn = document.getElementById('lc-close-chat');
         if (closeBtn && !chatClosed) closeBtn.style.display = 'inline-flex';
         if (agentEnded) {
-            // Agent already closed this thread. Keep the transcript, but do not
-            // look like a live chat until the agent clicks Open.
+            // Agent closed the thread. Visitor can type to start it again; that
+            // send requeues the same chat into Connecting until an agent assigns.
             var inputClosed = document.getElementById('lc-input');
             var sendClosed = document.getElementById('lc-send');
             if (inputClosed) {
-                inputClosed.placeholder = 'Chat closed';
-                inputClosed.disabled = true;
+                inputClosed.placeholder = 'Write a message...';
+                inputClosed.disabled = false;
             }
-            if (sendClosed) sendClosed.disabled = true;
+            if (sendClosed) sendClosed.disabled = false;
             updateStatus('Chat closed', false);
             var closedRole = document.getElementById('lc-panel-agent-role');
             if (closedRole) {
@@ -5784,8 +5784,8 @@
         }
 
         // Agent / inactivity close — transcript stays so the close line is visible.
-        // Compose is locked. Thanks screen is only for a visitor self-close.
-        // Agent Open (rejoin) is what turns the chat back on.
+        // Compose stays open: a new message requeues this chat into Connecting.
+        // Thanks screen is only for a visitor self-close.
         if (conversationId) {
             persistConversationId(conversationId);
             persistChatToken(chatToken || '');
@@ -5796,14 +5796,14 @@
         document.getElementById('lc-panel-head').style.display = 'flex';
         document.getElementById('lc-panel-toolbar').style.display = 'none';
         setCloseChatVisible(false);
+        setComposeEnabled(true);
         var inputEl = document.getElementById('lc-input');
         var sendEl = document.getElementById('lc-send');
         if (inputEl) {
-            inputEl.placeholder = 'Chat closed';
-            inputEl.disabled = true;
-            inputEl.value = '';
+            inputEl.placeholder = 'Write a message...';
+            inputEl.disabled = false;
         }
-        if (sendEl) sendEl.disabled = true;
+        if (sendEl) sendEl.disabled = false;
         var lineToShow = String(closeLine || lastAgentCloseLine || '').trim();
         if (lineToShow) {
             lastAgentCloseLine = lineToShow;
@@ -9111,6 +9111,19 @@
             }
             return;
         }
+        if (wasClosed && lastClosedBy !== 'visitor') {
+            chatClosed = true;
+            lastClosedBy = 'agent';
+            setWaitingState(false);
+            updateStatus('Chat closed', false);
+            var closedRole = document.getElementById('lc-panel-agent-role');
+            if (closedRole) closedRole.textContent = 'Chat closed';
+            var inputRestore = document.getElementById('lc-input');
+            if (inputRestore) {
+                inputRestore.disabled = false;
+                inputRestore.placeholder = 'Write a message...';
+            }
+        }
         if (sendBtn) sendBtn.classList.remove('is-sending');
         if (pending) {
             markVisitorSendFailed(tempId);
@@ -9205,6 +9218,14 @@
         visitorTextInFlight += 1;
         if (sendBtn) sendBtn.classList.add('is-sending');
         var wasClosed = chatClosed;
+        var agentClosedContinue = wasClosed && lastClosedBy !== 'visitor';
+        if (agentClosedContinue) {
+            markChatContinuedFromClosed({
+                status: 'waiting',
+                reopened: true,
+                reopened_by: 'visitor'
+            }, { fromVisitorAction: true });
+        }
         if (typeof window.__lcNoteVisitorStillHere === 'function') {
             window.__lcNoteVisitorStillHere();
         }
