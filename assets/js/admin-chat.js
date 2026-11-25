@@ -2413,6 +2413,7 @@
         if (!t) return false;
         return /chat closed automatically due to inactivity/i.test(t)
             || /^chat closed by agent/i.test(t)
+            || /closed the chat\.?$/i.test(t)
             || /ip blocked — chat moved to history/i.test(t)
             // Visitor self-close: "{Name} closed the live chat." / "Visitor closed the live chat."
             || /closed the live chat/i.test(t)
@@ -2424,7 +2425,7 @@
         if (/inactivity/i.test(t)) return 'inactivity';
         if (/left the page/i.test(t)) return 'leave';
         if (/closed the live chat/i.test(t)) return 'visitor';
-        if (/chat closed by agent/i.test(t)) return 'agent';
+        if (/chat closed by agent/i.test(t) || /closed the chat\.?$/i.test(t)) return 'agent';
         return 'agent';
     }
 
@@ -6256,7 +6257,7 @@
         if (!mid && messagesEl.querySelector('.lc-msg.system')) {
             var lines = messagesEl.querySelectorAll('.lc-msg.system');
             var last = lines.length ? String(lines[lines.length - 1].textContent || '') : '';
-            if (/chat closed by agent/i.test(last)) return;
+            if (/chat closed by agent|closed the chat\.?$/i.test(last)) return;
         }
         try {
             appendLiveMessage({

@@ -8,7 +8,7 @@
     window.__LC_WIDGET_APP = true;
 
     // Bump when shipping visitor-facing UI changes (helps spot stale CDN caches).
-    var LC_WIDGET_BUILD = 282;
+    var LC_WIDGET_BUILD = 283;
     // Hard WS-only: zero visitor-poll loops. Only empty-transcript one-shot history seed
     // may hit visitor-poll.php. Live delivery = WebSocket only (no disconnect fallback poll).
     var LC_WS_ONLY = true;
@@ -3747,10 +3747,29 @@
         ensureBrandPresenceChannel(client);
     }
 
+    function agentCloseLineText(payload) {
+        payload = payload || {};
+        var fromMsg = payload.message && (payload.message.message || payload.message.body);
+        if (fromMsg && String(fromMsg).replace(/\s/g, '') !== '') {
+            return String(fromMsg);
+        }
+        var who = String(payload.agent_name || (payload.agent && payload.agent.name) || '').trim() || 'Agent';
+        return who + ' closed the chat.';
+    }
+
     function handleVisitorChatClosed(payload) {
         payload = payload || {};
         if (!payload.status) payload.status = 'closed';
         if (!payload.closed_by) payload.closed_by = 'agent';
+        var line = agentCloseLineText(payload);
+        if (!payload.message || !(payload.message.message || payload.message.body)) {
+            payload.message = {
+                id: payload.message_id || ('close_' + String(payload.conversation_id || conversationId || '0')),
+                sender_type: 'system',
+                message: line,
+                created_at: new Date().toISOString()
+            };
+        }
         handleVisitorConversationUpdated(payload);
     }
 
@@ -3785,12 +3804,12 @@
                         visitor_uid: payload.visitor_uid
                     });
                 } catch (eClosePaint) {}
-            } else if (payload.message_id && !document.querySelector('#lc-panel-messages [data-msg-id="' + payload.message_id + '"]')) {
+            } else if (!document.querySelector('#lc-panel-messages [data-msg-id="' + (payload.message_id || '') + '"]')) {
                 try {
                     appendMessage({
-                        id: payload.message_id,
+                        id: payload.message_id || ('close_' + String(payload.conversation_id || conversationId || '0')),
                         sender_type: 'system',
-                        message: 'Chat closed by agent.',
+                        message: agentCloseLineText(payload),
                         created_at: (payload.message && payload.message.created_at) || null
                     });
                 } catch (eCloseSynth) {}
@@ -5519,7 +5538,7 @@
             if (/left the (?:chat|conversation)/i.test(txt)) {
                 continue;
             }
-            if (/chat closed by agent/i.test(txt)) return 'agent';
+            if (/chat closed by agent/i.test(txt) || /closed the chat\.?$/i.test(txt)) return 'agent';
             if (/closed automatically due to inactivity/i.test(txt)) return 'inactivity';
             if (/left the page/i.test(txt)) return 'leave';
             // "{Name} closed the live chat." OR "Visitor closed the live chat."
@@ -6800,6 +6819,7 @@
         var t = String(text || '').replace(/\s+/g, ' ').trim();
         if (!t) return false;
         return /chat closed by agent/i.test(t)
+            || /closed the chat\.?$/i.test(t)
             || /closed automatically due to inactivity/i.test(t)
             || /left the page — chat closed/i.test(t)
             || /^IP blocked/i.test(t)

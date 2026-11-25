@@ -1305,7 +1305,7 @@ function lc_is_visitor_session_close_message(string $message): bool
         return false;
     }
     return (bool) preg_match(
-        '/closed the live chat|Chat closed|Chat ended|left the page|Chat closed automatically due to inactivity|ended this chat|Merged \d+ earlier chat/i',
+        '/closed the live chat|closed the chat|Chat closed|Chat ended|left the page|Chat closed automatically due to inactivity|ended this chat|Merged \d+ earlier chat/i',
         $t
     );
 }
@@ -1337,7 +1337,7 @@ function lc_conversation_closed_by(int $conversationId): string
             if (!lc_is_visitor_session_close_message($text)) {
                 continue;
             }
-            if (preg_match('/chat closed by agent/i', $text)) {
+            if (preg_match('/chat closed by agent|closed the chat\.?$/i', $text)) {
                 return 'agent';
             }
             if (preg_match('/closed automatically due to inactivity/i', $text)) {

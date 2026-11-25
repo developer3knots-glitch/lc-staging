@@ -53,7 +53,7 @@ const visitorSse = new Map();
 const visitorMsgAcks = new Map();
 /** Last message.new publish — exposed on /health for live debugging */
 let lastMessageNew = null;
-const REALTIME_BUILD = 29;
+const REALTIME_BUILD = 30;
 /** Optional PHP visitor-ack bridge (e.g. http://127.0.0.1/api/visitor-ack.php or full https URL). */
 const VISITOR_ACK_URL = String(process.env.LC_VISITOR_ACK_URL || '').trim();
 const VISITOR_ACK_HOST = String(process.env.LC_VISITOR_ACK_HOST || '').trim();
@@ -317,7 +317,7 @@ function isVisitorClosePayload(event, data) {
   if (event === 'conversation.updated' && data && String(data.status || '') === 'closed') return true;
   if (event === 'message.new' && data) {
     const text = String((data.message && data.message.message) || data.message || '');
-    return /chat closed by agent|closed automatically due to inactivity|IP blocked|chat moved to history/i.test(text);
+    return /chat closed by agent|closed the chat|closed automatically due to inactivity|IP blocked|chat moved to history/i.test(text);
   }
   return false;
 }

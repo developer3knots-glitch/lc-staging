@@ -71,9 +71,13 @@ try {
     ");
     $upd->execute([$conversationId]);
 
+    $agentName = trim((string) ($agent['name'] ?? ''));
+    if ($agentName === '') {
+        $agentName = 'Agent';
+    }
     $closeNote = !empty($input['blocked_leave'])
         ? 'IP blocked — chat moved to history.'
-        : 'Chat closed by agent.';
+        : ($agentName . ' closed the chat.');
     $closeMsgId = 0;
     $closeMessage = null;
     if ($upd->rowCount() > 0) {
@@ -103,12 +107,14 @@ try {
             'id' => $closeMsgId,
             'sender_type' => 'system',
             'message' => $closeNote,
+            'agent_name' => $agentName,
             'created_at' => gmdate('c'),
         ];
         $closePayload = [
             'status' => 'closed',
             'closed_by' => 'agent',
             'agent_id' => 0,
+            'agent_name' => $agentName,
             'previous_agent_id' => $previousAgentId,
             'conversation_id' => $conversationId,
         ];
