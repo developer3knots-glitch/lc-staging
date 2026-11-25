@@ -76,7 +76,8 @@ try {
         $reopened = true;
     }
     $uploadIncoming = ($status === 'waiting');
-    if ($status === 'waiting') {
+    // Soft-continue after close stays Unassigned — do not auto-assign.
+    if ($status === 'waiting' && !$reopened) {
         lc_assign_agent($conversationId);
         $status = (string) ($db->query("SELECT status FROM conversations WHERE id = " . (int) $conversationId)->fetchColumn() ?: $status);
     }

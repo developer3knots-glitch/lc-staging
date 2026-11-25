@@ -148,7 +148,9 @@ try {
                         ]);
                     }
                 }
-                if ($status === 'waiting' && function_exists('lc_assign_agent')) {
+                // Soft-continue after close must stay Unassigned — agent Assigns manually.
+                // Auto-assign only for brand-new waiting chats, not visitor reopen.
+                if ($status === 'waiting' && !$publishReopened && function_exists('lc_assign_agent')) {
                     lc_assign_agent($conversationId);
                     $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $status);
                 }
@@ -157,6 +159,7 @@ try {
                     if (!$publishReopened || $status !== 'waiting') {
                         lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                             'status' => $status,
+                            'agent_id' => ($status === 'waiting') ? 0 : null,
                             'reopened_by' => $publishReopened ? 'visitor' : null,
                         ]);
                     }
@@ -188,7 +191,7 @@ try {
             }
         });
     } else {
-        if ($status === 'waiting' && function_exists('lc_assign_agent')) {
+        if ($status === 'waiting' && !$reopened && function_exists('lc_assign_agent')) {
             lc_assign_agent($conversationId);
             $status = (string) ($db->query("SELECT status FROM conversations WHERE id = {$conversationId}")->fetchColumn() ?: $status);
         }
@@ -196,6 +199,7 @@ try {
             if (!$reopened || $status !== 'waiting') {
                 lc_realtime_publish_conversation_event($conversationId, 'conversation.updated', [
                     'status' => $status,
+                    'agent_id' => ($status === 'waiting') ? 0 : null,
                     'reopened_by' => $reopened ? 'visitor' : null,
                 ]);
             }

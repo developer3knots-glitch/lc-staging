@@ -4210,31 +4210,58 @@
         if (!selectedId) return;
         var btn = document.getElementById('lc-reopen-chat');
         if (btn) btn.disabled = true;
+        var reopenCid = selectedId;
         fetch(base + '/api/agent-reopen.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ conversation_id: selectedId })
+            body: JSON.stringify({ conversation_id: reopenCid })
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (btn) btn.disabled = false;
             if (!data || data.success === false) {
                 alert((data && data.error) || 'Could not reopen chat');
                 return;
             }
+            if (selectedId !== reopenCid) return;
+            var agentId = parseInt(data.agent_id || myAgentId, 10) || myAgentId;
+            var agentName = String(data.agent_name || (data.agent && data.agent.name) || '').trim();
             setReopenBarVisible(false);
+            setUnassignedMode(false);
+            isSupervising = false;
+            chatTransferredAway = false;
+            if (superviseBar) superviseBar.hidden = true;
+            setTakeoverMenuVisible(false);
+            noteAdminThreadReopened(data.message_id || (data.message && data.message.id) || 0);
             syncConversationListStatus({
-                id: selectedId,
+                id: reopenCid,
                 status: 'active',
-                agent_id: data.agent_id || myAgentId
+                agent_id: agentId,
+                agent_name: agentName || undefined,
+                agent: data.agent || undefined
             });
-            currentAssignedAgentId = parseInt(data.agent_id || myAgentId, 10) || myAgentId;
+            currentAssignedAgentId = agentId;
+            if (data.message && (data.message.id || data.message_id)) {
+                try { appendLiveMessage(data.message); } catch (eJoin) {}
+            }
+            var row = null;
+            (lastConversations || []).forEach(function (c) {
+                if ((parseInt(c.id, 10) || 0) === reopenCid) row = c;
+            });
+            updateChatActions(row || {
+                id: reopenCid,
+                status: 'active',
+                agent_id: agentId,
+                agent_name: agentName
+            }, true);
             if (replyInput) {
                 replyInput.disabled = false;
                 replyInput.placeholder = 'Type a message…';
+                try { replyInput.focus(); } catch (eF) {}
             }
             var sendBtn = document.getElementById('lc-send-reply');
             if (sendBtn) sendBtn.disabled = false;
-            pollMessages();
+            needsFullHistory = false;
+            pollMessages({ force: true });
             loadConversations(true);
         }).catch(function () {
             if (btn) btn.disabled = false;
@@ -4281,7 +4308,7 @@
                     var sysLines = messagesEl.querySelectorAll('.lc-msg.system');
                     for (var si = sysLines.length - 1; si >= 0; si--) {
                         var st = String(sysLines[si].textContent || '');
-                        if (/chat closed by agent/i.test(st)) { closedReason = 'agent'; break; }
+                        if (/chat closed by agent/i.test(st) || /closed the chat\.?$/i.test(st)) { closedReason = 'agent'; break; }
                         if (/closed automatically due to inactivity/i.test(st)) { closedReason = 'inactivity'; break; }
                         if (/closed the live chat/i.test(st)) { closedReason = 'visitor'; break; }
                         if (/left the page/i.test(st)) { closedReason = 'leave'; break; }
@@ -4302,7 +4329,12 @@
             setUnassignedMode(false);
             if (transferWrap) transferWrap.style.display = 'none';
             closeTransferPanel();
-            setReopenBarVisible(visitorIsBrowsing(c) && !(currentIpBlocked || (c && c.ip_blocked)));
+            // After agent/inactivity close: Open while visitor is still on site.
+            // Visitor self-close keeps the thread closed (no Open).
+            var canReopen = closedReason !== 'visitor'
+                && !(currentIpBlocked || (c && c.ip_blocked))
+                && (visitorIsBrowsing(c) || !presenceMeansLeft(normalizeVisitorPresence(c && c.visitor_presence)));
+            setReopenBarVisible(!!canReopen);
             return;
         }
 

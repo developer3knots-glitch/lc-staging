@@ -94,9 +94,16 @@ if (function_exists('lc_realtime_publish_inbox')) {
     ]);
 }
 
-lc_json([
+$out = [
     'success' => true,
     'status' => 'active',
     'agent_id' => $ownerId,
     'agent_name' => $ownerName,
-]);
+    'agent' => $agentPublic,
+    'reopened_by' => 'agent',
+];
+if ($joinMsgId > 0 && !empty($updatedPayload['message'])) {
+    $out['message_id'] = $joinMsgId;
+    $out['message'] = $updatedPayload['message'];
+}
+lc_json($out);
