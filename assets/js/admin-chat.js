@@ -5277,6 +5277,11 @@
                 renderVisitorDetails(currentConversationMeta, false);
                 markConversationBlocked(selectedId, false);
                 updateBlockIpMenu();
+                updateChatActions({
+                    id: convId,
+                    status: 'active',
+                    agent_id: aid
+                }, true);
                 pollMessages();
             })
             .catch(function () {
@@ -7971,6 +7976,11 @@
                             }
                             var sendActiveBtn = document.getElementById('lc-send-reply');
                             if (sendActiveBtn) sendActiveBtn.disabled = false;
+                            updateChatActions({
+                                id: cid,
+                                status: 'active',
+                                agent_id: newAgent
+                            }, true);
                         }
                     } else if (payload && payload.status === 'waiting' && newAgent === 0) {
                         // Only show Assign again if we are not already the active assignee
