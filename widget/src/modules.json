@@ -1,0 +1,72 @@
+[
+  {
+    "file": "01-boot-core.js",
+    "from": 10,
+    "to": 435,
+    "desc": "Boot, flags, identity, navigation helpers",
+    "lines": 427
+  },
+  {
+    "file": "02-presence.js",
+    "from": 436,
+    "to": 1203,
+    "desc": "Page tracker, presence, Left website",
+    "lines": 769
+  },
+  {
+    "file": "03-widget-dom.js",
+    "from": 1204,
+    "to": 2013,
+    "desc": "buildWidget DOM, storage, maximize",
+    "lines": 811
+  },
+  {
+    "file": "04-screens.js",
+    "from": 2014,
+    "to": 3540,
+    "desc": "Resume, prechat, idle, settings sync helpers",
+    "lines": 1528
+  },
+  {
+    "file": "05-realtime.js",
+    "from": 3541,
+    "to": 4551,
+    "desc": "WS handlers, message.new, conversation.updated",
+    "lines": 1012
+  },
+  {
+    "file": "06-routing.js",
+    "from": 4552,
+    "to": 5281,
+    "desc": "Entry routing, start chat, prechat submit",
+    "lines": 731
+  },
+  {
+    "file": "07-panel-lifecycle.js",
+    "from": 5282,
+    "to": 7151,
+    "desc": "Panel open/close, ended, new chat, initChat",
+    "lines": 1871
+  },
+  {
+    "file": "08-chat-ui.js",
+    "from": 7152,
+    "to": 8120,
+    "desc": "Waiting, typing, avatars, reactions",
+    "lines": 970
+  },
+  {
+    "file": "09-messages.js",
+    "from": 8121,
+    "to": 9102,
+    "desc": "appendMessage, poll, attachments",
+    "lines": 983
+  },
+  {
+    "file": "10-send-boot.js",
+    "from": 9103,
+    "to": 9450,
+    "desc": "Send path + bootWidget",
+    "lines": 348
+  }
+]
