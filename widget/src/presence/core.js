@@ -1,17 +1,14 @@
 /* LC widget module: presence/core.js — shared page tracker + presence transport
  *
- * Event files (load after this):
- *   02-presence-minimized.js
- *   02-presence-active.js
- *   02-presence-tab-change.js
- *   02-presence-tab-closed.js
- *   02-presence-site-left.js
- *   02-presence-wire.js
+ * Sibling events in this folder:
+ *   active.js | tab-change.js | tab-closed.js | site-left.js
+ *   wire.js (boot) | minimized.js (complete minimize UI + presence)
+ *   boot-ui.js
  */
         var lastSentUrl = '';
         var currentEnteredAt = Date.now();
         var leaveSentForUrl = '';
-        var siteLeaveSent = false;
+        siteLeaveSent = false;
         var sameSiteLeaveHandled = false;
         var externalLeavePending = false;
         var presenceTimer = null;

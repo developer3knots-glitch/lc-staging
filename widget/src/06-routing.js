@@ -610,13 +610,6 @@
         }
     }
 
-    function hideMinimizeConfirm() {
-        var el = document.getElementById('lc-minimize-confirm');
-        if (el) {
-            el.hidden = true;
-        }
-    }
-
     function showCloseConfirm() {
         if (!conversationId) {
             minimizePanel();
@@ -637,62 +630,9 @@
         }
     }
 
-    function minimizeConfirmEnabled() {
-        // Brand setting: default ON so the keep-chatting sheet stays available.
-        if (!settings || settings.minimize_confirm_enabled === undefined || settings.minimize_confirm_enabled === null) {
-            return true;
-        }
-        var v = settings.minimize_confirm_enabled;
-        return !(v === 0 || v === '0' || v === false || v === 'false');
-    }
-
-    /** Toolbar / Escape minimize — instant Minimized presence (no confirm delay). */
-    function requestMinimize() {
-        var panel = document.getElementById('lc-panel');
-        var visuallyOpen = false;
-        if (panel) {
-            try { visuallyOpen = window.getComputedStyle(panel).display !== 'none' && !panel.hidden; }
-            catch (eVis) { visuallyOpen = panel.style.display !== 'none' && !panel.hidden; }
-        }
-        if (!isOpen && !visuallyOpen) {
-            // Panel already hidden — still re-assert Minimized over WS (0 delay).
-            reportEngagementPresence(false, true, {
-                chat_open: 0,
-                force_status: 'minimized',
-                page_visible: document.visibilityState === 'hidden' ? 0 : 1
-            });
-            return;
-        }
-        // Always minimize immediately so agent badge flips Active → Minimized with no delay.
-        // Confirm sheet was leaving status stuck on Active while the dialog stayed open.
-        minimizePanel();
-    }
-
-    function showMinimizeConfirm() {
-        if (!isOpen) {
-            return;
-        }
-        if (!conversationId || chatClosed) {
-            minimizePanel();
-            return;
-        }
-        hideCloseConfirm();
-        var textEl = document.getElementById('lc-minimize-confirm-text');
-        if (textEl) {
-            textEl.textContent = 'Your conversation on ' + widgetSiteLabel() + ' stays open while you switch tabs or apps.';
-        }
-        var el = document.getElementById('lc-minimize-confirm');
-        if (el) {
-            el.hidden = false;
-        }
-    }
-
     function bindConfirmSheets() {
         var closeYes = document.getElementById('lc-close-confirm-yes');
         var closeDismiss = document.getElementById('lc-close-confirm-dismiss');
-        var minKeep = document.getElementById('lc-minimize-confirm-keep');
-        var minClose = document.getElementById('lc-minimize-confirm-close');
-        var minX = document.getElementById('lc-minimize-confirm-x');
 
         if (closeYes) {
             closeYes.addEventListener('click', function () {
@@ -703,29 +643,18 @@
         if (closeDismiss) {
             closeDismiss.addEventListener('click', hideCloseConfirm);
         }
-        if (minKeep) {
-            minKeep.addEventListener('click', hideMinimizeConfirm);
-        }
-        if (minClose) {
-            minClose.addEventListener('click', function () {
-                hideMinimizeConfirm();
-                minimizePanel();
-            });
-        }
-        if (minX) {
-            minX.addEventListener('click', hideMinimizeConfirm);
-        }
 
-        ['lc-close-confirm', 'lc-minimize-confirm'].forEach(function (id) {
-            var overlay = document.getElementById(id);
-            if (!overlay) {
-                return;
-            }
-            overlay.addEventListener('click', function (e) {
-                if (e.target === overlay) {
-                    overlay.hidden = true;
+        var closeOverlay = document.getElementById('lc-close-confirm');
+        if (closeOverlay) {
+            closeOverlay.addEventListener('click', function (e) {
+                if (e.target === closeOverlay) {
+                    closeOverlay.hidden = true;
                 }
             });
-        });
+        }
+
+        // Minimize confirm + panel logic lives in presence/minimized.js
+        if (typeof bindMinimizeConfirmSheets === 'function') {
+            bindMinimizeConfirmSheets();
+        }
     }
-    function minimizePanel() {

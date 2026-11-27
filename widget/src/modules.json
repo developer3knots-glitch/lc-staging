@@ -8,10 +8,6 @@
     "desc": "Presence shared: page tracker, WS/HTTP transport, emitPresenceLeft"
   },
   {
-    "file": "presence/minimized.js",
-    "desc": "EVENT Minimized — panel closed / launcher"
-  },
-  {
     "file": "presence/active.js",
     "desc": "EVENT Active — panel open + tab visible; pageshow/focus"
   },
@@ -30,6 +26,10 @@
   {
     "file": "presence/wire.js",
     "desc": "Presence boot, debug hooks, close initPageTracker"
+  },
+  {
+    "file": "presence/minimized.js",
+    "desc": "EVENT Minimized — button click, panel close, presence emit (complete)"
   },
   {
     "file": "presence/boot-ui.js",

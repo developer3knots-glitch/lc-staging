@@ -14,7 +14,7 @@ Backup of the old monolith: `widget/backup/embed-app.js.bak`
 | File | Event | Agent badge |
 |------|--------|-------------|
 | `presence/core.js` | Shared transport / page tracker | — |
-| `presence/minimized.js` | **Minimized** | Chat minimized |
+| `presence/minimized.js` | **Minimized** (button → panel → WS) | Chat minimized |
 | `presence/active.js` | **Active** (+ back on tab) | Active |
 | `presence/tab-change.js` | **Tab change** | Tab |
 | `presence/tab-closed.js` | **Tab closed** | Left website |

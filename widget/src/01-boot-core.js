@@ -426,5 +426,7 @@ var LC_WIDGET_BUILD = 307;
 
     /** Push widget open / tab visibility to the server for agent presence. */
     var reportEngagementPresence = function () {};
+    /** Set true after Tab closed / Site left — blocks Minimized/Active until return. */
+    var siteLeaveSent = false;
 
     function initPageTracker() {

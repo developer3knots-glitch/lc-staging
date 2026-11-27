@@ -1,42 +1,6 @@
-/* LC widget module: 07-panel-lifecycle.js — Panel open/close, ended, new chat, initChat */
-        var epoch = bumpPresenceEpoch();
-        // Presence FIRST — agent badge must not wait on panel DOM / confirm cleanup
-        isOpen = false;
-        hideMinimizeConfirm();
-        reportEngagementPresence(false, true, {
-            chat_open: 0,
-            force_status: 'minimized',
-            page_visible: document.visibilityState === 'hidden' ? 0 : 1
-        });
-        stopAckHeartbeat();
-        var panel = document.getElementById('lc-panel');
-        var bubble = document.getElementById('lc-bubble');
-        var root = document.getElementById('lc-widget-root');
-        if (panel) {
-            // Must beat openPanel's display:flex !important or 2nd minimize leaves panel stuck open.
-            panel.style.setProperty('display', 'none', 'important');
-            panel.style.animation = '';
-        }
-        if (bubble) bubble.classList.remove('lcw-open');
-        if (root) root.classList.remove('lcw-panel-open');
-        hideHeadMenu();
-        hideTranscriptSheet();
-        hideTranscriptConfirm();
-        persistPanelOpen(false);
-        // Re-assert Minimized after focus/blur races — cancelled if user re-opens (epoch bump).
-        function reassertMin() {
-            if (epoch !== presenceEpoch) return;
-            if (isChatPanelOpen()) return;
-            // No force_status — avoids duplicate HTTP "Visitor minimized…" transcript lines.
-            reportEngagementPresence(false, true, {
-                chat_open: 0,
-                page_visible: document.visibilityState === 'hidden' ? 0 : 1
-            });
-        }
-        minimizeReassertTimers.push(setTimeout(reassertMin, 0));
-        minimizeReassertTimers.push(setTimeout(reassertMin, 50));
-    }
-
+/* LC widget module: 07-panel-lifecycle.js — Panel open/close, ended, new chat, initChat
+ * Minimize lives in presence/minimized.js (requestMinimize / minimizePanel).
+ */
     /**
      * Open the chat panel. Safe to call repeatedly (no-op if already open).
      * @param {{ silenceFlow?: boolean }} options
