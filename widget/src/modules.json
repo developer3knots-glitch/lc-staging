@@ -44,8 +44,12 @@
     "desc": "Resume, prechat, idle, settings sync helpers"
   },
   {
-    "file": "05-realtime.js",
-    "desc": "WS handlers, message.new, conversation.updated"
+    "file": "realtime/connection.js",
+    "desc": "WebSocket connection — load script, token, connect, channels"
+  },
+  {
+    "file": "realtime/handlers.js",
+    "desc": "WebSocket event handlers — message.new, conversation.updated"
   },
   {
     "file": "06-routing.js",

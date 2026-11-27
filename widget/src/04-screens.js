@@ -617,12 +617,6 @@
         });
     }
 
-    function ensureBrandPresenceChannel(client) {
-        var brandId = parseInt((settings && settings.brand_id) || 0, 10) || 0;
-        if (brandId < 1 || !client || typeof client.subscribe !== 'function') return;
-        try { client.subscribe('brand:' + brandId + ':presence'); } catch (eSub) {}
-    }
-
     function getSettingsSyncMs() {
         return Math.max(10000, Math.min(30000, (pollMs || 1500) * 8));
     }
@@ -934,59 +928,11 @@
         }
     }
 
-    function fetchVisitorRealtimeToken() {
-        var cid = parseInt(conversationId, 10) || 0;
-        if (cid < 1 || !visitorUid) {
-            return Promise.resolve('');
-        }
-        return fetch(siteUrl + '/api/realtime-token.php?visitor_uid=' + encodeURIComponent(visitorUid) +
-            '&conversation_id=' + encodeURIComponent(cid) +
-            '&chat_token=' + encodeURIComponent(chatToken || (typeof getStoredChatToken === 'function' ? getStoredChatToken() : '') || ''), {
-                credentials: 'omit',
-                headers: apiHeaders()
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data && data.realtime) {
-                    realtimeConfig = data.realtime;
-                }
-                return (data && data.success && data.token) ? data.token : '';
-            })
-            .catch(function () { return ''; });
-    }
-
-    function visitorSseEndpoint() {
-        var wsUrl = (realtimeConfig && realtimeConfig.wsUrl) || '';
-        if (!wsUrl) return '';
-        return wsUrl
-            .replace(/^wss:/i, 'https:')
-            .replace(/^ws:/i, 'http:')
-            .replace(/\/$/, '') + '/sse';
-    }
-
-    function stopVisitorSse() {
-        if (visitorSseRetryTimer) {
-            clearTimeout(visitorSseRetryTimer);
-            visitorSseRetryTimer = null;
-        }
-        if (visitorSse) {
-            try { visitorSse.close(); } catch (eC) {}
-            visitorSse = null;
-        }
-        visitorSseUrl = '';
-        visitorSseBoundConv = 0;
-    }
-
     /**
      * SSE disabled on this stack — Chrome hits net::ERR_HTTP2_PROTOCOL_ERROR on
      * /lc-realtime/sse (HTTP/2 forbids Connection headers; nginx upgrade location
      * also breaks EventSource). WebSocket is the only live pipe.
      */
-    function startVisitorSse(token) {
-        stopVisitorSse();
-        window.__lcSseDisabled = true;
-        return false;
-    }
 
     function stopVisitorLongPoll() {
         visitorWaitActive = false;
@@ -1487,22 +1433,6 @@
         return false;
     }
 
-    function ensureVisitorConvChannel() {
-        var cid = parseInt(conversationId, 10) || 0;
-        if (cid < 1) return;
-        var ch = 'conv:' + cid;
-        var vCh = visitorUid ? ('visitor:' + String(visitorUid).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)) : '';
-        if (realtimeClient && typeof realtimeClient.subscribe === 'function') {
-            try { realtimeClient.subscribe(ch); } catch (e1) {}
-            if (vCh) {
-                try { realtimeClient.subscribe(vCh); } catch (e1b) {}
-            }
-            ensureBrandPresenceChannel(realtimeClient);
-        }
-        // Never subscribe presenceClient to conv: — a second WS was racing the chat
-        // socket and eating message.new frames.
-    }
-
     function ackVisitorMessagePainted(messageId) {
         var mid = parseInt(messageId, 10) || 0;
         if (mid < 1) return;
@@ -1524,5 +1454,3 @@
             ackAgentMessagesSeen(!viewing, mid);
         } catch (eRec) {}
     }
-
-    function handleVisitorMessageNew(payload) {

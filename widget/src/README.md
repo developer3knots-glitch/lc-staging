@@ -24,6 +24,13 @@ Backup of the old monolith: `widget/backup/embed-app.js.bak`
 
 Console helpers: `__lcPresenceActive`, `__lcPresenceMinimized`, `__lcPresenceTabChange`, `__lcPresenceTabClosed`, `__lcPresenceSiteLeft`.
 
+## WebSocket — `src/realtime/`
+
+| File | Responsibility |
+|------|----------------|
+| `realtime/connection.js` | Load `lc-realtime.js`, tokens, `connect()`, channels |
+| `realtime/handlers.js` | `message.new`, `conversation.updated`, invites |
+
 ## Other modules
 
 | File | Responsibility |
@@ -31,7 +38,6 @@ Console helpers: `__lcPresenceActive`, `__lcPresenceMinimized`, `__lcPresenceTab
 | `01-boot-core.js` | Boot, flags, identity, links |
 | `03-widget-dom.js` | DOM shell, storage |
 | `04-screens.js` | Resume / prechat / idle |
-| `05-realtime.js` | WebSocket handlers |
 | `06-routing.js` | Entry routing, start chat |
 | `07-panel-lifecycle.js` | Panel, ended, initChat |
 | `08-chat-ui.js` | Waiting, typing, reactions |
