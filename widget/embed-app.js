@@ -630,8 +630,8 @@
                 label = 'Tab';
             } else if (force === 'minimized' || !fields.chat_open) {
                 // Launcher-only (incl. tab hidden while minimized) stays Minimized.
-                status = 'active';
-                label = 'Active';
+                status = 'minimized';
+                label = 'Chat minimized';
             } else if (tabHidden) {
                 status = 'away';
                 label = 'Tab';
