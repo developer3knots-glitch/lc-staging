@@ -21,6 +21,13 @@ if (is_dir($srcDir)) {
     foreach (glob($srcDir . '/[0-9][0-9]-*.js') ?: [] as $f) {
         $files[] = $f;
     }
+    // Nested presence event modules
+    $presenceDir = $srcDir . '/presence';
+    if (is_dir($presenceDir)) {
+        foreach (glob($presenceDir . '/*.js') ?: [] as $f) {
+            $files[] = $f;
+        }
+    }
     $manifest = $srcDir . '/modules.json';
     if (is_file($manifest)) {
         $files[] = $manifest;

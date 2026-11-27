@@ -1,7 +1,7 @@
 <?php
 /**
- * CORS-safe module fetch for cross-origin embeds (customer site → widget host).
- * embed-app.js loads: src-file.php?f=01-boot-core.js&v=…
+ * CORS-safe module fetch for cross-origin embeds.
+ * ?f=01-boot-core.js  or  ?f=presence/active.js
  */
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
@@ -11,16 +11,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
     exit;
 }
 
-$f = basename((string) ($_GET['f'] ?? ''));
-if (!preg_match('/^\d{2}-[a-z0-9\-]+\.js$/', $f)) {
+$srcRoot = realpath(__DIR__ . '/src');
+$rel = str_replace('\\', '/', (string) ($_GET['f'] ?? ''));
+$rel = ltrim($rel, '/');
+
+if (!$srcRoot || $rel === '' || strpos($rel, '..') !== false || !preg_match('/^[a-zA-Z0-9_.\-\/]+\.js$/', $rel)) {
     http_response_code(404);
     header('Content-Type: text/plain; charset=utf-8');
     echo 'Not found';
     exit;
 }
 
-$path = __DIR__ . '/src/' . $f;
-if (!is_file($path)) {
+$path = $srcRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+$real = realpath($path);
+if (!$real || strpos($real, $srcRoot) !== 0 || !is_file($real)) {
     http_response_code(404);
     header('Content-Type: text/plain; charset=utf-8');
     echo 'Not found';
@@ -28,4 +32,4 @@ if (!is_file($path)) {
 }
 
 header('Content-Type: application/javascript; charset=utf-8');
-readfile($path);
+readfile($real);

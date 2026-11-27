@@ -6,17 +6,29 @@ Backup of the old monolith: `widget/backup/embed-app.js.bak`
 
 1. Site loads `embed.js`
 2. `embed.js` asks `rev.php` for version, then loads `embed-app.js`
-3. `embed-app.js` injects a classic `<script src="src-bundle.php">` (no `eval` / `new Function`)
-4. `src-bundle.php` concatenates the files below into one IIFE on the server
+3. `embed-app.js` injects `<script src="src-bundle.php">` (no `eval`)
+4. `src-bundle.php` concatenates files from `modules.json` into one IIFE
 
-Customer sites often ban `unsafe-eval`, so fetch+`new Function` cannot be used.
+## Presence events — `src/presence/`
 
-## Modules
+| File | Event | Agent badge |
+|------|--------|-------------|
+| `presence/core.js` | Shared transport / page tracker | — |
+| `presence/minimized.js` | **Minimized** | Chat minimized |
+| `presence/active.js` | **Active** (+ back on tab) | Active |
+| `presence/tab-change.js` | **Tab change** | Tab |
+| `presence/tab-closed.js` | **Tab closed** | Left website |
+| `presence/site-left.js` | **Site left** | Left website |
+| `presence/wire.js` | Boot + `window.__lcPresence*` hooks | — |
+| `presence/boot-ui.js` | Reveal gate, icons | — |
+
+Console helpers: `__lcPresenceActive`, `__lcPresenceMinimized`, `__lcPresenceTabChange`, `__lcPresenceTabClosed`, `__lcPresenceSiteLeft`.
+
+## Other modules
 
 | File | Responsibility |
 |------|----------------|
 | `01-boot-core.js` | Boot, flags, identity, links |
-| `02-presence.js` | Presence / Left website |
 | `03-widget-dom.js` | DOM shell, storage |
 | `04-screens.js` | Resume / prechat / idle |
 | `05-realtime.js` | WebSocket handlers |
@@ -26,10 +38,6 @@ Customer sites often ban `unsafe-eval`, so fetch+`new Function` cannot be used.
 | `09-messages.js` | Transcript, attachments |
 | `10-send-boot.js` | Send + bootWidget |
 
-## Optional offline concat
-
 ```bash
 node widget/build.mjs
 ```
-
-That overwrites `embed-app.js` with a single bundled file (skips `src-bundle.php`). Prefer the thin entry + `src-bundle.php` for normal deploys.
