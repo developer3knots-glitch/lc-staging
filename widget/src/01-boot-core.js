@@ -100,7 +100,10 @@ var LC_WIDGET_BUILD = 307;
     var siteUrl = (script && script.getAttribute('data-site')) || '';
     if (!siteUrl) {
         var src = script.src || '';
-        siteUrl = src.replace(/\/widget\/embed(?:-app)?\.js.*$/, '');
+        siteUrl = src.replace(/\/widget\/(?:embed(?:-app)?\.js|src-bundle\.php).*$/i, '');
+        if (!siteUrl || siteUrl === src) {
+            siteUrl = src.replace(/\/widget\/[^?#]*.*$/i, '');
+        }
     }
     siteUrl = siteUrl.replace(/\/$/, '');
 

@@ -1,13 +1,15 @@
 # Widget source modules
 
-Backup of the old single file: `widget/backup/embed-app.js.bak`
+Backup of the old monolith: `widget/backup/embed-app.js.bak`
 
-## How it loads
+## How it loads (CSP-safe)
 
 1. Site loads `embed.js`
-2. `embed.js` loads `embed-app.js` (thin entry)
-3. `embed-app.js` **imports** each file below via `src-file.php` (CORS-safe)
-4. All module text runs in **one shared scope** (same as the old monolith)
+2. `embed.js` asks `rev.php` for version, then loads `embed-app.js`
+3. `embed-app.js` injects a classic `<script src="src-bundle.php">` (no `eval` / `new Function`)
+4. `src-bundle.php` concatenates the files below into one IIFE on the server
+
+Customer sites often ban `unsafe-eval`, so fetch+`new Function` cannot be used.
 
 ## Modules
 
@@ -24,12 +26,10 @@ Backup of the old single file: `widget/backup/embed-app.js.bak`
 | `09-messages.js` | Transcript, attachments |
 | `10-send-boot.js` | Send + bootWidget |
 
-## Optional local concat
-
-If you need a single offline file again:
+## Optional offline concat
 
 ```bash
 node widget/build.mjs
 ```
 
-That overwrites `embed-app.js` with a bundled copy. Prefer the thin entry + `src/` for normal work.
+That overwrites `embed-app.js` with a single bundled file (skips `src-bundle.php`). Prefer the thin entry + `src-bundle.php` for normal deploys.

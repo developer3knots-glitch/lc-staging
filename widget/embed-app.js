@@ -1,18 +1,19 @@
 /**
- * LiveChat Widget entry — loads split modules from widget/src/.
+ * LiveChat Widget entry — loads split modules via classic <script> (CSP-safe).
  * Backup of the old monolith: widget/backup/embed-app.js.bak
  *
- * Customer sites still use: <script src="…/widget/embed.js">
- * This file imports (fetches) modules and runs them in ONE shared scope
- * so var/function across files keep working without polluting the host page.
+ * Customer CSP blocks unsafe-eval / new Function, so we do NOT fetch+eval.
+ * Instead we inject src-bundle.php (server concatenates widget/src/*.js).
  */
 (function () {
     'use strict';
-    if (window.__LC_WIDGET_APP) return;
-    window.__LC_WIDGET_APP = true;
+    if (window.__LC_WIDGET_APP || window.__LC_WIDGET_BUNDLE_LOADING) return;
+    window.__LC_WIDGET_BUNDLE_LOADING = true;
 
     var current = document.currentScript;
-    var src = (current && current.src) ? String(current.src) : '';
+    if (!current || !current.src) return;
+
+    var src = String(current.src);
     var base = src.replace(/\/embed-app\.js(?:\?.*)?$/i, '/');
     if (base === src) {
         base = src.replace(/[^\/]+$/, '');
@@ -20,45 +21,25 @@
     var versionMatch = src.match(/[?&]v=([^&]+)/);
     var version = versionMatch ? decodeURIComponent(versionMatch[1]) : String(Date.now());
 
-    // Ordered module list (same as widget/src/modules.json).
-    var MODULES = [
-        '01-boot-core.js',
-        '02-presence.js',
-        '03-widget-dom.js',
-        '04-screens.js',
-        '05-realtime.js',
-        '06-routing.js',
-        '07-panel-lifecycle.js',
-        '08-chat-ui.js',
-        '09-messages.js',
-        '10-send-boot.js'
-    ];
+    var s = document.createElement('script');
+    s.src = base + 'src-bundle.php?v=' + encodeURIComponent(version);
+    s.charset = 'utf-8';
+    s.async = false;
 
-    function moduleUrl(name) {
-        // src-file.php adds CORS so customer-origin pages can fetch widget host files.
-        return base + 'src-file.php?f=' + encodeURIComponent(name) + '&v=' + encodeURIComponent(version);
+    // data-site / data-brand live on this tag (copied by embed.js) — pass them through
+    // so document.currentScript inside the bundle still sees them.
+    var attrs = current.attributes;
+    for (var i = 0; i < attrs.length; i++) {
+        var name = attrs[i].name;
+        if (name.indexOf('data-') === 0) {
+            s.setAttribute(name, attrs[i].value);
+        }
     }
 
-    function fetchText(url) {
-        return fetch(url, { credentials: 'omit', cache: 'no-cache' }).then(function (r) {
-            if (!r.ok) throw new Error('module ' + url + ' → ' + r.status);
-            return r.text();
-        });
+    var parent = current.parentNode || document.head || document.documentElement;
+    if (current.nextSibling) {
+        parent.insertBefore(s, current.nextSibling);
+    } else {
+        parent.appendChild(s);
     }
-
-    function runModules(parts) {
-        var body = "'use strict';\n" + parts.join('\n');
-        // One function scope = shared vars across former monolith files.
-        (new Function(body))();
-    }
-
-    function fail(err) {
-        try {
-            console.error('[LiveChat] widget module load failed', err);
-        } catch (eLog) {}
-    }
-
-    Promise.all(MODULES.map(function (name) {
-        return fetchText(moduleUrl(name));
-    })).then(runModules).catch(fail);
 })();
